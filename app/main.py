@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from app import __version__
 from app.api import health
 from app.config import Settings, get_settings
+from app.observability import RequestContextMiddleware, configure
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -22,6 +23,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     response carries it.
     """
     settings = settings or get_settings()
+    configure(settings.log_level)
 
     app = FastAPI(
         title="Facify",
@@ -32,6 +34,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     app.state.settings = settings
+
+    # Outermost: every log line and every response — including error responses —
+    # carries the request identifier.
+    app.add_middleware(RequestContextMiddleware)
+
     app.include_router(health.router)
 
     return app
