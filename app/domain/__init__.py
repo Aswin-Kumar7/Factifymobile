@@ -1,0 +1,56 @@
+"""Domain types (M05) — the authoritative value set the system can produce."""
+
+from app.domain.claim import Claim, ClaimAnchor
+from app.domain.enums import (
+    Action,
+    ClaimStatus,
+    ClaimType,
+    CoverageExpectation,
+    Direction,
+    EvidenceKind,
+    Importance,
+    MatchQuality,
+    MediaProvenance,
+    Method,
+    Relation,
+    Severity,
+    SourceRisk,
+    SyntheticSignal,
+    Tier,
+)
+from app.domain.evidence import (
+    Advisory,
+    Evidence,
+    InputAnchor,
+    MatchBasis,
+    SourceAnchor,
+    can_be_decisive,
+    derive_match_quality,
+)
+
+__all__ = [
+    "Action",
+    "Advisory",
+    "Claim",
+    "ClaimAnchor",
+    "ClaimStatus",
+    "ClaimType",
+    "CoverageExpectation",
+    "Direction",
+    "Evidence",
+    "EvidenceKind",
+    "Importance",
+    "InputAnchor",
+    "MatchBasis",
+    "MatchQuality",
+    "MediaProvenance",
+    "Method",
+    "Relation",
+    "Severity",
+    "SourceAnchor",
+    "SourceRisk",
+    "SyntheticSignal",
+    "Tier",
+    "can_be_decisive",
+    "derive_match_quality",
+]
