@@ -14,6 +14,7 @@ dependencies = [
     "pillow>=11.0",
     "trafilatura>=2.0",
     "pypdf>=5.1",
+    "fastembed>=0.5",
 ]
 
 [dependency-groups]
@@ -26,6 +27,7 @@ dev = [
     "mypy>=1.13",
     "pip-audit>=2.7",
     "lxml-stubs>=0.5.1",
+    "truststore>=0.10.4",
 ]
 
 [build-system]
@@ -43,13 +45,14 @@ packages = ["app"]
 # ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q --strict-markers --strict-config -m 'not live'"
+addopts = "-q --strict-markers --strict-config -m 'not live and not model'"
 asyncio_mode = "auto"
 markers = [
     "unit: pure core; no database, network or model access",
     "db: requires a live Postgres with pgvector (FACIFY_DATABASE_URL)",
     "replay: runs against stored source snapshots",
     "live: performs real outbound calls; never runs in CI",
+    "model: requires downloaded model weights (FACIFY_MODEL_TESTS=1)",
 ]
 
 [tool.ruff]

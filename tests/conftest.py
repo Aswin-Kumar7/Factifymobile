@@ -58,3 +58,16 @@ async def conn(database: Database) -> AsyncIterator[object]:
         transaction = connection.transaction(force_rollback=True)
         async with transaction:
             yield connection
+
+
+# Model tests download weights and are opt-in for the same reason database tests are:
+# nothing should silently pull hundreds of megabytes during an ordinary test run.
+# `truststore` bridges the OS certificate store, which this network's TLS
+# interception requires and a plain CI runner does not.
+if os.environ.get("FACIFY_MODEL_TESTS") == "1":  # pragma: no cover - opt-in path
+    try:
+        import truststore
+
+        truststore.inject_into_ssl()
+    except ImportError:
+        pass
