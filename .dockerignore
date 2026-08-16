@@ -1,0 +1,26 @@
+.git
+.github
+.venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+
+# Planning material is not part of the runtime image
+*.md
+docs
+dump
+web
+mobile
+
+# Never ship secrets or local data
+.env
+.env.*
+data/media
+data/snapshots
+*.onnx
+*.pt
+*.safetensors

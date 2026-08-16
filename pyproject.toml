@@ -1,0 +1,93 @@
+[project]
+name = "facify"
+version = "0.1.0"
+description = "Evidence-based content verification. Verdicts from citable evidence, never from model confidence."
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "psycopg[binary,pool]>=3.2",
+    "python-json-logger>=2.0.7",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "httpx>=0.27",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "pip-audit>=2.7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+# ---------------------------------------------------------------------------
+# Test layout (M01)
+#   unit    pure core — no database, no network, no model, no fixtures
+#   replay  snapshot replay against stored source snapshots (M47)
+#   live    real outbound calls — excluded from CI, opt-in only
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers --strict-config -m 'not live'"
+asyncio_mode = "auto"
+markers = [
+    "unit: pure core; no database, network or model access",
+    "db: requires a live Postgres with pgvector (FACIFY_DATABASE_URL)",
+    "replay: runs against stored source snapshots",
+    "live: performs real outbound calls; never runs in CI",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # import sorting
+    "B",        # bugbear
+    "UP",       # pyupgrade
+    "S",        # bandit / security
+    "ASYNC",    # async correctness
+    "T20",      # no print statements
+    "RUF",
+]
+ignore = [
+    "S101",   # assert is fine in tests
+    "RUF001", # ambiguous unicode in strings — prose uses en/em dashes deliberately
+    "RUF002", # ambiguous unicode in docstrings — same
+    "RUF003", # ambiguous unicode in comments — same
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "tests"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S105", "S106"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+disallow_untyped_defs = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/main.py"]
