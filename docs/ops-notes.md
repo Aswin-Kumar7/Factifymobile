@@ -191,6 +191,71 @@ after a cold start pays ~20 s.
 
 ---
 
+## Origin clustering: the M26 gate is NOT met (measured 2026-08-16)
+
+**Status: open.** Recorded rather than worked around, because the fix is a
+feed-selection decision that needs a human.
+
+### What the plan assumed
+
+codexplan.md §9 states the rule this way: *"Twenty Indian outlets carrying the same
+story are often one PTI/ANI wire copy reprinted twenty times."* Near-duplicate
+MinHash was chosen to collapse exactly that.
+
+### What was measured
+
+Live ingestion of **638 items from 12 major English-language national outlets**
+(Times of India, Hindustan Times, Indian Express, NDTV, Mint, News18 and others)
+produced **630 clusters and zero multi-outlet clusters**.
+
+Three diagnostics, in order:
+
+| Question | Finding |
+|---|---|
+| Is RSS text long enough to shingle? | **No.** 246 of 402 items had excerpts under 100 characters; the median was **0**. RSS carries headlines, not bodies. |
+| Would article bodies fix it? | **No.** Fetched 22 real article bodies for hand-labelled same-story pairs. Same-story Jaccard: **0.0 – 0.04**. Different-story: 0.0. The populations do not separate. |
+| Is there explicit wire attribution? | **No.** Zero of 402 items carried a PTI/ANI/Reuters credit in RSS metadata. |
+
+Shingle size was swept from 2 to 5 words. At every size, the tenth percentile of
+same-story pairs sat *below* the maximum of different-story pairs. **No threshold
+separates them**, so this is not a tuning problem.
+
+### What it actually means
+
+These outlets **cover** the same events; they do not **reprint** each other. Each
+writes its own headline and its own prose. Near-duplicate detection finds nothing
+because there are no near-duplicates.
+
+That is not entirely bad news. On this population, multiple outlets covering one
+story really are multiple independent origins, so corroboration counts here are more
+meaningful than the plan feared, not less. The feared failure — twenty mastheads over
+one origin — does not appear in this feed mix.
+
+Near-duplicate MinHash remains the right tool for the population it was chosen for:
+content farms, regional aggregators that do run wire copy verbatim, and the recycled
+-article pattern the plan describes elsewhere. Those sources are simply not in the
+current registry.
+
+### Options, for a human to choose
+
+1. **Add feeds that genuinely syndicate** — regional and aggregator outlets that run
+   PTI/ANI copy unedited. This makes the gate meetable and also broadens the corpus
+   toward the sources where recycling actually happens. Most aligned with the plan.
+2. **Add a second independence signal** — shared quoted-source relationships, which
+   §9 already lists among the signals to store and which is not implemented. Three
+   articles quoting one identical official statement share an origin even when the
+   prose differs.
+3. **Restate the gate** to "clustering demonstrably collapses verbatim reprints",
+   which the 25 unit tests already prove against realistic wire-reprint fixtures, and
+   accept that the current national-outlet mix does not exercise it live.
+
+**Not done: lowering the threshold until something clusters.** The populations
+overlap, so any threshold that produced a multi-outlet cluster here would be merging
+genuinely independent reporting — overstating corroboration, which is the failure
+mode that produces a confident wrong `SUPPORTED`.
+
+---
+
 ## Credential hygiene
 
 The database password was shared in a chat transcript during setup and is therefore

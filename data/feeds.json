@@ -1,0 +1,208 @@
+{
+  "$comment": [
+    "The allowlisted source registry (M24). Data, not code: adding a source is a",
+    "review of this file, not a deploy of new logic.",
+    "",
+    "Two deliberate properties of this list:",
+    "",
+    "1. It includes many outlets that carry the same wire services (PTI, ANI).",
+    "   That is the point. Origin clustering has to have real duplicates to collapse,",
+    "   and the M26 gate requires at least one multi-outlet cluster in the live",
+    "   corpus. Subscribing to outlets that reprint the same wire is a feed-selection",
+    "   decision, not synthetic data.",
+    "",
+    "2. Fact-checkers are marked source_class 'factchecker' and are the only sources",
+    "   whose output can become Tier C evidence. News outlets are corroboration",
+    "   material; they are not adjudications.",
+    "",
+    "'allowed_for_primary_check' marks domains whose own pages can settle an",
+    "attribution question. It is false by default and set only for bodies that",
+    "publish primary records."
+  ],
+  "feeds": [
+    {
+      "url": "https://www.altnews.in/feed/",
+      "publisher": "Alt News",
+      "source_class": "factchecker",
+      "cadence_minutes": 30
+    },
+    {
+      "url": "https://www.boomlive.in/rss/",
+      "publisher": "BOOM",
+      "source_class": "factchecker",
+      "cadence_minutes": 30
+    },
+    {
+      "url": "https://factly.in/feed/",
+      "publisher": "Factly",
+      "source_class": "factchecker",
+      "cadence_minutes": 30
+    },
+    {
+      "url": "https://www.vishvasnews.com/feed/",
+      "publisher": "Vishvas News",
+      "source_class": "factchecker",
+      "cadence_minutes": 30
+    },
+    {
+      "url": "https://www.newschecker.in/feed/",
+      "publisher": "Newschecker",
+      "source_class": "factchecker",
+      "cadence_minutes": 30
+    },
+    {
+      "url": "https://digiteye.in/feed/",
+      "publisher": "Digiteye India",
+      "source_class": "factchecker",
+      "cadence_minutes": 60
+    },
+
+    {
+      "url": "https://indianexpress.com/section/india/feed/",
+      "publisher": "The Indian Express",
+      "source_class": "news",
+      "cadence_minutes": 15
+    },
+    {
+      "url": "https://timesofindia.indiatimes.com/rssfeedstopstories.cms",
+      "publisher": "The Times of India",
+      "source_class": "news",
+      "cadence_minutes": 15
+    },
+    {
+      "url": "https://feeds.feedburner.com/ndtvnews-top-stories",
+      "publisher": "NDTV",
+      "source_class": "news",
+      "cadence_minutes": 15
+    },
+    {
+      "url": "https://www.hindustantimes.com/feeds/rss/india-news/rssfeed.xml",
+      "publisher": "Hindustan Times",
+      "source_class": "news",
+      "cadence_minutes": 15
+    },
+    {
+      "url": "https://www.news18.com/commonfeeds/v1/eng/rss/india.xml",
+      "publisher": "News18",
+      "source_class": "news",
+      "cadence_minutes": 15
+    },
+    {
+      "url": "https://www.thehindu.com/news/national/feeder/default.rss",
+      "publisher": "The Hindu",
+      "source_class": "news",
+      "cadence_minutes": 15
+    },
+    {
+      "url": "https://scroll.in/feed",
+      "publisher": "Scroll.in",
+      "source_class": "news",
+      "cadence_minutes": 30
+    },
+    {
+      "url": "https://thewire.in/rss",
+      "publisher": "The Wire",
+      "source_class": "news",
+      "cadence_minutes": 30
+    },
+    {
+      "url": "https://theprint.in/feed/",
+      "publisher": "ThePrint",
+      "source_class": "news",
+      "cadence_minutes": 30
+    },
+    {
+      "url": "https://www.deccanherald.com/rss/national.rss",
+      "publisher": "Deccan Herald",
+      "source_class": "news",
+      "cadence_minutes": 30
+    },
+    {
+      "url": "https://www.business-standard.com/rss/home_page_top_stories.rss",
+      "publisher": "Business Standard",
+      "source_class": "news",
+      "cadence_minutes": 30
+    },
+    {
+      "url": "https://www.livemint.com/rss/news",
+      "publisher": "Mint",
+      "source_class": "news",
+      "cadence_minutes": 30
+    },
+    {
+      "url": "https://economictimes.indiatimes.com/rssfeedstopstories.cms",
+      "publisher": "The Economic Times",
+      "source_class": "news",
+      "cadence_minutes": 30
+    },
+    {
+      "url": "https://www.firstpost.com/commonfeeds/v1/mfp/rss/india.xml",
+      "publisher": "Firstpost",
+      "source_class": "news",
+      "cadence_minutes": 30
+    },
+    {
+      "url": "https://www.indiatoday.in/rss/1206578",
+      "publisher": "India Today",
+      "source_class": "news",
+      "cadence_minutes": 15
+    },
+    {
+      "url": "https://www.telegraphindia.com/feeds/rss.jsp?id=3",
+      "publisher": "The Telegraph India",
+      "source_class": "news",
+      "cadence_minutes": 30
+    },
+    {
+      "url": "https://www.tribuneindia.com/rss/feed?catId=6",
+      "publisher": "The Tribune",
+      "source_class": "news",
+      "cadence_minutes": 30
+    },
+    {
+      "url": "https://www.freepressjournal.in/stories.rss",
+      "publisher": "The Free Press Journal",
+      "source_class": "news",
+      "cadence_minutes": 30
+    },
+    {
+      "url": "https://www.newindianexpress.com/nation/rss",
+      "publisher": "The New Indian Express",
+      "source_class": "news",
+      "cadence_minutes": 30
+    },
+    {
+      "url": "https://www.outlookindia.com/rss/main/magazine",
+      "publisher": "Outlook India",
+      "source_class": "news",
+      "cadence_minutes": 60
+    },
+    {
+      "url": "https://zeenews.india.com/rss/india-national-news.xml",
+      "publisher": "Zee News",
+      "source_class": "news",
+      "cadence_minutes": 30
+    },
+    {
+      "url": "https://www.dnaindia.com/feeds/india.xml",
+      "publisher": "DNA India",
+      "source_class": "news",
+      "cadence_minutes": 30
+    },
+
+    {
+      "url": "https://www.pib.gov.in/RssMain.aspx?ModId=6&Lang=1&Regid=3",
+      "publisher": "Press Information Bureau",
+      "source_class": "official",
+      "cadence_minutes": 30,
+      "allowed_for_primary_check": true
+    },
+    {
+      "url": "https://www.rbi.org.in/pressreleases_rss.xml",
+      "publisher": "Reserve Bank of India",
+      "source_class": "official",
+      "cadence_minutes": 60,
+      "allowed_for_primary_check": true
+    }
+  ]
+}

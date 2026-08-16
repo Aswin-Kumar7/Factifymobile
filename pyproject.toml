@@ -15,6 +15,7 @@ dependencies = [
     "trafilatura>=2.0",
     "pypdf>=5.1",
     "fastembed>=0.5",
+    "feedparser>=6.0",
 ]
 
 [dependency-groups]
@@ -95,6 +96,12 @@ plugins = ["pydantic.mypy"]
 [[tool.mypy.overrides]]
 module = ["tests.*"]
 disallow_untyped_defs = false
+
+# Ships no type information. Its output is treated as untrusted feed data and
+# validated by parse_feed rather than by the type checker.
+[[tool.mypy.overrides]]
+module = ["feedparser.*"]
+ignore_missing_imports = true
 
 [tool.coverage.run]
 source = ["app"]

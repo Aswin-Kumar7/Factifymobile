@@ -621,13 +621,19 @@ class CorpusRepository(_Repository):
         language: str | None = None,
         source_id: UUID | None = None,
         snapshot_id: UUID | None = None,
+        embedding: list[float] | None = None,
+        minhash_signature: bytes | None = None,
     ) -> UUID:
+        # pgvector accepts its literal form as text; formatting here keeps the
+        # repository the only place that knows how a vector is written.
+        vector = f"[{','.join(str(value) for value in embedding)}]" if embedding else None
+
         row = await self._one(
             """
             INSERT INTO corpus_item (canonical_url, content_hash, title, excerpt,
                                      publisher, published_at, language, source_id,
-                                     snapshot_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                     snapshot_id, embedding, minhash_signature)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::vector, %s)
             ON CONFLICT (canonical_url) DO UPDATE
                 SET title = COALESCE(EXCLUDED.title, corpus_item.title),
                     excerpt = COALESCE(EXCLUDED.excerpt, corpus_item.excerpt)
@@ -643,6 +649,8 @@ class CorpusRepository(_Repository):
                 language,
                 source_id,
                 snapshot_id,
+                vector,
+                minhash_signature,
             ),
         )
         assert row is not None
