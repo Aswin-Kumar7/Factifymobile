@@ -3,7 +3,7 @@
     "The allowlisted source registry (M24). Data, not code: adding a source is a",
     "review of this file, not a deploy of new logic.",
     "",
-    "Two deliberate properties of this list:",
+    "Three deliberate properties of this list:",
     "",
     "1. It includes many outlets that carry the same wire services (PTI, ANI).",
     "   That is the point. Origin clustering has to have real duplicates to collapse,",
@@ -11,9 +11,21 @@
     "   corpus. Subscribing to outlets that reprint the same wire is a feed-selection",
     "   decision, not synthetic data.",
     "",
+    "   'carries_wire' marks the outlets added for that reason: regional papers and",
+    "   aggregators that republish agency copy substantially unedited. National",
+    "   mastheads were measured writing their own copy (cross-outlet Jaccard 0.00 to",
+    "   0.04), so a list of only those cannot satisfy the gate however long it runs.",
+    "   Measured in docs/ops-notes.md.",
+    "",
     "2. Fact-checkers are marked source_class 'factchecker' and are the only sources",
     "   whose output can become Tier C evidence. News outlets are corroboration",
     "   material; they are not adjudications.",
+    "",
+    "3. Every URL here was fetched and parsed on 2026-08-16 and returned at least one",
+    "   item. Thirteen of the previous thirty were dead — two of them fact-checkers,",
+    "   which silently weakened the cheapest evidence class. Feeds are re-probed as",
+    "   part of reviewing this file; a feed that cannot be verified is removed rather",
+    "   than left in to fail quietly against backoff.",
     "",
     "'allowed_for_primary_check' marks domains whose own pages can settle an",
     "attribution question. It is false by default and set only for bodies that",
@@ -27,7 +39,7 @@
       "cadence_minutes": 30
     },
     {
-      "url": "https://www.boomlive.in/rss/",
+      "url": "https://www.boomlive.in/google_feeds.xml",
       "publisher": "BOOM",
       "source_class": "factchecker",
       "cadence_minutes": 30
@@ -45,7 +57,7 @@
       "cadence_minutes": 30
     },
     {
-      "url": "https://www.newschecker.in/feed/",
+      "url": "https://newschecker.in/feed/",
       "publisher": "Newschecker",
       "source_class": "factchecker",
       "cadence_minutes": 30
@@ -88,38 +100,14 @@
       "cadence_minutes": 15
     },
     {
-      "url": "https://www.thehindu.com/news/national/feeder/default.rss",
-      "publisher": "The Hindu",
+      "url": "https://www.indiatoday.in/rss/1206578",
+      "publisher": "India Today",
       "source_class": "news",
       "cadence_minutes": 15
     },
     {
-      "url": "https://scroll.in/feed",
+      "url": "https://feeds.feedburner.com/ScrollinArticles",
       "publisher": "Scroll.in",
-      "source_class": "news",
-      "cadence_minutes": 30
-    },
-    {
-      "url": "https://thewire.in/rss",
-      "publisher": "The Wire",
-      "source_class": "news",
-      "cadence_minutes": 30
-    },
-    {
-      "url": "https://theprint.in/feed/",
-      "publisher": "ThePrint",
-      "source_class": "news",
-      "cadence_minutes": 30
-    },
-    {
-      "url": "https://www.deccanherald.com/rss/national.rss",
-      "publisher": "Deccan Herald",
-      "source_class": "news",
-      "cadence_minutes": 30
-    },
-    {
-      "url": "https://www.business-standard.com/rss/home_page_top_stories.rss",
-      "publisher": "Business Standard",
       "source_class": "news",
       "cadence_minutes": 30
     },
@@ -142,52 +130,171 @@
       "cadence_minutes": 30
     },
     {
-      "url": "https://www.indiatoday.in/rss/1206578",
-      "publisher": "India Today",
-      "source_class": "news",
-      "cadence_minutes": 15
-    },
-    {
-      "url": "https://www.telegraphindia.com/feeds/rss.jsp?id=3",
-      "publisher": "The Telegraph India",
-      "source_class": "news",
-      "cadence_minutes": 30
-    },
-    {
-      "url": "https://www.tribuneindia.com/rss/feed?catId=6",
-      "publisher": "The Tribune",
-      "source_class": "news",
-      "cadence_minutes": 30
-    },
-    {
-      "url": "https://www.freepressjournal.in/stories.rss",
-      "publisher": "The Free Press Journal",
-      "source_class": "news",
-      "cadence_minutes": 30
-    },
-    {
-      "url": "https://www.newindianexpress.com/nation/rss",
+      "url": "https://www.newindianexpress.com/stories.rss",
       "publisher": "The New Indian Express",
       "source_class": "news",
       "cadence_minutes": 30
     },
     {
-      "url": "https://www.outlookindia.com/rss/main/magazine",
+      "url": "https://www.outlookindia.com/stories.rss",
       "publisher": "Outlook India",
       "source_class": "news",
       "cadence_minutes": 60
     },
+
     {
-      "url": "https://zeenews.india.com/rss/india-national-news.xml",
-      "publisher": "Zee News",
+      "url": "https://www.business-standard.com/rss/latest.rss",
+      "publisher": "Business Standard",
       "source_class": "news",
-      "cadence_minutes": 30
+      "cadence_minutes": 15,
+      "carries_wire": true
     },
     {
-      "url": "https://www.dnaindia.com/feeds/india.xml",
-      "publisher": "DNA India",
+      "url": "https://www.orissapost.com/feed/",
+      "publisher": "Orissa Post",
       "source_class": "news",
-      "cadence_minutes": 30
+      "cadence_minutes": 15,
+      "carries_wire": true
+    },
+    {
+      "url": "https://www.newsdrum.in/rss",
+      "publisher": "NewsDrum",
+      "source_class": "news",
+      "cadence_minutes": 15,
+      "carries_wire": true
+    },
+    {
+      "url": "https://sambadenglish.com/rss",
+      "publisher": "Sambad English",
+      "source_class": "news",
+      "cadence_minutes": 15,
+      "carries_wire": true
+    },
+    {
+      "url": "https://www.millenniumpost.in/google_feeds.xml",
+      "publisher": "Millennium Post",
+      "source_class": "news",
+      "cadence_minutes": 15,
+      "carries_wire": true
+    },
+    {
+      "url": "https://odishatv.in/rss",
+      "publisher": "Odisha TV",
+      "source_class": "news",
+      "cadence_minutes": 15,
+      "carries_wire": true
+    },
+    {
+      "url": "https://risingkashmir.com/feed",
+      "publisher": "Rising Kashmir",
+      "source_class": "news",
+      "cadence_minutes": 30,
+      "carries_wire": true
+    },
+    {
+      "url": "https://www.thehansindia.com/google_feeds.xml",
+      "publisher": "The Hans India",
+      "source_class": "news",
+      "cadence_minutes": 30,
+      "carries_wire": true
+    },
+    {
+      "url": "https://assamtribune.com/google_feeds.xml",
+      "publisher": "The Assam Tribune",
+      "source_class": "news",
+      "cadence_minutes": 30,
+      "carries_wire": true
+    },
+    {
+      "url": "https://www.deccanchronicle.com/google_feeds.xml",
+      "publisher": "Deccan Chronicle",
+      "source_class": "news",
+      "cadence_minutes": 30,
+      "carries_wire": true
+    },
+    {
+      "url": "https://telanganatoday.com/feed",
+      "publisher": "Telangana Today",
+      "source_class": "news",
+      "cadence_minutes": 30,
+      "carries_wire": true
+    },
+    {
+      "url": "https://www.freepressjournal.in/stories.rss",
+      "publisher": "The Free Press Journal",
+      "source_class": "news",
+      "cadence_minutes": 30,
+      "carries_wire": true
+    },
+    {
+      "url": "https://www.indiatvnews.com/rssnews/topstory-india.xml",
+      "publisher": "India TV",
+      "source_class": "news",
+      "cadence_minutes": 30,
+      "carries_wire": true
+    },
+    {
+      "url": "https://theshillongtimes.com/feed/",
+      "publisher": "The Shillong Times",
+      "source_class": "news",
+      "cadence_minutes": 60,
+      "carries_wire": true
+    },
+    {
+      "url": "https://nenow.in/feed",
+      "publisher": "Northeast Now",
+      "source_class": "news",
+      "cadence_minutes": 60,
+      "carries_wire": true
+    },
+    {
+      "url": "https://meghalayamonitor.com/feed/",
+      "publisher": "Meghalaya Monitor",
+      "source_class": "news",
+      "cadence_minutes": 60,
+      "carries_wire": true
+    },
+    {
+      "url": "https://nagalandpost.com/feed/",
+      "publisher": "Nagaland Post",
+      "source_class": "news",
+      "cadence_minutes": 60,
+      "carries_wire": true
+    },
+    {
+      "url": "https://arunachaltimes.in/index.php/feed/",
+      "publisher": "The Arunachal Times",
+      "source_class": "news",
+      "cadence_minutes": 60,
+      "carries_wire": true
+    },
+    {
+      "url": "https://kashmirreader.com/feed/",
+      "publisher": "Kashmir Reader",
+      "source_class": "news",
+      "cadence_minutes": 60,
+      "carries_wire": true
+    },
+    {
+      "url": "https://mizorampost.com/feed/",
+      "publisher": "Mizoram Post",
+      "source_class": "news",
+      "cadence_minutes": 60,
+      "carries_wire": true
+    },
+    {
+      "url": "https://syllad.com/feed/",
+      "publisher": "Syllad",
+      "source_class": "news",
+      "cadence_minutes": 60,
+      "carries_wire": true
+    },
+    {
+      "url": "https://starofmysore.com/feed/",
+      "publisher": "Star of Mysore",
+      "source_class": "news",
+      "cadence_minutes": 60,
+      "carries_wire": true
     },
 
     {

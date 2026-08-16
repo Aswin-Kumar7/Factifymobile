@@ -53,6 +53,7 @@ class FeedDefinition:
     source_class: str
     cadence_minutes: int = 30
     allowed_for_primary_check: bool = False
+    carries_wire: bool = False
 
     @property
     def domain(self) -> str:
@@ -75,6 +76,7 @@ def load_registry(path: Path | None = None) -> tuple[FeedDefinition, ...]:
             source_class=entry["source_class"],
             cadence_minutes=int(entry.get("cadence_minutes", 30)),
             allowed_for_primary_check=bool(entry.get("allowed_for_primary_check", False)),
+            carries_wire=bool(entry.get("carries_wire", False)),
         )
         for entry in payload["feeds"]
     )
@@ -82,6 +84,17 @@ def load_registry(path: Path | None = None) -> tuple[FeedDefinition, ...]:
     urls = [definition.url for definition in definitions]
     if len(set(urls)) != len(urls):
         raise ValueError("registry contains duplicate feed URLs")
+
+    # The M26 gate needs syndicated duplicates to collapse, and national mastheads
+    # measurably do not provide them — they write their own copy. A registry with no
+    # wire-carrying outlet cannot satisfy that gate however long ingestion runs, so
+    # the condition is caught here at load rather than as a mysteriously empty
+    # cluster table days later.
+    if not any(definition.carries_wire for definition in definitions):
+        raise ValueError(
+            "registry contains no outlet marked carries_wire; origin clustering would "
+            "have no syndicated duplicates to collapse and the M26 gate cannot pass"
+        )
 
     return definitions
 

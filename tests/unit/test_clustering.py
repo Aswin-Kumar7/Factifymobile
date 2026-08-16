@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from app.knowledge.clustering import CorroborationCount, OriginClusterer
+from app.knowledge.ingest import IngestedItem
 from app.knowledge.minhash import Signature, jaccard, shingles, sign
 
 pytestmark = pytest.mark.unit
@@ -44,6 +45,32 @@ UNRELATED = (
     "The city's transport authority said metro services on the blue line would run "
     "on a reduced schedule this weekend while signalling equipment is replaced at "
     "two stations."
+)
+
+# A full-length wire story, the way one actually arrives: distinct paragraphs, each
+# adding new vocabulary. Length alone would not do — shingles are a *set*, so copy
+# repeated four times produces the same shingles as copy printed once, and a fixture
+# built that way would show no truncation effect at all.
+LONG_WIRE_ARTICLE = (
+    "New Delhi, Aug 16 (PTI) The government on Friday announced a relief scheme for "
+    "farmers affected by unseasonal rainfall, with an outlay of five hundred crore "
+    "rupees. "
+    "Officials said applications would open next month and that district collectors "
+    "had been asked to complete verification within thirty days. "
+    "The agriculture minister told reporters the package covers eleven districts "
+    "where crop damage exceeded thirty three per cent of the sown area. "
+    "Under the scheme, cultivators holding up to two hectares receive a higher per "
+    "hectare rate, and tenant farmers registered with the state portal are eligible "
+    "for the first time. "
+    "State officials estimate that about four lakh households will qualify, of whom "
+    "roughly a third are sharecroppers without formal title. "
+    "A senior official in the department said disbursal would be made directly to "
+    "bank accounts seeded with Aadhaar, and that a grievance window would stay open "
+    "for sixty days after each district publishes its provisional list. "
+    "Opposition leaders in the state assembly called the outlay inadequate, pointing "
+    "to earlier estimates of the damage that ran to nearly twice the announced sum. "
+    "The minister said the figure would be revised once ground surveys conclude, and "
+    "that an interim payment would not preclude a further tranche."
 )
 
 
@@ -216,3 +243,107 @@ class TestCorroborationCount:
     def test_syndication_is_visible(self) -> None:
         assert CorroborationCount(documents=19, origins=3).is_syndicated
         assert not CorroborationCount(documents=3, origins=3).is_syndicated
+
+
+class TestClusteringTextIsTheArticleNotTheExcerpt:
+    """Why `IngestedItem.clustering_text` prefers the body.
+
+    The M26 gate failed for a whole build cycle against a corpus of national outlets,
+    and the second time it failed the cause was this: every CMS truncates its RSS
+    excerpt at a different length, so the Jaccard between two feeds' excerpts of one
+    wire story is bounded by where the two happened to cut rather than by how alike
+    the articles are. Measured live on three PTI stories — 0.301, 0.265 and 0.205 on
+    excerpts against 0.787, 0.792 and 0.770 on bodies.
+
+    These tests fail if anyone reverts clustering to the excerpt, without needing a
+    network or a database to notice.
+    """
+
+    @staticmethod
+    def _item(publisher: str, *, title: str, body: str, excerpt_chars: int) -> IngestedItem:
+        return IngestedItem(
+            canonical_url=f"https://{publisher.lower().replace(' ', '')}.example/story",
+            content_hash=f"sha256:{publisher}",
+            title=title,
+            # Each outlet's feed cuts the same copy at its own length.
+            excerpt=body[:excerpt_chars],
+            publisher=publisher,
+            published_at=None,
+            language="en",
+            body=body,
+        )
+
+    def test_excerpt_truncation_hides_syndication(self) -> None:
+        """Two truncations of one story look less alike than the story is."""
+        long_wire = LONG_WIRE_ARTICLE
+
+        short_cut = long_wire[:200]
+        long_cut = long_wire[:900]
+
+        assert jaccard(short_cut, long_cut) < 0.5, (
+            "expected differing truncations to fall below the clustering threshold; "
+            "if this passes, the fixture no longer models the failure"
+        )
+        assert jaccard(long_wire, long_wire) == 1.0
+
+    def test_the_same_article_clusters_when_bodies_are_used(self) -> None:
+        long_wire = LONG_WIRE_ARTICLE
+
+        first = self._item(
+            "Wire Carrier A", title="Relief for farmers", body=long_wire, excerpt_chars=200
+        )
+        second = self._item(
+            "Wire Carrier B", title="Rain-hit farmers get relief", body=long_wire, excerpt_chars=900
+        )
+
+        clusterer = OriginClusterer()
+        clusterer.assign(document_id="a", text=first.clustering_text, publisher=first.publisher)
+        clusterer.assign(document_id="b", text=second.clustering_text, publisher=second.publisher)
+
+        assert len(clusterer.clusters) == 1
+        assert clusterer.clusters[0].is_multi_outlet
+
+    def test_the_same_article_does_not_cluster_on_excerpts(self) -> None:
+        """The old behaviour, kept as a test so the regression is visible."""
+        long_wire = LONG_WIRE_ARTICLE
+
+        first = self._item(
+            "Wire Carrier A", title="Relief for farmers", body=long_wire, excerpt_chars=200
+        )
+        second = self._item(
+            "Wire Carrier B", title="Rain-hit farmers get relief", body=long_wire, excerpt_chars=900
+        )
+
+        clusterer = OriginClusterer()
+        clusterer.assign(
+            document_id="a", text=f"{first.title}\n{first.excerpt}", publisher=first.publisher
+        )
+        clusterer.assign(
+            document_id="b", text=f"{second.title}\n{second.excerpt}", publisher=second.publisher
+        )
+
+        assert len(clusterer.clusters) == 2
+        assert not any(cluster.is_multi_outlet for cluster in clusterer.clusters)
+
+    def test_an_unhydrated_item_falls_back_to_its_excerpt(self) -> None:
+        """A page that would not load still gets ingested and still clusters."""
+        item = IngestedItem(
+            canonical_url="https://example.org/story",
+            content_hash="sha256:x",
+            title="Headline",
+            excerpt="the feed snippet",
+            publisher="Some Outlet",
+            published_at=None,
+            language="en",
+        )
+
+        assert not item.is_hydrated
+        assert item.clustering_text == "Headline\nthe feed snippet"
+
+    def test_independent_reporting_still_does_not_cluster_on_bodies(self) -> None:
+        """Body clustering must not become a machine for merging distinct reporting."""
+        clusterer = OriginClusterer()
+        clusterer.assign(document_id="a", text=WIRE_ORIGINAL, publisher="Wire Carrier")
+        clusterer.assign(document_id="b", text=INDEPENDENT_REPORT, publisher="Own Reporting")
+
+        assert len(clusterer.clusters) == 2

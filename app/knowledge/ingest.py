@@ -20,9 +20,10 @@ that matters, and keeping more than that would be republishing someone else's wo
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -32,6 +33,7 @@ import feedparser
 from app.db.repositories import CorpusRepository, SourceRepository
 from app.embeddings.text import TextEmbedder
 from app.extraction.language import Language, detect
+from app.extraction.web import extract
 from app.intake.normalizer import _canonical_url
 from app.knowledge.clustering import OriginClusterer
 from app.knowledge.minhash import sign
@@ -46,6 +48,15 @@ logger = logging.getLogger("facify.ingest")
 # actually carries the near-duplicate signal.
 EXCERPT_CHARS = 1200
 
+# How many articles to fetch per feed per tick. Bounded because a tick fetching every
+# item of every feed would take minutes and hammer publishers; the newest items are
+# the ones a fresh corpus needs and the ones a syndication wave is carrying now.
+DEFAULT_BODY_FETCH_LIMIT = 20
+
+# Below this, an extraction is a navigation wrapper or a paywall stub rather than an
+# article, and the feed excerpt is the better clustering text.
+_MIN_BODY_CHARS = 400
+
 
 @dataclass(frozen=True, slots=True)
 class IngestedItem:
@@ -58,6 +69,7 @@ class IngestedItem:
     publisher: str
     published_at: datetime | None
     language: str
+    body: str = ""
 
     @property
     def clustering_text(self) -> str:
@@ -66,8 +78,25 @@ class IngestedItem:
         Title and body together: an outlet reprinting a wire story usually rewrites
         the headline and keeps the body, so using the headline alone would miss most
         syndication and using it not at all would lose a useful signal.
+
+        The *article* body when it could be fetched, and the feed excerpt only as a
+        fallback. That distinction is what makes M26 work at all. Each CMS truncates
+        its RSS excerpt at a different length, so the Jaccard between two truncations
+        of one wire story is bounded by where the two feeds happened to cut — not by
+        how similar the articles are. Measured on the same three PTI stories: 0.301,
+        0.265 and 0.205 on excerpts, against 0.787, 0.792 and 0.770 on bodies. The
+        first set clusters nothing at any sane threshold; the second clusters cleanly
+        at the shipped 0.5.
+
+        Only the signature and a short excerpt are persisted, never the body, so this
+        stays inside M25's rule against republishing full article text.
         """
-        return f"{self.title}\n{self.excerpt}"
+        return f"{self.title}\n{self.body or self.excerpt}"
+
+    @property
+    def is_hydrated(self) -> bool:
+        """Whether clustering is running on the article or on a feed snippet."""
+        return bool(self.body)
 
 
 @dataclass(slots=True)
@@ -79,6 +108,7 @@ class TickResult:
     feeds_failed: int = 0
     items_seen: int = 0
     items_new: int = 0
+    items_hydrated: int = 0
     clusters_created: int = 0
     multi_outlet_clusters: int = 0
     failures: list[str] = field(default_factory=list)
@@ -163,6 +193,7 @@ class IngestionWorker:
         sources: SourceRepository,
         clusterer: OriginClusterer,
         embedder: TextEmbedder | None = None,
+        body_fetch_limit: int = DEFAULT_BODY_FETCH_LIMIT,
     ) -> None:
         self._fetcher = fetcher
         self._registry = registry
@@ -170,6 +201,7 @@ class IngestionWorker:
         self._sources = sources
         self._clusterer = clusterer
         self._embedder = embedder
+        self._body_fetch_limit = body_fetch_limit
 
     async def tick(self, definitions: dict[str, FeedDefinition], *, limit: int = 5) -> TickResult:
         """Fetch and ingest a bounded batch of due feeds.
@@ -209,6 +241,7 @@ class IngestionWorker:
             outcome="ok",
             feeds=result.feeds_attempted,
             items_new=result.items_new,
+            items_hydrated=result.items_hydrated,
             failed=result.feeds_failed,
             multi_outlet_clusters=result.multi_outlet_clusters,
         )
@@ -247,6 +280,9 @@ class IngestionWorker:
 
         items = parse_feed(response.body, publisher=definition.publisher)
         result.items_seen += len(items)
+
+        items = await self._hydrate(items, result=result)
+
         new_count = await self._store(items, source_id=source_id, response=response, result=result)
 
         await self._registry.complete(
@@ -255,6 +291,48 @@ class IngestionWorker:
             item_count=new_count,
             cadence_minutes=definition.cadence_minutes,
         )
+
+    async def _hydrate(
+        self, items: tuple[IngestedItem, ...], *, result: TickResult
+    ) -> tuple[IngestedItem, ...]:
+        """Fetch each item's article and attach its extracted body.
+
+        This is what makes origin clustering see syndication. Clustering on feed
+        excerpts measurably cannot: the same PTI story reached 0.301 across two
+        outlets on excerpts and 0.787 on bodies, and the threshold sits between them.
+
+        Bounded and best-effort. A page that will not load keeps its excerpt and is
+        still ingested — an un-hydrated item clusters worse, which is a degraded
+        signal, not a failure. Ingestion is a background job precisely so it can
+        afford this; nothing here is on a user request path.
+        """
+        if self._body_fetch_limit <= 0:
+            return items
+
+        targets = items[: self._body_fetch_limit]
+        responses = await asyncio.gather(
+            *(self._fetcher.fetch(item.canonical_url, provider="article") for item in targets),
+            return_exceptions=True,
+        )
+
+        hydrated: list[IngestedItem] = []
+        for item, response in zip(targets, responses, strict=True):
+            if not isinstance(response, FetchResult):
+                hydrated.append(item)
+                continue
+
+            article = extract(response.text, url=item.canonical_url)
+
+            # A near-empty extraction means the page was a wrapper, a paywall or a
+            # JavaScript shell. The excerpt is better than a fragment, so keep it.
+            if len(article.body) < _MIN_BODY_CHARS:
+                hydrated.append(item)
+                continue
+
+            hydrated.append(replace(item, body=article.body))
+            result.items_hydrated += 1
+
+        return tuple(hydrated) + items[self._body_fetch_limit :]
 
     async def _store(
         self,

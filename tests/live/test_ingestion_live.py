@@ -57,12 +57,16 @@ async def test_live_feeds_produce_a_multi_outlet_origin_cluster(conn: Any) -> No
 
     by_url = {definition.url: definition for definition in definitions}
 
-    # Several ticks, because one tick is a bounded batch of five feeds and
-    # syndication only shows up once enough outlets have been read.
+    # Enough ticks to reach every declared feed: one tick is a bounded batch of five,
+    # and syndication only shows up once enough outlets have been read. The wire
+    # carriers are what produce it, and they are spread through the registry.
     total = 0
-    for _ in range(6):
+    hydrated = 0
+    ticks = len(definitions) // 5 + 2
+    for _ in range(ticks):
         result = await worker.tick(by_url, limit=5)
         total += result.items_new
+        hydrated += result.items_hydrated
         if not result.feeds_attempted:
             break
 
@@ -70,10 +74,20 @@ async def test_live_feeds_produce_a_multi_outlet_origin_cluster(conn: Any) -> No
 
     assert total > 0, "no items ingested at all; check network and feed reachability"
 
+    # Checked before the gate itself, because an un-hydrated run would fail the gate
+    # for a reason that has nothing to do with the feed mix or the threshold, and the
+    # error message should say which of those actually happened.
+    assert hydrated > 0, (
+        f"ingested {total} items but hydrated none with article bodies. Origin "
+        "clustering over feed excerpts cannot detect syndication — each CMS truncates "
+        "at a different length — so the gate below would fail for the wrong reason."
+    )
+
     multi = clusterer.multi_outlet_clusters()
 
     assert multi, (
-        f"ingested {total} items across {len(clusterer.clusters)} clusters but found no "
-        "multi-outlet cluster. Either the MinHash threshold is mistuned or the feed "
-        "mix carries too little syndication."
+        f"ingested {total} items ({hydrated} hydrated) across "
+        f"{len(clusterer.clusters)} clusters but found no multi-outlet cluster. "
+        "Either the MinHash threshold is mistuned or the feed mix carries too little "
+        "syndication."
     )

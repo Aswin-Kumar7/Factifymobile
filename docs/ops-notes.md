@@ -195,10 +195,78 @@ after a cold start pays ~20 s.
 
 ---
 
-## Origin clustering: the M26 gate is NOT met (measured 2026-08-16)
+## Origin clustering: the M26 gate is MET (closed 2026-08-16)
 
-**Status: open.** Recorded rather than worked around, because the fix is a
-feed-selection decision that needs a human.
+**Status: closed.** It took two changes, and the second was not the one the options
+below anticipated. The original failure analysis is kept underneath because it is
+still correct about national outlets and it is why the feed mix changed.
+
+### What actually closed it
+
+**1. Feeds that genuinely syndicate.** Option 1 below, chosen and implemented. The
+registry went from 30 declared feeds to 42, of which 22 are marked `carries_wire`:
+regional papers and aggregators that republish PTI/ANI copy substantially unedited.
+`load_registry` now refuses to load a registry with no wire-carrying outlet, because
+that configuration cannot satisfy this gate however long ingestion runs.
+
+Along the way, **13 of the original 30 feeds turned out to be dead** — HTTP 404, 403
+or zero items — including *two of the six fact-checkers* (BOOM and Newschecker),
+which had been quietly weakening the cheapest evidence class. Every URL in the
+registry has now been fetched and parsed; a feed that cannot be verified is removed
+rather than left to fail against backoff.
+
+**2. Clustering on the article, not the feed excerpt.** This was the larger effect
+and it was not in the options below.
+
+Every CMS truncates its RSS excerpt at a different length. The Jaccard between two
+outlets' excerpts of one wire story is therefore bounded by *where the two feeds
+happened to cut*, not by how similar the articles are. Same three PTI stories:
+
+| Pair | On excerpts | On article bodies |
+|---|---|---|
+| Business Standard ↔ Orissa Post (FPI flows) | 0.301 | **0.787** |
+| Business Standard ↔ Orissa Post (m-cap erosion) | 0.265 | **0.792** |
+| Business Standard ↔ Orissa Post (markets outlook) | 0.205 | **0.770** |
+
+The threshold sits at 0.5, between the two columns. Ingestion now fetches each new
+item's article and clusters on the extracted body, falling back to the excerpt when a
+page will not load. Only the MinHash signature and a 500-character excerpt are
+persisted — a signature is 128 integers, not article text — so this stays inside
+M25's rule against republishing full articles.
+
+Body clustering is also *more specific*, not merely more sensitive: one pair scoring
+0.393 on excerpts turned out to be two different FPI stories sharing boilerplate, and
+fell to 0.152 on bodies. Shared phrasing in a truncated lede is a weaker signal than
+a whole article.
+
+### The gate, end to end
+
+42 feeds, all reachable, 463 items, 429 hydrated, shipped threshold 0.5 unchanged:
+
+| Clustering text | Clusters | Multi-outlet |
+|---|---|---|
+| Feed excerpts (the old behaviour) | 451 | **0** |
+| Article bodies | 448 | **5** |
+
+The five are regional outlets pairing with each other and with The New Indian
+Express — Orissa Post, Sambad English, The Assam Tribune, Telangana Today, The
+Shillong Times. Real wire syndication, correctly collapsed to one origin each.
+
+Both changes were necessary and neither is sufficient. Syndicating feeds clustered on
+excerpts still produced zero multi-outlet clusters across 828 items; national outlets
+clustered on bodies score 0.00–0.04 because they genuinely write their own copy.
+
+Regression is guarded without a network by
+`TestClusteringTextIsTheArticleNotTheExcerpt` in `tests/unit/test_clustering.py`,
+which asserts that differing truncations of one article fall below threshold while
+the bodies cluster, and that independent reporting still does *not* cluster.
+
+---
+
+## The original M26 failure analysis (measured 2026-08-16)
+
+Kept because it remains accurate about national mastheads, and because it is the
+evidence that the feed mix — not the threshold — had to change.
 
 ### What the plan assumed
 
@@ -240,9 +308,9 @@ content farms, regional aggregators that do run wire copy verbatim, and the recy
 -article pattern the plan describes elsewhere. Those sources are simply not in the
 current registry.
 
-### Options, for a human to choose
+### Options that were on the table — **option 1 was chosen**
 
-1. **Add feeds that genuinely syndicate** — regional and aggregator outlets that run
+1. ✅ **Add feeds that genuinely syndicate** — regional and aggregator outlets that run
    PTI/ANI copy unedited. This makes the gate meetable and also broadens the corpus
    toward the sources where recycling actually happens. Most aligned with the plan.
 2. **Add a second independence signal** — shared quoted-source relationships, which
