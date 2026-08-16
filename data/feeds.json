@@ -27,6 +27,22 @@
     "   part of reviewing this file; a feed that cannot be verified is removed rather",
     "   than left in to fail quietly against backoff.",
     "",
+    "4. The list is not Indian by rule — it is an allowlist, which is a fetch-security",
+    "   and trust boundary, not a geography one. It is mostly Indian because the claim",
+    "   distribution is. Non-Indian sources are included where they do specific work:",
+    "",
+    "   - International fact-checkers (Snopes, Full Fact) adjudicate claims that",
+    "     circulate in India too, and their output is Tier C like any other.",
+    "   - International desks covering foreign events are what date recycled foreign",
+    "     imagery, which is among the largest categories of Indian visual",
+    "     misinformation — a Syrian or Gaza photograph recaptioned as Kashmir needs",
+    "     the original coverage to exist in the corpus before M33/M34 can find it.",
+    "",
+    "   Reuters, AP and AFP are deliberately absent: their public RSS endpoints are",
+    "   retired (404/401/403 as of 2026-08-16) and their wire content is now sold",
+    "   through paid APIs. Their copy still reaches the corpus second-hand through the",
+    "   Indian outlets that carry it.",
+    "",
     "'allowed_for_primary_check' marks domains whose own pages can settle an",
     "attribution question. It is false by default and set only for bodies that",
     "publish primary records."
@@ -67,6 +83,18 @@
       "publisher": "Digiteye India",
       "source_class": "factchecker",
       "cadence_minutes": 60
+    },
+    {
+      "url": "https://www.snopes.com/feed/",
+      "publisher": "Snopes",
+      "source_class": "factchecker",
+      "cadence_minutes": 120
+    },
+    {
+      "url": "https://fullfact.org/feed/all/",
+      "publisher": "Full Fact",
+      "source_class": "factchecker",
+      "cadence_minutes": 120
     },
 
     {
@@ -295,6 +323,43 @@
       "source_class": "news",
       "cadence_minutes": 60,
       "carries_wire": true
+    },
+
+    {
+      "url": "https://feeds.bbci.co.uk/news/world/asia/india/rss.xml",
+      "publisher": "BBC News India",
+      "source_class": "news",
+      "cadence_minutes": 30
+    },
+    {
+      "url": "https://feeds.bbci.co.uk/news/world/rss.xml",
+      "publisher": "BBC News World",
+      "source_class": "news",
+      "cadence_minutes": 60
+    },
+    {
+      "url": "https://www.aljazeera.com/xml/rss/all.xml",
+      "publisher": "Al Jazeera",
+      "source_class": "news",
+      "cadence_minutes": 60
+    },
+    {
+      "url": "https://www.theguardian.com/world/rss",
+      "publisher": "The Guardian",
+      "source_class": "news",
+      "cadence_minutes": 60
+    },
+    {
+      "url": "https://rss.dw.com/rdf/rss-en-all",
+      "publisher": "Deutsche Welle",
+      "source_class": "news",
+      "cadence_minutes": 60
+    },
+    {
+      "url": "https://www.france24.com/en/rss",
+      "publisher": "France 24",
+      "source_class": "news",
+      "cadence_minutes": 60
     },
 
     {

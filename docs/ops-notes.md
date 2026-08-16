@@ -241,16 +241,17 @@ a whole article.
 
 ### The gate, end to end
 
-42 feeds, all reachable, 463 items, 429 hydrated, shipped threshold 0.5 unchanged:
+50 feeds, all reachable, 557 items, 510 hydrated, shipped threshold 0.5 unchanged:
 
 | Clustering text | Clusters | Multi-outlet |
 |---|---|---|
-| Feed excerpts (the old behaviour) | 451 | **0** |
-| Article bodies | 448 | **5** |
+| Feed excerpts (the old behaviour) | 545 | **0** |
+| Article bodies | 541 | **6** |
 
-The five are regional outlets pairing with each other and with The New Indian
-Express — Orissa Post, Sambad English, The Assam Tribune, Telangana Today, The
-Shillong Times. Real wire syndication, correctly collapsed to one origin each.
+The six are regional outlets pairing with each other and with The New Indian Express
+and Hindustan Times — Orissa Post, Sambad English, The Assam Tribune, Telangana
+Today, The Shillong Times. Real wire syndication, correctly collapsed to one origin
+each.
 
 Both changes were necessary and neither is sufficient. Syndicating feeds clustered on
 excerpts still produced zero multi-outlet clusters across 828 items; national outlets
@@ -425,6 +426,91 @@ every platform and still kills the child on timeout.
 
 Not a Windows-only concern: it would have surfaced as "video silently never works" on
 any deployment that sets a non-default loop policy.
+
+---
+
+## Google News as a source: measured and rejected (2026-08-16)
+
+Recorded because it is the obvious idea, it was raised twice, and the reason it fails
+is not obvious until measured.
+
+### There is no API
+
+The Google News API was deprecated in 2011 and turned down in February 2016. What
+remains is the unofficial `news.google.com/rss`, a SERP scraper, or an aggregator
+such as NewsAPI.org — whose free tier carries a **24-hour delay**, restricts CORS to
+localhost, forbids commercial use, and costs $449/month to run in production. A
+24-hour delay is disqualifying on its own against a 30-minute developing-story TTL.
+
+### The RSS endpoints work, and give us the wrong thing
+
+Measured against `hl=en-IN&gl=IN&ceid=IN:en`:
+
+| Endpoint | Entries | Distinct outlets | **Repeated headlines** |
+|---|---|---|---|
+| Top stories | 38 | 25 | **0** |
+| Search `PTI` | 100 | 36 | **0** |
+| Search `farmers relief scheme` | 100 | 70 | **2** |
+
+The last column is the whole point. Google clusters and deduplicates at ingestion
+and serves one representative article per story — that is a feature of a reader
+product and the exact destruction of the signal M26 needs. The two repeats in the
+third row were *US* stories (Utah, Nebraska) returned despite India geo-targeting,
+which is a separate relevance problem.
+
+Sourcing the corpus from Google News would guarantee the origin-clustering gate can
+never pass, and worse: syndicated coverage would arrive pre-collapsed and unlabelled,
+so twenty mastheads carrying one wire story would look like one independent report
+rather than being counted as one. That is the failure that makes corroboration
+theatre.
+
+### The links are not citable
+
+Every item link is a `news.google.com/rss/articles/CBMi…` stub. Fetched, all three
+sampled stubs returned HTTP 200 **from `news.google.com` itself** — ~600 KB of
+JavaScript, no redirect to the publisher. Recovering a real URL needs either decoding
+Google's payload format or driving a headless browser. Both are undocumented,
+change without notice, and would sit on the evidence path where a citation must
+resolve to the publisher.
+
+### Scraping the HTML surface
+
+`news.google.com/home` returns 1.7 MB containing **zero `<article>` elements** and is
+JS-rendered, so it needs a headless browser to read at all. It is also against
+Google's terms of service. Not pursued on either ground.
+
+### What Google News would legitimately be good for
+
+Query-time *discovery* of coverage for a claim the corpus does not hold — the shape
+of M27/M31/M34, which are already governed and capped. It is not a corpus source and
+it cannot supply a citation. That distinction is the whole of the argument: discovery
+finds candidates, and evidence requires a fetched, dated, anchored page.
+
+---
+
+## Non-Indian sources: eight added (2026-08-16)
+
+The allowlist is a fetch-security and trust boundary, not a geography rule. It is
+mostly Indian because the claim distribution is, but two categories of non-Indian
+source do work nothing in the Indian list can:
+
+- **International fact-checkers** — Snopes and Full Fact adjudicate claims that
+  circulate in India too, and their output is Tier C like any other adjudication.
+- **International desks** — BBC (India and World), Al Jazeera, The Guardian,
+  Deutsche Welle, France 24. Recycled foreign imagery is among the largest categories
+  of Indian visual misinformation, and a Gaza or Syria photograph recaptioned as
+  Kashmir can only be dated if the original coverage is in the corpus for M33/M34 to
+  match against.
+
+None are marked `carries_wire`: they write their own copy and must not be counted as
+syndication.
+
+**Reuters, AP and AFP are absent because their public RSS is retired** — measured
+404, 401 and 403 respectively on 2026-08-16 — and their wire content is now sold
+through paid APIs. Their copy still reaches the corpus second-hand through the Indian
+outlets that carry it, which is exactly what the `carries_wire` feeds provide.
+
+Registry is now 50 feeds: 8 fact-checkers, 40 news (22 wire-carrying), 2 official.
 
 ---
 
