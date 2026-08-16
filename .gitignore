@@ -1,0 +1,53 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+service-account*.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Node / web console
+node_modules/
+.next/
+out/
+
+# Android / Flutter
+*.apk
+*.aab
+*.keystore
+*.jks
+local.properties
+.gradle/
+build/
+.dart_tool/
+
+# Models and media — never in git
+*.onnx
+*.pt
+*.safetensors
+/data/media/
+/data/snapshots/
+
+# Local databases and caches
+*.db
+*.sqlite3
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
