@@ -9,9 +9,20 @@ middleware in one known place.
 from fastapi import FastAPI
 
 from app import __version__
-from app.api import health
+from app.api import health, verify
 from app.config import Settings, get_settings
 from app.observability import RequestContextMiddleware, configure
+
+DESCRIPTION = """
+Facify verifies content against citable evidence.
+
+Every decisive verdict carries at least one citation with a fetched excerpt and an
+anchor into the source. A claim with no citable evidence returns `UNVERIFIED` — that
+is the designed answer, not a failure.
+
+Forensic signals appear in `advisories`, never inside `evidence`. They are shown for
+transparency and are not used in any verdict.
+""".strip()
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -29,6 +40,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         title="Facify",
         version=__version__,
         summary="Evidence-based content verification",
+        description=DESCRIPTION,
         docs_url="/docs",
         openapi_url="/openapi.json",
     )
@@ -40,6 +52,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(RequestContextMiddleware)
 
     app.include_router(health.router)
+    app.include_router(verify.router)
+
+    # Excluded from the published schema and authenticated with a shared secret. It
+    # is included last so it cannot shadow a public route by accident.
+    app.include_router(verify.internal)
 
     return app
 

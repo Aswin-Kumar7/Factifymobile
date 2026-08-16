@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from app.domain.claim import Claim
-from app.domain.enums import Relation
+from app.domain.enums import EvidenceKind, Method, Relation, Tier
 from app.observability.logging import event
 from app.sources.base import SourceCandidate, SourceRelation, SourceSnapshot, insufficient
 
@@ -103,6 +103,12 @@ class TemporalResolver:
     name = NAME
     version = VERSION
     allowed_domains: frozenset[str] = frozenset()
+
+    # A dated page establishing that something predates what it is captioned as.
+    # Tier B: strong, because a publication date is a checkable fact about a record.
+    tier = Tier.B
+    kind = EvidenceKind.DATED_SOURCE
+    method = Method.MATCHED_PAGE_DATE
 
     def __init__(self, *, archive_enabled: bool = False) -> None:
         # Off by default. The flagship case must resolve from matched-page dates

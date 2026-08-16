@@ -26,6 +26,8 @@ from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import UUID
 
+from pydantic import SecretStr
+
 from app.db.repositories import FeedRepository
 from app.observability.logging import event
 
@@ -106,17 +108,29 @@ def backoff_for(consecutive_failures: int) -> int:
     return int(min(BACKOFF_BASE_SECONDS * 2 ** (consecutive_failures - 1), BACKOFF_CEILING_SECONDS))
 
 
-def authenticate_trigger(supplied: str | None, expected: str | None) -> bool:
+def authenticate_trigger(supplied: str | None, expected: SecretStr | str | None) -> bool:
     """Verify the scheduler's shared secret.
 
     Constant-time comparison: the endpoint is reachable from the internet, and a
     timing-variable check on a fixed secret is worth avoiding for the cost of one
     function call. A missing configured secret denies rather than allows, so an
     unconfigured deployment cannot be triggered by anyone.
+
+    Accepts `SecretStr` as well as `str` because that is what `Settings` holds, and
+    the two are not interchangeable — `hmac.compare_digest` raises `TypeError` on a
+    `SecretStr`. Unwrapping here rather than at each call site matters: this is a
+    security boundary, and a caller that passed the wrong shape produced a 500 with
+    a stack trace instead of a clean denial. Comparison is over UTF-8 bytes so a
+    non-ASCII secret does not raise either.
     """
-    if not expected or not supplied:
+    if expected is None or not supplied:
         return False
-    return hmac.compare_digest(supplied, expected)
+
+    secret = expected.get_secret_value() if isinstance(expected, SecretStr) else expected
+    if not secret:
+        return False
+
+    return hmac.compare_digest(supplied.encode("utf-8"), secret.encode("utf-8"))
 
 
 class FeedRegistry:

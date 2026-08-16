@@ -16,6 +16,9 @@ dependencies = [
     "pypdf>=5.1",
     "fastembed>=0.5",
     "feedparser>=6.0",
+    # Multipart parsing for /v1/verify/file. FastAPI raises at import time without
+    # it, so an upload route cannot be added by accident and left broken.
+    "python-multipart>=0.0.20",
 ]
 
 [dependency-groups]

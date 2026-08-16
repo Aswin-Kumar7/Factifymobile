@@ -31,6 +31,7 @@ from app.db.pool import Database
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
+
 def _test_database_url() -> str | None:
     """The test connection string, from the environment or from `.env`.
 

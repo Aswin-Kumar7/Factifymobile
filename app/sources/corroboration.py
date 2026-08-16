@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from app.domain.claim import Claim
-from app.domain.enums import CoverageExpectation, Relation
+from app.domain.enums import CoverageExpectation, EvidenceKind, Method, Relation, Tier
 from app.knowledge.clustering import CorroborationCount, OriginClusterer
 from app.observability.logging import event
 from app.sources.base import SourceCandidate, SourceRelation, SourceSnapshot, insufficient
@@ -106,6 +106,12 @@ class CorroborationResolver:
     name = NAME
     version = VERSION
     allowed_domains: frozenset[str] = frozenset()
+
+    # Independent origins agreeing. Tier D: real, and never decisive alone —
+    # twenty outlets carrying one wire story is one origin, which M26 collapses.
+    tier = Tier.D
+    kind = EvidenceKind.CORROBORATION
+    method = Method.ORIGIN_CLUSTER_COUNT
 
     def __init__(
         self,

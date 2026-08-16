@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 from app.domain.claim import Claim
-from app.domain.enums import Relation
+from app.domain.enums import EvidenceKind, Method, Relation, Tier
 from app.extraction.web import extract
 from app.observability.logging import event
 from app.security.fetcher import FetchResult, SecureFetcher
@@ -100,6 +100,12 @@ class AttributionResolver:
 
     name = ATTRIBUTION_NAME
     version = VERSION
+
+    # "According to Reuters" checked against Reuters. Tier D: it establishes what a
+    # named source does or does not carry, which contextualises rather than settles.
+    tier = Tier.D
+    kind = EvidenceKind.ATTRIBUTION
+    method = Method.OFFICIAL_SOURCE
 
     def __init__(
         self, *, fetcher: SecureFetcher, allowed_domains: frozenset[str] | None = None
@@ -237,6 +243,12 @@ class QuoteResolver:
     name = QUOTE_NAME
     version = VERSION
     allowed_domains: frozenset[str] = frozenset()
+
+    # A quotation traced to where it was said. Tier D for the same reason as
+    # attribution: it fixes provenance of words, not the truth of the claim.
+    tier = Tier.D
+    kind = EvidenceKind.QUOTE
+    method = Method.OFFICIAL_SOURCE
 
     def __init__(self, *, fetcher: SecureFetcher) -> None:
         self._fetcher = fetcher

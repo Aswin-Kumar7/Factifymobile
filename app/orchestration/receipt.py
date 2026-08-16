@@ -1,0 +1,300 @@
+"""Result receipt (M42).
+
+A verifiable record of what was attested, on what evidence, and when.
+
+**What this is not, stated first because the temptation to oversell it is real:** it
+is not a legal certificate, not a compliance artifact, and not a tamper-*proof*
+archive. It is tamper-*evident*. It proves that the evidence rows behind a verdict
+have not changed since the verdict was issued, signed with a development key held by
+this service. Anyone who controls the key can issue a receipt saying anything. That
+is a meaningful guarantee and a narrow one, and describing it as more would be the
+same failure mode as a confident wrong verdict — authority-shaped language covering a
+weaker fact.
+
+The digest is built by canonicalising the evidence set: every citation, snapshot,
+excerpt and anchor, in a fixed order, joined by separators that cannot occur inside
+the values. Alter any stored evidence row and the recomputed digest stops matching,
+which is exactly what the gate tests.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import logging
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from uuid import UUID
+
+from app.domain.evidence import Evidence
+from app.observability.logging import event
+
+logger = logging.getLogger("facify.receipt")
+
+RECEIPT_VERSION = "2026.08.1"
+
+# Field separator for canonicalisation. A unit separator cannot appear in a URL, a
+# hash or extracted text, so no combination of values can be made to collide by
+# choosing content that contains the delimiter.
+_FIELD = "\x1f"
+_RECORD = "\x1e"
+
+DISCLAIMER = (
+    "This is a tamper-evident result receipt, not a legal certificate or a "
+    "compliance artifact. It shows what was attested, on what evidence, and when."
+)
+
+
+@dataclass(frozen=True, slots=True)
+class Receipt:
+    """A signed statement about one case's evidence set."""
+
+    id: str
+    case_id: UUID
+    evidence_digest: str
+    signature: str
+    issued_at: datetime
+    rule_version: str
+    action: str
+    evidence_count: int
+    version: str = RECEIPT_VERSION
+
+    @property
+    def disclaimer(self) -> str:
+        return DISCLAIMER
+
+    def to_payload(self) -> dict[str, object]:
+        """What a verification view renders. Never includes the key."""
+        return {
+            "receipt_id": self.id,
+            "case_id": str(self.case_id),
+            "evidence_digest": self.evidence_digest,
+            "signature": self.signature,
+            "issued_at": self.issued_at.isoformat(),
+            "rule_version": self.rule_version,
+            "action": self.action,
+            "evidence_count": self.evidence_count,
+            "receipt_version": self.version,
+            "disclaimer": DISCLAIMER,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class Verification:
+    """The outcome of checking a receipt against stored evidence."""
+
+    valid: bool
+    reason: str = ""
+    expected_digest: str = ""
+    actual_digest: str = ""
+
+    @property
+    def failed_because_evidence_changed(self) -> bool:
+        return not self.valid and self.expected_digest != self.actual_digest
+
+
+def canonicalise(evidence: list[Evidence]) -> str:
+    """Render an evidence set as one deterministic string.
+
+    Sorted by evidence id so the digest does not depend on retrieval order — two runs
+    that found the same evidence in a different sequence must produce the same
+    receipt, or the receipt would be evidence about scheduling rather than content.
+
+    Every field that would change the meaning of a citation is included. A field left
+    out is a field an attacker may alter freely.
+    """
+    records = []
+    for item in sorted(evidence, key=lambda e: e.id):
+        records.append(
+            _FIELD.join(
+                (
+                    item.id,
+                    item.claim_id,
+                    item.tier.value,
+                    item.kind.value,
+                    item.direction.value,
+                    item.method.value,
+                    item.citation_url,
+                    item.snapshot_id,
+                    item.source_excerpt,
+                    str(item.source_anchor.char_start),
+                    str(item.source_anchor.char_end),
+                    item.match_basis.metric,
+                    f"{item.match_basis.value:.6f}",
+                    f"{item.match_basis.threshold:.6f}",
+                    item.match_quality.value,
+                )
+            )
+        )
+    return _RECORD.join(records)
+
+
+def digest(evidence: list[Evidence]) -> str:
+    """The content address of an evidence set."""
+    return "sha256:" + hashlib.sha256(canonicalise(evidence).encode("utf-8")).hexdigest()
+
+
+class ReceiptSigner:
+    """Issues and verifies receipts with a symmetric development key.
+
+    Symmetric on purpose for now: the signing and verifying parties are the same
+    service, so a keypair would add ceremony without adding a property. When a third
+    party needs to verify independently this becomes asymmetric, and the receipt
+    already carries a version field so that change is expressible.
+    """
+
+    def __init__(self, *, key: str, version: str = RECEIPT_VERSION) -> None:
+        if not key:
+            raise ValueError("a receipt signing key is required; refusing to sign with nothing")
+        self._key = key.encode("utf-8")
+        self._version = version
+
+    def issue(
+        self,
+        *,
+        case_id: UUID,
+        evidence: list[Evidence],
+        action: str,
+        rule_version: str,
+        issued_at: datetime | None = None,
+    ) -> Receipt:
+        """Sign the evidence digest for a case."""
+        stamp = issued_at or datetime.now(UTC)
+        evidence_digest = digest(evidence)
+
+        signature = self._sign(
+            case_id=case_id,
+            evidence_digest=evidence_digest,
+            action=action,
+            rule_version=rule_version,
+            issued_at=stamp,
+        )
+
+        receipt = Receipt(
+            # Content-addressed: the identifier is derived from what was attested, so
+            # a receipt cannot silently be made to point at different content.
+            id="rcpt:" + hashlib.sha256(f"{case_id}{evidence_digest}".encode()).hexdigest()[:32],
+            case_id=case_id,
+            evidence_digest=evidence_digest,
+            signature=signature,
+            issued_at=stamp,
+            rule_version=rule_version,
+            action=action,
+            evidence_count=len(evidence),
+            version=self._version,
+        )
+
+        event(
+            logger,
+            "receipt issued",
+            module="receipt",
+            outcome="ok",
+            evidence_count=len(evidence),
+        )
+        return receipt
+
+    def verify(self, receipt: Receipt, evidence: list[Evidence]) -> Verification:
+        """Check a receipt against the evidence currently stored.
+
+        Two independent checks, and both must pass. The signature proves the receipt
+        was issued by this service; the digest proves the evidence has not changed
+        since. A receipt that passes the first and fails the second is precisely the
+        tampering case this module exists to surface.
+        """
+        expected = self._sign(
+            case_id=receipt.case_id,
+            evidence_digest=receipt.evidence_digest,
+            action=receipt.action,
+            rule_version=receipt.rule_version,
+            issued_at=receipt.issued_at,
+        )
+
+        if not hmac.compare_digest(expected, receipt.signature):
+            return Verification(
+                valid=False,
+                reason="the signature does not match; this receipt was not issued here",
+                expected_digest=receipt.evidence_digest,
+                actual_digest=receipt.evidence_digest,
+            )
+
+        actual = digest(evidence)
+        if not hmac.compare_digest(actual, receipt.evidence_digest):
+            event(
+                logger,
+                "receipt verification failed",
+                module="receipt",
+                outcome="rejected",
+                failure_reason="evidence_changed",
+            )
+            return Verification(
+                valid=False,
+                reason="the stored evidence has changed since this receipt was issued",
+                expected_digest=receipt.evidence_digest,
+                actual_digest=actual,
+            )
+
+        return Verification(
+            valid=True, expected_digest=receipt.evidence_digest, actual_digest=actual
+        )
+
+    def _sign(
+        self,
+        *,
+        case_id: UUID,
+        evidence_digest: str,
+        action: str,
+        rule_version: str,
+        issued_at: datetime,
+    ) -> str:
+        """HMAC over every field a verifier is asked to trust.
+
+        The action and rule version are inside the signature, not merely alongside
+        it: a receipt whose verdict could be edited while the evidence digest stayed
+        valid would attest to the wrong thing.
+        """
+        message = _FIELD.join(
+            (
+                self._version,
+                str(case_id),
+                evidence_digest,
+                action,
+                rule_version,
+                issued_at.isoformat(),
+            )
+        )
+        return hmac.new(self._key, message.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def public_view(receipt: Receipt, verification: Verification) -> dict[str, object]:
+    """What the public verification page shows.
+
+    Deliberately does not include the evidence itself. A receipt says *that* a set of
+    evidence was attested and has not changed; the evidence is served from the case
+    endpoint, where access control applies.
+    """
+    return {
+        **receipt.to_payload(),
+        "verified": verification.valid,
+        "verification_reason": verification.reason
+        or "The evidence behind this result is unchanged since it was issued.",
+    }
+
+
+def parse_receipt(payload: dict[str, object]) -> Receipt:
+    """Rebuild a receipt from its stored payload."""
+    return Receipt(
+        id=str(payload["receipt_id"]),
+        case_id=UUID(str(payload["case_id"])),
+        evidence_digest=str(payload["evidence_digest"]),
+        signature=str(payload["signature"]),
+        issued_at=datetime.fromisoformat(str(payload["issued_at"])),
+        rule_version=str(payload["rule_version"]),
+        action=str(payload["action"]),
+        evidence_count=int(str(payload["evidence_count"])),
+        version=str(payload.get("receipt_version", RECEIPT_VERSION)),
+    )
+
+
+def dumps(receipt: Receipt) -> str:
+    return json.dumps(receipt.to_payload(), sort_keys=True, separators=(",", ":"))

@@ -33,7 +33,8 @@ from typing import Protocol
 from urllib.parse import urlsplit
 
 from app.domain.claim import Claim
-from app.domain.enums import Relation
+from app.domain.enums import Direction, EvidenceKind, Method, Relation, Tier
+from app.domain.evidence import Evidence, MatchBasis, SourceAnchor
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,17 +127,88 @@ class SourceResolver(Protocol):
     `allowed_domains` empty means the resolver works over sources proposed elsewhere
     — the corpus, or a URL the user supplied — rather than crawling. No resolver
     reaches the open web on its own.
+
+    `tier`, `kind` and `method` are declared by the resolver rather than assigned by
+    whatever assembles the evidence. A resolver knows what class of finding it can
+    produce; an assembler that decided per-item would be free to promote a weak
+    finding into a strong tier, which is exactly the judgement the tier system exists
+    to take away from any single component.
     """
 
     name: str
     version: str
     allowed_domains: frozenset[str]
 
+    tier: Tier
+    kind: EvidenceKind
+    method: Method
+
     async def candidates(self, claim: Claim) -> list[SourceCandidate]: ...
 
     async def snapshot(self, candidate: SourceCandidate) -> SourceSnapshot | None: ...
 
     async def relate(self, claim: Claim, snapshot: SourceSnapshot) -> SourceRelation: ...
+
+
+_DIRECTION_FOR = {
+    Relation.SUPPORTS: Direction.SUPPORTS,
+    Relation.CONTRADICTS: Direction.CONTRADICTS,
+    Relation.CONTEXTUALIZES: Direction.CONTEXTUALIZES,
+}
+
+
+def build_evidence(
+    *,
+    resolver: SourceResolver,
+    claim_id: str,
+    snapshot: SourceSnapshot,
+    relation: SourceRelation,
+) -> Evidence | None:
+    """Turn a relation and its snapshot into one citable evidence item.
+
+    Returns `None` rather than raising when the relation is not citable, because a
+    resolver finding nothing is the ordinary case and not an error.
+
+    Every field here comes from something recorded: the excerpt was located in the
+    fetched text, the anchor is its offsets, the basis is the metric the resolver
+    measured. Nothing is asserted by the assembler, and `match_quality` is derived
+    from the basis by the model itself — so this function cannot upgrade a finding
+    even if it wanted to.
+    """
+    if not relation.is_citable:
+        return None
+
+    direction = _DIRECTION_FOR.get(relation.relation)
+    if direction is None:
+        return None
+
+    anchor = SourceAnchor(
+        char_start=relation.anchor.get("char_start"),
+        char_end=relation.anchor.get("char_end"),
+    )
+
+    return Evidence.build(
+        id=f"ev:{resolver.name}:{snapshot.content_hash[:16]}:{claim_id}",
+        claim_id=claim_id,
+        tier=resolver.tier,
+        kind=resolver.kind,
+        direction=direction,
+        method=resolver.method,
+        finding=relation.excerpt[:400],
+        citation_url=snapshot.final_url or snapshot.url,
+        snapshot_id=snapshot.id,
+        source_excerpt=relation.excerpt,
+        source_anchor=anchor,
+        match_basis=MatchBasis(
+            metric=relation.metric or "unspecified",
+            value=relation.value,
+            threshold=relation.threshold,
+        ),
+        publisher=snapshot.publisher,
+        provider=relation.validator,
+        provider_version=relation.validator_version,
+        observed_at=snapshot.fetched_at,
+    )
 
 
 def locate_excerpt(text: str, needle: str, *, window: int = 220) -> tuple[str, dict[str, int]]:

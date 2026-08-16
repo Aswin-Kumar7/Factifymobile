@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from app.domain.claim import Claim
-from app.domain.enums import Relation
+from app.domain.enums import EvidenceKind, Method, Relation, Tier
 from app.governor.governor import Governor, Skip
 from app.observability.logging import event
 from app.sources.base import (
@@ -140,6 +140,12 @@ class FactCheckResolver:
     name = NAME
     version = VERSION
     allowed_domains: frozenset[str] = frozenset()
+
+    # A published adjudication. Tier C is the only tier a fact-checker's rating
+    # can produce, and it is decisive on its own because someone put their name on it.
+    tier = Tier.C
+    kind = EvidenceKind.FACT_CHECK
+    method = Method.CLAIM_REVIEW
 
     def __init__(
         self,
