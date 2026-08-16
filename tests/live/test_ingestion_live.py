@@ -1,6 +1,6 @@
 """The M26 gate: at least one multi-outlet origin cluster in the live corpus.
 
-    FACIFY_TEST_DATABASE_URL=... uv run pytest -m live
+    TEST_DATABASE_URL=... uv run pytest -m live
 
 This is deliberately a live test. The gate asks whether real Indian outlets, on a
 real afternoon, actually produce the syndication that origin clustering exists to
@@ -14,7 +14,6 @@ nothing to demonstrate.
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 import pytest
@@ -26,14 +25,10 @@ from app.knowledge.registry import FeedRegistry, load_registry
 from app.security.fetcher import SecureFetcher
 from tests.conftest import requires_database
 
-pytestmark = [
-    pytest.mark.live,
-    requires_database,
-    pytest.mark.skipif(
-        os.environ.get("FACIFY_TEST_DATABASE_URL") is None,
-        reason="live ingestion needs a database to write the corpus into",
-    ),
-]
+# `requires_database` already skips without a connection string, and this test needs
+# one for the same reason every other database test does: to write the corpus it then
+# clusters.
+pytestmark = [pytest.mark.live, requires_database]
 
 
 @pytest.mark.anyio

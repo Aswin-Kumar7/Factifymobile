@@ -5,7 +5,9 @@ substitute provides — `bit(64)` Hamming indexes, `vector` columns and JSONB ar
 things SQLite can pretend to do. Without a connection string they skip loudly rather
 than silently passing against a fake.
 
-    FACIFY_TEST_DATABASE_URL=postgresql://... uv run pytest -m db
+    TEST_DATABASE_URL=postgresql://... uv run pytest -m db
+
+Or set it in .env.test, which this file also reads.
 """
 
 from __future__ import annotations
@@ -14,9 +16,11 @@ import asyncio
 import os
 import sys
 from collections.abc import AsyncIterator
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
+from dotenv import dotenv_values
 
 from app.db.migrate import migrate
 from app.db.pool import Database
@@ -27,11 +31,40 @@ from app.db.pool import Database
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-TEST_DATABASE_URL = os.environ.get("FACIFY_TEST_DATABASE_URL")
+def _test_database_url() -> str | None:
+    """The test connection string, from the environment or from `.env`.
+
+    Deliberately **not** named with the ``FACIFY_`` prefix. That prefix is the
+    application's config namespace and `Settings` declares it ``extra="forbid"``, so
+    a typo in a real setting fails loudly instead of being ignored — a test-harness
+    variable living there would force that guard to be weakened.
+
+    It lives in ``.env.test`` rather than ``.env`` for the same reason: pydantic
+    rejects every key in ``.env`` it does not recognise, test-only ones included.
+
+    That file is read as a fallback because pydantic-settings parses dotenv files
+    directly and never exports them to ``os.environ``, so a developer who has
+    configured the project still has nothing here unless they separately export it.
+    Falling back means database tests run for them instead of silently skipping —
+    the failure mode worth avoiding, because a skipped database test looks exactly
+    like a passing one in a summary line.
+    """
+    from_env = os.environ.get("TEST_DATABASE_URL")
+    if from_env:
+        return from_env
+
+    dotenv = Path(__file__).resolve().parents[1] / ".env.test"
+    if not dotenv.exists():
+        return None
+
+    return dotenv_values(dotenv).get("TEST_DATABASE_URL") or None
+
+
+TEST_DATABASE_URL = _test_database_url()
 
 requires_database = pytest.mark.skipif(
     TEST_DATABASE_URL is None,
-    reason="set FACIFY_TEST_DATABASE_URL to run database tests",
+    reason="set TEST_DATABASE_URL (environment or .env) to run database tests",
 )
 
 

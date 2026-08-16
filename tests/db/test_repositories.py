@@ -2,7 +2,7 @@
 
 Requires a real Postgres with pgvector:
 
-    FACIFY_TEST_DATABASE_URL=postgresql://... uv run pytest -m db
+    TEST_DATABASE_URL=postgresql://... uv run pytest -m db
 """
 
 from __future__ import annotations

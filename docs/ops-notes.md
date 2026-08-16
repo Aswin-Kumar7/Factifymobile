@@ -514,6 +514,39 @@ Registry is now 50 feeds: 8 fact-checkers, 40 news (22 wire-carrying), 2 officia
 
 ---
 
+## Google Fact Check Tools API: live, needs a key (2026-08-16)
+
+`GET https://factchecktools.googleapis.com/v1alpha1/claims:search`
+
+Without a key it returns **HTTP 403 `PERMISSION_DENIED`** — *"Method doesn't allow
+unregistered callers"*. So the service is up and the endpoint is correct; it is
+gated on a key, not broken. The key is free and the wiring in `FactCheckResolver`
+is already in place behind `FACIFY_FACTCHECK__ENABLED` plus a cap.
+
+### ClaimReview markup is absent from Indian fact-checkers
+
+Checked separately, because the API is not the only way to reach an adjudication —
+publishers can embed `ClaimReview` JSON-LD in their own pages, which needs no key.
+They do not:
+
+| Page | `ClaimReview` present |
+|---|---|
+| altnews.in (index) | no |
+| factly.in (index) | no |
+| vishvasnews.com (index) | no |
+| Three individual Factly article pages | **no** |
+
+This is the measurement that justifies `parse_rating_from_title`. Indian
+fact-checkers write the verdict into the headline — "Fact Check: this video is NOT
+from Delhi", "फैक्ट चेक: यह दावा फर्जी है" — and publish no structured rating
+anywhere. Reading the headline is not a shortcut around missing markup; it is the
+only place the rating exists.
+
+The M27 gate — a fact-checked case resolving with the external API disabled — passes
+on this path, which is why it was written that way.
+
+---
+
 ## Credential hygiene
 
 The database password was shared in a chat transcript during setup and is therefore
