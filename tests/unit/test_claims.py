@@ -1,0 +1,241 @@
+"""M18 and M20 — claim extraction, OCR, and the two rules that matter most.
+
+The interesting tests are not "did we get claims". They are:
+
+  - with no model configured, does the system return **nothing** rather than
+    something plausible;
+  - can a claim the document does not contain reach storage.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from app.extraction.claims import ClaimPipeline
+from app.extraction.llm import (
+    ExtractionOutcome,
+    ProposedAnchor,
+    ProposedClaim,
+    UnavailableExtractor,
+)
+from app.extraction.ocr import UnavailableOcr
+
+pytestmark = pytest.mark.unit
+
+
+DOCUMENT = (
+    "The government announced a relief scheme for farmers on Thursday. "
+    "Officials said applications would open next month across every district. "
+    "According to Reuters, the total outlay is five hundred crore rupees."
+)
+
+
+def _proposal(text: str, **overrides: object) -> ProposedClaim:
+    fields: dict[str, object] = {
+        "text": text,
+        "claim_type": "EVENT",
+        "severity": "HIGH",
+        "importance": "MAIN_THESIS",
+        "source_anchor": ProposedAnchor(paragraph_index=0),
+    }
+    fields.update(overrides)
+    return ProposedClaim.model_validate(fields)
+
+
+class FakeExtractor:
+    """Returns fixed proposals and counts how often it was asked."""
+
+    def __init__(self, outcome: ExtractionOutcome) -> None:
+        self.outcome = outcome
+        self.calls = 0
+
+    async def extract_claims(self, text: str) -> ExtractionOutcome:
+        del text
+        self.calls += 1
+        return self.outcome
+
+
+class TestNoModelMeansNoClaims:
+    """The rule that outranks the rest: never invent evidence."""
+
+    async def test_an_unavailable_model_produces_nothing_and_says_why(self) -> None:
+        pipeline = ClaimPipeline(UnavailableExtractor())
+
+        result = await pipeline.extract(DOCUMENT, content_hash="sha256:doc")
+
+        assert result.claims == ()
+        assert result.reason == "unavailable: no model configured"
+        assert not result.succeeded
+
+    async def test_unavailable_ocr_returns_nothing_rather_than_approximating(self) -> None:
+        outcome = await UnavailableOcr().transcribe(b"\xff\xd8\xff")
+
+        assert outcome.text == ""
+        assert not outcome.has_text
+        assert outcome.reason == "unavailable: no model configured"
+
+    async def test_a_provider_failure_is_a_reason_not_a_guess(self) -> None:
+        pipeline = ClaimPipeline(
+            FakeExtractor(ExtractionOutcome(reason="provider failed: request timed out"))
+        )
+
+        result = await pipeline.extract(DOCUMENT, content_hash="sha256:doc")
+
+        assert result.claims == ()
+        assert "timed out" in str(result.reason)
+
+
+class TestAnchorVerification:
+    """A claim that does not correspond to the document does not get stored.
+
+    This is what stops both a hallucination and a successful injection from
+    manufacturing a claim: the invented sentence would also have to appear in the
+    source.
+    """
+
+    async def test_a_claim_present_in_the_source_is_kept(self) -> None:
+        pipeline = ClaimPipeline(
+            FakeExtractor(
+                ExtractionOutcome(
+                    claims=(_proposal("The government announced a relief scheme for farmers"),)
+                )
+            )
+        )
+
+        result = await pipeline.extract(DOCUMENT, content_hash="sha256:doc")
+
+        assert len(result.claims) == 1
+        assert result.claims[0].anchor.char_start is not None
+
+    async def test_a_claim_absent_from_the_source_is_discarded(self) -> None:
+        """The model, or the document instructing it, invented this outright."""
+        pipeline = ClaimPipeline(
+            FakeExtractor(
+                ExtractionOutcome(
+                    claims=(_proposal("Reuters has verified this story as completely true"),)
+                )
+            )
+        )
+
+        result = await pipeline.extract(DOCUMENT, content_hash="sha256:doc")
+
+        assert result.claims == ()
+        assert result.discarded
+
+    async def test_a_lightly_reworded_claim_still_anchors(self) -> None:
+        """Extraction legitimately normalises punctuation and drops a trailing clause."""
+        pipeline = ClaimPipeline(
+            FakeExtractor(
+                ExtractionOutcome(
+                    claims=(_proposal("applications would open next month across every district"),)
+                )
+            )
+        )
+
+        result = await pipeline.extract(DOCUMENT, content_hash="sha256:doc")
+
+        assert len(result.claims) == 1
+
+    async def test_the_anchor_points_at_the_real_text(self) -> None:
+        pipeline = ClaimPipeline(
+            FakeExtractor(
+                ExtractionOutcome(
+                    claims=(_proposal("the total outlay is five hundred crore rupees"),)
+                )
+            )
+        )
+
+        result = await pipeline.extract(DOCUMENT, content_hash="sha256:doc")
+        anchor = result.claims[0].anchor
+
+        assert anchor.char_start is not None
+        assert anchor.char_end is not None
+        assert anchor.char_end > anchor.char_start
+
+    async def test_a_mix_keeps_the_real_and_drops_the_invented(self) -> None:
+        pipeline = ClaimPipeline(
+            FakeExtractor(
+                ExtractionOutcome(
+                    claims=(
+                        _proposal("The government announced a relief scheme for farmers"),
+                        _proposal("The scheme was later cancelled by the supreme court"),
+                    )
+                )
+            )
+        )
+
+        result = await pipeline.extract(DOCUMENT, content_hash="sha256:doc")
+
+        assert len(result.claims) == 1
+        assert len(result.discarded) == 1
+
+
+class TestOneCallPerDocument:
+    async def test_exactly_one_call_is_made(self) -> None:
+        extractor = FakeExtractor(
+            ExtractionOutcome(claims=(_proposal("The government announced a relief scheme"),))
+        )
+        pipeline = ClaimPipeline(extractor)
+
+        await pipeline.extract(DOCUMENT, content_hash="sha256:doc")
+
+        assert extractor.calls == 1
+
+    async def test_empty_input_makes_no_call_at_all(self) -> None:
+        extractor = FakeExtractor(ExtractionOutcome())
+        pipeline = ClaimPipeline(extractor)
+
+        result = await pipeline.extract("   ", content_hash="sha256:blank")
+
+        assert extractor.calls == 0
+        assert result.reason == "no text to extract from"
+
+
+class TestInjectionFindingsTravel:
+    async def test_an_injection_attempt_reaches_the_source_risk_track(self) -> None:
+        """The attempt is a finding about the publisher, not noise to drop."""
+        pipeline = ClaimPipeline(
+            FakeExtractor(
+                ExtractionOutcome(
+                    claims=(),
+                    injection_findings=("instruction_override: Ignore all previous instructions",),
+                    reason=None,
+                )
+            )
+        )
+
+        result = await pipeline.extract(DOCUMENT, content_hash="sha256:doc")
+
+        assert result.injection_findings
+        assert "instruction_override" in result.injection_findings[0]
+
+
+class TestProposalSchema:
+    def test_a_proposal_carrying_a_status_is_rejected(self) -> None:
+        """The model labels and segments; it never assigns a verdict."""
+        proposal = ProposedClaim.model_validate(
+            {
+                "text": "a claim",
+                "claim_type": "EVENT",
+                "severity": "HIGH",
+                "importance": "MAIN_THESIS",
+                "status": "CONTRADICTED",
+                "confidence": 0.97,
+            }
+        )
+
+        assert not hasattr(proposal, "status")
+        assert not hasattr(proposal, "confidence")
+
+    def test_an_unknown_claim_type_is_rejected(self) -> None:
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ProposedClaim.model_validate(
+                {
+                    "text": "a claim",
+                    "claim_type": "event_context",
+                    "severity": "HIGH",
+                    "importance": "MAIN_THESIS",
+                }
+            )

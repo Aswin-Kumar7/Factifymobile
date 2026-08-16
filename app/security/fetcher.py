@@ -17,6 +17,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 
@@ -174,6 +175,63 @@ class SecureFetcher:
             f"more than {self._max_redirects} redirects",
             kind="redirect_limit",
             provider=provider,
+        )
+
+    async def post_json(
+        self,
+        url: str,
+        payload: dict[str, Any],
+        *,
+        provider: str,
+        headers: dict[str, str] | None = None,
+    ) -> FetchResult | FetchFailure:
+        """POST to a configured provider endpoint.
+
+        Deliberately the same client, and deliberately still SSRF-validated. A
+        provider endpoint comes from configuration rather than from an attacker, but
+        it resolves publicly like any other host, so the guard costs nothing and
+        catches the case where a misconfigured or hijacked endpoint points somewhere
+        internal. One HTTP client remains one HTTP client.
+        """
+        started = time.perf_counter()
+
+        try:
+            resolve_and_validate(url)
+        except BlockedDestination as blocked:
+            return self._failure(url, blocked.reason, kind="blocked", provider=provider)
+
+        try:
+            response = await self._client.post(
+                url, json=payload, headers={"Content-Type": "application/json", **(headers or {})}
+            )
+        except httpx.TimeoutException:
+            return self._failure(url, "request timed out", kind="timeout", provider=provider)
+        except httpx.HTTPError as exc:
+            return self._failure(
+                url, f"transport error: {type(exc).__name__}", kind="transport", provider=provider
+            )
+
+        body = await response.aread()
+        await response.aclose()
+        elapsed_ms = (time.perf_counter() - started) * 1000
+
+        if response.status_code >= 400:
+            return self._failure(
+                url,
+                f"provider returned {response.status_code}",
+                kind="provider_error",
+                provider=provider,
+            )
+
+        return FetchResult(
+            url=url,
+            final_url=url,
+            status_code=response.status_code,
+            content_type=response.headers.get("content-type", "").split(";")[0] or None,
+            body=body,
+            byte_count=len(body),
+            fetched_at=datetime.now(UTC),
+            elapsed_ms=elapsed_ms,
         )
 
     async def _complete(
