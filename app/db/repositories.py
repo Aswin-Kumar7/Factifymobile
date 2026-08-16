@@ -57,7 +57,7 @@ class CaseRepository(_Repository):
     ) -> UUID:
         row = await self._one(
             """
-            INSERT INTO facify_case (request_id, input_type, language,
+            INSERT INTO verification_case (request_id, input_type, language,
                                      consent_to_process_media)
             VALUES (%s, %s, %s, %s)
             RETURNING id
@@ -68,7 +68,7 @@ class CaseRepository(_Repository):
         return UUID(str(row["id"]))
 
     async def get(self, case_id: UUID) -> Row | None:
-        return await self._one("SELECT * FROM facify_case WHERE id = %s", (case_id,))
+        return await self._one("SELECT * FROM verification_case WHERE id = %s", (case_id,))
 
     async def complete(
         self,
@@ -81,7 +81,7 @@ class CaseRepository(_Repository):
     ) -> None:
         await self._execute(
             """
-            UPDATE facify_case
+            UPDATE verification_case
                SET status = 'complete',
                    overall_action = %s,
                    media_provenance = %s,

@@ -19,16 +19,30 @@
 -- halves storage and is the right optimisation once retrieval quality is measured,
 -- which is a change of column type and index, not of schema shape.
 
-BEGIN;
+-- Schema placement is a security decision, not a preference.
+--
+-- The hosting platform auto-generates a REST API over `public`, can auto-expose new
+-- tables in it, and runs an event trigger that enables RLS on new `public` tables.
+-- None of that is wanted here: this schema holds evidence, verdicts and an
+-- append-only audit log, reached only by this service over a direct connection.
+-- A dedicated schema keeps all three mechanisms off our tables by construction,
+-- rather than by remembering to toggle a setting in a dashboard.
+--
+-- The runner wraps each migration in its own transaction, so this file does not
+-- open one.
 
-CREATE EXTENSION IF NOT EXISTS vector;
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE SCHEMA IF NOT EXISTS facify;
+CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;
+
+SET LOCAL search_path TO facify, extensions, public;
+
+-- gen_random_uuid() is core in PostgreSQL 13+, so no extension is needed for it.
 
 -- ---------------------------------------------------------------------------
 -- Request-scoped entities
 -- ---------------------------------------------------------------------------
 
-CREATE TABLE facify_case (
+CREATE TABLE verification_case (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id         UUID,
     request_id        TEXT        NOT NULL,
@@ -53,12 +67,12 @@ CREATE TABLE facify_case (
     completed_at      TIMESTAMPTZ
 );
 
-CREATE INDEX idx_case_created_at ON facify_case (created_at DESC);
-CREATE INDEX idx_case_request_id ON facify_case (request_id);
+CREATE INDEX idx_case_created_at ON verification_case (created_at DESC);
+CREATE INDEX idx_case_request_id ON verification_case (request_id);
 
 CREATE TABLE content_object (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    case_id      UUID        NOT NULL REFERENCES facify_case (id) ON DELETE CASCADE,
+    case_id      UUID        NOT NULL REFERENCES verification_case (id) ON DELETE CASCADE,
     kind         TEXT        NOT NULL
         CHECK (kind IN ('text', 'url', 'image', 'pdf', 'video', 'audio', 'frame')),
     sha256       TEXT        NOT NULL,
@@ -76,7 +90,7 @@ CREATE INDEX idx_content_object_sha256 ON content_object (sha256);
 
 CREATE TABLE claim (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    case_id          UUID        NOT NULL REFERENCES facify_case (id) ON DELETE CASCADE,
+    case_id          UUID        NOT NULL REFERENCES verification_case (id) ON DELETE CASCADE,
     content_object_id UUID       REFERENCES content_object (id) ON DELETE SET NULL,
     text             TEXT        NOT NULL,
     normalized_text  TEXT        NOT NULL,
@@ -210,7 +224,7 @@ CREATE INDEX idx_evidence_claim ON evidence (claim_id);
 -- changes no verdict and no score.
 CREATE TABLE advisory (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    case_id       UUID        NOT NULL REFERENCES facify_case (id) ON DELETE CASCADE,
+    case_id       UUID        NOT NULL REFERENCES verification_case (id) ON DELETE CASCADE,
     content_object_id UUID    REFERENCES content_object (id) ON DELETE CASCADE,
     provider      TEXT        NOT NULL,
     provider_version TEXT,
@@ -282,7 +296,7 @@ CREATE INDEX idx_verdict_claim ON verdict (claim_id);
 
 CREATE TABLE observation (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    case_id           UUID        REFERENCES facify_case (id) ON DELETE CASCADE,
+    case_id           UUID        REFERENCES verification_case (id) ON DELETE CASCADE,
     content_object_id UUID        REFERENCES content_object (id) ON DELETE CASCADE,
     claim_id          UUID        REFERENCES claim (id) ON DELETE CASCADE,
     kind              TEXT        NOT NULL,
@@ -329,7 +343,7 @@ CREATE TABLE claim_occurrence (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     fingerprint_id    UUID        REFERENCES media_fingerprint (id) ON DELETE CASCADE,
     claim_id          UUID        REFERENCES claim (id) ON DELETE SET NULL,
-    case_id           UUID        REFERENCES facify_case (id) ON DELETE SET NULL,
+    case_id           UUID        REFERENCES verification_case (id) ON DELETE SET NULL,
     content_object_id UUID        REFERENCES content_object (id) ON DELETE SET NULL,
     caption_text      TEXT,
     language          TEXT,
@@ -425,7 +439,7 @@ CREATE TABLE feed_run (
 -- can never serve a stale verdict.
 CREATE TABLE verdict_cache (
     cache_key         TEXT PRIMARY KEY,
-    case_id           UUID        REFERENCES facify_case (id) ON DELETE SET NULL,
+    case_id           UUID        REFERENCES verification_case (id) ON DELETE SET NULL,
     status_json       JSONB       NOT NULL,
     rule_version      TEXT        NOT NULL,
     extractor_version TEXT        NOT NULL,
@@ -464,7 +478,7 @@ CREATE TABLE call_budget (
 
 CREATE TABLE review_item (
     id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    case_id        UUID        NOT NULL REFERENCES facify_case (id) ON DELETE CASCADE,
+    case_id        UUID        NOT NULL REFERENCES verification_case (id) ON DELETE CASCADE,
     reason         TEXT        NOT NULL,
     machine_status TEXT,
     human_label    TEXT,        -- recorded beside the machine verdict, never over it
@@ -518,4 +532,4 @@ CREATE INDEX idx_claim_embedding
 CREATE INDEX idx_factcheck_record_embedding
     ON factcheck_record USING hnsw (embedding vector_cosine_ops);
 
-COMMIT;
+

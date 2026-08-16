@@ -10,7 +10,9 @@ than silently passing against a fake.
 
 from __future__ import annotations
 
+import asyncio
 import os
+import sys
 from collections.abc import AsyncIterator
 
 import pytest
@@ -18,6 +20,12 @@ import pytest_asyncio
 
 from app.db.migrate import migrate
 from app.db.pool import Database
+
+# psycopg's async mode cannot run on Windows' default ProactorEventLoop. Production
+# is Linux, where this is a no-op; without it no database test can run on a Windows
+# development machine.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 TEST_DATABASE_URL = os.environ.get("FACIFY_TEST_DATABASE_URL")
 

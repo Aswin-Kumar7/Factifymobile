@@ -19,6 +19,11 @@ from psycopg_pool import AsyncConnectionPool
 
 Row = dict[str, Any]
 
+# Every connection resolves unqualified names against Facify's own schema first, so
+# repositories never carry a schema prefix and can never accidentally read or write a
+# platform-managed table in `public`.
+SEARCH_PATH = "facify,extensions,public"
+
 
 class Database:
     """Owns the connection pool for the process lifetime."""
@@ -30,7 +35,10 @@ class Database:
             min_size=min_size,
             max_size=max_size,
             open=False,
-            kwargs={"row_factory": dict_row},
+            kwargs={
+                "row_factory": dict_row,
+                "options": f"-c search_path={SEARCH_PATH}",
+            },
         )
 
     async def open(self) -> None:

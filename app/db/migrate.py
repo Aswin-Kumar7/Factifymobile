@@ -15,19 +15,37 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from psycopg import AsyncConnection
+from psycopg import AsyncConnection, sql
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
 _FILENAME = re.compile(r"^(\d{4})_([a-z0-9_]+)\.sql$")
 
-_LEDGER = """
-CREATE TABLE IF NOT EXISTS schema_migration (
+# Facify owns a dedicated schema; see the header of 0001_initial.sql for why. The
+# ledger lives there too, so a migrated database carries its own history rather than
+# leaving it in a schema the platform manages.
+#
+# The schema name is composed with psycopg's identifier quoting rather than string
+# interpolation. It is a constant today, but a query built by concatenation is a
+# habit that outlives the constant that made it safe.
+SCHEMA = "facify"
+_SCHEMA_ID = sql.Identifier(SCHEMA)
+
+_CREATE_SCHEMA = sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(_SCHEMA_ID)
+
+_CREATE_LEDGER = sql.SQL("""
+CREATE TABLE IF NOT EXISTS {}.schema_migration (
     version     TEXT PRIMARY KEY,
     name        TEXT        NOT NULL,
     checksum    TEXT        NOT NULL,
     applied_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 )
-"""
+""").format(_SCHEMA_ID)
+
+_SELECT_APPLIED = sql.SQL("SELECT version, checksum FROM {}.schema_migration").format(_SCHEMA_ID)
+
+_RECORD_APPLIED = sql.SQL(
+    "INSERT INTO {}.schema_migration (version, name, checksum) VALUES (%s, %s, %s)"
+).format(_SCHEMA_ID)
 
 
 class MigrationError(RuntimeError):
@@ -68,8 +86,9 @@ def discover(directory: Path | None = None) -> list[Migration]:
 
 async def applied_versions(conn: AsyncConnection[dict[str, object]]) -> dict[str, str]:
     """Version -> checksum for everything already applied."""
-    await conn.execute(_LEDGER)
-    result = await conn.execute("SELECT version, checksum FROM schema_migration")
+    await conn.execute(_CREATE_SCHEMA)
+    await conn.execute(_CREATE_LEDGER)
+    result = await conn.execute(_SELECT_APPLIED)
     rows = await result.fetchall()
     return {str(row["version"]): str(row["checksum"]) for row in rows}
 
@@ -100,7 +119,7 @@ async def migrate(
         async with conn.transaction():
             await conn.execute(migration.sql)
             await conn.execute(
-                "INSERT INTO schema_migration (version, name, checksum) VALUES (%s, %s, %s)",
+                _RECORD_APPLIED,
                 (migration.version, migration.name, migration.checksum),
             )
 

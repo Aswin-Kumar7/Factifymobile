@@ -7,10 +7,55 @@ too.
 
 ---
 
+## Target database (measured 2026-08-16)
+
+| Property | Value |
+|---|---|
+| PostgreSQL | 17.6 |
+| pgvector | **0.8.2** — clears the ≥0.7 requirement for `bit_hamming_ops` and `halfvec` |
+| `gen_random_uuid()` | Core in PG13+; no extension dependency |
+| Extension schema | `extensions` (platform convention) |
+| Region | ap-south-1 |
+
+**Connection choice.** Use the **session pooler** (port 5432 on the pooler host).
+The direct host is IPv6-first and not reachable from every network; the transaction
+pooler (6543) does not support prepared statements, which psycopg3 uses by default —
+it would need `prepare_threshold=None` and buys nothing at this scale.
+
+**Windows development note.** psycopg's async mode cannot run on the default
+`ProactorEventLoop`. `tests/conftest.py` selects the selector policy on `win32`;
+production is Linux, where this is a no-op.
+
+---
+
+## Schema isolation (M03)
+
+All 25 tables live in a dedicated **`facify`** schema, verified as **0 tables in
+`public`**.
+
+This is a security decision, not tidiness. The platform auto-generates a REST API
+over `public`, can auto-expose new tables in it, and runs an event trigger enabling
+RLS on new `public` tables. This schema holds evidence, verdicts and an append-only
+audit log reached only by this service over a direct connection. A dedicated schema
+keeps all three mechanisms off our tables **by construction**, rather than by
+remembering to toggle a dashboard setting — and it survives someone re-enabling
+those settings later.
+
+Connections set `search_path=facify,extensions,public`, so repositories carry no
+schema prefix and cannot accidentally read or write a platform-managed table.
+
+**Re-check after any platform change:** `public` must still contain zero Facify
+tables.
+
+---
+
 ## Storage sizing (M03)
 
 Free-tier ceiling: **500 MB database**, 1 GB file storage, 50 MB maximum upload,
 5 GB cached plus 5 GB uncached egress.
+
+**Measured baseline:** the empty migrated schema, 25 tables and 6 HNSW indexes,
+occupies **2,360 kB**. That is the fixed cost before a single row exists.
 
 ### Per-row cost of the vector columns
 
@@ -70,10 +115,22 @@ influences whether the embedding services share a process or split.
 
 ## Verification still owed
 
-| Item | Blocked on | How to close it |
+| Item | Status | Note |
 |---|---|---|
-| Migration runs clean on an empty database | A Postgres with pgvector ≥ 0.7 | `FACIFY_TEST_DATABASE_URL=… uv run pytest -m db` |
-| Round-trip through every repository | Same | Same command; 22 tests are written and skipping |
-| Container image builds and boots | Docker, unavailable locally | CI `image` job builds it and probes `/healthz` |
-| Measured storage per corpus item | Ingestion having run | Day 6 |
-| Measured model quota in the team account | Provider credentials | Day 0 |
+| Migration runs clean on an empty database | ✅ **Closed** 2026-08-16 | 25 tables, 6 HNSW indexes, `bit_hamming_ops` accepted |
+| Migration is idempotent under re-run | ✅ **Closed** | Second run found `0001` applied with a matching checksum and applied nothing |
+| Round-trip through every repository | ✅ **Closed** | 22 database tests pass against the live instance |
+| Container image builds and boots | ⏳ Open | Docker unavailable locally; the CI `image` job builds and probes `/healthz` |
+| Measured storage per corpus item | ⏳ Open | Needs ingestion to have run — Day 6 |
+| Measured model quota in the team account | ⏳ Open | Needs provider credentials — Day 0 |
+
+---
+
+## Credential hygiene
+
+The database password was shared in a chat transcript during setup and is therefore
+**considered compromised**. Rotate it in the platform dashboard, and from then on
+supply it only through the server environment.
+
+Nothing in this repository contains a connection string: `.env` is ignored, and
+`.env.example` carries commented placeholders only.
