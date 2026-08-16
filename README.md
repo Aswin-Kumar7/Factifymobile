@@ -67,9 +67,8 @@ wins for the 15-day build and `technical_plan.md` describes where it grows.
 
 ## Status
 
-Planning. Committed code from earlier iterations (verdict engine, URL resolvers, quota governor,
-language detection, corroboration) is in git history at `1fbb6a0` and earlier; the working tree is
-being restructured around the plan above.
+Planning baseline. History starts fresh at the initial commit — no implementation yet. Build order,
+module boundaries and gates are in [agent-actionplan.md](agent-actionplan.md).
 
 ## Stack
 

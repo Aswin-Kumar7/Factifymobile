@@ -309,11 +309,11 @@ After the hackathon, the internal modules can become independently scalable work
 | Public X / YouTube link | Read public metadata/thumbnail when the platform permits; otherwise ask for screenshot or exported media | Best effort, not a decisive path |
 | Authenticated/private social post | Ask the user for a screenshot or exported media | Explicitly unsupported |
 
-> **Platform boundary:** commit `f47e587` contains tested canonical, X-syndication, YouTube, and
-> generic-web adapters. Retain them, but keep the policy boundary: X and YouTube frequently restrict
-> automated retrieval, so no verdict may depend on either adapter. Use public metadata or thumbnails
-> when available, then ask for a screenshot or exported media. The reliable P0 demonstration is a
-> public web article, image, PDF, or upload.
+> **Platform boundary:** the generic-web resolver is P0 and must be built. X and YouTube adapters are
+> **best effort only** — both platforms frequently restrict automated retrieval, so no verdict may
+> depend on either. Read public metadata or thumbnails when available, then ask for a screenshot or
+> exported media. The reliable P0 demonstration is a public web article, image, PDF, or upload, and
+> the platform adapters must never sit on the critical path of a gate.
 
 ### Model-side URL retrieval — what it cannot do
 
@@ -1385,10 +1385,10 @@ Do not publish the original plan’s 100,000-check unit economics yet. It is not
 
 **Gate:** verdicts work without a model, network, or database; rollup is snapshot-tested.
 
-> **Note on existing code:** the repository already contains a working, fully-tested verdict engine
-> using a single-verdict vocabulary (`VERIFIED`/`DISPUTED`/`UNVERIFIABLE`). The multi-dimension
-> status model in §2 is a better design and worth the change, but Day 3 is therefore a **rewrite of
-> tested code**, not new work — budget it as such rather than discovering it mid-day.
+> **Note on scope:** this is built from nothing — the repository starts at a planning baseline with
+> no prior implementation. Day 3 is the highest-leverage day in the schedule: the engine is pure,
+> has no dependencies on the database, network or any model, and every invariant the rest of the
+> system relies on is enforced here. Give it the time, and write the tests first.
 
 ### Day 4 — Text and claim pipeline
 
@@ -1582,8 +1582,8 @@ items in the manifest** — the false-positive figure is not reportable below th
 
 > **Why P0 changed:** four items moved in and one moved out, each for a stated reason above —
 > recurrence because it is a named ZAIML-005 deliverable (§10), cache and governor because the
-> free-tier model budget makes them survival rather than optimization (§11), the existing resolvers
-> because deleting working code is negative work (§5), live failure reporting because the demo must
+> free-tier model budget makes them survival rather than optimization (§11), the generic-web
+> resolver because links are the most likely judge input (§5), live failure reporting because the demo must
 > remain honest when a real provider fails (§16), and C2PA remains optional because it cannot be
 > guaranteed on reprocessed public inputs (§8A).
 
