@@ -35,16 +35,18 @@ from app.api.schemas import (
     advisory_to_response,
     evidence_to_response,
 )
+from app.extraction.claims import ExtractedClaims
 from app.intake.normalizer import (
     InputType,
     IntakeRejected,
+    NormalisedIntake,
     normalise_text,
     normalise_upload,
     normalise_url,
 )
 from app.knowledge.registry import authenticate_trigger
 from app.observability.logging import event
-from app.orchestration.pipeline import VerificationResult
+from app.orchestration.pipeline import SkippedCheck, VerificationResult
 from app.orchestration.review import HumanLabel, ReviewQueue
 
 logger = logging.getLogger("facify.api.verify")
@@ -67,6 +69,33 @@ def get_orchestrator(request: Request) -> object:
             detail="verification is not available; the service is not fully configured",
         )
     return orchestrator
+
+
+async def extract_claims_for(request: Request, intake: NormalisedIntake) -> ExtractedClaims:
+    """Pull checkable claims out of the submission.
+
+    Upstream of the orchestrator because it has its own cache and its own provider
+    budget — one model call per document, and a cache hit costs none.
+
+    An unconfigured extractor returns no claims *and a reason*, which the caller
+    attaches to the response. That distinction is the point: "we could not read this"
+    and "we read it and found nothing to check" are different answers, and collapsing
+    them would let a configuration gap render as a clean bill of health.
+    """
+    pipeline = getattr(request.app.state, "claim_pipeline", None)
+    if pipeline is None:
+        return ExtractedClaims(reason="claim extraction is not configured")
+
+    text = intake.primary.text or ""
+    if not text.strip():
+        return ExtractedClaims(reason="no readable text in this submission")
+
+    return await pipeline.extract(  # type: ignore[no-any-return]
+        text,
+        content_hash=intake.primary.sha256,
+        input_kind=intake.input_type.value,
+        language=intake.language.language.value,
+    )
 
 
 def to_response(result: VerificationResult, *, receipt_url: str | None = None) -> VerifyResponse:
@@ -158,12 +187,17 @@ async def verify(payload: VerifyRequest, request: Request) -> VerifyResponse:
         ) from rejected
 
     case_id = uuid4()
+    extracted = await extract_claims_for(request, intake)
 
-    # Claims arrive from extraction, which is upstream of the orchestrator. Until
-    # that path is wired here the pipeline runs with none, which produces an
-    # abstaining response rather than a fabricated one — the correct behaviour for
-    # "we could not read any checkable claim out of this".
-    result = await orchestrator.verify(intake, case_id=case_id, claims=[])  # type: ignore[attr-defined]
+    result = await orchestrator.verify(  # type: ignore[attr-defined]
+        intake, case_id=case_id, claims=list(extracted.claims)
+    )
+
+    # Extraction failing is a gap in the answer, not a failure of the request. It is
+    # attached so the response can say the text could not be read into claims rather
+    # than presenting "nothing to check" as "nothing wrong".
+    if extracted.reason:
+        result.skipped.append(SkippedCheck(check="claim_extraction", reason=extracted.reason))
 
     event(
         logger,
@@ -171,6 +205,7 @@ async def verify(payload: VerifyRequest, request: Request) -> VerifyResponse:
         module="api.verify",
         outcome="ok",
         action=result.action.value,
+        claims=len(extracted.claims),
         from_cache=result.from_cache,
         elapsed_ms=result.elapsed_ms,
     )

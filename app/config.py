@@ -120,6 +120,15 @@ class Settings(BaseSettings):
     # provider credential — it authenticates the scheduler to us.
     ingest_trigger_secret: SecretStr | None = None
 
+    # Signs result receipts (M42). Also not a provider credential: it signs our own
+    # attestations rather than authenticating us to anyone.
+    #
+    # Absent means receipts are not issued. `ReceiptSigner` refuses an empty key
+    # rather than signing with a default, because a receipt signed with a value
+    # anyone could guess verifies for anyone and is worse than no receipt at all —
+    # it looks like tamper-evidence without being any.
+    receipt_signing_key: SecretStr | None = None
+
     models: ModelSettings = ModelSettings()
     limits: LimitSettings = LimitSettings()
 
