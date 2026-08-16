@@ -57,6 +57,8 @@ class ProviderMetrics:
 
     def __init__(self) -> None:
         self._stats: dict[str, ProviderStats] = {}
+        self._cache_hits: dict[str, int] = {}
+        self._cache_misses: dict[str, int] = {}
         self._lock = Lock()
 
     def _stats_for(self, provider: str) -> ProviderStats:
@@ -106,9 +108,40 @@ class ProviderMetrics:
                 for provider, stats in self._stats.items()
             }
 
+    # -- cache accounting -------------------------------------------------------
+    #
+    # Hit rate is a stated day-one investor metric and the mechanism behind the
+    # margin story: it should rise with usage, so it has to be measurable from the
+    # first request rather than instrumented later.
+
+    def record_cache_hit(self, surface: str) -> None:
+        with self._lock:
+            self._cache_hits[surface] = self._cache_hits.get(surface, 0) + 1
+
+    def record_cache_miss(self, surface: str) -> None:
+        with self._lock:
+            self._cache_misses[surface] = self._cache_misses.get(surface, 0) + 1
+
+    def cache_snapshot(self) -> dict[str, dict[str, float | int]]:
+        with self._lock:
+            surfaces = set(self._cache_hits) | set(self._cache_misses)
+            report: dict[str, dict[str, float | int]] = {}
+            for surface in sorted(surfaces):
+                hits = self._cache_hits.get(surface, 0)
+                misses = self._cache_misses.get(surface, 0)
+                total = hits + misses
+                report[surface] = {
+                    "hits": hits,
+                    "misses": misses,
+                    "hit_rate": round(hits / total, 4) if total else 0.0,
+                }
+            return report
+
     def reset(self) -> None:
         with self._lock:
             self._stats.clear()
+            self._cache_hits.clear()
+            self._cache_misses.clear()
 
 
 metrics = ProviderMetrics()
