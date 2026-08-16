@@ -10,14 +10,19 @@ from fastapi import FastAPI
 
 from app import __version__
 from app.api import health
+from app.config import Settings, get_settings
 
 
-def create_app() -> FastAPI:
+def create_app(settings: Settings | None = None) -> FastAPI:
     """Build the ASGI application.
 
-    Middleware order matters and is fixed here: request context is established
-    before anything else so every downstream log line and response carries it.
+    Settings are resolved here so an invalid configuration is a boot failure rather
+    than a surprise at first use. Middleware order matters and is fixed here: request
+    context is established before anything else so every downstream log line and
+    response carries it.
     """
+    settings = settings or get_settings()
+
     app = FastAPI(
         title="Facify",
         version=__version__,
@@ -26,6 +31,7 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json",
     )
 
+    app.state.settings = settings
     app.include_router(health.router)
 
     return app
