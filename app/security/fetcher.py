@@ -1,0 +1,263 @@
+"""The one outbound HTTP client (M09).
+
+Every request this service makes to the outside world goes through here. That is not
+a style preference: the SSRF guard, the byte caps, the politeness layer and the
+chain-of-custody record are only guarantees if there is no second path. A test
+asserts no other module constructs an HTTP client.
+
+Redirects are followed manually rather than by the client library, because the guard
+has to run again on every hop. A destination that is public on the first request and
+internal on the second is the standard bypass, and a library that follows redirects
+for us would take that hop before we ever see it.
+"""
+
+from __future__ import annotations
+
+import logging
+import time
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+
+import httpx
+
+from app.observability.logging import event
+from app.observability.metrics import metrics
+from app.security.ssrf import BlockedDestination, resolve_and_validate
+
+logger = logging.getLogger("facify.fetch")
+
+# An honest user agent. Bulk ingestion identifies itself and respects robots; a
+# single user-triggered fetch is the same request any link-preview bot makes and is
+# not crawling, but we still say who we are.
+USER_AGENT = "FacifyBot/1.0 (+https://facify.example/bot)"
+
+# Content types worth parsing. Anything else is fetched no further than its headers —
+# we are not going to stream a video through the article extractor.
+DEFAULT_ACCEPTED_TYPES = (
+    "text/html",
+    "application/xhtml+xml",
+    "application/xml",
+    "text/xml",
+    "application/rss+xml",
+    "application/atom+xml",
+    "application/json",
+    "application/ld+json",
+    "application/pdf",
+    "text/plain",
+    "image/",
+)
+
+
+class FetchBlocked(Exception):
+    """The fetch did not happen, and the reason is recorded on the outcome."""
+
+
+@dataclass(frozen=True, slots=True)
+class FetchResult:
+    """A completed fetch and its chain-of-custody record.
+
+    This is what every downstream citation points back at: where we went, what came
+    back, how big it was and exactly when. Without it an evidence object is an
+    assertion about a page nobody can prove we read.
+    """
+
+    url: str
+    final_url: str
+    status_code: int
+    content_type: str | None
+    body: bytes
+    byte_count: int
+    fetched_at: datetime
+    redirect_chain: tuple[str, ...] = ()
+    elapsed_ms: float = 0.0
+    truncated: bool = False
+
+    @property
+    def text(self) -> str:
+        """Decoded body, replacing anything undecodable rather than raising."""
+        return self.body.decode("utf-8", errors="replace")
+
+
+@dataclass(frozen=True, slots=True)
+class FetchFailure:
+    """A fetch that did not complete, as data rather than an exception.
+
+    A blocked or failed fetch is an ordinary outcome of verifying attacker-supplied
+    URLs. It produces `INSUFFICIENT` upstream and the claim abstains — it must never
+    surface to a user as a verdict, and it must never be silently swallowed either.
+    """
+
+    url: str
+    reason: str
+    kind: str
+    attempted_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+
+class SecureFetcher:
+    """Guarded HTTP client. Construct one per process and share it."""
+
+    def __init__(
+        self,
+        *,
+        timeout_seconds: float = 15.0,
+        max_redirects: int = 5,
+        max_bytes: int = 10 * 1024 * 1024,
+        accepted_types: tuple[str, ...] = DEFAULT_ACCEPTED_TYPES,
+        client: httpx.AsyncClient | None = None,
+    ) -> None:
+        self._max_redirects = max_redirects
+        self._max_bytes = max_bytes
+        self._accepted_types = accepted_types
+        self._client = client or httpx.AsyncClient(
+            # Redirects are ours to follow, one validated hop at a time.
+            follow_redirects=False,
+            timeout=httpx.Timeout(timeout_seconds),
+            headers={"User-Agent": USER_AGENT},
+            # No cookie jar: nothing this service fetches is behind a session, and a
+            # jar would carry state between unrelated hosts.
+            cookies=None,
+            trust_env=False,
+        )
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+    async def fetch(self, url: str, *, provider: str = "web") -> FetchResult | FetchFailure:
+        """Fetch a public URL, validating every hop.
+
+        Returns a failure value rather than raising for the expected cases — blocked
+        destination, timeout, oversized body, uninteresting content type — because
+        those are outcomes to record, not errors to propagate.
+        """
+        started = time.perf_counter()
+        chain: list[str] = []
+        current = url
+
+        for hop in range(self._max_redirects + 1):
+            try:
+                resolve_and_validate(current)
+            except BlockedDestination as blocked:
+                return self._failure(
+                    url, blocked.reason, kind="blocked", provider=provider, hop=hop
+                )
+
+            try:
+                response = await self._client.get(
+                    current, headers={"Accept-Encoding": "gzip, deflate"}
+                )
+            except httpx.TimeoutException:
+                return self._failure(url, "request timed out", kind="timeout", provider=provider)
+            except httpx.HTTPError as exc:
+                return self._failure(
+                    url,
+                    f"transport error: {type(exc).__name__}",
+                    kind="transport",
+                    provider=provider,
+                )
+
+            if response.is_redirect:
+                location = response.headers.get("location")
+                if not location:
+                    await response.aclose()
+                    return self._failure(
+                        url, "redirect without a location", kind="transport", provider=provider
+                    )
+                chain.append(current)
+                current = str(httpx.URL(current).join(location))
+                await response.aclose()
+                continue
+
+            return await self._complete(url, current, response, chain, started, provider=provider)
+
+        return self._failure(
+            url,
+            f"more than {self._max_redirects} redirects",
+            kind="redirect_limit",
+            provider=provider,
+        )
+
+    async def _complete(
+        self,
+        original_url: str,
+        final_url: str,
+        response: httpx.Response,
+        chain: list[str],
+        started: float,
+        *,
+        provider: str,
+    ) -> FetchResult | FetchFailure:
+        content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
+
+        if content_type and not any(content_type.startswith(t) for t in self._accepted_types):
+            await response.aclose()
+            return self._failure(
+                original_url,
+                f"content type {content_type!r} is not parsed",
+                kind="content_type",
+                provider=provider,
+            )
+
+        # A declared length over the cap is refused before a byte is read. The
+        # streaming cap below still applies, because the header is attacker-supplied
+        # and may be absent or a lie.
+        declared = response.headers.get("content-length")
+        if declared and declared.isdigit() and int(declared) > self._max_bytes:
+            await response.aclose()
+            return self._failure(
+                original_url,
+                f"declared size {declared} exceeds the {self._max_bytes} byte cap",
+                kind="too_large",
+                provider=provider,
+            )
+
+        body = await response.aread()
+        await response.aclose()
+
+        truncated = len(body) > self._max_bytes
+        if truncated:
+            body = body[: self._max_bytes]
+
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        metrics.record_success(provider, elapsed_ms)
+        event(
+            logger,
+            "fetch completed",
+            module="security.fetcher",
+            outcome="ok",
+            provider=provider,
+            latency_ms=elapsed_ms,
+            status_code=response.status_code,
+            redirects=len(chain),
+            byte_count=len(body),
+            truncated=truncated,
+        )
+
+        return FetchResult(
+            url=original_url,
+            final_url=final_url,
+            status_code=response.status_code,
+            content_type=content_type or None,
+            body=body,
+            byte_count=len(body),
+            fetched_at=datetime.now(UTC),
+            redirect_chain=tuple(chain),
+            elapsed_ms=elapsed_ms,
+            truncated=truncated,
+        )
+
+    def _failure(
+        self, url: str, reason: str, *, kind: str, provider: str, hop: int = 0
+    ) -> FetchFailure:
+        metrics.record_failure(provider)
+        event(
+            logger,
+            "fetch failed",
+            module="security.fetcher",
+            outcome="blocked" if kind == "blocked" else "error",
+            provider=provider,
+            failure_reason=reason,
+            level=logging.WARNING,
+            kind=kind,
+            hop=hop,
+        )
+        return FetchFailure(url=url, reason=reason, kind=kind)
