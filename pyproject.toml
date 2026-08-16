@@ -84,7 +84,10 @@ ignore = [
 known-first-party = ["app", "tests"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S104", "S105", "S106"]  # fixture strings, not real binds or secrets
+"tests/*" = [
+    "S104", "S105", "S106",  # fixture strings, not real binds or secrets
+    "S603", "S607",          # tests build fixture media by calling ffmpeg directly
+]
 
 [tool.mypy]
 python_version = "3.12"
@@ -101,6 +104,12 @@ disallow_untyped_defs = false
 # validated by parse_feed rather than by the type checker.
 [[tool.mypy.overrides]]
 module = ["feedparser.*"]
+ignore_missing_imports = true
+
+# Optional at runtime (M36 is P1) and not installed here. Its absence is a supported
+# configuration that returns "unknown", so the import is guarded rather than required.
+[[tool.mypy.overrides]]
+module = ["c2pa.*"]
 ignore_missing_imports = true
 
 [tool.coverage.run]

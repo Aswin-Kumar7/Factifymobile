@@ -175,8 +175,12 @@ floods, two ministers at two podiums — score almost as high as a true match.
 **Default threshold is 0.96**, set *above* the same-kind figure rather than between it
 and a true match: a false match is a cited wrong answer, a miss is an honest
 abstention. Every comparison reports its margin, and near-misses are logged, so the
-threshold can be calibrated on real pairs rather than assumed. **It has not been
-calibrated on real images yet** — that is a Day 8 task.
+threshold can be calibrated on real pairs rather than assumed.
+
+This 0.96 remains the embedder's default for any caller comparing two images in
+isolation. **The media matcher does not use it** — it verifies candidates that already
+survived a perceptual-hash gate, which is a different population, and 0.96 is wrong
+for it by a wide margin. See the calibration below.
 
 ### Running the model tests
 
@@ -253,6 +257,106 @@ current registry.
 overlap, so any threshold that produced a multi-outlet cluster here would be merging
 genuinely independent reporting — overstating corroboration, which is the failure
 mode that produces a confident wrong `SUPPORTED`.
+
+---
+
+## Media matching calibrated (M33, measured 2026-08-16)
+
+The Day 8 task named above, done. 22 distinct real photographs, deduplicated by
+content hash *and* perceptual hash — Windows ships the same wallpaper under several
+filenames, and counting those as different pictures scores a correct match as a false
+positive, which is how the first run of this measurement fooled itself.
+
+Four transformations per photograph (88 same-picture variants) and all 231
+cross-photograph pairs:
+
+| Variant | What it models |
+|---|---|
+| Downscale to 480×360 + JPEG q55 | A photo on its third forward |
+| Re-encode at 720×540 + q70 | A screenshot of a post |
+| 8% crop + q80 | The common trim |
+| 15% crop + q80 | An aggressive trim |
+
+### The hash gate, not the embedding, is what rejects unrelated images
+
+At the shipped gate of Hamming ≤ 12, **229 of 231 different-photograph pairs never
+reach the verifier at all**. Only two survive it, scoring 0.8649 and 0.9188. Meanwhile
+same-picture variants that pass the gate score 0.8829 – 1.0000, median 0.9642.
+
+This inverts the assumption the 0.96 threshold was built on. M23 set it above 0.956 to
+reject "different content of the same kind" — but that population is eliminated by the
+hash gate before the embedding is ever consulted. The threshold was calibrated against
+pairs the verifier never sees.
+
+### Gate and threshold swept together
+
+Recall is over all 88 variants; a false match is any different-photograph pair passing
+both stages.
+
+| Gate | 0.96 | 0.94 | 0.93 | 0.92 | 0.90 | Worst impostor past gate |
+|---|---|---|---|---|---|---|
+| 10 | 29 / 0 | 42 / 0 | 49 / 0 | 50 / 0 | 51 / **1** | 0.9188 |
+| **12** | 31 / 0 | 44 / 0 | **51 / 0** | 52 / 0 | 54 / **1** | 0.9188 |
+| 16 | 35 / **1** | 49 / **1** | 57 / **1** | 58 / **2** | 61 / **3** | 0.9697 |
+| 20 | 40 / **1** | 54 / **1** | 62 / **1** | 63 / **2** | 66 / **4** | 0.9697 |
+| 24 | 41 / **1** | 59 / **1** | 67 / **1** | 68 / **2** | 72 / **6** | 0.9697 |
+
+*(cells are `recall / false matches`)*
+
+**Gate 12 is the last value that is clean at every threshold.** At 16 and above a false
+match appears even at 0.96, because an impostor pair sits at 0.9697 — higher than most
+genuine re-shares. Widening the gate to recover cropped images buys recall by
+introducing exactly the failure the module exists to prevent, so it stays at 12.
+
+### Changed: verification threshold 0.96 → 0.93, media matcher only
+
+`app/media/matching.py::VERIFICATION_THRESHOLD`. At gate 12 this takes recall from
+31/88 to 51/88 — it roughly doubles the number of recycled images found — with zero
+false matches and 0.0112 of margin over the highest surviving impostor. 0.92 would add
+one more match and cut the margin to 0.0012, which is not a margin.
+
+`ImageEmbedder`'s own default stays at 0.96 for callers comparing images in isolation.
+
+**Provisional.** The negative population past the gate is two pairs. Two samples do not
+justify a threshold, and this is re-measured against the real corpus once it carries
+volume. It is recorded here rather than left as a bare constant for that reason.
+
+### Known limitation: crops beyond ~10% are not found locally
+
+Measured pHash distances for an 8% crop across 8 photographs: `8, 10, 12, 16, 18, 20,
+20, 24` against a gate of 12 — so **3 of 8 cropped re-shares are recovered locally**.
+This is not tuned away, because the sweep above shows the only way to recover the rest
+is a gate that admits false matches.
+
+Cropped media is stage two's job. This is precisely why M34 reverse-image discovery
+exists, and it is the strongest argument against treating local matching as sufficient
+on its own.
+
+### CLIP is not testable on synthetic images
+
+Recorded because it cost a debugging cycle. The synthetic fixtures in
+`tests/unit/images.py` are right for testing the matcher and hashing, and useless for
+testing CLIP: with real weights a recompressed copy of one synthetic scene scored
+**0.9248 against itself**, while two unrelated synthetic scenes scored **0.9491**. The
+same picture ranked *below* a different one.
+
+CLIP embeds semantic content, and every abstract pattern is semantically "an abstract
+picture with coloured shapes." The model tests therefore source real photographs from
+the machine and **skip with a named reason** when none are found, rather than passing
+over data that means nothing.
+
+---
+
+## Video: asyncio subprocesses do not work under the selector event loop
+
+`asyncio.create_subprocess_exec` raises `NotImplementedError` on Windows under
+`WindowsSelectorEventLoopPolicy` — which is the policy psycopg's async support
+requires, so the two cannot coexist in one process. ffmpeg is invoked through
+`asyncio.to_thread(subprocess.run, ...)` instead, which works under every loop on
+every platform and still kills the child on timeout.
+
+Not a Windows-only concern: it would have surfaced as "video silently never works" on
+any deployment that sets a non-default loop policy.
 
 ---
 
