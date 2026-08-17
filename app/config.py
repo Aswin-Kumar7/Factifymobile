@@ -49,6 +49,15 @@ class ProviderSettings(BaseModel):
     timeout_seconds: float = Field(default=10.0, gt=0, le=120)
     max_retries: int = Field(default=1, ge=0, le=5)
 
+    # Where the provider lives. Configurable rather than hard-coded because the same
+    # credential can front different surfaces — a Gemini key works against the
+    # Generative Language API, while Vertex AI is a different host *and* a different
+    # auth scheme. Keeping the URL in configuration means switching surface is an
+    # environment change, and a wrong one fails at boot rather than at first call.
+    #
+    # `{model}` is substituted from `models.extraction` / `models.escalation`.
+    endpoint: str = ""
+
     @model_validator(mode="after")
     def _enabled_providers_need_a_credential(self) -> Self:
         if self.enabled and self.api_key is None:
@@ -58,10 +67,45 @@ class ProviderSettings(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def _bearer_endpoints_are_rejected(self) -> Self:
+        """Vertex AI cannot be driven with an API key, so refuse it explicitly.
+
+        Every provider here authenticates with an `x-goog-api-key` header. Vertex AI
+        wants an OAuth bearer token from a service account, so pointing this
+        configuration at `aiplatform.googleapis.com` would produce 401s on every
+        call. Naming the reason at boot is worth more than a stack of auth failures
+        that look like an outage.
+        """
+        if self.endpoint and "aiplatform.googleapis.com" in self.endpoint:
+            raise ValueError(
+                "this endpoint is Vertex AI, which authenticates with an OAuth bearer "
+                "token rather than an API key. Use the Generative Language API "
+                "(generativelanguage.googleapis.com) with a Gemini API key, or add "
+                "service-account auth before pointing at Vertex"
+            )
+        return self
+
     @property
     def usable(self) -> bool:
-        """Enabled, credentialled, and permitted at least one call per day."""
+        """Enabled, credentialled, and permitted at least one call per day.
+
+        The governor's question, deliberately not including the endpoint: quota
+        accounting and transport are separate concerns, and a component that only
+        meters calls should not need a URL to do it.
+        """
         return self.enabled and self.api_key is not None and self.daily_cap > 0
+
+    @property
+    def is_callable(self) -> bool:
+        """Usable *and* has somewhere to send the request.
+
+        The caller's question. Checked at boot by `Settings` rather than enforced
+        here, because an enabled provider with no endpoint would otherwise pass the
+        governor and fail every call — and downstream that reads as "the source had
+        nothing" rather than "we were misconfigured".
+        """
+        return self.usable and bool(self.endpoint)
 
 
 class ModelSettings(BaseModel):
@@ -152,6 +196,22 @@ class Settings(BaseSettings):
     def _production_requires_a_database(self) -> Self:
         if self.environment is not Environment.LOCAL and self.database_url is None:
             raise ValueError(f"database_url is required in the {self.environment} environment")
+
+        # An enabled provider with no endpoint is a credential with nowhere to send
+        # it: it passes the governor, spends a unit, fails, and the failure reads
+        # downstream as "the source had nothing to say". Refusing to boot turns a
+        # silent wrong answer into a loud configuration error.
+        stranded = [
+            name
+            for name, provider in self.providers.items()
+            if provider.usable and not provider.endpoint
+        ]
+        if stranded:
+            raise ValueError(
+                f"enabled with a credential but no endpoint: {', '.join(sorted(stranded))}. "
+                "Set FACIFY_<PROVIDER>__ENDPOINT or disable the provider"
+            )
+
         return self
 
     @property

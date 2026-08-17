@@ -5,6 +5,9 @@ from pydantic import ValidationError
 
 from app.config import Environment, ProviderSettings, Settings
 
+# A real endpoint, because an enabled provider without one now refuses to boot.
+VISION_ENDPOINT = "https://vision.googleapis.com/v1/images:annotate"
+
 pytestmark = pytest.mark.unit
 
 
@@ -71,14 +74,26 @@ class TestUsability:
 class TestRedaction:
     def test_redacted_view_never_contains_a_credential(self) -> None:
         settings = _settings(
-            vision={"enabled": True, "api_key": "super-secret-value", "daily_cap": 33}
+            vision={
+                "enabled": True,
+                "api_key": "super-secret-value",
+                "daily_cap": 33,
+                "endpoint": VISION_ENDPOINT,
+            }
         )
 
         assert "super-secret-value" not in repr(settings.redacted())
         assert settings.redacted()["providers"]["vision"]["credentialled"] is True
 
     def test_redacted_view_reports_enablement_and_caps(self) -> None:
-        settings = _settings(vision={"enabled": True, "api_key": "k", "daily_cap": 33})
+        settings = _settings(
+            vision={
+                "enabled": True,
+                "api_key": "k",
+                "daily_cap": 33,
+                "endpoint": VISION_ENDPOINT,
+            }
+        )
 
         vision = settings.redacted()["providers"]["vision"]
         assert vision == {
@@ -97,12 +112,49 @@ class TestEnvironmentLoading:
         monkeypatch.setenv("FACIFY_VISION__ENABLED", "true")
         monkeypatch.setenv("FACIFY_VISION__API_KEY", "from-env")
         monkeypatch.setenv("FACIFY_VISION__DAILY_CAP", "33")
+        monkeypatch.setenv("FACIFY_VISION__ENDPOINT", VISION_ENDPOINT)
 
         settings = Settings(_env_file=None)
 
         assert settings.vision.usable
+        assert settings.vision.is_callable
         assert settings.vision.api_key is not None
         assert settings.vision.api_key.get_secret_value() == "from-env"
+
+    def test_a_credential_with_no_endpoint_refuses_to_boot(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A provider with nowhere to send the request passes the governor, spends a
+        unit, and fails — which downstream reads as "the source had nothing"."""
+        monkeypatch.setenv("FACIFY_VISION__ENABLED", "true")
+        monkeypatch.setenv("FACIFY_VISION__API_KEY", "from-env")
+        monkeypatch.setenv("FACIFY_VISION__DAILY_CAP", "33")
+
+        with pytest.raises(ValidationError, match="no endpoint"):
+            Settings(_env_file=None)
+
+    def test_vertex_ai_is_refused_by_name(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """It authenticates with an OAuth bearer token, not the x-goog-api-key header
+        every provider here sends, so it would 401 on every call."""
+        monkeypatch.setenv("FACIFY_LLM__ENABLED", "true")
+        monkeypatch.setenv("FACIFY_LLM__API_KEY", "k")
+        monkeypatch.setenv("FACIFY_LLM__DAILY_CAP", "50")
+        monkeypatch.setenv(
+            "FACIFY_LLM__ENDPOINT",
+            "https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/"
+            "us-central1/publishers/google/models/{model}:generateContent",
+        )
+
+        with pytest.raises(ValidationError, match="Vertex AI"):
+            Settings(_env_file=None)
+
+    def test_a_disabled_provider_needs_no_endpoint(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The default configuration must boot with nothing set at all."""
+        monkeypatch.setenv("FACIFY_VISION__ENABLED", "false")
+
+        settings = Settings(_env_file=None)
+
+        assert not settings.vision.is_callable
 
     def test_every_provider_can_be_disabled_by_configuration_alone(
         self, monkeypatch: pytest.MonkeyPatch
