@@ -547,6 +547,53 @@ on this path, which is why it was written that way.
 
 ---
 
+## Gemini billing: the $300 Cloud credit does not apply (2026-08-16)
+
+Recorded because it looks exactly like a broken account and is not one.
+
+A new Google Cloud account with the $300 free trial credit still gets **HTTP 429
+"Your prepayment credits are depleted"** on every Gemini `generateContent` call. The
+credit is real and works — Vision and Fact Check Tools both returned 200 on the same
+project — but Google excludes this one API from it:
+
+> the Google Cloud Welcome credit or free trial credit can't be used towards the
+> Gemini API or AI Studio
+
+Effective March 2026. Prepay and Postpay plans started 23 March 2026, new users
+default to Prepay, and the minimum initial purchase is $10.
+
+So the split on one project is:
+
+| Service | Billed against | Status on the trial credit |
+|---|---|---|
+| Cloud Run, Cloud Vision, Fact Check Tools | Google Cloud billing | Covered by the $300 |
+| Gemini API | Separate Gemini prepay balance | **Not covered** — needs its own $10+ |
+
+### ListModels advertises models that cannot be called
+
+Separate trap found at the same time. `gemini-2.5-flash` appears in ListModels with
+`generateContent` in its supported methods, then returns **404 "no longer available
+to new users"** on an actual call. `gemini-3.5-flash`, `gemini-3.6-flash` and
+`gemini-3.7-flash` resolve.
+
+Never pick a model id from the list alone — probe it with a real `generateContent`
+call. The list is a catalogue, not an entitlement.
+
+### There is no extraction path without a model
+
+`app/extraction/` contains exactly two implementations of the `Extractor` protocol:
+`LLMExtractor` and `UnavailableExtractor`, which returns nothing by design. There is
+no rule-based fallback, and adding one would mean hand-written heuristics deciding
+what counts as a claim — a judgement with no author, which is the thing the
+architecture refuses everywhere else.
+
+Without a funded Gemini balance, `/v1/verify` extracts no claims and abstains with
+`claim_extraction was not checked`. That is honest and it is also the whole text
+path, so the media path (Vision, funded by the Cloud credit) is what still
+demonstrates end to end.
+
+---
+
 ## Credential hygiene
 
 The database password was shared in a chat transcript during setup and is therefore
