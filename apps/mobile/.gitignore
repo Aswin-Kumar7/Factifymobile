@@ -1,0 +1,21 @@
+# Flutter/Dart build output and tooling state.
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+*.iml
+
+# Local Android SDK paths — machine-specific, never shared.
+android/local.properties
+android/.gradle/
+android/app/debug/
+android/app/profile/
+android/app/release/
+
+# Signing material. A keystore in the repo is a signing identity anyone can use.
+*.jks
+*.keystore
+key.properties
+
+# Kotlin incremental-compile scratch.
+android/.kotlin/
