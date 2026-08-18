@@ -129,12 +129,14 @@ class Orchestrator:
         governor: Governor,
         resolvers: list[SourceResolver],
         extractor_version: str,
+        model_id: str = "",
         concurrency: int = DEFAULT_CONCURRENCY,
     ) -> None:
         self._cache = cache
         self._governor = governor
         self._resolvers = resolvers
         self._extractor_version = extractor_version
+        self._model_id = model_id
         self._semaphore = asyncio.Semaphore(concurrency)
 
     async def verify(
@@ -165,6 +167,7 @@ class Orchestrator:
             rule_version=RULE_VERSION,
             extractor_version=self._extractor_version,
             language=intake.language.language.value,
+            model_id=self._model_id,
         )
         cached = await self._cache.get_verdict(cache_key)
         if cached is not None:

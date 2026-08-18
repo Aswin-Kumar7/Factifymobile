@@ -40,6 +40,16 @@ class CacheKeyParts:
     policy_profile: str = DEFAULT_POLICY_PROFILE
     language: str | None = None
 
+    # The model that produced the extraction, because it changes the answer.
+    #
+    # `extractor_version` covers our prompt and parsing; it does not move when Google
+    # changes what a model id resolves to. Pointing at a moving alias like
+    # `gemini-flash-latest` without this would keep serving extractions computed by
+    # the previous model under a key asserting the current one — and worse, new
+    # extractions from the new model would be stored under that same key. Including
+    # it means a model change simply misses and recomputes.
+    model_id: str = ""
+
     def derive(self) -> str:
         """A stable, opaque key.
 
@@ -55,6 +65,7 @@ class CacheKeyParts:
                 self.corpus_version,
                 self.policy_profile,
                 self.language or "-",
+                self.model_id or "-",
             )
         )
         return hashlib.sha256(material.encode("utf-8")).hexdigest()
