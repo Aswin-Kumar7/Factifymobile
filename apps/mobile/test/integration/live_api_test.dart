@@ -8,7 +8,6 @@
 library;
 
 import 'package:facify_mobile/api/client.dart';
-import 'package:facify_mobile/models/verdict.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
