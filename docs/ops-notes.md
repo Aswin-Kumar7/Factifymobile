@@ -594,6 +594,87 @@ demonstrates end to end.
 
 ---
 
+## Live end-to-end testing with real providers (2026-08-18)
+
+All three Google services live, a real ingested corpus, and real claims. Two
+defects found, both fixed; one earlier measurement corrected.
+
+### The first real cited verdict
+
+Corpus: 2,064 items from 39 sources, including 76 fact-check adjudications of which
+8 carried a rating readable from the headline.
+
+    claim   "A digitally altered video of Sara Tendulkar has gone viral"
+    action  DO_NOT_SHARE
+    status  CONTRADICTED
+    tier    C, Alt News, altnews.in/digitally-altered-video-of-sara-t...
+    excerpt "Alt News rated this altered: Digitally altered video of Sara Tendulkar"
+
+A decisive status carrying a citation the system ingested itself, with no
+fact-check API key involved — the M27 fallback path working on live data.
+
+### Defect: the extraction prompt referenced a schema it never sent
+
+`_SYSTEM_INSTRUCTION` said "Return only the JSON described by the schema" and no
+`responseSchema` was ever transmitted. The model was matching a shape it had never
+seen, answering plausibly and differently each run, and failing validation
+downstream. The schema is now sent, derived from the enums so a new `ClaimType`
+cannot be offered to the model without `ProposedClaim` also accepting it.
+
+### Defect: false factual claims were classified OPINION
+
+Worse than it sounds, because opinion is never fact-checked — so the claims this
+product exists to catch were being routed away from checking:
+
+| Claim | Before | After |
+|---|---|---|
+| "Drinking hot water cures coronavirus infection." | OPINION | EVENT |
+| "EVMs used in Indian elections can be hacked remotely." | OPINION | EVENT |
+
+The instruction said only "Label opinion as OPINION" and the model read
+"implausible or debunked" as "opinion". It now defines OPINION as a value judgement
+no evidence could settle, names both examples above as factual-but-false, and states
+that misfiling one removes it from checking entirely.
+
+`EXTRACTOR_VERSION` 2026.08.1 → 2026.08.3 across both fixes, because each changes
+what the same document extracts to and the extraction cache is keyed on it.
+
+### Correction: the "graphics fail to match" alarm was a test artifact
+
+A byte-identical share card measured 0.8681 against the 0.93 threshold, which looked
+like the threshold being mis-calibrated for graphics — a serious problem, since
+screenshotted text cards are a large share of what circulates on WhatsApp.
+
+It was not. The test's recycling transform used `resize((480, 360))`, which squashes
+a 1200x667 image; the aspect distortion destroyed the similarity, not the
+recompression. A messaging app rescales, it does not restretch. With `thumbnail`
+preserving aspect:
+
+| Content type | n | min | median | below 0.93 |
+|---|---|---|---|---|
+| Real news photographs | 20 | 0.8049 | 0.9734 | 5/20 |
+| Real branded share cards | 12 | 0.8452 | 0.9686 | 2/12 |
+
+Graphics are fine. A first attempt at this used *synthetic* text cards and reported
+different cards scoring 1.0000 — that measured the fixture, not the model: one
+layout with only the words changed is pixel-near-identical, and CLIP at 224px cannot
+read the text that differs. Replaced with real `og:image` cards, one per masthead.
+
+### The 0.93 threshold is confirmed, not changed
+
+Across 16 real images the hash gate rejected **every** cross-image pair, so this run
+produced no impostor data. Combined with the earlier 22-wallpaper calibration:
+
+    genuine recycles, minimum      0.8049  (this run)
+    impostors past the gate, max   0.9188  (earlier run)
+
+The populations overlap: no threshold catches every genuine recycle and rejects
+every impostor. 0.93 sits above the impostor ceiling and misses roughly 22% of
+genuine recycles. That is the correct trade for this product — a miss is recoverable
+through reverse-image discovery, a false match is a cited wrong answer.
+
+---
+
 ## Credential hygiene
 
 The database password was shared in a chat transcript during setup and is therefore

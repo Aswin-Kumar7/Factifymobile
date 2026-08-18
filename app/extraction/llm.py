@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -39,7 +40,7 @@ PROVIDER = "llm"
 
 # Bumped whenever the prompt or the schema changes, because either changes what the
 # same document extracts to — and the extraction cache is keyed on it.
-EXTRACTOR_VERSION = "2026.08.1"
+EXTRACTOR_VERSION = "2026.08.3"
 
 MAX_CLAIMS_PER_DOCUMENT = 7
 
@@ -107,9 +108,73 @@ _SYSTEM_INSTRUCTION = (
     "claim is true, and you never assign a status, verdict or confidence. Return only "
     "the JSON described by the schema. Extract at most "
     f"{MAX_CLAIMS_PER_DOCUMENT} claims, choosing the ones that are consequential and "
-    "verifiable. Label opinion as OPINION. For each claim, report where in the "
-    "document it appeared."
+    "verifiable. For each claim, report where in the document it appeared. "
+    "OPINION means a value judgement or preference that no evidence could settle — "
+    "'the scheme is inadequate', 'the film is boring'. It does NOT mean a claim you "
+    "think is false, implausible, fringe or already debunked. "
+    "'Drinking hot water cures coronavirus' and 'EVMs can be hacked remotely' are "
+    "FACTUAL claims that happen to be false: they assert something about the world "
+    "that evidence can address, so classify them by what they assert — a health "
+    "claim is an EVENT or STATISTIC, not an OPINION. "
+    "Misfiling a false factual claim as OPINION removes it from checking entirely, "
+    "which is the one outcome this extraction must never produce."
 )
+
+
+def _enum_values(enum_type: type[StrEnum]) -> list[str]:
+    """The wire values of an enum, for the response schema.
+
+    Derived rather than written out so a new member cannot be offered to the model
+    without `ProposedClaim` also accepting it.
+    """
+    return [member.value for member in enum_type]
+
+
+# The response shape, in the subset of JSON Schema the provider accepts.
+#
+# Derived from the enums rather than written out, so adding a ClaimType cannot
+# leave the model offering a value `ProposedClaim` will then reject. Kept in step
+# with that model by construction; EXTRACTOR_VERSION is bumped when either moves,
+# because both change what the same document extracts to.
+_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "claims": {
+            "type": "array",
+            "maxItems": MAX_CLAIMS_PER_DOCUMENT,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "claim_type": {"type": "string", "enum": _enum_values(ClaimType)},
+                    "severity": {"type": "string", "enum": _enum_values(Severity)},
+                    "importance": {"type": "string", "enum": _enum_values(Importance)},
+                    "coverage_expectation": {
+                        "type": "string",
+                        "enum": _enum_values(CoverageExpectation),
+                        "nullable": True,
+                    },
+                    "entities": {"type": "array", "items": {"type": "string"}},
+                    "dates": {"type": "array", "items": {"type": "string"}},
+                    "location": {"type": "string", "nullable": True},
+                    "search_phrases": {"type": "array", "items": {"type": "string"}},
+                    "needs_human_review": {"type": "boolean"},
+                    "source_anchor": {
+                        "type": "object",
+                        "properties": {
+                            "section": {"type": "string", "nullable": True},
+                            "paragraph_index": {"type": "integer", "nullable": True},
+                            "char_start": {"type": "integer", "nullable": True},
+                            "char_end": {"type": "integer", "nullable": True},
+                        },
+                    },
+                },
+                "required": ["text", "claim_type", "severity", "importance"],
+            },
+        }
+    },
+    "required": ["claims"],
+}
 
 
 class LLMExtractor:
@@ -220,6 +285,12 @@ class LLMExtractor:
             "contents": [{"role": "user", "parts": [{"text": fenced.prompt_block}]}],
             "generationConfig": {
                 "responseMimeType": "application/json",
+                # The schema is transmitted, not merely referred to. The system
+                # instruction says "the JSON described by the schema", and without
+                # this the model was being asked to match a shape it had never been
+                # shown — which it answered plausibly and differently every time,
+                # failing validation downstream.
+                "responseSchema": _RESPONSE_SCHEMA,
                 "temperature": 0.0,
             },
         }
