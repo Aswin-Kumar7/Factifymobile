@@ -6,12 +6,30 @@ global state, and so later modules (M04 observability, M12 rate limiting) attach
 middleware in one known place.
 """
 
+import asyncio
+import logging
+import sys
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from app import __version__
 from app.api import health, verify
 from app.config import Settings, get_settings
 from app.observability import RequestContextMiddleware, configure
+
+logger = logging.getLogger("facify.main")
+
+if sys.platform == "win32":
+    # psycopg's async mode refuses to run on Windows' default ProactorEventLoop, and
+    # the failure surfaces as "pool initialization incomplete after 10.0 sec" — a
+    # timeout that reads like an unreachable database rather than a loop mismatch.
+    #
+    # Set here because it must happen before any loop is created, and `create_app` is
+    # too late when a server has already started one. Deployment is Linux, where this
+    # branch never runs; it exists so local development on Windows works at all.
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 DESCRIPTION = """
 Facify verifies content against citable evidence.
@@ -36,7 +54,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     configure(settings.log_level)
 
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        """Open the pool and compose the verification stack.
+
+        A composition failure is logged and left to stand rather than raised: the
+        health endpoint must still answer so a failing deployment can be diagnosed,
+        and `/verify` already returns 503 when no orchestrator is present. Crashing
+        the boot instead would leave nothing to ask.
+        """
+        from app.orchestration import composition
+
+        try:
+            for name, value in (await composition.build(settings)).items():
+                setattr(app.state, name, value)
+        except Exception as error:
+            logger.exception("composition failed; /verify will report unavailable: %s", error)
+
+        yield
+
+        database = getattr(app.state, "database", None)
+        if database is not None:
+            await database.close()
+
     app = FastAPI(
+        lifespan=lifespan,
         title="Facify",
         version=__version__,
         summary="Evidence-based content verification",
