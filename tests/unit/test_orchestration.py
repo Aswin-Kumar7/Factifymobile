@@ -659,3 +659,138 @@ class TestTriggerAuthentication:
 
         assert authenticate_trigger("गुप्त", SecretStr("गुप्त"))
         assert not authenticate_trigger("गुप्त", SecretStr("other"))
+
+
+class RecordingCache:
+    """Misses on read, records what write-back stores."""
+
+    def __init__(self) -> None:
+        self.written: dict[str, Any] | None = None
+        self.written_negative: bool | None = None
+
+    async def get_verdict(self, parts: Any) -> None:
+        return None
+
+    async def put_verdict(
+        self,
+        parts: Any,
+        payload: dict[str, Any],
+        *,
+        case_id: Any = None,
+        is_negative: bool = False,
+        developing: bool = False,
+    ) -> None:
+        self.written = payload
+        self.written_negative = is_negative
+
+
+class HittingCache:
+    """Serves one stored payload, the way a warm cache row would."""
+
+    def __init__(self, payload: dict[str, Any]) -> None:
+        from datetime import UTC, datetime
+
+        from app.cache.service import CachedVerdict
+
+        self._cached = CachedVerdict(
+            payload=payload,
+            retrieved_at=datetime.now(UTC),
+            rule_version="test",
+            is_negative=False,
+        )
+
+    async def get_verdict(self, parts: Any) -> Any:
+        return self._cached
+
+    async def put_verdict(self, *args: Any, **kwargs: Any) -> None:
+        raise AssertionError("a hit must not be re-written")
+
+
+class TestCacheRoundTrip:
+    """M13 write-back: what the payload stores, and what a hit rebuilds.
+
+    The write existed for one day with two silent failure modes — no caller, then a
+    foreign-key violation — so this class pins the contract: a complete run stores
+    the action, the rollup reason and the original case id; a hit carries all three
+    back out; and rows written before the fields existed still serve.
+    """
+
+    @pytest.mark.anyio
+    async def test_a_complete_run_writes_action_reason_and_case_id(self) -> None:
+        cache = RecordingCache()
+        orchestrator = Orchestrator(
+            cache=cache,  # type: ignore[arg-type]
+            governor=RecordingGovernor(),  # type: ignore[arg-type]
+            resolvers=[],
+            extractor_version="test",
+        )
+
+        case_id = uuid4()
+        intake = normalise_text("The government announced a relief scheme on Friday.")
+        result = await orchestrator.verify(intake, case_id=case_id, claims=[_claim()])
+
+        assert cache.written is not None
+        assert cache.written["action"] == result.action.value
+        assert cache.written["action_reason"] == result.case_decision.reason
+        # The id under which the ledger will record this run — the payload copy is
+        # what lets a later hit serve the full stored case instead of a bare action.
+        assert cache.written["case_id"] == str(case_id)
+        # An abstention is cached with the shorter negative TTL.
+        assert cache.written_negative is (result.action is Action.SEND_TO_REVIEW)
+
+    @pytest.mark.anyio
+    async def test_a_run_with_no_claims_writes_nothing(self) -> None:
+        """An empty run is not an answer, and caching it would serve the emptiness."""
+        cache = RecordingCache()
+        orchestrator = Orchestrator(
+            cache=cache,  # type: ignore[arg-type]
+            governor=RecordingGovernor(),  # type: ignore[arg-type]
+            resolvers=[],
+            extractor_version="test",
+        )
+
+        intake = normalise_text("The government announced a relief scheme on Friday.")
+        await orchestrator.verify(intake, case_id=uuid4(), claims=[])
+
+        assert cache.written is None
+
+    @pytest.mark.anyio
+    async def test_a_hit_carries_the_source_case_and_the_original_reason(self) -> None:
+        original = uuid4()
+        orchestrator = Orchestrator(
+            cache=HittingCache(  # type: ignore[arg-type]
+                {
+                    "action": "SEND_TO_REVIEW",
+                    "action_reason": "Not enough citable evidence to decide.",
+                    "case_id": str(original),
+                }
+            ),
+            governor=RecordingGovernor(),  # type: ignore[arg-type]
+            resolvers=[],
+            extractor_version="test",
+        )
+
+        intake = normalise_text("The government announced a relief scheme on Friday.")
+        result = await orchestrator.verify(intake, case_id=uuid4(), claims=[])
+
+        assert result.from_cache
+        assert result.source_case_id == original
+        assert result.case_decision.reason == "Not enough citable evidence to decide."
+
+    @pytest.mark.anyio
+    async def test_a_legacy_action_only_row_still_serves(self) -> None:
+        """Rows written before the payload carried a case id parse to a thin hit,
+        which is exactly what they hold — never an error, never a fabricated id."""
+        orchestrator = Orchestrator(
+            cache=HittingCache({"action": "SAFE_TO_SHARE"}),  # type: ignore[arg-type]
+            governor=RecordingGovernor(),  # type: ignore[arg-type]
+            resolvers=[],
+            extractor_version="test",
+        )
+
+        intake = normalise_text("The government announced a relief scheme on Friday.")
+        result = await orchestrator.verify(intake, case_id=uuid4(), claims=[])
+
+        assert result.from_cache
+        assert result.source_case_id is None
+        assert result.action is Action.SAFE_TO_SHARE

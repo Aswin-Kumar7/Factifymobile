@@ -138,6 +138,12 @@ class VerificationResult:
     from_cache: bool = False
     elapsed_ms: int = 0
     rule_version: str = RULE_VERSION
+    # The case the cached verdict was originally computed under, set only on a
+    # cache hit. The hit itself writes no ledger row — rewriting would record a
+    # second case for one verification — so this is the id under which the claims,
+    # evidence and verdicts actually exist. The endpoint uses it to serve the full
+    # stored result instead of an action with nothing behind it.
+    source_case_id: UUID | None = None
 
     @property
     def evidence(self) -> list[Evidence]:
@@ -290,13 +296,19 @@ class Orchestrator:
             try:
                 await self._cache.put_verdict(
                     cache_key,
-                    {"action": result.action.value},
-                    # No case id, deliberately. The column is a foreign key to
-                    # `verification_case`, and the ledger writes that row *after*
-                    # this method returns — the fixed order puts write-back before
-                    # persist. Passing the id here violated the constraint and every
-                    # cache write failed silently, which read as "cache never hits"
-                    # rather than as the ordering bug it was.
+                    {
+                        "action": result.action.value,
+                        "action_reason": result.case_decision.reason,
+                        # The case id travels in the payload, NOT in the row's
+                        # `case_id` column. The column is a foreign key to
+                        # `verification_case`, and the ledger writes that row *after*
+                        # this method returns — the fixed order puts write-back
+                        # before persist — so using the column violated the
+                        # constraint and every cache write failed silently. The
+                        # payload copy has no constraint to violate at write time,
+                        # and by any later read the ledger row exists.
+                        "case_id": str(case_id),
+                    },
                     case_id=None,
                     is_negative=result.action is Action.SEND_TO_REVIEW,
                     developing=any(o.claim.within_developing_window for o in outcomes),
@@ -334,6 +346,15 @@ class Orchestrator:
         except ValueError:
             action = Action.SEND_TO_REVIEW
 
+        # The case the verdict was originally recorded under. Older cache rows
+        # carry no case id — they predate the field — and parse to `None`, which
+        # downstream reads as "serve the thin result", exactly what those rows hold.
+        source_case_id: UUID | None = None
+        try:
+            source_case_id = UUID(str(cached.payload["case_id"]))
+        except (KeyError, ValueError):
+            source_case_id = None
+
         age = int(cached.age.total_seconds())
         event(
             logger,
@@ -343,7 +364,19 @@ class Orchestrator:
             cache="hit",
             age_s=age,
             usable=raw_action is not None,
+            ledger_backed=source_case_id is not None,
         )
+
+        # The original rollup reason when the payload carries one. The staleness
+        # signal does not belong in this sentence — `from_cache` and `retrieved_at`
+        # already say it, and the interface renders both.
+        stored_reason = cached.payload.get("action_reason")
+        if raw_action is None:
+            reason = "A stored result was found but could not be read; routed for review."
+        elif isinstance(stored_reason, str) and stored_reason:
+            reason = stored_reason
+        else:
+            reason = f"Previously verified {age}s ago; the stored result was reused unchanged."
 
         return VerificationResult(
             case_id=case_id,
@@ -352,15 +385,12 @@ class Orchestrator:
             case_decision=CaseDecision(
                 action=action,
                 rule_id="cache",
-                reason=(
-                    f"Previously verified {age}s ago; the stored result was reused unchanged."
-                    if raw_action is not None
-                    else "A stored result was found but could not be read; routed for review."
-                ),
+                reason=reason,
                 rule_version=cached.rule_version,
             ),
             from_cache=True,
             elapsed_ms=int((time.perf_counter() - started) * 1000),
+            source_case_id=source_case_id,
         )
 
     async def _resolve_all(

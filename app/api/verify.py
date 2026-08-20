@@ -99,6 +99,53 @@ async def extract_claims_for(request: Request, intake: NormalisedIntake) -> Extr
     )
 
 
+async def cached_full_response(
+    request: Request, result: VerificationResult
+) -> VerifyResponse | None:
+    """The complete stored result behind a cache hit, or `None` to fall back.
+
+    The cache payload stores the action, not the claims or the evidence, so a hit
+    rendered from the payload alone is a verdict card with nothing behind it — on
+    exactly the repeated content the cache exists to serve. The claims and evidence
+    do exist: the ledger recorded them under the original case. Reading them back
+    through `CaseReader` keeps one source of truth, and means the `case_id` in a
+    cached response resolves — `/v1/cases/{id}/evidence` works on it, where the
+    fresh hit's throwaway id pointed at nothing.
+
+    `None` when the hit is not ledger-backed (older cache rows, or the original
+    ledger write failed): the caller serves the thin result, which is everything
+    those rows actually hold.
+    """
+    if not result.from_cache or result.source_case_id is None:
+        return None
+
+    reader = getattr(request.app.state, "case_reader", None)
+    if reader is None:
+        return None
+
+    try:
+        stored = await reader.get(result.source_case_id)
+    except Exception:
+        logger.exception("cached case could not be read; serving the thin result")
+        return None
+
+    if not isinstance(stored, VerifyResponse) or not stored.claims:
+        return None
+
+    # `retrieved_at` stays the original computation time — a cached result served
+    # later is a claim about the present made from evidence about the past, and the
+    # timestamp is how the interface stays honest about that. The reason comes from
+    # the cache payload, which kept the original rollup wording.
+    return stored.model_copy(
+        update={
+            "from_cache": True,
+            "action": result.action,
+            "action_reason": result.case_decision.reason,
+            "elapsed_ms": result.elapsed_ms,
+        }
+    )
+
+
 def to_response(result: VerificationResult, *, receipt_url: str | None = None) -> VerifyResponse:
     """Project a pipeline result onto the wire contract.
 
@@ -193,6 +240,10 @@ async def verify(payload: VerifyRequest, request: Request) -> VerifyResponse:
     result = await orchestrator.verify(  # type: ignore[attr-defined]
         intake, case_id=case_id, claims=list(extracted.claims)
     )
+
+    cached = await cached_full_response(request, result)
+    if cached is not None:
+        return cached
 
     # Extraction failing is a gap in the answer, not a failure of the request. It is
     # attached so the response can say the text could not be read into claims rather
@@ -298,6 +349,11 @@ async def verify_file(
         )
 
     result = await orchestrator.verify(intake, case_id=case_id, claims=[])  # type: ignore[attr-defined]
+
+    cached = await cached_full_response(request, result)
+    if cached is not None:
+        return cached
+
     return to_response(result)
 
 
