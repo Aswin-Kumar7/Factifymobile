@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile, status
@@ -48,7 +48,7 @@ from app.intake.normalizer import (
 from app.knowledge.registry import authenticate_trigger
 from app.observability.logging import event
 from app.orchestration.pipeline import SkippedCheck, VerificationResult
-from app.orchestration.review import HumanLabel, ReviewQueue
+from app.orchestration.review import HumanLabel
 
 logger = logging.getLogger("facify.api.verify")
 
@@ -422,6 +422,43 @@ async def get_receipt(receipt_id: str, request: Request) -> ReceiptResponse:
     return ReceiptResponse(**payload)
 
 
+@router.post(
+    "/cases/{case_id}/report",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Flag a verdict for human review",
+)
+async def report_case(case_id: UUID, request: Request) -> dict[str, str]:
+    """A person disagrees with a verdict, or wants human eyes on it.
+
+    This is the endpoint behind the app's Report button, which previously showed
+    "Reported for human review" while sending nothing anywhere — a fabricated
+    confirmation in a product whose one claim is that it does not fabricate.
+
+    The reason is recorded as `user_reported`, distinct from the pipeline's own
+    abstention routing, because "the system was unsure" and "a person disagreed"
+    deserve different reviewer attention. 404 when the case does not exist: a report
+    must point at a verdict that was actually issued.
+    """
+    queue = _review_queue(request)
+    reader = getattr(request.app.state, "case_reader", None)
+    if reader is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="unavailable")
+
+    stored = await reader.get(case_id)
+    if stored is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such case")
+
+    item_id = await queue.report(case_id)
+    event(
+        logger,
+        "case reported by user",
+        module="api.verify",
+        outcome="ok",
+        case_id=str(case_id),
+    )
+    return {"item_id": str(item_id), "status": "queued for human review"}
+
+
 @router.get(
     "/review",
     response_model=list[ReviewItemResponse],
@@ -458,14 +495,15 @@ async def record_review(item_id: UUID, payload: ReviewLabelRequest, request: Req
     )
 
 
-def _review_queue(request: Request) -> ReviewQueue:
+def _review_queue(request: Request) -> Any:
+    """The composed review queue — the pool adapter, which mirrors `ReviewQueue`."""
     queue = getattr(request.app.state, "review_queue", None)
     if queue is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="the review queue is not available; the service is not fully configured",
         )
-    return queue  # type: ignore[no-any-return]
+    return queue
 
 
 @internal.post("/ingest-tick", status_code=status.HTTP_202_ACCEPTED)

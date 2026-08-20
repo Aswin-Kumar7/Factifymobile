@@ -69,9 +69,11 @@ ThemeData _theme(Brightness brightness) {
   return ThemeData(
     colorScheme: scheme,
     useMaterial3: true,
-    scaffoldBackgroundColor: scheme.surface,
+    // The page ground sits one step below the cards, so surfaces read as
+    // surfaces without a single drop shadow anywhere.
+    scaffoldBackgroundColor: scheme.surfaceContainerLow,
     appBarTheme: AppBarTheme(
-      backgroundColor: scheme.surface,
+      backgroundColor: scheme.surfaceContainerLow,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
       scrolledUnderElevation: 1,
@@ -85,13 +87,24 @@ ThemeData _theme(Brightness brightness) {
     cardTheme: CardThemeData(
       elevation: 0,
       margin: EdgeInsets.zero,
+      color: scheme.surface,
       // An outline rather than a shadow: several cards stack on the result
       // screen, and stacked shadows turn into visual noise that reads as depth
       // where there is no hierarchy.
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         side: BorderSide(color: scheme.outlineVariant),
       ),
+    ),
+    navigationBarTheme: NavigationBarThemeData(
+      backgroundColor: scheme.surface,
+      indicatorColor: scheme.primary.withValues(alpha: 0.12),
+      height: 68,
+      labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+    ),
+    snackBarTheme: SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
     ),
     inputDecorationTheme: InputDecorationTheme(
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),

@@ -193,13 +193,24 @@ class _EvidenceCard extends StatelessWidget {
             const SizedBox(height: 8),
             // The quoted passage, which is what makes this a citation rather
             // than a link. An evidence row without it is a search result.
+            // Styled as a blockquote — the accent bar says "this text is the
+            // source speaking, not us".
             Container(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
               decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(6),
+                color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+                borderRadius: const BorderRadius.only(
+                  topRight: Radius.circular(10),
+                  bottomRight: Radius.circular(10),
+                ),
+                border: Border(
+                  left: BorderSide(color: theme.colorScheme.primary, width: 3),
+                ),
               ),
-              child: Text(evidence.sourceExcerpt, style: theme.textTheme.bodySmall),
+              child: Text(
+                '“${evidence.sourceExcerpt}”',
+                style: theme.textTheme.bodySmall?.copyWith(height: 1.45),
+              ),
             ),
             if (evidence.sourceAnchor.describe != null)
               Padding(

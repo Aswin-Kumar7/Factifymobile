@@ -91,3 +91,52 @@ class PoolCacheService:
     async def put_extraction(self, *args: Any, **kwargs: Any) -> Any:
         async with self._database.connection() as conn:
             return await CacheService(conn).put_extraction(*args, **kwargs)
+
+
+class PoolReviewQueue:
+    """The review queue over short-lived connections.
+
+    Same shape as the other adapters, and the reason the review endpoints stopped
+    returning 503: `ReviewQueue` binds to one connection, so nothing process-lifetime
+    could ever hold one, so nothing was ever composed, so `/v1/review` was
+    unreachable in every deployment there has ever been.
+    """
+
+    def __init__(self, database: Database) -> None:
+        self._database = database
+
+    async def route(self, result: Any) -> Any:
+        from app.db.repositories import ReviewRepository
+        from app.orchestration.review import ReviewQueue
+
+        async with self._database.connection() as conn:
+            return await ReviewQueue(repository=ReviewRepository(conn)).route(result)
+
+    async def pending(self, limit: int = 50) -> Any:
+        from app.db.repositories import ReviewRepository
+        from app.orchestration.review import ReviewQueue
+
+        async with self._database.connection() as conn:
+            return await ReviewQueue(repository=ReviewRepository(conn)).pending(limit)
+
+    async def record(self, **kwargs: Any) -> None:
+        from app.db.repositories import ReviewRepository
+        from app.orchestration.review import ReviewQueue
+
+        async with self._database.connection() as conn:
+            await ReviewQueue(repository=ReviewRepository(conn)).record(**kwargs)
+
+    async def report(self, case_id: Any) -> Any:
+        """A user-initiated report: this verdict deserves human eyes.
+
+        Distinct from `route`, which the pipeline calls for its own abstentions.
+        The reason string names the source so a reviewer can tell "the system was
+        unsure" from "a person disagreed" — those want different attention.
+        """
+        from app.db.repositories import ReviewRepository
+        from app.orchestration.review import ReviewReason
+
+        async with self._database.connection() as conn:
+            return await ReviewRepository(conn).enqueue(
+                case_id=case_id, reason=ReviewReason.USER_REPORTED.value, machine_status=None
+            )

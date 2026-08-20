@@ -10,6 +10,11 @@
 ///     phrasing is that nothing contradicts it and sources agree.
 ///   * The retrieval time is always shown. A verdict without it is a claim about
 ///     the present made from evidence about the past.
+///
+/// Visually: soft tinted surfaces rather than solid colour banners. The solid
+/// banners shouted at maximum contrast whatever the verdict, so a calm abstention
+/// and a hard contradiction had the same visual temperature. A tint carries the
+/// same semantic colour at conversational volume, and the wording does the rest.
 library;
 
 import 'package:flutter/material.dart';
@@ -24,48 +29,99 @@ class VerdictCard extends StatelessWidget {
     required this.onSeeEvidence,
     required this.onShareCorrection,
     required this.onReportForReview,
+    this.reporting = false,
   });
 
   final Verdict verdict;
   final VoidCallback onSeeEvidence;
   final VoidCallback onShareCorrection;
-  final VoidCallback onReportForReview;
+  final VoidCallback? onReportForReview;
+
+  /// True while a report is in flight, so the button can say so instead of
+  /// appearing to do nothing.
+  final bool reporting;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final style = _ActionStyle.of(verdict.action, theme.colorScheme);
+    final style = _ActionStyle.of(verdict.action, theme.brightness);
+    final citations = verdict.allEvidence.length;
 
     return Card(
       clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // The tinted verdict header.
           Container(
-            color: style.background,
-            padding: const EdgeInsets.all(16),
-            child: Row(
+            color: style.container,
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(style.icon, color: style.foreground, size: 28),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        style.headline,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          color: style.foreground,
-                          fontWeight: FontWeight.w600,
-                        ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: style.tone.withValues(alpha: 0.16),
+                        shape: BoxShape.circle,
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        style.subhead,
-                        style: theme.textTheme.bodySmall?.copyWith(color: style.foreground),
+                      child: Icon(style.icon, color: style.onContainer, size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            style.headline,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              color: style.onContainer,
+                              fontWeight: FontWeight.w700,
+                              height: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            style.subhead,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: style.onContainer.withValues(alpha: 0.85),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    _MetaChip(
+                      icon: Icons.receipt_long_outlined,
+                      label: switch (citations) {
+                        0 => 'No citations',
+                        1 => '1 citation',
+                        final n => '$n citations',
+                      },
+                      tone: style.onContainer,
+                    ),
+                    _MetaChip(
+                      icon: Icons.schedule,
+                      label: DateFormat('d MMM, HH:mm').format(verdict.retrievedAt.toLocal()),
+                      tone: style.onContainer,
+                    ),
+                    if (verdict.fromCache)
+                      _MetaChip(
+                        icon: Icons.bolt,
+                        label: 'Checked earlier',
+                        tone: style.onContainer,
+                      ),
+                  ],
                 ),
               ],
             ),
@@ -77,39 +133,67 @@ class VerdictCard extends StatelessWidget {
               children: [
                 Text(verdict.actionReason, style: theme.textTheme.bodyMedium),
                 if (verdict.claims.isNotEmpty) ...[
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 14),
                   ...verdict.claims.map((claim) => _ClaimRow(claim: claim)),
                 ],
                 if (verdict.recurrence != null && verdict.recurrence!.timesSeen > 0) ...[
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   _RecurrenceLine(recurrence: verdict.recurrence!),
                 ],
                 if (verdict.completenessNote != null) ...[
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   _IncompleteNote(note: verdict.completenessNote!),
                 ],
-                const SizedBox(height: 12),
-                _Provenance(verdict: verdict),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    FilledButton.tonalIcon(
-                      onPressed: onSeeEvidence,
-                      icon: const Icon(Icons.receipt_long, size: 18),
-                      label: Text('See evidence (${verdict.allEvidence.length})'),
+                if (verdict.fromCache) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    'Reused from an earlier check of the same content. The evidence '
+                    'below is from that check.',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
-                    if (verdict.action == VerdictAction.shareWithCorrection ||
-                        verdict.action == VerdictAction.doNotShare)
-                      OutlinedButton.icon(
-                        onPressed: onShareCorrection,
-                        icon: const Icon(Icons.reply, size: 18),
-                        label: const Text('Share correction'),
+                  ),
+                ],
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.tonalIcon(
+                        onPressed: onSeeEvidence,
+                        icon: const Icon(Icons.receipt_long, size: 18),
+                        label: Text(
+                          citations == 0 ? 'Why no verdict?' : 'See evidence ($citations)',
+                        ),
                       ),
-                    TextButton.icon(
-                      onPressed: onReportForReview,
-                      icon: const Icon(Icons.flag_outlined, size: 18),
-                      label: const Text('Report'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    if (verdict.action == VerdictAction.shareWithCorrection ||
+                        verdict.action == VerdictAction.doNotShare) ...[
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: onShareCorrection,
+                          icon: const Icon(Icons.reply, size: 18),
+                          label: const Text('Share correction'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    Expanded(
+                      child: TextButton.icon(
+                        onPressed: reporting ? null : onReportForReview,
+                        icon: reporting
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.flag_outlined, size: 18),
+                        label: Text(reporting ? 'Reporting…' : 'Report'),
+                      ),
                     ),
                   ],
                 ),
@@ -122,6 +206,37 @@ class VerdictCard extends StatelessWidget {
   }
 }
 
+class _MetaChip extends StatelessWidget {
+  const _MetaChip({required this.icon, required this.label, required this.tone});
+
+  final IconData icon;
+  final String label;
+  final Color tone;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    decoration: BoxDecoration(
+      color: tone.withValues(alpha: 0.10),
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 13, color: tone),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: tone,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 /// Wording and colour per action.
 ///
 /// Every headline is a statement about *evidence*, never about truth. "Nothing
@@ -131,61 +246,85 @@ class _ActionStyle {
     required this.headline,
     required this.subhead,
     required this.icon,
-    required this.background,
-    required this.foreground,
+    required this.tone,
+    required this.container,
+    required this.onContainer,
   });
 
   final String headline;
   final String subhead;
   final IconData icon;
-  final Color background;
-  final Color foreground;
+  final Color tone;
+  final Color container;
+  final Color onContainer;
 
-  static _ActionStyle of(VerdictAction action, ColorScheme scheme) => switch (action) {
-    VerdictAction.safeToShare => _ActionStyle(
+  /// Soft container + legible foreground for one semantic colour, per theme.
+  ///
+  /// Dark mode lightens the foreground instead of darkening it — the same seed
+  /// colour, read against the opposite ground.
+  static _ActionStyle _tinted({
+    required String headline,
+    required String subhead,
+    required IconData icon,
+    required Color tone,
+    required Brightness brightness,
+  }) {
+    final dark = brightness == Brightness.dark;
+    return _ActionStyle(
+      headline: headline,
+      subhead: subhead,
+      icon: icon,
+      tone: tone,
+      container: tone.withValues(alpha: dark ? 0.20 : 0.10),
+      onContainer: Color.lerp(tone, dark ? Colors.white : Colors.black, dark ? 0.55 : 0.45)!,
+    );
+  }
+
+  static _ActionStyle of(VerdictAction action, Brightness brightness) => switch (action) {
+    VerdictAction.safeToShare => _tinted(
       headline: 'Nothing contradicts this',
       subhead: 'Independent sources agree',
-      icon: Icons.check_circle_outline,
-      background: const Color(0xFF1B5E20),
-      foreground: Colors.white,
+      icon: Icons.verified_outlined,
+      tone: const Color(0xFF2E7D32),
+      brightness: brightness,
     ),
-    VerdictAction.shareWithContext => _ActionStyle(
+    VerdictAction.shareWithContext => _tinted(
       headline: 'True, but missing context',
       subhead: 'Share the context with it',
       icon: Icons.info_outline,
-      background: const Color(0xFF01579B),
-      foreground: Colors.white,
+      tone: const Color(0xFF0277BD),
+      brightness: brightness,
     ),
-    VerdictAction.shareWithCorrection => _ActionStyle(
+    VerdictAction.shareWithCorrection => _tinted(
       headline: 'A detail here is wrong',
       subhead: 'Share only with a correction',
       icon: Icons.error_outline,
-      background: const Color(0xFFE65100),
-      foreground: Colors.white,
+      tone: const Color(0xFFEF6C00),
+      brightness: brightness,
     ),
-    VerdictAction.doNotShare => _ActionStyle(
+    VerdictAction.doNotShare => _tinted(
       headline: 'Contradicted by sources',
       subhead: 'Published sources say otherwise',
-      icon: Icons.cancel_outlined,
-      background: const Color(0xFFB71C1C),
-      foreground: Colors.white,
+      icon: Icons.gpp_bad_outlined,
+      tone: const Color(0xFFC62828),
+      brightness: brightness,
     ),
-    VerdictAction.waitAndRecheck => _ActionStyle(
+    VerdictAction.waitAndRecheck => _tinted(
       headline: 'Still developing',
       subhead: 'Early reports are often revised',
       icon: Icons.schedule,
-      background: const Color(0xFF4527A0),
-      foreground: Colors.white,
+      tone: const Color(0xFF5E35B1),
+      brightness: brightness,
     ),
     // Deliberately neutral, not red. Abstaining is the designed answer for a
     // case with no citable evidence, and colouring it as danger would tell
     // people we found something when we found nothing.
-    VerdictAction.sendToReview => _ActionStyle(
+    VerdictAction.sendToReview => _tinted(
       headline: 'Not enough evidence to decide',
-      subhead: 'Sent for human review',
+      subhead: 'Queued for human review',
       icon: Icons.help_outline,
-      background: const Color(0xFF37474F),
-      foreground: Colors.white,
+      tone: const Color(0xFF546E7A),
+      brightness: brightness,
     ),
   };
 }
@@ -198,21 +337,29 @@ class _ClaimRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colour = _colour(theme.colorScheme);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: Icon(_icon, size: 16, color: _colour(theme.colorScheme)),
+          Container(
+            margin: const EdgeInsets.only(top: 2),
+            width: 20,
+            height: 20,
+            decoration: BoxDecoration(
+              color: colour.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Icon(_icon, size: 13, color: colour),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(claim.text, style: theme.textTheme.bodyMedium),
+                const SizedBox(height: 1),
                 Text(
                   claim.reason,
                   style: theme.textTheme.bodySmall?.copyWith(
@@ -256,7 +403,7 @@ class _RecurrenceLine extends StatelessWidget {
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         children: [
@@ -282,45 +429,29 @@ class _IncompleteNote extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
+    const amber = Color(0xFFF57F17);
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF8E1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFFFE082)),
+        color: amber.withValues(alpha: dark ? 0.18 : 0.08),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.warning_amber, size: 18, color: Color(0xFFF57F17)),
+          const Icon(Icons.warning_amber, size: 18, color: amber),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               note,
-              style: theme.textTheme.bodySmall?.copyWith(color: const Color(0xFF6D4C00)),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: dark ? const Color(0xFFFFE082) : const Color(0xFF6D4C00),
+              ),
             ),
           ),
         ],
       ),
-    );
-  }
-}
-
-/// When the evidence was gathered, and whether it was reused.
-class _Provenance extends StatelessWidget {
-  const _Provenance({required this.verdict});
-
-  final Verdict verdict;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final when = DateFormat('d MMM yyyy, HH:mm').format(verdict.retrievedAt.toLocal());
-    final suffix = verdict.fromCache ? ' - reused from an earlier check' : '';
-
-    return Text(
-      'Evidence retrieved $when$suffix',
-      style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
     );
   }
 }

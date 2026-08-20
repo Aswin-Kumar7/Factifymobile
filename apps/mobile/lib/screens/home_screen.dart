@@ -29,7 +29,7 @@ import '../widgets/submission_card.dart';
 import '../widgets/verdict_card.dart';
 import 'evidence_screen.dart';
 
-/// Longest edge of the preview thumbnail. Read once at pick time — see
+/// Largest image read into memory for the preview thumbnail. See
 /// [Submission.image] for why the bytes are kept rather than the path.
 const int _thumbnailBytesLimit = 2 * 1024 * 1024;
 
@@ -48,17 +48,37 @@ class _HomeScreenState extends State<HomeScreen> {
   final ImagePicker _camera = ImagePicker();
   StreamSubscription<SharedContent>? _shareSubscription;
 
+  int _tab = 0;
   Verdict? _verdict;
   Submission? _submission;
   String? _error;
+  bool _errorRetryable = false;
   bool _busy = false;
+  bool _reporting = false;
   String? _pendingCaseId;
   final List<HistoryEntry> _history = [];
+  final Set<String> _reported = {};
+
+  /// Whether the service can verify right now. Three states, honestly:
+  /// unknown (null) until the first probe answers, then ready or not.
+  bool? _serviceReady;
+
+  /// Re-runs the submission that produced the current error. Retry exists
+  /// because [ApiFailure.retryable] was modelled and then ignored — the client
+  /// knew "try again shortly" from "your request was wrong" and the interface
+  /// collapsed both into a dead end.
+  Future<void> Function()? _lastRun;
 
   @override
   void initState() {
     super.initState();
     _listenForShares();
+    _probeService();
+  }
+
+  Future<void> _probeService() async {
+    final ready = await widget.client.ready();
+    if (mounted) setState(() => _serviceReady = ready);
   }
 
   /// Two channels, and both are needed.
@@ -78,6 +98,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _handleShared(SharedContent content) {
+    setState(() => _tab = 0);
     if (content.isFile) {
       unawaited(_verifyFile(File(content.value)));
       return;
@@ -107,9 +128,19 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  void _fail(ApiFailure failure) {
+    setState(() {
+      _error = failure.message;
+      _errorRetryable = failure.retryable;
+    });
+    // A failure is the moment the status dot is most likely stale.
+    unawaited(_probeService());
+  }
+
   Future<void> _verify(String raw) async {
     final value = raw.trim();
     if (value.isEmpty) return;
+    _lastRun = () => _verify(raw);
 
     // A bare URL and a block of text are different endpoints on the server, so
     // the distinction is made here rather than asking the person to.
@@ -122,13 +153,14 @@ class _HomeScreenState extends State<HomeScreen> {
           : await widget.client.verifyText(value);
       if (mounted) _finish(verdict);
     } on ApiFailure catch (failure) {
-      if (mounted) setState(() => _error = failure.message);
+      if (mounted) _fail(failure);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
   Future<void> _verifyFile(File file, {Submission? submission}) async {
+    _lastRun = () => _verifyFile(file, submission: submission);
     _beginRun(submission ?? await _describe(file));
 
     try {
@@ -139,14 +171,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (outcome.isPending) {
         // Video: accepted, not finished. Poll rather than hold the request open,
-        // which would end in a gateway timeout telling the user nothing.
+        // which would end in a gateway timeout telling the client nothing.
         setState(() => _pendingCaseId = outcome.pendingCaseId);
         await _pollFor(outcome.pendingCaseId!);
       } else {
         _finish(outcome.verdict!);
       }
     } on ApiFailure catch (failure) {
-      if (mounted) setState(() => _error = failure.message);
+      if (mounted) _fail(failure);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -155,13 +187,7 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Build the preview for a file, reading thumbnail bytes only for images.
   Future<Submission> _describe(File file) async {
     final name = file.path.toLowerCase();
-    final looksLikeImage = const [
-      '.jpg',
-      '.jpeg',
-      '.png',
-      '.webp',
-      '.bmp',
-    ].any(name.endsWith);
+    final looksLikeImage = const ['.jpg', '.jpeg', '.png', '.webp', '.bmp'].any(name.endsWith);
 
     if (!looksLikeImage) return Submission.document(file);
 
@@ -193,6 +219,7 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _pendingCaseId = null;
         _error = 'That video is taking longer than expected. Case $caseId is still processing.';
+        _errorRetryable = false;
       });
     }
   }
@@ -201,10 +228,7 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       switch (source) {
         case IntakeSource.gallery:
-          final result = await FilePicker.platform.pickFiles(
-            type: FileType.image,
-            withData: false,
-          );
+          final result = await FilePicker.platform.pickFiles(type: FileType.image);
           final path = result?.files.single.path;
           if (path != null) await _verifyFile(File(path));
 
@@ -220,7 +244,7 @@ class _HomeScreenState extends State<HomeScreen> {
           if (shot != null) await _verifyFile(File(shot.path));
 
         case IntakeSource.document:
-          final result = await FilePicker.platform.pickFiles(withData: false);
+          final result = await FilePicker.platform.pickFiles();
           final path = result?.files.single.path;
           if (path != null) await _verifyFile(File(path));
       }
@@ -233,6 +257,32 @@ class _HomeScreenState extends State<HomeScreen> {
               : 'That file could not be opened.',
         );
       }
+    }
+  }
+
+  /// Flag this verdict for human review — a real request, not a snackbar.
+  ///
+  /// The previous version showed "Reported for human review" while sending
+  /// nothing anywhere: a fabricated confirmation in a product whose one claim
+  /// is that it does not fabricate. It now calls the endpoint, and the
+  /// confirmation is the server's own reply.
+  Future<void> _reportCase() async {
+    final verdict = _verdict;
+    if (verdict == null || _reporting) return;
+
+    setState(() => _reporting = true);
+    try {
+      final status = await widget.client.reportCase(verdict.caseId);
+      if (!mounted) return;
+      _reported.add(verdict.caseId);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Reported — $status')));
+    } on ApiFailure catch (failure) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not report: ${failure.message}')));
+    } finally {
+      if (mounted) setState(() => _reporting = false);
     }
   }
 
@@ -271,9 +321,16 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _openEvidence(Verdict verdict) => Navigator.of(context).push(
-    MaterialPageRoute<void>(builder: (_) => EvidenceScreen(verdict: verdict)),
-  );
+  void _openEvidence(Verdict verdict) => Navigator.of(
+    context,
+  ).push(MaterialPageRoute<void>(builder: (_) => EvidenceScreen(verdict: verdict)));
+
+  void _openHistoryEntry(HistoryEntry entry) => setState(() {
+    _tab = 0;
+    _verdict = entry.verdict;
+    _submission = entry.submission;
+    _error = null;
+  });
 
   @override
   void dispose() {
@@ -284,85 +341,224 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final verdict = _verdict;
-    final submission = _submission;
-    final theme = Theme.of(context);
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Facify'),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(22),
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 8, left: 16, right: 16),
-            child: Align(
-              alignment: Alignment.centerLeft,
+        title: Row(
+          children: [
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary,
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: const Icon(Icons.fact_check_outlined, color: Colors.white, size: 18),
+            ),
+            const SizedBox(width: 10),
+            const Text('Facify'),
+          ],
+        ),
+        actions: [
+          _StatusDot(ready: _serviceReady, onTap: _probeService),
+          const SizedBox(width: 12),
+        ],
+      ),
+      body: SafeArea(
+        child: switch (_tab) {
+          0 => _checkTab(context),
+          _ => _activityTab(context),
+        },
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _tab,
+        onDestinationSelected: (index) => setState(() => _tab = index),
+        destinations: [
+          const NavigationDestination(
+            icon: Icon(Icons.fact_check_outlined),
+            selectedIcon: Icon(Icons.fact_check),
+            label: 'Check',
+          ),
+          NavigationDestination(
+            icon: Badge(
+              isLabelVisible: _history.isNotEmpty,
+              label: Text('${_history.length}'),
+              child: const Icon(Icons.history_outlined),
+            ),
+            selectedIcon: const Icon(Icons.history),
+            label: 'Activity',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _checkTab(BuildContext context) {
+    final theme = Theme.of(context);
+    final verdict = _verdict;
+    final submission = _submission;
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      children: [
+        Text(
+          'Verdicts from cited sources,\nnever from a model score',
+          style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700, height: 1.25),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Paste a forward, drop a link, or check a picture.',
+          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
+        const SizedBox(height: 16),
+        IntakeBar(
+          controller: _input,
+          busy: _busy,
+          onCheck: () => _verify(_input.text),
+          onPick: _pick,
+        ),
+        const SizedBox(height: 18),
+
+        if (submission != null) ...[
+          SubmissionCard(
+            submission: submission,
+            onClear: _busy
+                ? null
+                : () => setState(() {
+                    _submission = null;
+                    _verdict = null;
+                    _error = null;
+                  }),
+          ),
+          const SizedBox(height: 12),
+        ],
+
+        if (_busy) const _Working(),
+        if (_pendingCaseId != null) const _Pending(),
+        if (_error != null)
+          _ErrorNote(
+            message: _error!,
+            onRetry: _errorRetryable && _lastRun != null && !_busy
+                ? () {
+                    final run = _lastRun!;
+                    unawaited(run());
+                  }
+                : null,
+          ),
+
+        if (verdict != null)
+          VerdictCard(
+            verdict: verdict,
+            reporting: _reporting,
+            onSeeEvidence: () => _openEvidence(verdict),
+            onShareCorrection: _shareCorrection,
+            onReportForReview: _reported.contains(verdict.caseId) ? null : _reportCase,
+          ),
+
+        if (verdict != null && _reported.contains(verdict.caseId))
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              'Reported. A reviewer will see this case.',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+
+        if (verdict == null && !_busy && submission == null) const _EmptyState(),
+      ],
+    );
+  }
+
+  Widget _activityTab(BuildContext context) {
+    final theme = Theme.of(context);
+
+    if (_history.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.history,
+              size: 44,
+              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+            ),
+            const SizedBox(height: 12),
+            Text('No checks this session', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 6),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 40),
               child: Text(
-                'Verdicts from cited sources, never from a model score',
-                style: theme.textTheme.labelSmall?.copyWith(
+                'Results stay on this device for the session and are gone when '
+                'the app closes — what you check is nobody\'s record.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
             ),
-          ),
+          ],
         ),
-      ),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        HistoryStrip(entries: _history, onOpen: _openHistoryEntry),
+        const SizedBox(height: 12),
+        Text(
+          'Session only, by design: what you check is a record of what you were '
+          'suspicious about, and this app does not keep one.',
+          style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+}
+
+/// The service state, honestly: checking, ready, or unavailable.
+class _StatusDot extends StatelessWidget {
+  const _StatusDot({required this.ready, required this.onTap});
+
+  final bool? ready;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final (colour, label) = switch (ready) {
+      true => (const Color(0xFF2E7D32), 'Online'),
+      false => (theme.colorScheme.error, 'Offline'),
+      null => (theme.colorScheme.outline, 'Checking'),
+    };
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: colour.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
           children: [
-            IntakeBar(
-              controller: _input,
-              busy: _busy,
-              onCheck: () => _verify(_input.text),
-              onPick: _pick,
+            Container(
+              width: 7,
+              height: 7,
+              decoration: BoxDecoration(color: colour, shape: BoxShape.circle),
             ),
-            const SizedBox(height: 20),
-
-            if (submission != null) ...[
-              SubmissionCard(
-                submission: submission,
-                onClear: _busy
-                    ? null
-                    : () => setState(() {
-                        _submission = null;
-                        _verdict = null;
-                        _error = null;
-                      }),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: colour,
+                fontWeight: FontWeight.w600,
               ),
-              const SizedBox(height: 12),
-            ],
-
-            if (_busy) const _Working(),
-            if (_pendingCaseId != null) const _Pending(),
-            if (_error != null) _ErrorNote(message: _error!),
-
-            if (verdict != null)
-              VerdictCard(
-                verdict: verdict,
-                onSeeEvidence: () => _openEvidence(verdict),
-                onShareCorrection: _shareCorrection,
-                onReportForReview: () => ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('Reported for human review'))),
-              ),
-
-            if (verdict == null && !_busy && submission == null) const _EmptyState(),
-
-            if (_history.length > 1) ...[
-              const SizedBox(height: 28),
-              const Divider(),
-              const SizedBox(height: 12),
-              HistoryStrip(
-                // The current result is already on screen above.
-                entries: _history.skip(1).toList(),
-                onOpen: (entry) => setState(() {
-                  _verdict = entry.verdict;
-                  _submission = entry.submission;
-                  _error = null;
-                }),
-              ),
-            ],
+            ),
           ],
         ),
       ),
@@ -378,13 +574,13 @@ class _EmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 32),
+      padding: const EdgeInsets.symmetric(vertical: 28),
       child: Column(
         children: [
           Icon(
             Icons.verified_outlined,
             size: 44,
-            color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+            color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.45),
           ),
           const SizedBox(height: 12),
           Text('Nothing checked yet', style: theme.textTheme.titleSmall),
@@ -412,7 +608,7 @@ class _Working extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 24),
+    padding: const EdgeInsets.symmetric(vertical: 20),
     child: Column(
       children: [
         const LinearProgressIndicator(),
@@ -444,18 +640,32 @@ class _Pending extends StatelessWidget {
 }
 
 class _ErrorNote extends StatelessWidget {
-  const _ErrorNote({required this.message});
+  const _ErrorNote({required this.message, this.onRetry});
 
   final String message;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Card(
       color: scheme.errorContainer,
-      child: ListTile(
-        leading: Icon(Icons.error_outline, color: scheme.onErrorContainer),
-        title: Text(message, style: TextStyle(color: scheme.onErrorContainer)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+        child: Row(
+          children: [
+            Icon(Icons.error_outline, color: scheme.onErrorContainer),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(message, style: TextStyle(color: scheme.onErrorContainer)),
+            ),
+            if (onRetry != null)
+              TextButton(
+                onPressed: onRetry,
+                child: Text('Retry', style: TextStyle(color: scheme.onErrorContainer)),
+              ),
+          ],
+        ),
       ),
     );
   }

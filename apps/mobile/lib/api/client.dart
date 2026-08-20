@@ -93,6 +93,37 @@ class FacifyClient {
     return Verdict.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 
+  /// Flag a verdict for human review. Returns the queue confirmation.
+  ///
+  /// This is what the Report button actually does now. It previously showed
+  /// "Reported for human review" while sending nothing anywhere — a fabricated
+  /// confirmation in a product whose one claim is that it does not fabricate.
+  Future<String> reportCase(String caseId) async {
+    final response = await _send(
+      () => _http
+          .post(Uri.parse('$baseUrl/v1/cases/$caseId/report'))
+          .timeout(const Duration(seconds: 15)),
+    );
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    return (payload['status'] as String?) ?? 'queued for human review';
+  }
+
+  /// Whether the service can actually verify, not merely whether it is up.
+  /// Distinct from [healthy]: a booted service with no database answers
+  /// healthz 200 and readyz false.
+  Future<bool> ready() async {
+    try {
+      final response = await _http
+          .get(Uri.parse('$baseUrl/readyz'))
+          .timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) return false;
+      final payload = jsonDecode(response.body) as Map<String, dynamic>;
+      return payload['ready'] == true;
+    } on Object {
+      return false;
+    }
+  }
+
   Future<bool> healthy() async {
     try {
       final response = await _http

@@ -37,7 +37,7 @@ from app.extraction.claims import ClaimPipeline
 from app.extraction.llm import LLMExtractor
 from app.intake.normalizer import NormalisedIntake
 from app.observability.logging import event
-from app.orchestration.adapters import PoolCacheService, PoolGovernor
+from app.orchestration.adapters import PoolCacheService, PoolGovernor, PoolReviewQueue
 from app.orchestration.ledger import CaseReader, Ledger
 from app.orchestration.media import MediaVerification
 from app.orchestration.pipeline import Orchestrator, SkippedCheck, VerificationResult
@@ -79,10 +79,12 @@ class ServedOrchestrator:
         database: Database,
         orchestrator: Orchestrator,
         media: MediaVerification | None = None,
+        review_queue: PoolReviewQueue | None = None,
     ) -> None:
         self._database = database
         self._orchestrator = orchestrator
         self._media = media
+        self._review_queue = review_queue
 
     async def verify(
         self,
@@ -137,6 +139,16 @@ class ServedOrchestrator:
                         reason="the verdict was not recorded; it cannot be retrieved later",
                     )
                 )
+            elif self._review_queue is not None:
+                # Routed only after a successful persist: the queue row carries a
+                # foreign key to the case, and M43's whole promise — abstentions go
+                # to a human — was never kept because nothing ever called route().
+                # A routing failure is logged inside the queue and must not touch
+                # the verdict.
+                try:
+                    await self._review_queue.route(result)
+                except Exception:
+                    logger.exception("review routing failed; the verdict stands")
 
         return result
 
@@ -236,6 +248,8 @@ async def build(settings: Settings) -> dict[str, Any]:
         FactCheckResolver(records=records, api_available=False),
     ]
 
+    review_queue = PoolReviewQueue(database)
+
     orchestrator = Orchestrator(
         cache=cache,
         governor=governor,
@@ -249,10 +263,12 @@ async def build(settings: Settings) -> dict[str, Any]:
         "database": database,
         "embedder": embedder,
         "case_reader": CaseReader(database),
+        "review_queue": review_queue,
         "orchestrator": ServedOrchestrator(
             database=database,
             orchestrator=orchestrator,
             media=MediaVerification(database=database, embedder=image_embedder),
+            review_queue=review_queue,
         ),
     }
 

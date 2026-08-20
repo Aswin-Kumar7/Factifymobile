@@ -36,6 +36,11 @@ class ReviewReason(StrEnum):
     """Why a case is here. Rendered to the reviewer as their starting context."""
 
     NO_EVIDENCE = "no_citable_evidence"
+    # A person pressed Report on a verdict. Distinct from every pipeline reason,
+    # because "the system was unsure" and "a person disagreed" deserve different
+    # reviewer attention — and a decisive verdict a user contests is exactly the
+    # case most worth a human look.
+    USER_REPORTED = "user_reported"
     CONFLICTING_EVIDENCE = "sources_disagree"
     SOURCE_RISK = "publisher_risk_signals"
     INCOMPLETE_RUN = "checks_could_not_run"
@@ -69,6 +74,10 @@ class QueuedCase:
         return {
             ReviewReason.NO_EVIDENCE: (
                 "No citable source was found. The system abstained rather than guessing."
+            ),
+            ReviewReason.USER_REPORTED: (
+                "A person pressed Report on this verdict. Start from what they saw: the "
+                "machine status and its citations are beside this note."
             ),
             ReviewReason.CONFLICTING_EVIDENCE: (
                 "Sources disagree. Both sides are cited in the evidence list."
