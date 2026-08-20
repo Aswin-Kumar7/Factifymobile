@@ -48,11 +48,11 @@ came from the live server on this machine (DB round trip: 25ms median, measured)
 
 ## Remaining plan, in priority order
 
-1. **Cache payload is action-only.** A cache hit returns the verdict without its
-   claims or evidence — a repeat of a demo item shows a verdict card with nothing
-   behind it. Store the serialised claims/evidence in the payload (or link the hit
-   to the original case and read through the ledger). *This is the top item: it is
-   user-visible on exactly the repeated content the cache exists for.*
+1. ~~**Cache payload is action-only.**~~ **Fixed (`ad88d6b`).** The payload carries
+   the original case id; a hit reads the full stored result through `CaseReader`.
+   Verified live: hit = 341ms with identical claims, evidence and citations to the
+   cold run; `retrieved_at` frozen at the original computation across repeated
+   hits; the returned `case_id` resolves on `/v1/cases/{id}/evidence`.
 2. **Snapshot cache.** The cold path is fetch-bound (~1–2s for six pages). Fetched
    pages are re-fetched for every claim and every request; a short-TTL cache keyed
    by URL would cut most of it and be honest (the snapshot records `fetched_at`).
