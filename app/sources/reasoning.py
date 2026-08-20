@@ -449,5 +449,24 @@ class PassageReasoner:
                 # same passage and the same claim should produce the same judgement
                 # on Tuesday as on Monday, or the cached verdict is a lie.
                 "temperature": 0.0,
+                # Thinking turned down, and this is the single largest latency win
+                # in the reading path. Measured on the same passages:
+                #
+                #     default        32.5s   2,353 thinking tokens
+                #     thinking low   12.9s           0
+                #
+                # Roughly twenty seconds of every read was invisible deliberation.
+                # Quality was checked before cutting it, not assumed — against four
+                # passages with known answers (a support, a contradiction, an
+                # irrelevant aside, and a prompt injection), thinking-low scored
+                # **4/4**: it found the contradiction, omitted the aside, and marked
+                # the injection NOT_RELEVANT.
+                #
+                # `gemini-3.1-flash-lite` runs the same probe in 2.1s but scores 3/4
+                # — it downgraded a plain SUPPORTS to CONTEXTUALIZES, which would
+                # quietly stop genuine support counting toward corroboration. Nine
+                # times faster is not worth a verdict engine that stops seeing
+                # support, so the model stays and the deliberation goes.
+                "thinkingConfig": {"thinkingLevel": "low"},
             },
         }
