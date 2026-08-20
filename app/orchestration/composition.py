@@ -32,6 +32,7 @@ from app.db.pool import Database
 from app.domain.claim import Claim
 from app.domain.enums import SourceRisk
 from app.domain.evidence import Advisory
+from app.embeddings.image import ImageEmbedder
 from app.embeddings.text import TextEmbedder
 from app.extraction.claims import ClaimPipeline, ExtractedClaims
 from app.extraction.llm import LLMExtractor
@@ -39,6 +40,7 @@ from app.governor.governor import Governor
 from app.intake.normalizer import NormalisedIntake
 from app.observability.logging import event
 from app.orchestration.ledger import CaseReader, Ledger
+from app.orchestration.media import MediaVerification
 from app.orchestration.pipeline import Orchestrator, SkippedCheck, VerificationResult
 from app.security.fetcher import SecureFetcher
 from app.sources.base import SourceResolver
@@ -70,12 +72,14 @@ class RequestScopedOrchestrator:
         settings: Settings,
         extractor_version: str,
         corroboration: CorpusCorroboration | None = None,
+        media: MediaVerification | None = None,
     ) -> None:
         self._database = database
         self._resolvers = resolvers
         self._settings = settings
         self._extractor_version = extractor_version
         self._corroboration = corroboration
+        self._media = media
 
     async def verify(
         self,
@@ -86,11 +90,22 @@ class RequestScopedOrchestrator:
         advisories: list[Advisory] | None = None,
         source_risk: SourceRisk = SourceRisk.UNKNOWN,
     ) -> VerificationResult:
+        resolvers = self._resolvers
+
+        # An image arrives with no claims, because there is no text to extract them
+        # from. Without this the resolvers had nothing to run against and every
+        # upload returned a clean, empty 200.
+        if self._media is not None and not claims:
+            media_claims, media_resolvers = await self._media.prepare(intake)
+            if media_claims:
+                claims = media_claims
+                resolvers = [*self._resolvers, *media_resolvers]
+
         async with self._database.connection() as conn:
             orchestrator = Orchestrator(
                 cache=CacheService(conn),
                 governor=Governor(conn, self._settings.providers),
-                resolvers=self._resolvers,
+                resolvers=resolvers,
                 extractor_version=self._extractor_version,
                 model_id=self._settings.models.extraction,
                 corroboration=self._corroboration,
@@ -229,6 +244,10 @@ async def build(settings: Settings) -> dict[str, Any]:
     # Order is not significant — the pipeline runs resolvers concurrently — but the
     # set is: corpus retrieval is what makes the 2,000-item ingested corpus reachable
     # at all, and fact-checks are the only Tier C source there is.
+    # CLIP, for near-duplicate media verification. Loaded once: it is ~350 MiB
+    # resident and the whole point of local inference is not paying that per request.
+    image_embedder = ImageEmbedder()
+
     corpus = CorpusResolver(database=database, embedder=embedder, fetcher=source_fetcher)
     resolvers: list[SourceResolver] = [
         corpus,
@@ -245,6 +264,7 @@ async def build(settings: Settings) -> dict[str, Any]:
             settings=settings,
             extractor_version=_extractor_version(),
             corroboration=CorpusCorroboration(resolver=corpus, database=database),
+            media=MediaVerification(database=database, embedder=image_embedder),
         ),
     }
 
