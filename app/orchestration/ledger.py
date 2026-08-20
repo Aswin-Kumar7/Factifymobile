@@ -249,9 +249,7 @@ class CaseReader:
                                 citation_url=str(e["citation_url"]),
                                 snapshot_id=str(e["snapshot_id"]),
                                 source_excerpt=str(e["source_excerpt"]),
-                                source_anchor=SourceAnchorResponse(
-                                    **(e["source_anchor"] or {})
-                                ),
+                                source_anchor=SourceAnchorResponse(**(e["source_anchor"] or {})),
                                 match_basis=MatchBasisResponse(**(e["match_basis"] or {})),
                                 match_quality=str(e["match_quality"]),
                             )

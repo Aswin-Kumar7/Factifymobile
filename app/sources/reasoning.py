@@ -317,15 +317,13 @@ class PassageReasoner:
         self,
         *,
         fetcher: Any,
-        database: Any,
-        providers: Any,
+        governor: Any,
         endpoint: str,
         api_key: str,
         model_id: str,
     ) -> None:
         self._fetcher = fetcher
-        self._database = database
-        self._providers = providers
+        self._governor = governor
         self._endpoint = endpoint
         self._api_key = api_key
         self._model_id = model_id
@@ -340,18 +338,12 @@ class PassageReasoner:
         # Through the governor, per source, without exception.
         #
         # This is the expensive change in the whole design: reading costs one metered
-        # call for every source of every claim, where word overlap cost none. A
-        # two-claim submission over a six-source shortlist is twelve calls, and the
-        # free tier allows twenty a minute. The governor is therefore not a formality
-        # here — it is what stops one verification exhausting the day.
-        #
-        # When it refuses, the caller degrades to lexical matching rather than
-        # abstaining. A weaker answer with a real citation beats no answer.
-        from app.governor.governor import Governor
-
+        # call for every source of every claim, where word overlap cost none. The
+        # governor is therefore not a formality here — it is what stops one
+        # verification exhausting the day. When it refuses, the caller degrades to
+        # lexical matching rather than abstaining.
         try:
-            async with self._database.connection() as conn:
-                grant = await Governor(conn, self._providers).acquire(PROVIDER)
+            grant = await self._governor.acquire(PROVIDER)
         except ProviderUnavailable as unavailable:
             return ReasoningOutcome(reason=f"unavailable: {unavailable.reason.value}")
         del grant

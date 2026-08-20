@@ -27,15 +27,15 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import UUID
 
 from app.cache.keys import CacheKeyParts
-from app.cache.service import CachedVerdict, CacheService
+from app.cache.service import CachedVerdict
 from app.domain.claim import Claim
 from app.domain.enums import Action, ClaimStatus, Direction, SourceRisk
 from app.domain.evidence import Advisory, Evidence
-from app.governor.governor import Governor, Skip
+from app.governor.governor import Skip
 from app.intake.normalizer import NormalisedIntake
 from app.observability.logging import event
 from app.sources.base import SourceCandidate, SourceResolver, build_evidence
@@ -63,6 +63,35 @@ class Corroboration(Protocol):
     """
 
     async def signal(self, claim: Claim, *, citation_urls: list[str]) -> CorroborationSignal: ...
+
+
+class VerdictCache(Protocol):
+    """The two cache operations the pipeline performs.
+
+    A protocol rather than `CacheService` because that class binds to one database
+    connection, and an orchestrator that lives for the process cannot hold one
+    connection for the process. `PoolCacheService` satisfies this by checking a
+    connection out per operation; the audit's null cache satisfies it by doing
+    nothing.
+    """
+
+    async def get_verdict(self, parts: CacheKeyParts) -> CachedVerdict | None: ...
+
+    async def put_verdict(
+        self,
+        parts: CacheKeyParts,
+        payload: dict[str, Any],
+        *,
+        case_id: object | None = None,
+        is_negative: bool = False,
+        developing: bool = False,
+    ) -> None: ...
+
+
+class CallGovernor(Protocol):
+    """The single operation the pipeline needs from the governor."""
+
+    async def try_acquire(self, provider: str) -> object: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,8 +166,8 @@ class Orchestrator:
     def __init__(
         self,
         *,
-        cache: CacheService,
-        governor: Governor,
+        cache: VerdictCache,
+        governor: CallGovernor,
         resolvers: list[SourceResolver],
         extractor_version: str,
         model_id: str = "",
@@ -154,6 +183,29 @@ class Orchestrator:
         # Optional so existing callers — the audit runner, every unit test — keep
         # working unchanged and simply count no origins.
         self._corroboration = corroboration
+
+    @property
+    def resolvers(self) -> list[SourceResolver]:
+        return list(self._resolvers)
+
+    def with_resolvers(self, resolvers: list[SourceResolver]) -> Orchestrator:
+        """A view of this orchestrator over a different resolver set.
+
+        Exists for media: its resolvers carry per-request findings and cannot be
+        process-lifetime. Everything else — cache, governor, corroboration, **and the
+        semaphore** — is shared, because the fetch ceiling only means anything if
+        every in-flight request counts against the same one.
+        """
+        clone = Orchestrator(
+            cache=self._cache,
+            governor=self._governor,
+            resolvers=resolvers,
+            extractor_version=self._extractor_version,
+            model_id=self._model_id,
+            corroboration=self._corroboration,
+        )
+        clone._semaphore = self._semaphore
+        return clone
 
     async def verify(
         self,
@@ -189,7 +241,13 @@ class Orchestrator:
         if cached is not None:
             return self._from_cache(cached, case_id=case_id, intake=intake, started=started)
 
-        outcomes = await self._resolve_all(claims, skipped=skipped)
+        # The budget becomes a deadline here, not a wish. TARGET_SECONDS was declared
+        # and measured but never enforced, and real requests ran to 90 seconds — past
+        # the mobile client's own 45 second timeout, so the server was still working
+        # on answers nobody was waiting for.
+        deadline = started + TARGET_SECONDS
+
+        outcomes = await self._resolve_all(claims, skipped=skipped, deadline=deadline)
 
         case_decision = roll_up(
             [(outcome.claim, outcome.decision) for outcome in outcomes], source_risk=source_risk
@@ -218,6 +276,41 @@ class Orchestrator:
             elapsed_ms=result.elapsed_ms,
             within_target=result.within_target,
         )
+
+        # Write-back — the half of M13 that was missing. `get_verdict` was probed on
+        # every request while `put_verdict` had no caller anywhere, so the cache was
+        # permanently empty and every repeat submission paid the full price. The
+        # probe asserted "a repeat costs zero"; nothing made it true.
+        #
+        # Only complete runs are cached, the same rule pre-warming follows: caching a
+        # partial run would store a provider outage as the answer and serve it all
+        # day. A write failure is logged and swallowed — losing a cache entry must
+        # never lose the verdict that was already computed.
+        if result.is_complete and outcomes:
+            try:
+                await self._cache.put_verdict(
+                    cache_key,
+                    {"action": result.action.value},
+                    # No case id, deliberately. The column is a foreign key to
+                    # `verification_case`, and the ledger writes that row *after*
+                    # this method returns — the fixed order puts write-back before
+                    # persist. Passing the id here violated the constraint and every
+                    # cache write failed silently, which read as "cache never hits"
+                    # rather than as the ordering bug it was.
+                    case_id=None,
+                    is_negative=result.action is Action.SEND_TO_REVIEW,
+                    developing=any(o.claim.within_developing_window for o in outcomes),
+                )
+            except Exception as error:
+                event(
+                    logger,
+                    "verdict cache write failed; result returned uncached",
+                    module="orchestration",
+                    outcome="degraded",
+                    failure_reason=f"{type(error).__name__}: {error}",
+                    level=logging.WARNING,
+                )
+
         return result
 
     def _from_cache(
@@ -271,33 +364,55 @@ class Orchestrator:
         )
 
     async def _resolve_all(
-        self, claims: list[Claim], *, skipped: list[SkippedCheck]
+        self,
+        claims: list[Claim],
+        *,
+        skipped: list[SkippedCheck],
+        deadline: float | None = None,
     ) -> list[ClaimOutcome]:
         """Resolve every claim, bounded by the concurrency ceiling."""
         if not claims:
             return []
 
         results = await asyncio.gather(
-            *(self._resolve_claim(claim, skipped=skipped) for claim in claims)
+            *(self._resolve_claim(claim, skipped=skipped, deadline=deadline) for claim in claims)
         )
         return list(results)
 
-    async def _resolve_claim(self, claim: Claim, *, skipped: list[SkippedCheck]) -> ClaimOutcome:
+    async def _resolve_claim(
+        self, claim: Claim, *, skipped: list[SkippedCheck], deadline: float | None = None
+    ) -> ClaimOutcome:
         """Gather evidence for one claim, then decide on it.
 
         `decide` and `evidence_strength` are both called here and neither is
         bypassable: there is no branch in this function that produces a status any
         other way.
+
+        Each resolver runs under what remains of the request deadline. Per resolver
+        rather than around the gather: a timeout on the gather cancels everything,
+        discarding the evidence the fast resolvers already produced, and a partial
+        answer that says what was skipped beats an empty one that took just as long.
         """
         evidence: list[Evidence] = []
 
+        remaining = max(2.0, deadline - time.perf_counter()) if deadline is not None else None
+
         gathered = await asyncio.gather(
-            *(self._run_resolver(resolver, claim) for resolver in self._resolvers),
+            *(
+                asyncio.wait_for(self._run_resolver(resolver, claim), timeout=remaining)
+                for resolver in self._resolvers
+            ),
             return_exceptions=True,
         )
 
         for resolver, outcome in zip(self._resolvers, gathered, strict=True):
             name = getattr(resolver, "name", type(resolver).__name__)
+
+            if isinstance(outcome, TimeoutError):
+                skipped.append(
+                    SkippedCheck(check=name, reason=f"deadline of {TARGET_SECONDS:.0f}s exceeded")
+                )
+                continue
 
             if isinstance(outcome, BaseException):
                 # A producer failing is a gap, not a crash. It is recorded so the

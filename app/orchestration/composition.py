@@ -26,7 +26,6 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from app.cache.service import CacheService
 from app.config import Settings
 from app.db.pool import Database
 from app.domain.claim import Claim
@@ -34,11 +33,11 @@ from app.domain.enums import SourceRisk
 from app.domain.evidence import Advisory
 from app.embeddings.image import ImageEmbedder
 from app.embeddings.text import TextEmbedder
-from app.extraction.claims import ClaimPipeline, ExtractedClaims
+from app.extraction.claims import ClaimPipeline
 from app.extraction.llm import LLMExtractor
-from app.governor.governor import Governor
 from app.intake.normalizer import NormalisedIntake
 from app.observability.logging import event
+from app.orchestration.adapters import PoolCacheService, PoolGovernor
 from app.orchestration.ledger import CaseReader, Ledger
 from app.orchestration.media import MediaVerification
 from app.orchestration.pipeline import Orchestrator, SkippedCheck, VerificationResult
@@ -58,28 +57,31 @@ SOURCE_TIMEOUT_SECONDS = 20.0
 MODEL_TIMEOUT_SECONDS = 90.0
 
 
-class RequestScopedOrchestrator:
-    """Builds an `Orchestrator` per request over shared, expensive components.
+class ServedOrchestrator:
+    """The process-lifetime verification surface.
 
-    Presents the same `verify` signature the endpoint already calls, so the API layer
-    does not need to know that the cache and the governor are connection-bound.
+    One `Orchestrator` for the process, not one per request. The per-request version
+    held a pool connection across the *whole* verification — six source fetches at a
+    20 second timeout and a model call at up to 90 — so ten concurrent requests
+    pinned the entire pool, and the reasoner then needed an eleventh connection
+    while all ten were held. It also rebuilt `Semaphore(6)` and the burst window per
+    request, which made both limiters count against nothing: the publisher-socket
+    ceiling and the per-minute cap only exist if there is exactly one of each.
+
+    Database work now goes through the pool adapters, which check a connection out
+    for the microseconds the query takes. What remains per request is what must be:
+    media claim preparation, and the ledger write at the end.
     """
 
     def __init__(
         self,
         *,
         database: Database,
-        resolvers: list[SourceResolver],
-        settings: Settings,
-        extractor_version: str,
-        corroboration: CorpusCorroboration | None = None,
+        orchestrator: Orchestrator,
         media: MediaVerification | None = None,
     ) -> None:
         self._database = database
-        self._resolvers = resolvers
-        self._settings = settings
-        self._extractor_version = extractor_version
-        self._corroboration = corroboration
+        self._orchestrator = orchestrator
         self._media = media
 
     async def verify(
@@ -91,38 +93,36 @@ class RequestScopedOrchestrator:
         advisories: list[Advisory] | None = None,
         source_risk: SourceRisk = SourceRisk.UNKNOWN,
     ) -> VerificationResult:
-        resolvers = self._resolvers
-
         # An image arrives with no claims, because there is no text to extract them
         # from. Without this the resolvers had nothing to run against and every
         # upload returned a clean, empty 200.
+        #
+        # Media resolvers carry per-request findings, so this request gets its own
+        # orchestrator over them. The text path — every other request — uses the
+        # shared one, which is what keeps the semaphore a real ceiling.
+        orchestrator = self._orchestrator
         if self._media is not None and not claims:
             media_claims, media_resolvers = await self._media.prepare(intake)
             if media_claims:
                 claims = media_claims
-                resolvers = [*self._resolvers, *media_resolvers]
+                orchestrator = self._orchestrator.with_resolvers(
+                    [*self._orchestrator.resolvers, *media_resolvers]
+                )
 
-        async with self._database.connection() as conn:
-            orchestrator = Orchestrator(
-                cache=CacheService(conn),
-                governor=Governor(conn, self._settings.providers),
-                resolvers=resolvers,
-                extractor_version=self._extractor_version,
-                model_id=self._settings.models.extraction,
-                corroboration=self._corroboration,
-            )
-            result = await orchestrator.verify(
-                intake,
-                case_id=case_id,
-                claims=claims,
-                advisories=advisories,
-                source_risk=source_risk,
-            )
+        result = await orchestrator.verify(
+            intake,
+            case_id=case_id,
+            claims=claims,
+            advisories=advisories,
+            source_risk=source_risk,
+        )
 
-            # Written after the verdict exists and never allowed to change it. A
-            # cached result is not rewritten: it was persisted when first computed,
-            # and writing it again would record a second case for one verification.
-            if not result.from_cache:
+        # Written after the verdict exists and never allowed to change it. A cached
+        # result is not rewritten: it was persisted when first computed, and writing
+        # it again would record a second case for one verification. The connection is
+        # checked out here, after every fetch and model call has already finished.
+        if not result.from_cache:
+            async with self._database.connection() as conn:
                 written = await Ledger(conn).persist(
                     result,
                     request_id=str(case_id),
@@ -130,58 +130,15 @@ class RequestScopedOrchestrator:
                     language=intake.language.language.value,
                     consent_to_process_media=getattr(intake, "consent_to_process_media", False),
                 )
-                if not written:
-                    result.skipped.append(
-                        SkippedCheck(
-                            check="ledger",
-                            reason="the verdict was not recorded; it cannot be retrieved later",
-                        )
+            if not written:
+                result.skipped.append(
+                    SkippedCheck(
+                        check="ledger",
+                        reason="the verdict was not recorded; it cannot be retrieved later",
                     )
+                )
 
-            return result
-
-
-class RequestScopedClaimPipeline:
-    """Extraction, with the governor and the extraction cache bound per request.
-
-    The same connection-scoping problem the orchestrator has, for the same reason:
-    `LLMExtractor` calls `governor.acquire` before every model call, and the governor
-    writes the day's spend to the database. A process-lifetime governor would hold one
-    connection open for the life of the container.
-
-    Wiring the governor is not optional here. It is the only thing standing between a
-    burst of requests and the daily quota, and the free tier is the ceiling.
-    """
-
-    def __init__(self, *, database: Database, settings: Settings, endpoint: str, api_key: str):
-        self._database = database
-        self._settings = settings
-        self._endpoint = endpoint
-        self._api_key = api_key
-        self._fetcher = SecureFetcher(timeout_seconds=MODEL_TIMEOUT_SECONDS)
-
-    async def extract(
-        self,
-        text: str,
-        *,
-        content_hash: str,
-        input_kind: str = "text",
-        language: str | None = None,
-    ) -> ExtractedClaims:
-        async with self._database.connection() as conn:
-            pipeline = ClaimPipeline(
-                LLMExtractor(
-                    fetcher=self._fetcher,
-                    governor=Governor(conn, self._settings.providers),
-                    endpoint=self._endpoint,
-                    api_key=self._api_key,
-                    model_id=self._settings.models.extraction,
-                ),
-                cache=CacheService(conn),
-            )
-            return await pipeline.extract(
-                text, content_hash=content_hash, input_kind=input_kind, language=language
-            )
+        return result
 
 
 async def load_factcheck_records(database: Database) -> list[FactCheckRecord]:
@@ -249,6 +206,12 @@ async def build(settings: Settings) -> dict[str, Any]:
     # resident and the whole point of local inference is not paying that per request.
     image_embedder = ImageEmbedder()
 
+    # One governor and one cache for the process. The burst window and the fetch
+    # semaphore only limit anything if there is exactly one of each; per-request
+    # copies counted every request against itself and nothing against the process.
+    governor = PoolGovernor(database, settings.providers)
+    cache = PoolCacheService(database)
+
     # The reasoner reads fetched passages and judges them against the claim. Only
     # built when a model is configured; without it the corpus resolver falls back to
     # word overlap, which cannot detect contradiction and reports as much.
@@ -256,8 +219,7 @@ async def build(settings: Settings) -> dict[str, Any]:
     if settings.llm.enabled and settings.llm.api_key:
         reasoner = PassageReasoner(
             fetcher=SecureFetcher(timeout_seconds=MODEL_TIMEOUT_SECONDS),
-            database=database,
-            providers=settings.providers,
+            governor=governor,
             endpoint=settings.llm.endpoint,
             api_key=settings.llm.api_key.get_secret_value(),
             model_id=settings.models.extraction,
@@ -274,27 +236,43 @@ async def build(settings: Settings) -> dict[str, Any]:
         FactCheckResolver(records=records, api_available=False),
     ]
 
+    orchestrator = Orchestrator(
+        cache=cache,
+        governor=governor,
+        resolvers=resolvers,
+        extractor_version=_extractor_version(),
+        model_id=settings.models.extraction,
+        corroboration=CorpusCorroboration(resolver=corpus, database=database),
+    )
+
     state: dict[str, Any] = {
         "database": database,
         "embedder": embedder,
         "case_reader": CaseReader(database),
-        "orchestrator": RequestScopedOrchestrator(
+        "orchestrator": ServedOrchestrator(
             database=database,
-            resolvers=resolvers,
-            settings=settings,
-            extractor_version=_extractor_version(),
-            corroboration=CorpusCorroboration(resolver=corpus, database=database),
+            orchestrator=orchestrator,
             media=MediaVerification(database=database, embedder=image_embedder),
         ),
     }
 
     if settings.llm.enabled and settings.llm.api_key:
-        state["claim_pipeline"] = RequestScopedClaimPipeline(
-            database=database,
-            settings=settings,
-            endpoint=settings.llm.endpoint,
-            api_key=settings.llm.api_key.get_secret_value(),
+        # Built once. The previous shape checked a connection out and then held it
+        # across the model call — up to 90 seconds of pool time per extraction spent
+        # waiting on a provider. The pool adapters check connections out only for the
+        # budget row and the cache row.
+        state["claim_pipeline"] = ClaimPipeline(
+            LLMExtractor(
+                fetcher=SecureFetcher(timeout_seconds=MODEL_TIMEOUT_SECONDS),
+                governor=governor,  # type: ignore[arg-type]
+                endpoint=settings.llm.endpoint,
+                api_key=settings.llm.api_key.get_secret_value(),
+                model_id=settings.models.extraction,
+            ),
+            cache=cache,  # type: ignore[arg-type]
         )
+
+    await _prewarm(embedder, image_embedder)
 
     event(
         logger,
@@ -306,6 +284,38 @@ async def build(settings: Settings) -> dict[str, Any]:
         extraction_configured="claim_pipeline" in state,
     )
     return state
+
+
+async def _prewarm(embedder: TextEmbedder, image_embedder: ImageEmbedder) -> None:
+    """Load both ONNX models before the first request instead of inside it.
+
+    Lazy loading put ~2s of text-model load and ~4s of CLIP load inside whichever
+    request arrived first — on demo day, the judge's. Worse, the load ran on the
+    event loop, so every concurrent request stalled behind it. Paying the cost at
+    startup moves it to a moment nobody is waiting on.
+
+    Failures are logged and swallowed: an embedder that cannot load degrades exactly
+    as it would have at first use, and a warmup problem must not stop the service
+    from answering the requests that do not need it.
+    """
+    import asyncio
+
+    def _warm() -> None:
+        embedder.embed(["warmup"], language="en")
+        _ = image_embedder.available
+
+    try:
+        await asyncio.to_thread(_warm)
+        event(logger, "models prewarmed", module="composition", outcome="ok")
+    except Exception as error:
+        event(
+            logger,
+            "model prewarm failed; first use will retry",
+            module="composition",
+            outcome="degraded",
+            failure_reason=f"{type(error).__name__}: {error}",
+            level=logging.WARNING,
+        )
 
 
 def _extractor_version() -> str:

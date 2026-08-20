@@ -12,6 +12,7 @@ deployment denies every trigger rather than accepting anonymous ones.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, datetime
 from typing import Annotated
@@ -282,6 +283,15 @@ async def verify_file(
     case_id = uuid4()
 
     if intake.input_type is InputType.VIDEO:
+        # The 202 must lead somewhere. No video worker is deployed in this build,
+        # and until this write existed the returned case id pointed at nothing:
+        # the client polled `/v1/cases/{id}`, got 404 fifteen times, and gave up on
+        # a promise the server never intended to keep. Recording the case makes the
+        # poll terminate in an honest answer — routed to review, nothing checked —
+        # instead of an infinite pending.
+        asyncio.get_running_loop().create_task(
+            _record_unprocessed_video(request, case_id=case_id, intake=intake)
+        )
         accepted = AcceptedResponse(case_id=str(case_id), poll_url=f"/v1/cases/{case_id}")
         return JSONResponse(
             status_code=status.HTTP_202_ACCEPTED, content=accepted.model_dump(mode="json")
@@ -289,6 +299,26 @@ async def verify_file(
 
     result = await orchestrator.verify(intake, case_id=case_id, claims=[])  # type: ignore[attr-defined]
     return to_response(result)
+
+
+async def _record_unprocessed_video(request: Request, *, case_id: UUID, intake: object) -> None:
+    """Persist an honest empty case for a video this build cannot process."""
+    database = getattr(request.app.state, "database", None)
+    if database is None:
+        return
+    try:
+        from app.db.repositories import CaseRepository
+
+        async with database.connection() as conn:
+            await CaseRepository(conn).create(
+                request_id=str(case_id),
+                input_type="video",
+                language=getattr(getattr(intake, "language", None), "language", None)
+                and intake.language.language.value,  # type: ignore[attr-defined]
+                case_id=case_id,
+            )
+    except Exception:
+        logger.exception("could not record the accepted video case")
 
 
 @router.get(

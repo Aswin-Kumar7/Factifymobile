@@ -26,6 +26,7 @@ not make this trade.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import re
@@ -354,7 +355,12 @@ class CorpusResolver:
         if self._embedder is None:
             return []
 
-        result = self._embedder.embed_one(claim.text, language=claim.language)
+        # ONNX inference is CPU-bound and synchronous. Called directly it blocks the
+        # event loop for every embedding — and on the first request, for the model
+        # load too — stalling every other in-flight request behind this one.
+        result = await asyncio.to_thread(
+            self._embedder.embed_one, claim.text, language=claim.language
+        )
         if not result.vectors:
             event(
                 logger,
@@ -470,7 +476,7 @@ class CorpusResolver:
             if relation is not None:
                 return relation
 
-        return self._relate_lexically(claim, snapshot)
+        return await self._relate_lexically(claim, snapshot)
 
     async def _reason(self, claim: Claim, snapshot: SourceSnapshot) -> SourceRelation | None:
         """The reading path. `None` means it could not run, not that it found nothing.
@@ -527,7 +533,7 @@ class CorpusResolver:
             threshold=0.0,
         )
 
-    def _relate_lexically(self, claim: Claim, snapshot: SourceSnapshot) -> SourceRelation:
+    async def _relate_lexically(self, claim: Claim, snapshot: SourceSnapshot) -> SourceRelation:
         """The fallback. Word overlap behind a semantic gate.
 
         **Never returns CONTRADICTS**, and that limit is the reason the reading path
@@ -544,7 +550,7 @@ class CorpusResolver:
                 f"claim-word coverage (best {score:.0%})",
             )
 
-        similarity = self._similarity(claim, sentence)
+        similarity = await self._similarity(claim, sentence)
         if similarity is None:
             # No vector for this claim, so the gate cannot be evaluated. Fall back to
             # demanding much heavier word coverage rather than waving the sentence
@@ -581,7 +587,7 @@ class CorpusResolver:
             threshold=SUPPORT_OVERLAP if score >= SUPPORT_OVERLAP else CONTEXT_OVERLAP,
         )
 
-    def _similarity(self, claim: Claim, sentence: str) -> float | None:
+    async def _similarity(self, claim: Claim, sentence: str) -> float | None:
         """Cosine between the claim and a candidate sentence, or `None` when the
         model has no representation for one of them.
 
@@ -592,7 +598,9 @@ class CorpusResolver:
         if self._embedder is None:
             return None
 
-        result = self._embedder.embed([claim.text, sentence], language=claim.language)
+        result = await asyncio.to_thread(
+            self._embedder.embed, [claim.text, sentence], language=claim.language
+        )
         if len(result.vectors) != 2:
             return None
         return cosine(result.vectors[0], result.vectors[1])

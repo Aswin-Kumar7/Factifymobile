@@ -107,7 +107,7 @@ async def _build_verifier(settings: Settings, conn: object) -> object:
     )
     orchestrator = Orchestrator(
         cache=_NullCache(),  # type: ignore[arg-type]
-        governor=_NoGovernor(),  # type: ignore[arg-type]
+        governor=_NoGovernor(),
         resolvers=[FactCheckResolver(records=records, api_available=False)],
         extractor_version="audit",
         model_id=settings.models.extraction,

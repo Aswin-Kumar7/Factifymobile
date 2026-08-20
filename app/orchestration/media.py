@@ -20,6 +20,7 @@ than as a proposition about the world that nothing could settle.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from contextlib import suppress
@@ -38,9 +39,10 @@ from app.sources.media import MediaMatchResolver, ProvenanceResolver
 
 logger = logging.getLogger("facify.orchestration.media")
 
-# How much of the fingerprint corpus to compare against. `LocalMatcher` shortlists by
-# Hamming distance in memory, so this bounds the work rather than the accuracy.
-CORPUS_LIMIT = 5000
+# Nearest fingerprints pulled from the HNSW index per query. Wide enough that the
+# true match cannot be crowded out by near-misses; the matcher's own distance
+# threshold and CLIP verification decide from there.
+SHORTLIST_LIMIT = 64
 
 
 class MediaVerification:
@@ -55,16 +57,16 @@ class MediaVerification:
         self._database = database
         self._embedder = embedder or UnavailableImageEmbedder()
 
-    async def prepare(
-        self, intake: NormalisedIntake
-    ) -> tuple[list[Claim], list[SourceResolver]]:
+    async def prepare(self, intake: NormalisedIntake) -> tuple[list[Claim], list[SourceResolver]]:
         """Everything needed to verify this image, or nothing if it is not one."""
         primary = intake.primary
         if not primary.is_media or primary.data is None:
             return [], []
 
         try:
-            marks = fingerprint(primary.data)
+            # DCT over a 32x32 grayscale plus two hashes — numpy CPU work. Off the
+            # event loop so an image upload does not stall concurrent text verifications.
+            marks = await asyncio.to_thread(fingerprint, primary.data)
         except HashFailed as error:
             # An unreadable image is not a suspicious one. No claim is raised, so the
             # case abstains rather than reporting a forensic finding about a file we
@@ -80,13 +82,12 @@ class MediaVerification:
 
         # Provenance is read directly from the bytes. A missing manifest means
         # unknown, never fakery — most genuine photographs carry no C2PA manifest.
-        report = provenance.read(primary.data, filename=primary.sha256)
+        report = await asyncio.to_thread(provenance.read, primary.data, filename=primary.sha256)
 
-        corpus = await self._stored_media()
+        corpus = await self._stored_media(marks)
         matcher = LocalMatcher(embedder=self._embedder)
-        result = matcher.match(
-            marks, corpus=corpus, query_embedding=self._embed(primary.data)
-        )
+        query_embedding = await asyncio.to_thread(self._embed, primary.data)
+        result = matcher.match(marks, corpus=corpus, query_embedding=query_embedding)
 
         event(
             logger,
@@ -148,27 +149,39 @@ class MediaVerification:
 
         return outcome.vectors[0] if outcome.vectors else None
 
-    async def _stored_media(self) -> list[StoredMedia]:
-        """The fingerprint corpus to compare against.
+    async def _stored_media(self, marks: Any) -> list[StoredMedia]:
+        """A shortlist of stored fingerprints worth comparing against this image.
 
-        Currently empty in this deployment — `media_fingerprint` holds no rows,
-        because nothing populates it yet. That is reported honestly rather than
-        hidden: with an empty corpus every image correctly finds no match, and the
-        response says no earlier publication was found rather than implying the
-        picture is new.
+        Shortlisted in SQL, not in Python. The previous version selected up to 5,000
+        rows — embeddings serialised as text and re-parsed per row, per request —
+        and then walked the whole set in `LocalMatcher`, while the HNSW index the
+        initial migration built on `phash` sat unused. The database can answer "the
+        64 nearest hashes" from that index without shipping the corpus anywhere.
+
+        Two legs, union'd: the exact sha256 (byte identity is proof on its own and
+        must never be lost to an approximate shortlist), and the nearest rows by
+        phash Hamming distance. `LocalMatcher` still makes the actual decision —
+        distance threshold, then CLIP verification — over this small set, so the
+        semantics are unchanged; only where the winnowing happens moved.
         """
         from app.media.hashing import PerceptualHash
 
         async with self._database.connection() as conn:
             cursor = await conn.execute(
                 """
-                SELECT id::text, sha256, phash::text AS phash, embedding::text AS embedding,
-                       source_date, citation_url
-                  FROM facify.media_fingerprint
-                 WHERE sha256 IS NOT NULL
-                 LIMIT %s
+                (SELECT id::text, sha256, phash::text AS phash,
+                        embedding::text AS embedding, source_date, citation_url
+                   FROM facify.media_fingerprint
+                  WHERE sha256 = %s)
+                UNION
+                (SELECT id::text, sha256, phash::text AS phash,
+                        embedding::text AS embedding, source_date, citation_url
+                   FROM facify.media_fingerprint
+                  WHERE phash IS NOT NULL
+                  ORDER BY phash <~> %s::bit(64)
+                  LIMIT %s)
                 """,
-                (CORPUS_LIMIT,),
+                (marks.sha256, marks.phash.to_bit_string(), SHORTLIST_LIMIT),
             )
             rows = list(await cursor.fetchall())
 

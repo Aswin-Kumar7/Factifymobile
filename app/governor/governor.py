@@ -94,10 +94,20 @@ class Governor:
     a restart, since a container recycling at noon must not reset the day's spend.
     """
 
-    def __init__(self, conn: Conn, providers: dict[str, ProviderSettings]) -> None:
+    def __init__(
+        self,
+        conn: Conn,
+        providers: dict[str, ProviderSettings],
+        *,
+        burst: SlidingWindowLimiter | None = None,
+    ) -> None:
         self._budget = BudgetRepository(conn)
         self._providers = providers
-        self._burst = SlidingWindowLimiter()
+        # Injectable because the limiter only limits if it is shared. A Governor
+        # constructed per request gets a fresh window per request, which counts each
+        # burst against itself and nothing against the process — the ceiling the
+        # limiter exists to impose. `PoolGovernor` passes one process-wide window in.
+        self._burst = burst if burst is not None else SlidingWindowLimiter()
         self._skips: list[Skip] = []
 
     @property
