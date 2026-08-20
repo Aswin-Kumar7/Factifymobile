@@ -47,7 +47,24 @@ logger = logging.getLogger("facify.orchestration")
 
 # The synchronous budget for text, URL, image and PDF (codexplan §11). Video returns
 # accepted-with-progress instead of blocking a request for half a minute.
+#
+# 8 seconds is the target for the lexical path and remains what `within_target`
+# reports against, because that is the number the product promised.
 TARGET_SECONDS = 8.0
+
+# The deadline actually enforced when a resolver may read sources with a model.
+#
+# Measured, not guessed: one source of four passages takes **31 seconds** through
+# `PassageReasoner`, against a 129ms fetch. Reading is two orders of magnitude
+# slower than the word overlap the 8 second budget was written for, so enforcing 8
+# here did not make the system fast — it made every reasoned verification abstain
+# with "deadline exceeded" while the model was still mid-sentence.
+#
+# 40 stays inside the mobile client's own 45 second timeout, which is the real
+# ceiling: past that the server is computing an answer nobody is waiting for.
+# Requests that exceed `TARGET_SECONDS` are still reported as over target — the
+# promise is not quietly rewritten, it is measured against honestly.
+REASONING_TARGET_SECONDS = 40.0
 
 # How many resolvers may run at once. Independent producers are concurrent because
 # they do not depend on each other; the ceiling exists so a burst of claims cannot
@@ -189,6 +206,10 @@ class Orchestrator:
         # Optional so existing callers — the audit runner, every unit test — keep
         # working unchanged and simply count no origins.
         self._corroboration = corroboration
+        # Whether any resolver reads sources with a model, which decides the
+        # deadline. Asked of the resolvers rather than configured separately, so the
+        # budget cannot drift out of step with what the pipeline actually does.
+        self._reads_sources = any(getattr(r, "reads_sources", False) for r in resolvers)
 
     @property
     def resolvers(self) -> list[SourceResolver]:
@@ -247,11 +268,18 @@ class Orchestrator:
         if cached is not None:
             return self._from_cache(cached, case_id=case_id, intake=intake, started=started)
 
-        # The budget becomes a deadline here, not a wish. TARGET_SECONDS was declared
-        # and measured but never enforced, and real requests ran to 90 seconds — past
+        # The budget becomes a deadline here, not a wish. It was declared and
+        # measured but never enforced, and real requests ran to 90 seconds — past
         # the mobile client's own 45 second timeout, so the server was still working
         # on answers nobody was waiting for.
-        deadline = started + TARGET_SECONDS
+        #
+        # Which budget depends on what the resolvers are allowed to do. Reading a
+        # source with a model measures 31 seconds; word overlap measures
+        # milliseconds. One deadline for both would either cut every reasoned answer
+        # off mid-call or let every lexical one dawdle.
+        deadline = started + (
+            REASONING_TARGET_SECONDS if self._reads_sources else TARGET_SECONDS
+        )
 
         outcomes = await self._resolve_all(claims, skipped=skipped, deadline=deadline)
 
@@ -439,8 +467,9 @@ class Orchestrator:
             name = getattr(resolver, "name", type(resolver).__name__)
 
             if isinstance(outcome, TimeoutError):
+                budget = REASONING_TARGET_SECONDS if self._reads_sources else TARGET_SECONDS
                 skipped.append(
-                    SkippedCheck(check=name, reason=f"deadline of {TARGET_SECONDS:.0f}s exceeded")
+                    SkippedCheck(check=name, reason=f"deadline of {budget:.0f}s exceeded")
                 )
                 continue
 

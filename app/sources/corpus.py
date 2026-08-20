@@ -78,12 +78,19 @@ SHORTLIST = 6
 # full shortlist is twelve calls plus extraction — roughly four verifications
 # against a fifty-a-day cap, which is not a product.
 #
-# Three is where the value is. The shortlist is RRF-ordered, so the sources that
-# actually answer the claim are at the top; positions four to six are the tail that
-# usually produces NOT_RELEVANT. Those still get fetched and still get the lexical
-# treatment, so nothing is dropped — it is judged more cheaply and more weakly, and
-# the ledger records which mechanism was used.
-REASONED_CANDIDATES = 3
+# One, and latency is why. Measured: a single source of four passages takes **31
+# seconds** through the reasoner. Three of them did not fit a 40 second deadline —
+# the whole resolver timed out and the verdict abstained with no evidence at all,
+# which is strictly worse than the lexical answer it replaced.
+#
+# The shortlist is RRF-ordered, so position one is the source most likely to answer
+# the claim. The rest are still fetched and still judged lexically, so nothing is
+# dropped — the tail is judged more cheaply and more weakly, and the ledger records
+# which mechanism decided each item.
+#
+# Raise this only alongside a faster model or an asynchronous upgrade path; it is
+# bounded by request latency, not by quota.
+REASONED_CANDIDATES = 1
 
 # Recency windows, in days.
 #
@@ -254,6 +261,16 @@ class CorpusResolver:
         # same answer; the cap keeps a long-running process from accumulating one
         # entry per page it has ever seen.
         self._reasonable: dict[str, bool] = {}
+
+    @property
+    def reads_sources(self) -> bool:
+        """Whether this resolver may spend model calls reading fetched passages.
+
+        The orchestrator asks so it can set a deadline that matches what actually
+        happens: 31 measured seconds for one reasoned source, against milliseconds
+        for word overlap.
+        """
+        return self._reasoner is not None
 
     async def search(self, claim: Claim) -> list[tuple[dict[str, Any], float]]:
         """Run both legs, fuse, and return rows with their fused score, best first.
@@ -511,14 +528,22 @@ class CorpusResolver:
                 f"read {outcome.passages_read} passages; none addresses this claim",
             )
 
-        # Located again against the whole article rather than trusting the passage
-        # offsets. The excerpt shown to a reader must be findable in the document
-        # they can open, not only in the fragment the model was handed.
-        excerpt, anchor = locate_excerpt(snapshot.text, best.quote)
-        if not excerpt:
+        # Located against the whole article rather than trusting the passage offsets:
+        # the citation must be findable in the document a reader can open, not only
+        # in the fragment the model was handed.
+        #
+        # The offsets are taken from that search, but the **quote itself** is what is
+        # shown — not the surrounding window `locate_excerpt` returns. The window
+        # re-widens into the raw article and drags the navigation bar back in with
+        # it, and a citation rendered as "|news |kerala jail gets ai based…" is site
+        # chrome presented as evidence. The model's quote is already verified
+        # verbatim and at least a full sentence, so it stands on its own.
+        window, anchor = locate_excerpt(snapshot.text, best.quote)
+        if not window:
             return insufficient(
                 NAME, VERSION, "the quoted passage could not be located in the fetched article"
             )
+        excerpt = best.quote
 
         return SourceRelation(
             relation=best.relation,
