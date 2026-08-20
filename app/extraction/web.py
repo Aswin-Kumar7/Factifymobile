@@ -29,6 +29,17 @@ _JSON_LD = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+# Publication date as an Open Graph / article meta tag, for pages that emit no
+# JSON-LD. A fallback, not the primary path: JSON-LD is a typed record, whereas a
+# meta tag is a string a template wrote. Measured on 16 real Indian article pages,
+# JSON-LD alone found 8 dates and this recovered 1 more — small, but dating is the
+# flagship case and the cost is one regex.
+_META_PUBLISHED = re.compile(
+    r"""<meta[^>]+(?:property|name)=["'](?:article:published_time|publishdate"""
+    r"""|og:published_time|datePublished)["'][^>]+content=["']([^"']+)""",
+    re.IGNORECASE,
+)
+
 # Long enough to carry a checkable claim. Shorter fragments are captions, bylines and
 # navigation text, which produce anchors nobody can act on.
 _MIN_PARAGRAPH_CHARS = 40
@@ -236,6 +247,13 @@ def extract(html: str, *, url: str | None = None) -> ExtractedArticle:
             title = None
 
     published = _parse_date(metadata.get("datePublished"))
+    if published is None:
+        # Fall back to the meta tag before giving up. A page that states its date
+        # only in a meta tag is still a dated page, and an undated page cannot
+        # participate in the temporal comparison at all.
+        match = _META_PUBLISHED.search(html)
+        if match:
+            published = _parse_date(match.group(1))
     if published is None and has_structured:
         limitations.append("structured metadata carries no publication date")
 

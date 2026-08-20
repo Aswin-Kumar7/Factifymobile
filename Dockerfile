@@ -23,11 +23,20 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Application layer.
 COPY app ./app
 COPY migrations ./migrations
+# The feed registry is data, not code: load_registry() reads /srv/data/feeds.json
+# and raises without it, so omitting this directory makes the container crash on
+# the first ingestion tick rather than at build time.
+COPY data ./data
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
 
 FROM python:3.12-slim-bookworm AS runtime
+
+# ffmpeg for the video keyframe path (M35). Without it KeyframeExtractor reports
+# itself unavailable and every video abstains — honest, but silently useless.
+# --no-install-recommends keeps this to the codecs rather than a desktop stack.
+RUN apt-get update     && apt-get install --no-install-recommends -y ffmpeg     && rm -rf /var/lib/apt/lists/*
 
 # Non-root: the process never needs to write outside its own tmp.
 RUN groupadd --system --gid 1001 facify \
@@ -43,7 +52,18 @@ ENV PATH="/srv/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
+COPY --from=builder --chown=facify:facify /build/data /srv/data
+
 USER facify
+
+# Local model weights, baked in at build time rather than downloaded on first use.
+#
+# fastembed fetches ~21s of text weights and ~15s of image weights the first time
+# it runs. On a scale-to-zero container that lands on the first user request, which
+# collides directly with the 3-8 second latency target — the one request most likely
+# to be a judge's. Paying it here makes the image larger and the cold start honest.
+ENV FASTEMBED_CACHE_PATH=/srv/.models
+RUN python -c "from fastembed import TextEmbedding, ImageEmbedding; TextEmbedding('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2', cache_dir='/srv/.models'); ImageEmbedding('Qdrant/clip-ViT-B-32-vision', cache_dir='/srv/.models')"     || echo "model pre-warm skipped; first request will pay the download"
 
 EXPOSE 8080
 

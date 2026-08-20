@@ -87,6 +87,9 @@ ignore = [
 known-first-party = ["app", "tests"]
 
 [tool.ruff.lint.per-file-ignores]
+# A command-line entry point. Its output IS the interface, so stdout is not a
+# stray debug print; logging would put the report behind a handler nobody configured.
+"app/audit/run.py" = ["T201"]
 "tests/*" = [
     "S104", "S105", "S106",  # fixture strings, not real binds or secrets
     "S603", "S607",          # tests build fixture media by calling ffmpeg directly
