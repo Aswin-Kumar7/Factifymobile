@@ -48,6 +48,8 @@ from app.sources.base import (
     insufficient,
     locate_excerpt,
 )
+from app.sources.corpus_text import is_navigation
+from app.sources.reasoning import REASONER_VERSION, PassageReasoner, split_passages
 
 logger = logging.getLogger("facify.sources.corpus")
 
@@ -67,6 +69,40 @@ RRF_K = 60
 # Candidates that get fetched. Each one costs an HTTP round trip inside an 8 second
 # budget, which is what bounds this rather than any property of the ranking.
 SHORTLIST = 6
+
+# Candidates that get *read* by the model, out of the shortlist above.
+#
+# Reading is metered and word overlap is not, which changes the arithmetic
+# completely. One call per source per claim means a two-claim submission over the
+# full shortlist is twelve calls plus extraction — roughly four verifications
+# against a fifty-a-day cap, which is not a product.
+#
+# Three is where the value is. The shortlist is RRF-ordered, so the sources that
+# actually answer the claim are at the top; positions four to six are the tail that
+# usually produces NOT_RELEVANT. Those still get fetched and still get the lexical
+# treatment, so nothing is dropped — it is judged more cheaply and more weakly, and
+# the ledger records which mechanism was used.
+REASONED_CANDIDATES = 3
+
+# Recency windows, in days.
+#
+# Retrieval had no date handling at all: `published_at` was selected and carried but
+# never filtered or ranked on, so a claim about this week could be answered with an
+# article from 2019 — and the corpus does span back that far. For a system checking
+# forwards, that is not a stale result, it is a wrong one, because the claim is
+# almost always about something recent and an old article about the same subject is
+# a different event.
+#
+# Two windows rather than one cutoff: the narrow window is what we want, the wide one
+# is what we accept rather than abstaining. A fact-check published four months ago is
+# still the right answer to a claim recirculating today.
+RECENT_WINDOW_DAYS = 45
+WIDE_WINDOW_DAYS = 365
+
+# Below this many rows the narrow window is treated as too thin to rely on and the
+# search widens. Set at the shortlist size: fewer candidates than we intend to fetch
+# means the window, not the corpus, is the limit.
+THIN_RESULT_COUNT = SHORTLIST
 
 # Share of a claim's significant words that must appear in a sentence before that
 # sentence is quotable as bearing on the claim. Two thresholds, because "this article
@@ -167,28 +203,6 @@ def best_sentence(claim_text: str, article_text: str) -> tuple[str, float]:
     return best, best_score
 
 
-def is_navigation(sentence: str) -> bool:
-    """Whether a line is site chrome rather than prose.
-
-    Extraction sometimes carries the nav bar into the body, and a breadcrumb like
-    "Home | News | Kerala Jail Gets AI Based Smart Surveillance System" scores
-    extremely well on word overlap precisely because it is the headline repeated.
-    It was the top-scoring "evidence" for one probe at 83% coverage.
-
-    Quoting it is wrong on its own terms: a citation should point at the sentence
-    where a publication says a thing, not at the menu above it.
-    """
-    if sentence.count("|") >= 2 or sentence.count("»") >= 2:
-        return True
-    # Breadcrumbs and menus are title-case fragments without sentence punctuation.
-    words = sentence.split()
-    if len(words) >= 5 and "." not in sentence:
-        capitalised = sum(1 for w in words if w[:1].isupper())
-        if capitalised / len(words) > 0.8:
-            return True
-    return False
-
-
 class CorpusResolver:
     """Finds ingested articles that bear on a claim, and quotes them.
 
@@ -222,11 +236,23 @@ class CorpusResolver:
         embedder: TextEmbedder | None = None,
         fetcher: SecureFetcher | None = None,
         shortlist: int = SHORTLIST,
+        reasoner: PassageReasoner | None = None,
     ) -> None:
         self._database = database
         self._embedder = embedder
         self._fetcher = fetcher or SecureFetcher(timeout_seconds=8.0)
         self._shortlist = shortlist
+        # Optional so the resolver still works with no model configured. Without it
+        # `relate` falls back to word overlap, which is weaker and says so.
+        self._reasoner = reasoner
+        # Which fetched pages are cheap enough to read, keyed by content hash.
+        #
+        # `relate` receives a snapshot and not the candidate, so the shortlist rank
+        # is not otherwise reachable from where the decision has to be made. The hash
+        # identifies the page, so a concurrent request for the same page reaches the
+        # same answer; the cap keeps a long-running process from accumulating one
+        # entry per page it has ever seen.
+        self._reasonable: dict[str, bool] = {}
 
     async def search(self, claim: Claim) -> list[tuple[dict[str, Any], float]]:
         """Run both legs, fuse, and return rows with their fused score, best first.
@@ -235,27 +261,61 @@ class CorpusResolver:
         result set. Searching twice would double the database work and, worse, could
         return two different sets for one claim — so the count and the citations
         would describe different things.
+
+        Recency is applied as a search window that widens only when the narrow one
+        comes back thin, rather than as a score penalty. A penalty still returns the
+        2019 article when nothing newer exists, just further down, and a candidate
+        that reaches the shortlist gets fetched and quoted regardless of its rank.
         """
-        rows: dict[str, dict[str, Any]] = {}
-        rankings: list[list[str]] = []
+        rows, rankings = await self._legs(claim, within_days=RECENT_WINDOW_DAYS)
 
-        async with self._database.connection() as conn:
-            dense = await self._dense(conn, claim)
-            if dense:
-                rankings.append([r["id"] for r in dense])
-                rows.update({r["id"]: r for r in dense})
-
-            lexical = await self._lexical(conn, claim)
-            if lexical:
-                rankings.append([r["id"] for r in lexical])
-                rows.update({r["id"]: r for r in lexical})
+        if sum(len(r) for r in rankings) < THIN_RESULT_COUNT:
+            wide_rows, wide_rankings = await self._legs(claim, within_days=WIDE_WINDOW_DAYS)
+            if sum(len(r) for r in wide_rankings) > sum(len(r) for r in rankings):
+                rows, rankings = wide_rows, wide_rankings
+                event(
+                    logger,
+                    "recency window widened",
+                    module="sources.corpus",
+                    outcome="ok",
+                    from_days=RECENT_WINDOW_DAYS,
+                    to_days=WIDE_WINDOW_DAYS,
+                )
 
         if not rankings:
             return []
 
+        # Recency is expressed by the window above and **not** by a ranking leg.
+        #
+        # A date ranking was tried here and had to be removed: RRF weights every leg
+        # equally, so ranking the whole result set by date made the newest article
+        # a top candidate whatever it was about. A claim about a Kerala jail
+        # retrieved an unrelated corruption arrest from the same afternoon, because
+        # it was newer. Freshness is a filter on what is eligible, never a reason to
+        # prefer one eligible source over a more relevant one.
         fused = reciprocal_rank_fusion(rankings)
         ordered = sorted(fused.items(), key=lambda pair: -pair[1])
         return [(rows[i], score) for i, score in ordered if rows.get(i, {}).get("canonical_url")]
+
+    async def _legs(
+        self, claim: Claim, *, within_days: int
+    ) -> tuple[dict[str, dict[str, Any]], list[list[str]]]:
+        """Both retrieval legs over one time window."""
+        rows: dict[str, dict[str, Any]] = {}
+        rankings: list[list[str]] = []
+
+        async with self._database.connection() as conn:
+            dense = await self._dense(conn, claim, within_days=within_days)
+            if dense:
+                rankings.append([r["id"] for r in dense])
+                rows.update({r["id"]: r for r in dense})
+
+            lexical = await self._lexical(conn, claim, within_days=within_days)
+            if lexical:
+                rankings.append([r["id"] for r in lexical])
+                rows.update({r["id"]: r for r in lexical})
+
+        return rows, rankings
 
     async def candidates(self, claim: Claim) -> list[SourceCandidate]:
         """Hybrid shortlist: dense and lexical legs, fused by rank."""
@@ -275,17 +335,19 @@ class CorpusResolver:
         return [
             SourceCandidate(
                 url=rows[item_id]["canonical_url"],
+                # Rank is carried here because it is the only field that survives
+                # into `snapshot`, where the read/skip decision is recorded.
                 publisher=rows[item_id].get("publisher"),
                 title=rows[item_id].get("title"),
                 published_at=rows[item_id].get("published_at"),
-                proposed_by=f"{NAME}:rrf",
+                proposed_by=f"{NAME}:rrf:{position}",
                 prior_score=score,
             )
-            for item_id, score in ordered
+            for position, (item_id, score) in enumerate(ordered)
             if rows.get(item_id, {}).get("canonical_url")
         ]
 
-    async def _dense(self, conn: Any, claim: Claim) -> list[dict[str, Any]]:
+    async def _dense(self, conn: Any, claim: Claim, *, within_days: int) -> list[dict[str, Any]]:
         """Vector leg. Returns nothing — not zeros — when the claim's language is
         outside the model, so the lexical leg carries it alone rather than being
         polluted by a meaningless ranking."""
@@ -310,14 +372,15 @@ class CorpusResolver:
                    origin_cluster_id::text AS origin_cluster_id, minhash_signature
               FROM facify.corpus_item
              WHERE embedding IS NOT NULL AND canonical_url IS NOT NULL
+               AND (published_at IS NULL OR published_at > now() - make_interval(days => %s))
              ORDER BY embedding <=> %s::vector
              LIMIT %s
             """,
-            (vector, DENSE_K),
+            (within_days, vector, DENSE_K),
         )
         return list(await cursor.fetchall())
 
-    async def _lexical(self, conn: Any, claim: Claim) -> list[dict[str, Any]]:
+    async def _lexical(self, conn: Any, claim: Claim, *, within_days: int) -> list[dict[str, Any]]:
         """Full-text leg over title and excerpt.
 
         `websearch_to_tsquery` rather than `plainto_tsquery` because it degrades
@@ -334,6 +397,7 @@ class CorpusResolver:
                    origin_cluster_id::text AS origin_cluster_id, minhash_signature
               FROM facify.corpus_item
              WHERE canonical_url IS NOT NULL
+               AND (published_at IS NULL OR published_at > now() - make_interval(days => %s))
                AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(excerpt,''))
                    @@ websearch_to_tsquery('simple', %s)
              ORDER BY ts_rank(
@@ -342,7 +406,7 @@ class CorpusResolver:
                       ) DESC
              LIMIT %s
             """,
-            (terms, terms, LEXICAL_K),
+            (within_days, terms, terms, LEXICAL_K),
         )
         return list(await cursor.fetchall())
 
@@ -366,6 +430,8 @@ class CorpusResolver:
         # what we made of it.
         digest = hashlib.sha256(result.body).hexdigest()
 
+        self._remember_rank(digest, candidate.proposed_by)
+
         return SourceSnapshot(
             id=digest,
             url=candidate.url,
@@ -379,15 +445,95 @@ class CorpusResolver:
             http_status=result.status_code,
         )
 
-    async def relate(self, claim: Claim, snapshot: SourceSnapshot) -> SourceRelation:
-        """Quote the sentence that bears on the claim, or return nothing.
+    def _remember_rank(self, digest: str, proposed_by: str) -> None:
+        """Record whether this page is inside the reading budget."""
+        if len(self._reasonable) > 4096:
+            self._reasonable.clear()
+        try:
+            rank = int(proposed_by.rsplit(":", 1)[-1])
+        except ValueError:
+            rank = 0
+        self._reasonable[digest] = rank < REASONED_CANDIDATES
 
-        **This resolver never returns CONTRADICTS.** Detecting that an article denies
-        a claim needs entailment, and lexical overlap cannot tell "X happened" from
-        "X did not happen" — the two share almost every significant word. Reporting
-        contradiction from this signal would be inventing the finding most likely to
-        be acted on. Contradiction comes from a fact-checker's published rating, and
-        absence of coverage is interpreted by `CorroborationResolver.assess`.
+    async def relate(self, claim: Claim, snapshot: SourceSnapshot) -> SourceRelation:
+        """Read the fetched article and say what it does to the claim.
+
+        Two mechanisms, and the difference between them is reading versus counting.
+        When a reasoner is configured the model reads whole paragraphs and returns a
+        relation with a verbatim quote and a stated reason; the quote is then located
+        in the passage it came from, and a quote that cannot be located discards the
+        judgement. When no model is available this falls back to word overlap behind
+        a semantic gate, which cannot detect contradiction and does not pretend to.
+        """
+        if self._reasoner is not None and self._reasonable.get(snapshot.content_hash, False):
+            relation = await self._reason(claim, snapshot)
+            if relation is not None:
+                return relation
+
+        return self._relate_lexically(claim, snapshot)
+
+    async def _reason(self, claim: Claim, snapshot: SourceSnapshot) -> SourceRelation | None:
+        """The reading path. `None` means it could not run, not that it found nothing.
+
+        The distinction matters: a provider outage must fall back to the weaker
+        mechanism rather than silently reporting that a source says nothing.
+        """
+        assert self._reasoner is not None
+
+        passages = split_passages(snapshot.text)
+        if not passages:
+            return None
+
+        outcome = await self._reasoner.judge(claim.text, passages)
+        if not outcome.succeeded:
+            event(
+                logger,
+                "passage reasoning unavailable; falling back to lexical matching",
+                module="sources.corpus",
+                outcome="degraded",
+                failure_reason=outcome.reason,
+            )
+            return None
+
+        best = outcome.best()
+        if best is None:
+            # The model read the article and found nothing bearing on the claim.
+            # That is an answer, and a stronger one than the lexical path can give.
+            return insufficient(
+                NAME,
+                VERSION,
+                f"read {outcome.passages_read} passages; none addresses this claim",
+            )
+
+        # Located again against the whole article rather than trusting the passage
+        # offsets. The excerpt shown to a reader must be findable in the document
+        # they can open, not only in the fragment the model was handed.
+        excerpt, anchor = locate_excerpt(snapshot.text, best.quote)
+        if not excerpt:
+            return insufficient(
+                NAME, VERSION, "the quoted passage could not be located in the fetched article"
+            )
+
+        return SourceRelation(
+            relation=best.relation,
+            validator=f"{NAME}+reasoner",
+            validator_version=f"{VERSION}/{REASONER_VERSION}",
+            excerpt=excerpt,
+            anchor=anchor,
+            # The reason travels in the metric so the ledger records *why* this
+            # relation was assigned, not merely that it was.
+            metric=f"passage_entailment: {best.reason}"[:200],
+            value=best.relevance,
+            threshold=0.0,
+        )
+
+    def _relate_lexically(self, claim: Claim, snapshot: SourceSnapshot) -> SourceRelation:
+        """The fallback. Word overlap behind a semantic gate.
+
+        **Never returns CONTRADICTS**, and that limit is the reason the reading path
+        exists: lexical overlap cannot tell "X happened" from "X did not happen",
+        since the two share every significant word. Reporting contradiction from this
+        signal would invent the finding most likely to be acted on.
         """
         sentence, score = best_sentence(claim.text, snapshot.text)
         if not sentence or score < CONTEXT_OVERLAP:

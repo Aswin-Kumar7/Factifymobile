@@ -46,6 +46,7 @@ from app.security.fetcher import SecureFetcher
 from app.sources.base import SourceResolver
 from app.sources.corpus import CorpusCorroboration, CorpusResolver
 from app.sources.factcheck import FactCheckRecord, FactCheckResolver, parse_rating_from_title
+from app.sources.reasoning import PassageReasoner
 
 logger = logging.getLogger("facify.composition")
 
@@ -248,7 +249,26 @@ async def build(settings: Settings) -> dict[str, Any]:
     # resident and the whole point of local inference is not paying that per request.
     image_embedder = ImageEmbedder()
 
-    corpus = CorpusResolver(database=database, embedder=embedder, fetcher=source_fetcher)
+    # The reasoner reads fetched passages and judges them against the claim. Only
+    # built when a model is configured; without it the corpus resolver falls back to
+    # word overlap, which cannot detect contradiction and reports as much.
+    reasoner: PassageReasoner | None = None
+    if settings.llm.enabled and settings.llm.api_key:
+        reasoner = PassageReasoner(
+            fetcher=SecureFetcher(timeout_seconds=MODEL_TIMEOUT_SECONDS),
+            database=database,
+            providers=settings.providers,
+            endpoint=settings.llm.endpoint,
+            api_key=settings.llm.api_key.get_secret_value(),
+            model_id=settings.models.extraction,
+        )
+
+    corpus = CorpusResolver(
+        database=database,
+        embedder=embedder,
+        fetcher=source_fetcher,
+        reasoner=reasoner,
+    )
     resolvers: list[SourceResolver] = [
         corpus,
         FactCheckResolver(records=records, api_available=False),
