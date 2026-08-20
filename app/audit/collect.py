@@ -17,7 +17,9 @@ import logging
 from typing import Any
 
 from app.audit.manifest import Category, Expectation, Manifest, ManifestItem, stamp
+from app.audit.manifest import content_hash as hash_bytes
 from app.observability.logging import event
+from app.security.fetcher import FetchResult, SecureFetcher
 
 logger = logging.getLogger("facify.audit.collect")
 
@@ -25,6 +27,18 @@ logger = logging.getLogger("facify.audit.collect")
 # between collection and the run, and a manifest that sits exactly on the floor
 # drops below it the first time a publisher deletes a page.
 GENUINE_TARGET = 45
+
+
+async def _page_hash(fetcher: SecureFetcher, url: str) -> str | None:
+    """Hash the page as it is now, so drift can actually be detected later.
+
+    `corpus_item.content_hash` cannot be reused for this: it hashes the feed entry
+    (title and excerpt), not the page bytes. Copying it made every item compare a
+    feed hash against page bytes and report "source changed" — 43 of 52 in the
+    first real run, every one of them false.
+    """
+    result = await fetcher.fetch(url, provider="audit_collect")
+    return hash_bytes(result.body) if isinstance(result, FetchResult) else None
 
 
 async def collect(conn: Any, *, genuine_target: int = GENUINE_TARGET) -> Manifest:
@@ -35,6 +49,7 @@ async def collect(conn: Any, *, genuine_target: int = GENUINE_TARGET) -> Manifes
     published rather than anything we decided.
     """
     items: list[ManifestItem] = []
+    fetcher = SecureFetcher(timeout_seconds=20.0, max_bytes=8 * 1024 * 1024)
 
     # --- genuine content -----------------------------------------------------
     # Ordinary published journalism. The expectation is ABSTAIN, not SUPPORTED:
@@ -67,7 +82,7 @@ async def collect(conn: Any, *, genuine_target: int = GENUINE_TARGET) -> Manifes
                 publisher=row["publisher"],
                 language=str(row["language"] or "en"),
                 retrieved_at=stamp(),
-                content_hash=str(row["content_hash"]),
+                content_hash=await _page_hash(fetcher, str(row["canonical_url"])),
                 note=(
                     "Ordinary published journalism. Expected to abstain: a "
                     "corroboration corpus cannot affirm an arbitrary article, and "
@@ -110,14 +125,19 @@ async def collect(conn: Any, *, genuine_target: int = GENUINE_TARGET) -> Manifes
                 id=f"factcheck-{index:03d}",
                 category=Category.FACT_CHECKED,
                 expectation=Expectation.CONTRADICTED,
-                url=str(row["canonical_url"]),
+                # Deliberately no `url`: the item under test is the CLAIM the
+                # fact-checker debunked, stated in their headline. Pointing at the
+                # article and fetching it would verify the fact-check itself, which
+                # is a different question and never resolves.
                 text=title,
                 publisher=row["publisher"],
                 language=str(row["language"] or "en"),
                 retrieved_at=stamp(),
-                content_hash=str(row["content_hash"]),
                 reviewer_label=rating,
-                note=f"{row['publisher']} published the rating {rating!r}.",
+                note=(
+                    f"{row['publisher']} published the rating {rating!r}. The claim "
+                    "is the headline; the adjudication should be found for it."
+                ),
             )
         )
 
@@ -139,6 +159,7 @@ async def collect(conn: Any, *, genuine_target: int = GENUINE_TARGET) -> Manifes
             )
         )
 
+    await fetcher.aclose()
     manifest = Manifest(items=items, collected_at=stamp(), corpus_version="live")
 
     event(

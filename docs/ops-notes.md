@@ -675,6 +675,69 @@ through reverse-image discovery, a false match is a cited wrong answer.
 
 ---
 
+## Audit harness: four measurement bugs, found by running it (2026-08-20)
+
+Track M's harness was written, run against the live pipeline, and produced a report
+that was wrong in four separate ways. All four are the same class of error — the
+measurement describing the harness rather than the system — and the last one was
+dangerous.
+
+### 1. A clean bill of health issued by an outage
+
+The report printed **"False-positive rate: 0.0% (n=45)"** while **98% of items never
+reached a provider**. Every failed item abstained; an abstention is not a false
+positive; so the arithmetic produced a flattering figure from a broken run.
+
+The genuine-content floor did not catch it, because the sample was fine — 45 items,
+above the floor of 35. The *run* was broken, which is a different condition.
+
+Fixed: `false_positive_rate()` also returns `None` above a 20% provider-failure
+ceiling, and the report says which of the two reasons applies. A rate withheld for
+the wrong stated reason would be its own small lie.
+
+### 2. Latency measured the rate limiter
+
+Reported medians were 12,000 ms across every category — exactly the 5-per-minute
+pacing interval. Pacing had been implemented as a fake governor inside the provider
+call, so the sleep landed inside the timed region.
+
+Moved to the harness, between items, outside timing. Real medians: **223 ms
+adversarial, 226 ms fact-checked, 474 ms genuine.**
+
+### 3. "43 of 52 sources changed" — every one false
+
+Collection copied `corpus_item.content_hash` as the drift baseline. That column
+hashes the *feed entry* (`title
+excerpt`), not the page bytes, so comparing it
+against fetched HTML always differed.
+
+Collection now fetches each page and hashes it. Reported drift dropped to 19 of 52 —
+still high, and now measuring something real: news HTML carries rotating ads and
+timestamps, so byte-exact comparison flags pages whose article text is unchanged.
+Hashing the *extracted body* instead would be the better check, and is not yet done.
+
+### 4. Fact-check items verified the wrong document
+
+Items were built pointing at the fact-checker's article URL. The verifier fetched
+it, so the system was asked to verify Alt News's own debunk rather than the claim
+being debunked — a different question that never resolves.
+
+Fact-check items now carry the headline as the claim and no URL. The headline states
+the claim; the adjudication should be found *for* it.
+
+### Also: the audit exhausts the free tier
+
+Three full runs of 52 items plus testing hit `RESOURCE_EXHAUSTED` on
+`generate_content_free_tier_requests`. The audit deliberately does not apply the
+daily cap — the cap (50) is smaller than the manifest (52), so honouring it would
+make a full run impossible by construction.
+
+That tension is real and unresolved: a full audit needs more calls than the free
+tier allows in a day. Options are a paid tier, a smaller manifest, or accepting that
+the audit runs across two days. Recorded rather than papered over.
+
+---
+
 ## Credential hygiene
 
 The database password was shared in a chat transcript during setup and is therefore

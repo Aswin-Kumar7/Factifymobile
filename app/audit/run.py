@@ -45,35 +45,21 @@ class _NullCache:
         return None
 
 
-class _PacedGovernor:
-    """Enforces the per-minute cap, and nothing else.
+class _NoGovernor:
+    """Caps are not applied during an audit.
 
-    The first audit run disabled the governor entirely and immediately earned HTTP
-    429s: 52 sequential extractions against a free tier that allows about ten a
-    minute. Every failed item then abstained, and the run reported a 100% abstention
-    rate that described the rate limit rather than the system.
-
-    The daily cap is deliberately NOT applied — it is smaller than the manifest, so
-    honouring it would make a full audit impossible by construction. The per-minute
-    cap is honoured because exceeding it does not conserve quota, it just fails.
+    The daily cap is smaller than the manifest, so honouring it would make a full
+    run impossible by construction. The per-minute limit still has to be respected —
+    exceeding it earns 429s rather than conserving anything — but that is done by
+    pacing the harness between items, where the wait does not land inside the
+    measured latency.
     """
 
-    def __init__(self, per_minute: int) -> None:
-        # A floor of one keeps an unconfigured provider from dividing by zero.
-        self._interval = 60.0 / max(1, per_minute)
-        self._last = 0.0
-
-    async def _wait(self) -> None:
-        elapsed = time.monotonic() - self._last
-        if self._last and elapsed < self._interval:
-            await asyncio.sleep(self._interval - elapsed)
-        self._last = time.monotonic()
-
     async def acquire(self, provider: str) -> None:
-        await self._wait()
+        return None
 
     async def try_acquire(self, provider: str) -> None:
-        await self._wait()
+        return None
 
 
 async def _build_verifier(settings: Settings, conn: object) -> object:
@@ -113,7 +99,7 @@ async def _build_verifier(settings: Settings, conn: object) -> object:
     pipeline = ClaimPipeline(
         LLMExtractor(
             fetcher=fetcher,
-            governor=_PacedGovernor(settings.llm.per_minute_cap),  # type: ignore[arg-type]
+            governor=_NoGovernor(),  # type: ignore[arg-type]
             endpoint=settings.llm.endpoint,
             api_key=settings.llm.api_key.get_secret_value() if settings.llm.api_key else "",
             model_id=settings.models.extraction,
@@ -121,7 +107,7 @@ async def _build_verifier(settings: Settings, conn: object) -> object:
     )
     orchestrator = Orchestrator(
         cache=_NullCache(),  # type: ignore[arg-type]
-        governor=_PacedGovernor(settings.llm.per_minute_cap),  # type: ignore[arg-type]
+        governor=_NoGovernor(),  # type: ignore[arg-type]
         resolvers=[FactCheckResolver(records=records, api_available=False)],
         extractor_version="audit",
         model_id=settings.models.extraction,
@@ -232,7 +218,11 @@ async def do_report(settings: Settings) -> None:
     await db.open()
     async with db.connection() as conn:
         verify = await _build_verifier(settings, conn)
-        harness = AuditHarness(verify=verify, corpus_version=manifest.corpus_version)
+        harness = AuditHarness(
+            verify=verify,
+            corpus_version=manifest.corpus_version,
+            pace_seconds=60.0 / max(1, settings.llm.per_minute_cap),
+        )
         report = await harness.run(manifest)
     await verify._fetcher.aclose()  # type: ignore[attr-defined]
     await verify._sources.aclose()  # type: ignore[attr-defined]

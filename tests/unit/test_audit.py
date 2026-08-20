@@ -293,3 +293,58 @@ class TestOfflineRehearsal:
     def test_a_demo_item_needs_something_to_verify(self) -> None:
         assert DemoItem(id="x", text="a claim").source == "a claim"
         assert DemoItem(id="x").source == ""
+
+
+class TestABrokenRunPublishesNoRate:
+    """Found the hard way: a quota-exhausted run reported 0.0% false positives
+    over 45 genuine items while 98% of them never reached a provider.
+
+    Every failed item abstained, and an abstention is not a false positive, so the
+    arithmetic produced a clean bill of health issued by an outage. The sample
+    floor did not catch it — the sample was fine, the run was not.
+    """
+
+    @staticmethod
+    def _results(*, failed: int, total: int = MIN_GENUINE_ITEMS) -> list[ItemResult]:
+        results = []
+        for i in range(total):
+            results.append(
+                _result(
+                    _item(i),
+                    provider_failures=("extraction: provider returned 429",) if i < failed else (),
+                )
+            )
+        return results
+
+    def test_a_mostly_failed_run_withholds_the_rate(self) -> None:
+        report = _report(self._results(failed=MIN_GENUINE_ITEMS - 2))
+
+        assert not report.ran_cleanly
+        assert report.false_positive_rate() is None
+
+    def test_a_clean_run_publishes_it(self) -> None:
+        report = _report(self._results(failed=0))
+
+        assert report.ran_cleanly
+        assert report.false_positive_rate() is not None
+
+    def test_a_few_failures_are_tolerated(self) -> None:
+        """Providers fail occasionally; that is not the same as an outage."""
+        report = _report(self._results(failed=2))
+
+        assert report.ran_cleanly
+        assert report.false_positive_rate() is not None
+
+    def test_the_report_names_the_outage_rather_than_the_sample_size(self) -> None:
+        rendered = _report(self._results(failed=MIN_GENUINE_ITEMS - 1)).render()
+
+        assert "not reportable" in rendered
+        assert "measured an outage, not the system" in rendered
+        # The sample was fine, so it must not blame the floor.
+        assert "floor is" not in rendered
+
+    def test_the_sample_floor_still_reports_its_own_reason(self) -> None:
+        rendered = _report([_result(_item(i)) for i in range(6)]).render()
+
+        assert "floor is" in rendered
+        assert "measured an outage" not in rendered

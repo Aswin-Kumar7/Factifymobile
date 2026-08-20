@@ -19,6 +19,7 @@ The reporting rules are as load-bearing as the measurement:
 
 from __future__ import annotations
 
+import asyncio
 import statistics
 import time
 from dataclasses import dataclass, field
@@ -113,16 +114,38 @@ class AuditReport:
     def false_positive_count(self) -> int:
         return sum(1 for r in self.genuine if r.is_false_positive)
 
-    def false_positive_rate(self) -> tuple[float, int] | None:
-        """Rate and sample size, or `None` when the floor is not met.
+    # Above this share of items failing to reach a provider, the run did not
+    # measure the system. It measured an outage.
+    MAX_PROVIDER_FAILURE = 0.20
 
-        Returning `None` rather than a number is the point. A caller cannot
-        accidentally print a rate that the sample does not support.
+    def false_positive_rate(self) -> tuple[float, int] | None:
+        """Rate and sample size, or `None` when it cannot be supported.
+
+        Returning `None` rather than a number is the point: a caller cannot print
+        a rate the run does not justify.
+
+        Two ways it can be unsupportable, and the second was found the hard way. A
+        quota-exhausted run reported "0.0% false positives (n=45)" while 98% of
+        items never reached the provider at all — every one of them abstained
+        because nothing ran, and abstention is not a false positive. That is a
+        clean bill of health issued by an outage, which is the exact failure this
+        module exists to prevent.
         """
         sample = len(self.genuine)
         if sample < MIN_GENUINE_ITEMS:
             return None
+
+        failure_rate, _ = self.provider_failure_rate
+        if failure_rate > self.MAX_PROVIDER_FAILURE:
+            return None
+
         return self.false_positive_count / sample, sample
+
+    @property
+    def ran_cleanly(self) -> bool:
+        """Whether enough of the run reached a provider to mean anything."""
+        failure_rate, _ = self.provider_failure_rate
+        return failure_rate <= self.MAX_PROVIDER_FAILURE
 
     @property
     def citation_coverage(self) -> tuple[int, int]:
@@ -209,17 +232,34 @@ class AuditReport:
         )
 
         rate = self.false_positive_rate()
+        failure_rate, failure_n = self.provider_failure_rate
+
         if rate is None:
+            lines += ["", "### False-positive rate: **not reportable**", ""]
+
+            if len(self.genuine) < MIN_GENUINE_ITEMS:
+                lines += [
+                    f"Genuine-content items in this run: **{len(self.genuine)}**, floor "
+                    f"is **{MIN_GENUINE_ITEMS}**.",
+                    "",
+                    "Below the floor a single failure moves the observed rate by more",
+                    "than the target itself, so no figure is published.",
+                ]
+            else:
+                lines += [
+                    f"**{failure_rate:.0%}** of items ({failure_n} total) failed to reach",
+                    "a provider, above the "
+                    f"{self.MAX_PROVIDER_FAILURE:.0%} ceiling for a meaningful run.",
+                    "",
+                    "This run measured an outage, not the system. Items that never ran",
+                    "abstained, and an abstention is not a false positive — so the",
+                    "arithmetic would have produced a flattering figure from a broken",
+                    "run. Re-run when providers are reachable.",
+                ]
+
             lines += [
                 "",
-                "### False-positive rate: **not reportable**",
-                "",
-                f"Genuine-content items in this run: **{len(self.genuine)}**, floor is "
-                f"**{MIN_GENUINE_ITEMS}**.",
-                "",
-                "Below the floor a single failure moves the observed rate by more than",
-                "the target itself, so no figure is published. The raw count is",
-                f"**{self.false_positive_count}** false positives out of",
+                f"The raw count is **{self.false_positive_count}** false positives out of",
                 f"**{len(self.genuine)}** genuine items — a count, deliberately not a rate.",
             ]
         else:
@@ -285,18 +325,33 @@ class AuditReport:
 class AuditHarness:
     """Runs the manifest. Records what happened, repairs nothing."""
 
-    def __init__(self, *, verify: object, corpus_version: str = "unknown") -> None:
+    def __init__(
+        self,
+        *,
+        verify: object,
+        corpus_version: str = "unknown",
+        pace_seconds: float = 0.0,
+    ) -> None:
         # `verify` is any async callable taking a ManifestItem and returning an
         # ItemResult. Injected rather than constructed so the harness can run
         # against the live pipeline or against replayed snapshots unchanged.
         self._verify = verify
         self._corpus_version = corpus_version
 
+        # Pacing lives here, BETWEEN items and outside the timed region. The first
+        # implementation put it inside the provider call, so every reported latency
+        # came back as exactly the throttle interval — a 12-second median that
+        # measured the rate limiter rather than the pipeline.
+        self._pace = pace_seconds
+
     async def run(self, manifest: Manifest) -> AuditReport:
         started = datetime.now(UTC).isoformat()
         results: list[ItemResult] = []
 
-        for item in manifest.items:
+        for index, item in enumerate(manifest.items):
+            if index and self._pace:
+                await asyncio.sleep(self._pace)
+
             began = time.perf_counter()
             try:
                 result = await self._verify(item)  # type: ignore[operator]
