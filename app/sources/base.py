@@ -231,6 +231,17 @@ def locate_excerpt(text: str, needle: str, *, window: int = 220) -> tuple[str, d
     start = max(0, position - window // 2)
     end = min(len(haystack), position + len(target) + window // 2)
 
+    # Snap the window out to whitespace so the quotation does not begin or end
+    # mid-word. A citation rendered as "om hereon is simple" reads as a broken
+    # excerpt and invites doubt about whether the rest was quoted faithfully.
+    # Only the displayed window moves; the offsets below still point at the match.
+    if start > 0:
+        space = haystack.rfind(" ", 0, start)
+        start = 0 if space == -1 else space + 1
+    if end < len(haystack):
+        space = haystack.find(" ", end)
+        end = len(haystack) if space == -1 else space
+
     return haystack[start:end].strip(), {"char_start": position, "char_end": position + len(target)}
 
 

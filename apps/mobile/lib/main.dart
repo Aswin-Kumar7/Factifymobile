@@ -34,10 +34,12 @@ class _FacifyAppState extends State<FacifyApp> {
     return MaterialApp(
       title: 'Facify',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF00695C)),
-        useMaterial3: true,
-      ),
+      theme: _theme(Brightness.light),
+      darkTheme: _theme(Brightness.dark),
+      // Follows the system. A verification tool gets opened in a hurry, often
+      // from a chat at night, and forcing a light surface at that moment is the
+      // kind of small friction that loses the check.
+      themeMode: ThemeMode.system,
       // English and Hindi. Hinglish is deliberately absent as an interface
       // language: it is a register rather than a locale, and the embedding model
       // cannot represent it (measured, see docs/ops-notes.md), so offering it
@@ -51,4 +53,75 @@ class _FacifyAppState extends State<FacifyApp> {
       home: HomeScreen(client: _client),
     );
   }
+}
+
+/// One theme built twice, so light and dark cannot drift apart.
+///
+/// The seed is deliberately restrained. Verdict severity is carried by the action
+/// colours in `VerdictCard` — green through red — and a strongly tinted chrome
+/// competes with exactly the signal that has to read at a glance.
+ThemeData _theme(Brightness brightness) {
+  final scheme = ColorScheme.fromSeed(
+    seedColor: const Color(0xFF00695C),
+    brightness: brightness,
+  );
+
+  return ThemeData(
+    colorScheme: scheme,
+    useMaterial3: true,
+    scaffoldBackgroundColor: scheme.surface,
+    appBarTheme: AppBarTheme(
+      backgroundColor: scheme.surface,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      scrolledUnderElevation: 1,
+      centerTitle: false,
+      titleTextStyle: TextStyle(
+        color: scheme.onSurface,
+        fontSize: 22,
+        fontWeight: FontWeight.w600,
+      ),
+    ),
+    cardTheme: CardThemeData(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      // An outline rather than a shadow: several cards stack on the result
+      // screen, and stacked shadows turn into visual noise that reads as depth
+      // where there is no hierarchy.
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: scheme.outlineVariant),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: scheme.primary, width: 2),
+      ),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
+    ),
+    listTileTheme: const ListTileThemeData(
+      contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+    ),
+    dividerTheme: DividerThemeData(color: scheme.outlineVariant, thickness: 1),
+    chipTheme: ChipThemeData(
+      side: BorderSide(color: scheme.outlineVariant),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+    ),
+  );
 }

@@ -35,6 +35,10 @@ class EvidenceScreen extends StatelessWidget {
             const SizedBox(height: 8),
             _ProvenanceCard(provenance: verdict.mediaProvenance!),
           ],
+          if (verdict.sourceRisk != 'UNKNOWN') ...[
+            const SizedBox(height: 8),
+            _SourceRiskCard(risk: verdict.sourceRisk),
+          ],
           if (verdict.skipped.isNotEmpty) ...[
             const SizedBox(height: 8),
             _SkippedCard(skipped: verdict.skipped),
@@ -445,6 +449,67 @@ class _CaseFooter extends StatelessWidget {
             label: const Text('Verify this result'),
           ),
       ],
+    );
+  }
+}
+
+
+/// What is known about the publisher, kept apart from what is known about the claim.
+///
+/// Rule 6 in the verdict engine caps a source-risk-only case at abstention, and the
+/// wording here matches that: a risky publisher is a reason to look harder, never a
+/// finding that the content is false. Presenting it as a verdict would let the
+/// messenger decide the message.
+class _SourceRiskCard extends StatelessWidget {
+  const _SourceRiskCard({required this.risk});
+
+  final String risk;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final (label, detail) = switch (risk) {
+      'HIGH' => (
+        'Publisher has a high risk profile',
+        'Recently registered, or with a record of unreliable material. This '
+            'describes the publisher, not this claim.',
+      ),
+      'MEDIUM' => (
+        'Publisher has a mixed record',
+        'Some signals worth noting about the source. This describes the '
+            'publisher, not this claim.',
+      ),
+      'LOW' => (
+        'Publisher has an established record',
+        'No adverse signals about the source. This is not evidence that the '
+            'claim itself is true.',
+      ),
+      _ => ('Publisher risk not assessed', 'Nothing is known either way.'),
+    };
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.storefront_outlined, size: 18, color: theme.colorScheme.onSurfaceVariant),
+                const SizedBox(width: 8),
+                Expanded(child: Text(label, style: theme.textTheme.titleSmall)),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              detail,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
