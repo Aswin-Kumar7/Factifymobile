@@ -27,17 +27,19 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Protocol
 from uuid import UUID
 
 from app.cache.keys import CacheKeyParts
 from app.cache.service import CachedVerdict, CacheService
 from app.domain.claim import Claim
-from app.domain.enums import Action, ClaimStatus, SourceRisk
+from app.domain.enums import Action, ClaimStatus, Direction, SourceRisk
 from app.domain.evidence import Advisory, Evidence
 from app.governor.governor import Governor, Skip
 from app.intake.normalizer import NormalisedIntake
 from app.observability.logging import event
 from app.sources.base import SourceCandidate, SourceResolver, build_evidence
+from app.sources.corpus import CorroborationSignal
 from app.verdict.engine import RULE_VERSION, CaseDecision, Decision, decide, roll_up
 from app.verdict.strength import Strength, evidence_strength
 
@@ -51,6 +53,16 @@ TARGET_SECONDS = 8.0
 # they do not depend on each other; the ceiling exists so a burst of claims cannot
 # open forty sockets against six publishers.
 DEFAULT_CONCURRENCY = 6
+
+
+class Corroboration(Protocol):
+    """Anything that can count independent origins for a claim.
+
+    A protocol rather than a concrete type so the orchestrator does not depend on the
+    corpus module, and so a test can count origins without a database.
+    """
+
+    async def signal(self, claim: Claim, *, citation_urls: list[str]) -> CorroborationSignal: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +143,7 @@ class Orchestrator:
         extractor_version: str,
         model_id: str = "",
         concurrency: int = DEFAULT_CONCURRENCY,
+        corroboration: Corroboration | None = None,
     ) -> None:
         self._cache = cache
         self._governor = governor
@@ -138,6 +151,9 @@ class Orchestrator:
         self._extractor_version = extractor_version
         self._model_id = model_id
         self._semaphore = asyncio.Semaphore(concurrency)
+        # Optional so existing callers — the audit runner, every unit test — keep
+        # working unchanged and simply count no origins.
+        self._corroboration = corroboration
 
     async def verify(
         self,
@@ -295,6 +311,17 @@ class Orchestrator:
                 skipped.append(SkippedCheck(check=name, reason=skip))
             evidence.extend(found)
 
+        # Corroboration is counted here — after the evidence exists and before
+        # anything decides. Rule 4 reads `independent_origin_count` off the claim,
+        # and nothing in this codebase ever wrote it: the field was read and never
+        # set, so a claim carried by several independent outlets still fell through
+        # to `rule.insufficient_origins`.
+        #
+        # The count must come from the citations rather than from what retrieval
+        # shortlisted. An earlier version counted the shortlist and handed the engine
+        # "6 independent origins" for a claim only one document actually supported.
+        claim = await self._count_origins(claim, evidence=evidence, skipped=skipped)
+
         decision = decide(claim, evidence)
         strength = evidence_strength(
             evidence,
@@ -304,6 +331,39 @@ class Orchestrator:
         )
 
         return ClaimOutcome(claim=claim, decision=decision, strength=strength, evidence=evidence)
+
+    async def _count_origins(
+        self, claim: Claim, *, evidence: list[Evidence], skipped: list[SkippedCheck]
+    ) -> Claim:
+        """Attach the independent-origin count, or leave the claim untouched.
+
+        Only supporting citations are counted. Contradicting evidence has its own
+        decisive rule and does not need an origin count, and mixing the two would let
+        sources that disagree inflate the corroboration behind a claim.
+
+        A failure degrades to "no corroboration counted" rather than aborting: the
+        counts stay zero, which can only make the verdict more cautious.
+        """
+        if self._corroboration is None:
+            return claim
+
+        urls = sorted(
+            {
+                e.citation_url
+                for e in evidence
+                if e.direction is Direction.SUPPORTS and e.citation_url
+            }
+        )
+        if not urls:
+            return claim
+
+        try:
+            signal = await self._corroboration.signal(claim, citation_urls=urls)
+        except Exception as error:
+            skipped.append(SkippedCheck(check="corroboration", reason=type(error).__name__))
+            return claim
+
+        return signal.applied_to(claim)
 
     async def _run_resolver(
         self, resolver: SourceResolver, claim: Claim

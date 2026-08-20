@@ -38,10 +38,11 @@ from app.extraction.llm import LLMExtractor
 from app.governor.governor import Governor
 from app.intake.normalizer import NormalisedIntake
 from app.observability.logging import event
-from app.orchestration.pipeline import Orchestrator, VerificationResult
+from app.orchestration.ledger import CaseReader, Ledger
+from app.orchestration.pipeline import Orchestrator, SkippedCheck, VerificationResult
 from app.security.fetcher import SecureFetcher
 from app.sources.base import SourceResolver
-from app.sources.corpus import CorpusResolver
+from app.sources.corpus import CorpusCorroboration, CorpusResolver
 from app.sources.factcheck import FactCheckRecord, FactCheckResolver, parse_rating_from_title
 
 logger = logging.getLogger("facify.composition")
@@ -68,11 +69,13 @@ class RequestScopedOrchestrator:
         resolvers: list[SourceResolver],
         settings: Settings,
         extractor_version: str,
+        corroboration: CorpusCorroboration | None = None,
     ) -> None:
         self._database = database
         self._resolvers = resolvers
         self._settings = settings
         self._extractor_version = extractor_version
+        self._corroboration = corroboration
 
     async def verify(
         self,
@@ -90,14 +93,36 @@ class RequestScopedOrchestrator:
                 resolvers=self._resolvers,
                 extractor_version=self._extractor_version,
                 model_id=self._settings.models.extraction,
+                corroboration=self._corroboration,
             )
-            return await orchestrator.verify(
+            result = await orchestrator.verify(
                 intake,
                 case_id=case_id,
                 claims=claims,
                 advisories=advisories,
                 source_risk=source_risk,
             )
+
+            # Written after the verdict exists and never allowed to change it. A
+            # cached result is not rewritten: it was persisted when first computed,
+            # and writing it again would record a second case for one verification.
+            if not result.from_cache:
+                written = await Ledger(conn).persist(
+                    result,
+                    request_id=str(case_id),
+                    input_type=intake.input_type.value,
+                    language=intake.language.language.value,
+                    consent_to_process_media=getattr(intake, "consent_to_process_media", False),
+                )
+                if not written:
+                    result.skipped.append(
+                        SkippedCheck(
+                            check="ledger",
+                            reason="the verdict was not recorded; it cannot be retrieved later",
+                        )
+                    )
+
+            return result
 
 
 class RequestScopedClaimPipeline:
@@ -204,19 +229,22 @@ async def build(settings: Settings) -> dict[str, Any]:
     # Order is not significant — the pipeline runs resolvers concurrently — but the
     # set is: corpus retrieval is what makes the 2,000-item ingested corpus reachable
     # at all, and fact-checks are the only Tier C source there is.
+    corpus = CorpusResolver(database=database, embedder=embedder, fetcher=source_fetcher)
     resolvers: list[SourceResolver] = [
-        CorpusResolver(database=database, embedder=embedder, fetcher=source_fetcher),
+        corpus,
         FactCheckResolver(records=records, api_available=False),
     ]
 
     state: dict[str, Any] = {
         "database": database,
         "embedder": embedder,
+        "case_reader": CaseReader(database),
         "orchestrator": RequestScopedOrchestrator(
             database=database,
             resolvers=resolvers,
             settings=settings,
             extractor_version=_extractor_version(),
+            corroboration=CorpusCorroboration(resolver=corpus, database=database),
         ),
     }
 

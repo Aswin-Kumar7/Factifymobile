@@ -54,7 +54,28 @@ class CaseRepository(_Repository):
         input_type: str,
         language: str | None = None,
         consent_to_process_media: bool = False,
+        case_id: UUID | None = None,
     ) -> UUID:
+        """Open a case, optionally under an id the caller already issued.
+
+        The endpoint mints the case id before verification starts, because the
+        response carries it and a client polls `/v1/cases/{id}` with it. Letting the
+        database generate a second id would persist the case under an identifier
+        nobody was ever given, and every lookup would miss.
+        """
+        if case_id is not None:
+            row = await self._one(
+                """
+                INSERT INTO verification_case (id, request_id, input_type, language,
+                                         consent_to_process_media)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (id) DO NOTHING
+                RETURNING id
+                """,
+                (case_id, request_id, input_type, language, consent_to_process_media),
+            )
+            return case_id if row is None else UUID(str(row["id"]))
+
         row = await self._one(
             """
             INSERT INTO verification_case (request_id, input_type, language,

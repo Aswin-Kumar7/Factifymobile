@@ -29,6 +29,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+from dataclasses import dataclass
 from typing import Any
 
 from app.domain.claim import Claim
@@ -36,6 +37,8 @@ from app.domain.enums import EvidenceKind, Method, Relation, Tier
 from app.embeddings.image import cosine
 from app.embeddings.text import TextEmbedder
 from app.extraction.web import extract
+from app.knowledge.clustering import DEFAULT_THRESHOLD
+from app.knowledge.minhash import Signature
 from app.observability.logging import event
 from app.security.fetcher import FetchResult, SecureFetcher
 from app.sources.base import (
@@ -200,7 +203,17 @@ class CorpusResolver:
 
     tier = Tier.D
     kind = EvidenceKind.CORROBORATION
-    method = Method.EMBEDDING_SIMILARITY
+    # `ORIGIN_CLUSTER_COUNT`, not `EMBEDDING_SIMILARITY`. The distinction the
+    # validators table draws is between candidate generation and a conclusion, and
+    # embeddings do only the former here: they shortlist, then the page is fetched
+    # and a sentence is anchored in it, and that anchored sentence is the finding.
+    #
+    # Declaring it decisive-capable does not make one article decisive. Rule 4
+    # additionally requires `claim.independent_origin_count >= 2`, so a single
+    # matching outlet still falls through to `rule.insufficient_origins`. The gate is
+    # the origin count, which is computed below from stored clustering rather than
+    # asserted here.
+    method = Method.ORIGIN_CLUSTER_COUNT
 
     def __init__(
         self,
@@ -215,8 +228,14 @@ class CorpusResolver:
         self._fetcher = fetcher or SecureFetcher(timeout_seconds=8.0)
         self._shortlist = shortlist
 
-    async def candidates(self, claim: Claim) -> list[SourceCandidate]:
-        """Hybrid shortlist: dense and lexical legs, fused by rank."""
+    async def search(self, claim: Claim) -> list[tuple[dict[str, Any], float]]:
+        """Run both legs, fuse, and return rows with their fused score, best first.
+
+        Separate from `candidates` because the corroboration signal needs the same
+        result set. Searching twice would double the database work and, worse, could
+        return two different sets for one claim — so the count and the citations
+        would describe different things.
+        """
         rows: dict[str, dict[str, Any]] = {}
         rankings: list[list[str]] = []
 
@@ -235,16 +254,21 @@ class CorpusResolver:
             return []
 
         fused = reciprocal_rank_fusion(rankings)
-        ordered = sorted(fused.items(), key=lambda pair: -pair[1])[: self._shortlist]
+        ordered = sorted(fused.items(), key=lambda pair: -pair[1])
+        return [(rows[i], score) for i, score in ordered if rows.get(i, {}).get("canonical_url")]
+
+    async def candidates(self, claim: Claim) -> list[SourceCandidate]:
+        """Hybrid shortlist: dense and lexical legs, fused by rank."""
+        found = await self.search(claim)
+        ordered = [(row["id"], score) for row, score in found][: self._shortlist]
+        rows = {row["id"]: row for row, _ in found}
 
         event(
             logger,
             "corpus shortlist built",
             module="sources.corpus",
             outcome="ok",
-            dense=len(rankings[0]) if rankings else 0,
-            legs=len(rankings),
-            fused=len(fused),
+            fused=len(found),
             shortlisted=len(ordered),
         )
 
@@ -282,7 +306,8 @@ class CorpusResolver:
         vector = "[" + ",".join(str(v) for v in result.vectors[0]) + "]"
         cursor = await conn.execute(
             """
-            SELECT id::text, canonical_url, title, publisher, published_at
+            SELECT id::text, canonical_url, title, publisher, published_at,
+                   origin_cluster_id::text AS origin_cluster_id, minhash_signature
               FROM facify.corpus_item
              WHERE embedding IS NOT NULL AND canonical_url IS NOT NULL
              ORDER BY embedding <=> %s::vector
@@ -305,7 +330,8 @@ class CorpusResolver:
 
         cursor = await conn.execute(
             """
-            SELECT id::text, canonical_url, title, publisher, published_at
+            SELECT id::text, canonical_url, title, publisher, published_at,
+                   origin_cluster_id::text AS origin_cluster_id, minhash_signature
               FROM facify.corpus_item
              WHERE canonical_url IS NOT NULL
                AND to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(excerpt,''))
@@ -424,3 +450,132 @@ class CorpusResolver:
         if len(result.vectors) != 2:
             return None
         return cosine(result.vectors[0], result.vectors[1])
+
+
+@dataclass(frozen=True, slots=True)
+class CorroborationSignal:
+    """How many independent origins carry a claim, out of how large a corpus.
+
+    Independence is what this measures and documents are not it: twenty outlets
+    running one wire story is one origin wearing twenty mastheads, which is why the
+    count comes from `origin_cluster_id` rather than from the number of rows.
+    """
+
+    document_count: int = 0
+    independent_origin_count: int = 0
+    corpus_size: int = 0
+
+    def applied_to(self, claim: Claim) -> Claim:
+        """The claim with the counts attached, ready for the verdict engine.
+
+        `Claim` is frozen, so this returns a copy. The verdict engine reads these two
+        fields directly in Rule 4, and before this existed nothing in the codebase
+        ever set them — they were read and never written, so every corroborated claim
+        fell through to `rule.insufficient_origins` no matter how many outlets
+        carried it.
+        """
+        return claim.model_copy(
+            update={
+                "document_count": self.document_count,
+                "independent_origin_count": self.independent_origin_count,
+            }
+        )
+
+
+def count_origins(rows: list[dict[str, Any]]) -> int:
+    """Independent origins among retrieved documents, by near-duplicate clustering.
+
+    **Computed here rather than read from `origin_cluster_id`, because that column is
+    null for all 2,064 corpus rows and `origin_cluster` holds none.** Trusting it
+    would have counted every document as its own origin — so twenty outlets running
+    one PTI wire story would have reported twenty independent origins and driven a
+    confident SUPPORTED verdict off a single source. That is the exact failure the
+    origin-cluster concept exists to prevent.
+
+    The signatures are already stored, so the clustering costs no fetch. Greedy
+    single-link over the retrieved set is enough at this size: the set is the
+    shortlist, not the corpus.
+    """
+    signatures: list[tuple[str, Signature]] = []
+    for row in rows:
+        raw = row.get("minhash_signature")
+        if raw:
+            signatures.append((row["id"], Signature.from_bytes(bytes(raw))))
+
+    # A document with no signature cannot be shown to duplicate another, so it counts
+    # as its own origin. Erring the other way would silently merge distinct sources.
+    unsigned = len(rows) - len(signatures)
+
+    origins: list[list[Signature]] = []
+    for _, signature in signatures:
+        for cluster in origins:
+            if any(signature.similarity(member) >= DEFAULT_THRESHOLD for member in cluster):
+                cluster.append(signature)
+                break
+        else:
+            origins.append([signature])
+
+    return len(origins) + unsigned
+
+
+class CorpusCorroboration:
+    """Counts independent origins for a claim, using the corpus search.
+
+    Deliberately reuses `CorpusResolver.search` rather than querying separately: two
+    searches could return two different sets for one claim, and then the origin count
+    would describe a set other than the one that produced the citations.
+    """
+
+    def __init__(self, *, resolver: CorpusResolver, database: Any) -> None:
+        self._resolver = resolver
+        self._database = database
+
+    async def signal(self, claim: Claim, *, citation_urls: list[str]) -> CorroborationSignal:
+        """Origins among the documents that actually support the claim.
+
+        **Counted over citations, not over the retrieval shortlist.** Counting the
+        shortlist was wrong and measurably so: for one probe the shortlist held six
+        articles while exactly one of them passed the evidence gate, and the verdict
+        engine was handed "6 independent origins" for a claim with a single source.
+        That is a confident SUPPORTED built on one document — the failure this whole
+        design exists to prevent.
+
+        So the input here is the citation URLs of supporting evidence, and the count
+        can never exceed the number of sources actually quoted.
+        """
+        if not citation_urls:
+            return CorroborationSignal(corpus_size=await self._corpus_size())
+
+        rows = await self._rows_for(citation_urls)
+
+        return CorroborationSignal(
+            document_count=len(citation_urls),
+            independent_origin_count=count_origins(rows) if rows else len(citation_urls),
+            corpus_size=await self._corpus_size(),
+        )
+
+    async def _rows_for(self, urls: list[str]) -> list[dict[str, Any]]:
+        """The corpus rows behind these citations, for their stored signatures.
+
+        Matched on `canonical_url` because that is where the citations came from. A
+        citation with no matching row contributes no signature, and `count_origins`
+        treats an unsigned document as its own origin rather than merging it away.
+        """
+        async with self._database.connection() as conn:
+            cursor = await conn.execute(
+                """
+                SELECT id::text, canonical_url, publisher, minhash_signature
+                  FROM facify.corpus_item
+                 WHERE canonical_url = ANY(%s)
+                """,
+                (list(urls),),
+            )
+            return list(await cursor.fetchall())
+
+    async def _corpus_size(self) -> int:
+        """How much was searched. Needed to interpret silence: finding nothing in
+        two thousand items and finding nothing in ten are different answers."""
+        async with self._database.connection() as conn:
+            cursor = await conn.execute("SELECT count(*) AS n FROM facify.corpus_item")
+            row = await cursor.fetchone()
+        return int(row["n"]) if row else 0
