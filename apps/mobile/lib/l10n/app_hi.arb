@@ -52,6 +52,13 @@
   "correctionHeader": "Facify से जाँचा गया:",
   "correctionSourceFallback": "स्रोत",
   "correctionNoSource": "कोई भी प्रकाशित स्रोत न इसकी पुष्टि कर सका, न खंडन।",
+  "correctionSheetTitle": "इसे चैट में वापस भेजें",
+  "shareContext": "संदर्भ के साथ साझा करें",
+  "correctionSheetBody": "यह तस्वीर चैट में जाएगी, और स्रोतों के लिंक उसके साथ टेक्स्ट में।",
+  "correctionShareImage": "तस्वीर साझा करें",
+  "correctionCopyText": "सिर्फ़ टेक्स्ट कॉपी करें",
+  "correctionShareFailed": "साझा करने का विकल्प नहीं खुल सका। सुधार कॉपी कर लिया गया है — इसे चैट में चिपकाएँ।",
+  "correctionCardFooter": "निर्णय उद्धृत स्रोतों से, कभी मॉडल स्कोर से नहीं।",
 
   "failureTimeout": "Facify को सामान्य से ज़्यादा समय लग रहा है। थोड़ी देर में फिर कोशिश करें।",
   "failureUnreachable": "Facify तक पहुँचा नहीं जा सका। अपना कनेक्शन जाँचें और फिर कोशिश करें।",

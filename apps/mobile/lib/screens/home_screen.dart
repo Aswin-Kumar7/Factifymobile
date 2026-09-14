@@ -27,6 +27,7 @@ import '../l10n/language_preference.dart';
 import '../l10n/phrases.dart';
 import '../models/submission.dart';
 import '../models/verdict.dart';
+import '../widgets/correction_sheet.dart';
 import '../widgets/history_strip.dart';
 import '../widgets/intake_bar.dart';
 import '../widgets/language_menu.dart';
@@ -348,38 +349,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// The correction card: what goes back to the group the content came from.
   ///
-  /// Built only from cited findings. A correction that cannot point at a source
-  /// is just a counter-assertion, and sending one starts an argument rather than
-  /// ending it.
+  /// Opens a preview of the exact picture that will be sent, with the source links
+  /// as text beside it (`correction_sheet.dart`). This used to copy text to the
+  /// clipboard and nothing more, leaving a wall of URLs to paste into a chat that
+  /// had received a picture.
   void _shareCorrection() {
     final verdict = _verdict;
     if (verdict == null) return;
-    final l10n = AppLocalizations.of(context);
-
-    final buffer = StringBuffer()
-      ..writeln(l10n.correctionHeader)
-      ..writeln();
-
-    for (final claim in verdict.claims.where((c) => c.isDecisive)) {
-      buffer
-        ..writeln('"${claim.text}"')
-        ..writeln(claim.reason);
-      for (final evidence in claim.evidence.take(2)) {
-        buffer.writeln(
-          '- ${evidence.publisher ?? l10n.correctionSourceFallback}: ${evidence.citationUrl}',
-        );
-      }
-      buffer.writeln();
-    }
-
-    // Said explicitly rather than left as an empty card. "Nothing could confirm
-    // this" is a useful thing to send back; a blank message is not.
-    if (verdict.claims.every((c) => !c.isDecisive)) {
-      buffer.writeln(l10n.correctionNoSource);
-    }
-
-    Clipboard.setData(ClipboardData(text: buffer.toString().trim()));
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.correctionCopied)));
+    unawaited(showCorrectionSheet(context, verdict));
   }
 
   void _openEvidence(Verdict verdict) => Navigator.of(context).push(

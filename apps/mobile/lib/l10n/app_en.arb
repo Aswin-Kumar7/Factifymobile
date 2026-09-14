@@ -69,6 +69,16 @@
   "correctionHeader": "Checked with Facify:",
   "correctionSourceFallback": "Source",
   "correctionNoSource": "No published source could confirm or contradict this.",
+  "correctionSheetTitle": "Send this back to the chat",
+  "shareContext": "Share with context",
+  "correctionSheetBody": "This picture goes to the chat, with the source links as text beside it.",
+  "correctionShareImage": "Share picture",
+  "correctionCopyText": "Copy text only",
+  "correctionShareFailed": "Sharing could not open. The correction was copied instead — paste it into the chat.",
+  "correctionCardFooter": "Verdict from cited sources, never from a model score.",
+  "@correctionCardFooter": {
+    "description": "Printed on the shared picture. States the method, and must not claim the content is true or false."
+  },
 
   "failureTimeout": "Facify is taking longer than usual. Try again in a moment.",
   "failureUnreachable": "Could not reach Facify. Check your connection and try again.",

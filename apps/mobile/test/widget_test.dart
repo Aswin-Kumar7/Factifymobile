@@ -16,12 +16,15 @@ import 'package:facify_mobile/main.dart';
 import 'package:facify_mobile/models/verdict.dart';
 import 'package:facify_mobile/screens/evidence_screen.dart';
 import 'package:facify_mobile/widgets/advisory_panel.dart';
+import 'package:facify_mobile/widgets/correction_card.dart';
+import 'package:facify_mobile/widgets/correction_sheet.dart';
 import 'package:facify_mobile/widgets/language_menu.dart';
 import 'package:facify_mobile/widgets/verdict_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:share_plus/share_plus.dart';
 
 /// A response shaped exactly as the server emits one.
 Map<String, dynamic> _payload({
@@ -374,6 +377,101 @@ void main() {
     });
   });
 
+  group('the correction card (M44, PLAN 1.7.5)', () {
+    Verdict contradicted() => Verdict.fromJson(
+      _payload(
+        claims: [
+          _claim(evidence: [_evidence()]),
+        ],
+        advisories: [_advisory()],
+      ),
+    );
+
+    Widget correctionCard(Verdict verdict) =>
+        SizedBox(width: correctionCardWidth, child: CorrectionCard(verdict: verdict));
+
+    testWidgets('names the decided claim, who said so and when, and no advisory', (tester) async {
+      await _pump(tester, correctionCard(contradicted()));
+
+      expect(find.text('Contradicted by sources'), findsOneWidget);
+      expect(find.textContaining('The scheme was cancelled on Friday.'), findsOneWidget);
+      expect(find.textContaining('Factchecker · factchecker.example'), findsOneWidget);
+      expect(find.textContaining('Evidence retrieved'), findsOneWidget);
+      // The picture leaves the app without the advisory panel's exclusion
+      // header, so no forensic signal may travel on it.
+      expect(find.textContaining('Noise levels vary'), findsNothing);
+      expect(find.textContaining('local_forensics'), findsNothing);
+    });
+
+    testWidgets('keeps the design law in Hindi', (tester) async {
+      await _pump(tester, correctionCard(contradicted()), locale: _hindi);
+
+      expect(find.text('स्रोतों ने इसका खंडन किया है'), findsOneWidget);
+      for (final word in const ['सच', 'सही', 'सत्य']) {
+        expect(find.textContaining(word), findsNothing, reason: 'the card says "$word"');
+      }
+    });
+
+    test('the text beside it carries the links, or says nothing could be confirmed', () {
+      final l10n = lookupAppLocalizations(_english);
+
+      final text = correctionText(contradicted(), l10n);
+      expect(text, startsWith('Checked with Facify:'));
+      expect(text, contains('https://factchecker.example/1'));
+
+      final undecided = Verdict.fromJson(
+        _payload(action: 'SEND_TO_REVIEW', claims: [_claim(status: 'UNVERIFIED')]),
+      );
+      expect(correctionText(undecided, l10n), contains('No published source could confirm'));
+    });
+
+    testWidgets('the sheet hands the share sheet a real picture, with the links as text', (
+      tester,
+    ) async {
+      _phoneSized(tester);
+      ShareParams? shared;
+      await tester.pumpWidget(
+        _app(
+          Scaffold(
+            body: CorrectionSheet(
+              verdict: contradicted(),
+              share: (params) async {
+                shared = params;
+                return ShareResultStatus.dismissed;
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Drawing the picture is real engine work, which completes only outside
+      // the test's fake clock.
+      await tester.runAsync(() async {
+        await tester.tap(find.text('Share picture'));
+        for (var i = 0; i < 300 && shared == null; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+      });
+
+      expect(shared, isNotNull, reason: 'the share sheet was never opened');
+      final png = await tester.runAsync(() => shared!.files!.single.readAsBytes());
+      expect(png!.sublist(0, 4), const [0x89, 0x50, 0x4E, 0x47], reason: 'not a PNG');
+      expect(shared!.fileNameOverrides, const ['facify-correction.png']);
+      expect(shared!.text, contains('https://factchecker.example/1'));
+      await tester.pump();
+    });
+
+    testWidgets('missing context can be sent back too; an abstention cannot', (tester) async {
+      await _pump(tester, _card(Verdict.fromJson(_payload(action: 'SHARE_WITH_CONTEXT'))));
+      expect(find.text('Share with context'), findsOneWidget);
+
+      await _pump(tester, _card(Verdict.fromJson(_payload(action: 'SEND_TO_REVIEW'))));
+      expect(find.text('Share with context'), findsNothing);
+      expect(find.text('Share correction'), findsNothing);
+    });
+  });
+
   group('languages (PLAN 1.7.6)', () {
     testWidgets('an English card carries no English-only note', (tester) async {
       await _pump(tester, _card(Verdict.fromJson(_payload())));
@@ -437,8 +535,8 @@ void main() {
       expect(find.textContaining('never from a model score'), findsOneWidget);
     });
 
-    testWidgets('the result and the evidence lay out at phone width, in both languages and '
-        'right to left', (tester) async {
+    testWidgets('the result, the evidence and the correction lay out at phone width, in both '
+        'languages and right to left', (tester) async {
       _phoneSized(tester, height: 12000);
       final verdict = Verdict.fromJson(
         _payload(
@@ -458,6 +556,12 @@ void main() {
           for (final screen in <Widget>[
             Scaffold(body: SingleChildScrollView(child: _card(verdict))),
             EvidenceScreen(verdict: verdict, language: LanguagePreference.inMemory()),
+            Scaffold(
+              body: CorrectionSheet(
+                verdict: verdict,
+                share: (_) async => ShareResultStatus.dismissed,
+              ),
+            ),
           ]) {
             // An overflowing row is reported to the framework, which fails the
             // test and names the offending widget. Taking the exception here

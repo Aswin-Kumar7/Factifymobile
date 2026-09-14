@@ -165,6 +165,30 @@ class AppLocalizationsEn extends AppLocalizations {
       'No published source could confirm or contradict this.';
 
   @override
+  String get correctionSheetTitle => 'Send this back to the chat';
+
+  @override
+  String get shareContext => 'Share with context';
+
+  @override
+  String get correctionSheetBody =>
+      'This picture goes to the chat, with the source links as text beside it.';
+
+  @override
+  String get correctionShareImage => 'Share picture';
+
+  @override
+  String get correctionCopyText => 'Copy text only';
+
+  @override
+  String get correctionShareFailed =>
+      'Sharing could not open. The correction was copied instead — paste it into the chat.';
+
+  @override
+  String get correctionCardFooter =>
+      'Verdict from cited sources, never from a model score.';
+
+  @override
   String get failureTimeout =>
       'Facify is taking longer than usual. Try again in a moment.';
 

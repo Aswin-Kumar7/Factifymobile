@@ -49,6 +49,9 @@ dependencies:
   # Holds one value: the interface language someone chose (see
   # lib/l10n/language_preference.dart). What was checked is never written to disk.
   shared_preferences: ^2.5.5
+  # Sends the correction card back through the system share sheet (M44, PLAN
+  # 1.7.5). Brings its own FileProvider, so the manifest grants nothing new.
+  share_plus: ^12.0.2
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.

@@ -344,6 +344,48 @@ abstract class AppLocalizations {
   /// **'No published source could confirm or contradict this.'**
   String get correctionNoSource;
 
+  /// No description provided for @correctionSheetTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Send this back to the chat'**
+  String get correctionSheetTitle;
+
+  /// No description provided for @shareContext.
+  ///
+  /// In en, this message translates to:
+  /// **'Share with context'**
+  String get shareContext;
+
+  /// No description provided for @correctionSheetBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This picture goes to the chat, with the source links as text beside it.'**
+  String get correctionSheetBody;
+
+  /// No description provided for @correctionShareImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Share picture'**
+  String get correctionShareImage;
+
+  /// No description provided for @correctionCopyText.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy text only'**
+  String get correctionCopyText;
+
+  /// No description provided for @correctionShareFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Sharing could not open. The correction was copied instead — paste it into the chat.'**
+  String get correctionShareFailed;
+
+  /// Printed on the shared picture. States the method, and must not claim the content is true or false.
+  ///
+  /// In en, this message translates to:
+  /// **'Verdict from cited sources, never from a model score.'**
+  String get correctionCardFooter;
+
   /// No description provided for @failureTimeout.
   ///
   /// In en, this message translates to:

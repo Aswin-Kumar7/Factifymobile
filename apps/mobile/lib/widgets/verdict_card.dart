@@ -21,6 +21,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/verdict.dart';
+import 'action_style.dart';
 import 'english_only_note.dart';
 
 class VerdictCard extends StatelessWidget {
@@ -46,7 +47,7 @@ class VerdictCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
-    final style = _ActionStyle.of(verdict.action, theme.brightness, l10n);
+    final style = ActionStyle.of(verdict.action, theme.brightness, l10n);
     final citations = verdict.allEvidence.length;
 
     return Card(
@@ -173,13 +174,21 @@ class VerdictCard extends StatelessWidget {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    if (verdict.action == VerdictAction.shareWithCorrection ||
-                        verdict.action == VerdictAction.doNotShare) ...[
+                    // Offered only when a source established something worth
+                    // sending back: a correction, or the context that was
+                    // missing. An abstention has nothing to send.
+                    if (switch (verdict.action) {
+                      VerdictAction.shareWithCorrection ||
+                      VerdictAction.doNotShare => l10n.shareCorrection,
+                      VerdictAction.shareWithContext => l10n.shareContext,
+                      _ => null,
+                    }
+                        case final label?) ...[
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: onShareCorrection,
                           icon: const Icon(Icons.reply, size: 18),
-                          label: Text(l10n.shareCorrection),
+                          label: Text(label),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -242,100 +251,6 @@ class _MetaChip extends StatelessWidget {
       ],
     ),
   );
-}
-
-/// Wording and colour per action.
-///
-/// Every headline is a statement about *evidence*, never about truth — in every
-/// language. The ARB descriptions carry that rule to whoever translates them, and
-/// test/widget_test.dart checks the Hindi card for the words that would break it.
-class _ActionStyle {
-  const _ActionStyle({
-    required this.headline,
-    required this.subhead,
-    required this.icon,
-    required this.tone,
-    required this.container,
-    required this.onContainer,
-  });
-
-  final String headline;
-  final String subhead;
-  final IconData icon;
-  final Color tone;
-  final Color container;
-  final Color onContainer;
-
-  /// Soft container + legible foreground for one semantic colour, per theme.
-  ///
-  /// Dark mode lightens the foreground instead of darkening it — the same seed
-  /// colour, read against the opposite ground.
-  static _ActionStyle _tinted({
-    required String headline,
-    required String subhead,
-    required IconData icon,
-    required Color tone,
-    required Brightness brightness,
-  }) {
-    final dark = brightness == Brightness.dark;
-    return _ActionStyle(
-      headline: headline,
-      subhead: subhead,
-      icon: icon,
-      tone: tone,
-      container: tone.withValues(alpha: dark ? 0.20 : 0.10),
-      onContainer: Color.lerp(tone, dark ? Colors.white : Colors.black, dark ? 0.55 : 0.45)!,
-    );
-  }
-
-  static _ActionStyle of(VerdictAction action, Brightness brightness, AppLocalizations l10n) =>
-      switch (action) {
-        VerdictAction.safeToShare => _tinted(
-          headline: l10n.headlineSafeToShare,
-          subhead: l10n.subheadSafeToShare,
-          icon: Icons.verified_outlined,
-          tone: const Color(0xFF2E7D32),
-          brightness: brightness,
-        ),
-        VerdictAction.shareWithContext => _tinted(
-          headline: l10n.headlineShareWithContext,
-          subhead: l10n.subheadShareWithContext,
-          icon: Icons.info_outline,
-          tone: const Color(0xFF0277BD),
-          brightness: brightness,
-        ),
-        VerdictAction.shareWithCorrection => _tinted(
-          headline: l10n.headlineShareWithCorrection,
-          subhead: l10n.subheadShareWithCorrection,
-          icon: Icons.error_outline,
-          tone: const Color(0xFFEF6C00),
-          brightness: brightness,
-        ),
-        VerdictAction.doNotShare => _tinted(
-          headline: l10n.headlineDoNotShare,
-          subhead: l10n.subheadDoNotShare,
-          icon: Icons.gpp_bad_outlined,
-          tone: const Color(0xFFC62828),
-          brightness: brightness,
-        ),
-        VerdictAction.waitAndRecheck => _tinted(
-          headline: l10n.headlineWaitAndRecheck,
-          subhead: l10n.subheadWaitAndRecheck,
-          icon: Icons.schedule,
-          tone: const Color(0xFF5E35B1),
-          brightness: brightness,
-        ),
-        // Deliberately neutral, not red. Abstaining is the designed answer for a
-        // case with no citable evidence, and colouring it as danger would tell
-        // people we found something when we found nothing.
-        VerdictAction.sendToReview => _tinted(
-          headline: l10n.headlineSendToReview,
-          subhead: l10n.subheadSendToReview,
-          icon: Icons.help_outline,
-          tone: const Color(0xFF546E7A),
-          brightness: brightness,
-        ),
-      };
 }
 
 class _ClaimRow extends StatelessWidget {

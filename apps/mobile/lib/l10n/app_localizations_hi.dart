@@ -162,6 +162,30 @@ class AppLocalizationsHi extends AppLocalizations {
       'कोई भी प्रकाशित स्रोत न इसकी पुष्टि कर सका, न खंडन।';
 
   @override
+  String get correctionSheetTitle => 'इसे चैट में वापस भेजें';
+
+  @override
+  String get shareContext => 'संदर्भ के साथ साझा करें';
+
+  @override
+  String get correctionSheetBody =>
+      'यह तस्वीर चैट में जाएगी, और स्रोतों के लिंक उसके साथ टेक्स्ट में।';
+
+  @override
+  String get correctionShareImage => 'तस्वीर साझा करें';
+
+  @override
+  String get correctionCopyText => 'सिर्फ़ टेक्स्ट कॉपी करें';
+
+  @override
+  String get correctionShareFailed =>
+      'साझा करने का विकल्प नहीं खुल सका। सुधार कॉपी कर लिया गया है — इसे चैट में चिपकाएँ।';
+
+  @override
+  String get correctionCardFooter =>
+      'निर्णय उद्धृत स्रोतों से, कभी मॉडल स्कोर से नहीं।';
+
+  @override
   String get failureTimeout =>
       'Facify को सामान्य से ज़्यादा समय लग रहा है। थोड़ी देर में फिर कोशिश करें।';
 
