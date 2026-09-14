@@ -361,7 +361,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _openEvidence(Verdict verdict) => Navigator.of(context).push(
     MaterialPageRoute<void>(
-      builder: (_) => EvidenceScreen(verdict: verdict, language: widget.language),
+      builder: (_) => EvidenceScreen(
+        verdict: verdict,
+        language: widget.language,
+        submission: _submission,
+      ),
     ),
   );
 

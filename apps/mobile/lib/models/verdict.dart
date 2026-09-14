@@ -68,6 +68,30 @@ class SourceAnchor {
   );
 }
 
+/// Where in the submission a claim was made: a span of the message, a page of a
+/// document, or a moment in a video.
+///
+/// Parsed so the evidence screen can show it. The server does not populate it yet
+/// (B8 in docs/hackathon-workflow.md), and a claim without one shows no location
+/// rather than a guessed one.
+class InputAnchor {
+  const InputAnchor({this.charStart, this.charEnd, this.pageNumber, this.frameStartMs});
+
+  final int? charStart;
+  final int? charEnd;
+  final int? pageNumber;
+  final int? frameStartMs;
+
+  factory InputAnchor.fromJson(Map<String, dynamic> json) => InputAnchor(
+    charStart: json['char_start'] as int?,
+    charEnd: json['char_end'] as int?,
+    pageNumber: json['page_number'] as int?,
+    frameStartMs: json['frame_start_ms'] as int?,
+  );
+
+  bool get isEmpty => charStart == null && pageNumber == null && frameStartMs == null;
+}
+
 /// The metric behind a match and the threshold it was judged against.
 ///
 /// Rendered rather than hidden: it is what lets a reader recompute the match
@@ -104,6 +128,7 @@ class Evidence {
     required this.matchQuality,
     this.publisher,
     this.observedAt,
+    this.inputAnchor,
   });
 
   final String id;
@@ -119,6 +144,7 @@ class Evidence {
   final String matchQuality;
   final String? publisher;
   final DateTime? observedAt;
+  final InputAnchor? inputAnchor;
 
   factory Evidence.fromJson(Map<String, dynamic> json) => Evidence(
     id: json['id'] as String,
@@ -138,10 +164,16 @@ class Evidence {
     matchQuality: json['match_quality'] as String? ?? 'WEAK',
     publisher: json['publisher'] as String?,
     observedAt: DateTime.tryParse(json['observed_at'] as String? ?? ''),
+    inputAnchor: json['input_anchor'] == null
+        ? null
+        : InputAnchor.fromJson((json['input_anchor'] as Map).cast<String, dynamic>()),
   );
 
   bool get contradicts => direction == 'contradicts';
   bool get supports => direction == 'supports';
+
+  /// The submitted media matched an earlier publication of it.
+  bool get isMediaMatch => kind == 'media_match';
 }
 
 /// A Tier E signal.
@@ -180,16 +212,26 @@ class Advisory {
 }
 
 class StrengthComponent {
-  const StrengthComponent({required this.name, required this.value, required this.explanation});
+  const StrengthComponent({
+    required this.name,
+    required this.value,
+    required this.explanation,
+    this.citations = const [],
+  });
 
   final String name;
   final double value;
   final String explanation;
 
+  /// The citation URLs this component was computed from. The server records them
+  /// but does not send them yet (B9); a component without them is not a link.
+  final List<String> citations;
+
   factory StrengthComponent.fromJson(Map<String, dynamic> json) => StrengthComponent(
     name: json['name'] as String,
     value: (json['value'] as num?)?.toDouble() ?? 0,
     explanation: json['explanation'] as String? ?? '',
+    citations: ((json['citations'] as List?) ?? const []).map((e) => e as String).toList(),
   );
 }
 
@@ -261,6 +303,16 @@ class Claim {
   bool get isDecisive => status.isDecisive;
   List<Evidence> get contradicting => evidence.where((e) => e.contradicts).toList();
   List<Evidence> get supporting => evidence.where((e) => e.supports).toList();
+
+  /// Where the claim sits in the submission, from the first evidence item that
+  /// recorded it. The contract carries the anchor per citation, not per claim.
+  InputAnchor? get inputAnchor {
+    for (final item in evidence) {
+      final anchor = item.inputAnchor;
+      if (anchor != null && !anchor.isEmpty) return anchor;
+    }
+    return null;
+  }
 }
 
 /// Something the pipeline could not do, and why.

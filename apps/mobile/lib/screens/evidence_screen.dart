@@ -8,7 +8,18 @@
 /// M44 puts the language toggle on this screen. Someone reading the evidence is
 /// the person most likely to want it in the other language, and sending them
 /// back to the home screen to switch would lose their place.
+///
+/// PLAN 1.7.4 and 1.7.7 add the rest of what is here: where the claim sits in the
+/// submission, the technique it fits, the timeline behind the verdict, the
+/// submitted picture beside a media match, and strength rows that lead to the
+/// citations they came from. Each renders only from data the response carries.
+/// Several of those fields are not sent yet (B6–B10 in docs/hackathon-workflow.md),
+/// and a missing field shows nothing rather than a guess.
 library;
+
+import 'dart:async';
+import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -17,76 +28,153 @@ import 'package:url_launcher/url_launcher.dart';
 import '../l10n/app_localizations.dart';
 import '../l10n/language_preference.dart';
 import '../l10n/phrases.dart';
+import '../models/submission.dart';
 import '../models/verdict.dart';
 import '../widgets/advisory_panel.dart';
 import '../widgets/english_only_note.dart';
+import '../widgets/evidence_timeline.dart';
 import '../widgets/language_menu.dart';
+import '../widgets/teaching_line.dart';
 
-class EvidenceScreen extends StatelessWidget {
-  const EvidenceScreen({super.key, required this.verdict, required this.language});
+class EvidenceScreen extends StatefulWidget {
+  const EvidenceScreen({
+    super.key,
+    required this.verdict,
+    required this.language,
+    this.submission,
+  });
 
   final Verdict verdict;
   final LanguagePreference language;
 
+  /// What was checked, when the screen was opened from a check in this session.
+  /// Lets a claim's anchor be shown inside the reader's own words, and a media
+  /// match beside the picture they submitted.
+  final Submission? submission;
+
+  @override
+  State<EvidenceScreen> createState() => _EvidenceScreenState();
+}
+
+class _EvidenceScreenState extends State<EvidenceScreen> {
+  /// One key per evidence card, so a strength row can bring its citation into view.
+  final Map<String, GlobalKey> _cardKeys = {};
+  String? _highlighted;
+  Timer? _highlightTimer;
+
+  GlobalKey _keyFor(Evidence evidence) => _cardKeys.putIfAbsent(evidence.id, GlobalKey.new);
+
+  /// Scrolls to the first card citing one of [urls], and marks it for a moment.
+  void _showCitations(List<String> urls) {
+    final target = widget.verdict.allEvidence.where((e) => urls.contains(e.citationUrl)).firstOrNull;
+    final cardContext = target == null ? null : _cardKeys[target.id]?.currentContext;
+    if (target == null || cardContext == null) return;
+
+    unawaited(
+      Scrollable.ensureVisible(
+        cardContext,
+        duration: const Duration(milliseconds: 350),
+        alignment: 0.1,
+      ),
+    );
+    setState(() => _highlighted = target.id);
+    _highlightTimer?.cancel();
+    _highlightTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _highlighted = null);
+    });
+  }
+
+  @override
+  void dispose() {
+    _highlightTimer?.cancel();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final verdict = widget.verdict;
 
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.evidenceTitle),
         actions: [
-          LanguageMenu(preference: language),
+          LanguageMenu(preference: widget.language),
           const SizedBox(width: 12),
         ],
       ),
-      body: ListView(
+      // A column rather than a lazy list: every card must exist for a strength row
+      // to scroll to it, and this screen is a handful of cards, not a feed.
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
-        children: [
-          const EnglishOnlyNote(padding: EdgeInsets.only(bottom: 10)),
-          for (final claim in verdict.claims) _ClaimSection(claim: claim),
-          if (verdict.allEvidence.isEmpty) const _NoEvidenceBlock(),
-          if (verdict.recurrence != null && verdict.recurrence!.timesSeen > 0) ...[
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const EnglishOnlyNote(padding: EdgeInsets.only(bottom: 10)),
+            for (final claim in verdict.claims)
+              _ClaimSection(
+                claim: claim,
+                submission: widget.submission,
+                highlighted: _highlighted,
+                keyFor: _keyFor,
+                onShowCitations: _showCitations,
+              ),
+            if (verdict.allEvidence.isEmpty) const _NoEvidenceBlock(),
+            EvidenceTimeline(verdict: verdict, padding: const EdgeInsets.only(top: 8)),
+            if (verdict.recurrence != null && verdict.recurrence!.timesSeen > 0) ...[
+              const SizedBox(height: 8),
+              _RecurrenceCard(recurrence: verdict.recurrence!),
+            ],
+            if (verdict.mediaProvenance != null) ...[
+              const SizedBox(height: 8),
+              _ProvenanceCard(provenance: verdict.mediaProvenance!),
+            ],
+            if (verdict.sourceRisk != 'UNKNOWN') ...[
+              const SizedBox(height: 8),
+              _SourceRiskCard(risk: verdict.sourceRisk),
+            ],
+            if (verdict.skipped.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              _SkippedCard(skipped: verdict.skipped),
+            ],
             const SizedBox(height: 8),
-            _RecurrenceCard(recurrence: verdict.recurrence!),
-          ],
-          if (verdict.mediaProvenance != null) ...[
+            _LimitsBlock(verdict: verdict),
             const SizedBox(height: 8),
-            _ProvenanceCard(provenance: verdict.mediaProvenance!),
+            // Last, and visually quietest, by design.
+            AdvisoryPanel(advisories: verdict.advisories),
+            const SizedBox(height: 24),
+            _CaseFooter(verdict: verdict),
           ],
-          if (verdict.sourceRisk != 'UNKNOWN') ...[
-            const SizedBox(height: 8),
-            _SourceRiskCard(risk: verdict.sourceRisk),
-          ],
-          if (verdict.skipped.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            _SkippedCard(skipped: verdict.skipped),
-          ],
-          const SizedBox(height: 8),
-          _LimitsBlock(verdict: verdict),
-          const SizedBox(height: 8),
-          // Last, and visually quietest, by design.
-          AdvisoryPanel(advisories: verdict.advisories),
-          const SizedBox(height: 24),
-          _CaseFooter(verdict: verdict),
-        ],
+        ),
       ),
     );
   }
 }
 
 class _ClaimSection extends StatelessWidget {
-  const _ClaimSection({required this.claim});
+  const _ClaimSection({
+    required this.claim,
+    required this.submission,
+    required this.highlighted,
+    required this.keyFor,
+    required this.onShowCitations,
+  });
 
   final Claim claim;
+  final Submission? submission;
+  final String? highlighted;
+  final GlobalKey Function(Evidence evidence) keyFor;
+  final void Function(List<String> urls) onShowCitations;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
+    final anchor = claim.inputAnchor;
+    final technique = techniqueFor(claim);
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Card(
           child: Padding(
@@ -97,17 +185,101 @@ class _ClaimSection extends StatelessWidget {
                 Text(l10n.theClaim, style: theme.textTheme.labelMedium),
                 const SizedBox(height: 4),
                 Text(claim.text, style: theme.textTheme.bodyLarge),
+                if (anchor != null) ...[
+                  const SizedBox(height: 8),
+                  _InputAnchorBlock(anchor: anchor, submission: submission),
+                ],
                 const SizedBox(height: 8),
                 Text(claim.reason, style: theme.textTheme.bodySmall),
                 const SizedBox(height: 10),
-                _StrengthBar(strength: claim.strength),
+                _StrengthBar(strength: claim.strength, onShowCitations: onShowCitations),
+                if (technique != null) ...[
+                  const SizedBox(height: 12),
+                  TeachingLine(technique: technique),
+                ],
               ],
             ),
           ),
         ),
-        for (final evidence in claim.evidence) _EvidenceCard(evidence: evidence),
+        for (final evidence in claim.evidence)
+          _EvidenceCard(
+            key: keyFor(evidence),
+            evidence: evidence,
+            highlighted: evidence.id == highlighted,
+            thumbnail: evidence.isMediaMatch ? submission?.thumbnail : null,
+          ),
         const SizedBox(height: 8),
       ],
+    );
+  }
+}
+
+/// Where the claim sits in what was submitted: the reader's own words with the
+/// span marked when the message is at hand, or its position otherwise.
+class _InputAnchorBlock extends StatelessWidget {
+  const _InputAnchorBlock({required this.anchor, required this.submission});
+
+  final InputAnchor anchor;
+  final Submission? submission;
+
+  /// Characters of the message kept either side of the marked span.
+  static const int _surrounding = 40;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final l10n = AppLocalizations.of(context);
+    final text = submission?.text;
+    final start = anchor.charStart;
+    final end = anchor.charEnd;
+
+    final Widget detail;
+    if (text != null && start != null && end != null && 0 <= start && start < end && end <= text.length) {
+      final from = math.max(0, start - _surrounding);
+      final to = math.min(text.length, end + _surrounding);
+      detail = Text.rich(
+        TextSpan(
+          children: [
+            if (from > 0) const TextSpan(text: '…'),
+            TextSpan(text: text.substring(from, start)),
+            TextSpan(
+              text: text.substring(start, end),
+              style: TextStyle(
+                backgroundColor: scheme.tertiaryContainer,
+                color: scheme.onTertiaryContainer,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            TextSpan(text: text.substring(end, to)),
+            if (to < text.length) const TextSpan(text: '…'),
+          ],
+        ),
+        style: theme.textTheme.bodySmall,
+      );
+    } else {
+      final position = l10n.describeInputAnchor(anchor);
+      if (position == null) return const SizedBox.shrink();
+      detail = Text(position, style: theme.textTheme.bodySmall);
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            l10n.inputAnchorLabel,
+            style: theme.textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 4),
+          detail,
+        ],
+      ),
     );
   }
 }
@@ -117,9 +289,10 @@ class _ClaimSection extends StatelessWidget {
 /// Every component states why it contributed, because a number without a reason
 /// is exactly the model-confidence figure this product refuses to show.
 class _StrengthBar extends StatelessWidget {
-  const _StrengthBar({required this.strength});
+  const _StrengthBar({required this.strength, required this.onShowCitations});
 
   final Strength strength;
+  final void Function(List<String> urls) onShowCitations;
 
   @override
   Widget build(BuildContext context) {
@@ -145,15 +318,7 @@ class _StrengthBar extends StatelessWidget {
         LinearProgressIndicator(value: strength.score.clamp(0, 1)),
         const SizedBox(height: 6),
         for (final component in strength.components)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 2),
-            child: Text(
-              // The component is named for a reader; its explanation is the
-              // server's, and stays English until B5.
-              '${l10n.strengthComponent(component.name)}: ${component.explanation}',
-              style: muted,
-            ),
-          ),
+          _ComponentRow(component: component, onShowCitations: onShowCitations),
         if (strength.advisoryExcluded.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 4),
@@ -167,11 +332,73 @@ class _StrengthBar extends StatelessWidget {
   }
 }
 
+/// One component of the score, leading to its citations when it has any.
+///
+/// Every component tappable through to its citations is the plan (1.7.7). The
+/// server records which citations produced each component but does not send them
+/// yet (B9), so until it does a row is plain text rather than a link to nothing.
+class _ComponentRow extends StatelessWidget {
+  const _ComponentRow({required this.component, required this.onShowCitations});
+
+  final StrengthComponent component;
+  final void Function(List<String> urls) onShowCitations;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
+    final muted = theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+    // The component is named for a reader; its explanation is the server's, and
+    // stays English until B5.
+    final label = Text(
+      '${l10n.strengthComponent(component.name)}: ${component.explanation}',
+      style: muted,
+    );
+
+    if (component.citations.isEmpty) {
+      return Padding(padding: const EdgeInsets.only(bottom: 2), child: label);
+    }
+
+    return InkWell(
+      onTap: () => onShowCitations(component.citations),
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(
+          children: [
+            Expanded(child: label),
+            const SizedBox(width: 6),
+            Icon(Icons.link, size: 14, color: theme.colorScheme.primary),
+            const SizedBox(width: 2),
+            Text(
+              l10n.strengthComponentCitations(component.citations.length),
+              style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.primary),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// One source card: publisher, date, excerpt, anchor and link.
 class _EvidenceCard extends StatelessWidget {
-  const _EvidenceCard({required this.evidence});
+  const _EvidenceCard({
+    super.key,
+    required this.evidence,
+    this.highlighted = false,
+    this.thumbnail,
+  });
 
   final Evidence evidence;
+
+  /// Marked briefly after a strength row led here, so the eye lands on it.
+  final bool highlighted;
+
+  /// The submitted picture, shown beside a media match. There is no picture of
+  /// the earlier publication to put next to it: the contract carries its page,
+  /// not the image (B10).
+  final Uint8List? thumbnail;
 
   @override
   Widget build(BuildContext context) {
@@ -182,14 +409,25 @@ class _EvidenceCard extends StatelessWidget {
         ? null
         : DateFormat('d MMM yyyy', l10n.localeName).format(evidence.observedAt!.toLocal());
     final anchor = l10n.describeAnchor(evidence.sourceAnchor);
+    final picture = thumbnail;
 
     return Card(
       margin: const EdgeInsets.only(top: 6),
+      shape: highlighted
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: BorderSide(color: theme.colorScheme.primary, width: 2),
+            )
+          : null,
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (picture != null) ...[
+              _MediaMatchPreview(picture: picture),
+              const SizedBox(height: 10),
+            ],
             Row(
               children: [
                 _DirectionChip(direction: evidence.direction),
@@ -254,6 +492,49 @@ class _EvidenceCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// The submitted picture, beside the finding that it was published before.
+class _MediaMatchPreview extends StatelessWidget {
+  const _MediaMatchPreview({required this.picture});
+
+  final Uint8List picture;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final l10n = AppLocalizations.of(context);
+
+    return Row(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Image.memory(
+            picture,
+            width: 72,
+            height: 72,
+            fit: BoxFit.cover,
+            // A preview that fails to decode must not take the evidence with it.
+            errorBuilder: (_, _, _) => const SizedBox(width: 72, height: 72),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Icon(Icons.compare_arrows, color: muted),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(l10n.mediaMatchYours, style: theme.textTheme.labelSmall?.copyWith(color: muted)),
+              const SizedBox(height: 2),
+              Text(l10n.mediaMatchEarlier, style: theme.textTheme.titleSmall),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -475,7 +756,6 @@ class _CaseFooter extends StatelessWidget {
     );
   }
 }
-
 
 /// What is known about the publisher, kept apart from what is known about the claim.
 ///

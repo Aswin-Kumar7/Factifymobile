@@ -775,6 +775,144 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Forensic signal - not used in this verdict.'**
   String get advisoryRowExcluded;
+
+  /// Heads the teaching-mode line. Techniques are named only for claims a cited source contradicted or recontextualised, and never claim anything is true.
+  ///
+  /// In en, this message translates to:
+  /// **'How posts like this mislead'**
+  String get techniqueLabel;
+
+  /// No description provided for @techniqueRecycledMediaTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Recycled picture'**
+  String get techniqueRecycledMediaTitle;
+
+  /// No description provided for @techniqueRecycledMediaBody.
+  ///
+  /// In en, this message translates to:
+  /// **'A picture published earlier, shared again as if it showed something new. Before trusting a photo, look for when it first appeared.'**
+  String get techniqueRecycledMediaBody;
+
+  /// No description provided for @techniqueMissingContextTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Missing context'**
+  String get techniqueMissingContextTitle;
+
+  /// No description provided for @techniqueMissingContextBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Published material framed to suggest something its sources do not say. Ask what the post leaves out.'**
+  String get techniqueMissingContextBody;
+
+  /// No description provided for @techniqueMisattributedQuoteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Words put in someone\'s mouth'**
+  String get techniqueMisattributedQuoteTitle;
+
+  /// No description provided for @techniqueMisattributedQuoteBody.
+  ///
+  /// In en, this message translates to:
+  /// **'A quote credited to someone that published sources do not record them saying. Look for the original speech or statement.'**
+  String get techniqueMisattributedQuoteBody;
+
+  /// No description provided for @techniqueTwistedNumberTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Twisted number'**
+  String get techniqueTwistedNumberTitle;
+
+  /// No description provided for @techniqueTwistedNumberBody.
+  ///
+  /// In en, this message translates to:
+  /// **'A figure changed, or taken from a source that says something different. Find the number in its original source.'**
+  String get techniqueTwistedNumberBody;
+
+  /// No description provided for @techniqueWrongIdentityTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Wrong label'**
+  String get techniqueWrongIdentityTitle;
+
+  /// No description provided for @techniqueWrongIdentityBody.
+  ///
+  /// In en, this message translates to:
+  /// **'A person or place presented as someone or somewhere else. Check names and places against a dated source.'**
+  String get techniqueWrongIdentityBody;
+
+  /// No description provided for @techniqueDistortedEventTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Distorted event'**
+  String get techniqueDistortedEventTitle;
+
+  /// No description provided for @techniqueDistortedEventBody.
+  ///
+  /// In en, this message translates to:
+  /// **'An event described differently from how published sources report it. Look for reporting from more than one outlet.'**
+  String get techniqueDistortedEventBody;
+
+  /// No description provided for @timelineTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Timeline'**
+  String get timelineTitle;
+
+  /// No description provided for @timelineFirstChecked.
+  ///
+  /// In en, this message translates to:
+  /// **'First checked by Facify'**
+  String get timelineFirstChecked;
+
+  /// No description provided for @timelineRetrieved.
+  ///
+  /// In en, this message translates to:
+  /// **'Evidence gathered for this result'**
+  String get timelineRetrieved;
+
+  /// No description provided for @inputAnchorLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Where your submission says this'**
+  String get inputAnchorLabel;
+
+  /// No description provided for @inputAnchorCharacters.
+  ///
+  /// In en, this message translates to:
+  /// **'Characters {start}–{end}'**
+  String inputAnchorCharacters(int start, int end);
+
+  /// No description provided for @inputAnchorPage.
+  ///
+  /// In en, this message translates to:
+  /// **'Page {page}'**
+  String inputAnchorPage(int page);
+
+  /// No description provided for @inputAnchorMoment.
+  ///
+  /// In en, this message translates to:
+  /// **'At {seconds} s in the video'**
+  String inputAnchorMoment(int seconds);
+
+  /// No description provided for @mediaMatchYours.
+  ///
+  /// In en, this message translates to:
+  /// **'Your picture'**
+  String get mediaMatchYours;
+
+  /// No description provided for @mediaMatchEarlier.
+  ///
+  /// In en, this message translates to:
+  /// **'Matches a picture published earlier'**
+  String get mediaMatchEarlier;
+
+  /// On a strength row that leads to the citations it was computed from.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 source} other{{count} sources}}'**
+  String strengthComponentCitations(int count);
 }
 
 class _AppLocalizationsDelegate

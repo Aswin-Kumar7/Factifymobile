@@ -493,4 +493,94 @@ class AppLocalizationsHi extends AppLocalizations {
   @override
   String get advisoryRowExcluded =>
       'फोरेंसिक संकेत — इस निर्णय में उपयोग नहीं किए गए।';
+
+  @override
+  String get techniqueLabel => 'ऐसी पोस्ट कैसे गुमराह करती हैं';
+
+  @override
+  String get techniqueRecycledMediaTitle => 'पुरानी तस्वीर, नई कहानी';
+
+  @override
+  String get techniqueRecycledMediaBody =>
+      'पहले प्रकाशित हो चुकी तस्वीर को फिर ऐसे फैलाया जाता है जैसे वह कुछ नया दिखा रही हो। किसी फ़ोटो पर भरोसा करने से पहले देखें कि वह पहली बार कब सामने आई।';
+
+  @override
+  String get techniqueMissingContextTitle => 'अधूरा संदर्भ';
+
+  @override
+  String get techniqueMissingContextBody =>
+      'प्रकाशित सामग्री को ऐसे पेश किया जाता है कि वह कुछ ऐसा जताए जो उसके स्रोत नहीं कहते। सोचें कि पोस्ट क्या छोड़ रही है।';
+
+  @override
+  String get techniqueMisattributedQuoteTitle =>
+      'किसी के मुँह में डाले गए शब्द';
+
+  @override
+  String get techniqueMisattributedQuoteBody =>
+      'किसी के नाम से ऐसा बयान, जिसे कहते हुए प्रकाशित स्रोतों में उनका कोई रिकॉर्ड नहीं। मूल भाषण या बयान खोजें।';
+
+  @override
+  String get techniqueTwistedNumberTitle => 'तोड़ा-मरोड़ा आँकड़ा';
+
+  @override
+  String get techniqueTwistedNumberBody =>
+      'कोई संख्या बदल दी जाती है, या ऐसे स्रोत से ली जाती है जो कुछ और कहता है। आँकड़े को उसके मूल स्रोत में खोजें।';
+
+  @override
+  String get techniqueWrongIdentityTitle => 'गलत पहचान';
+
+  @override
+  String get techniqueWrongIdentityBody =>
+      'किसी व्यक्ति या जगह को कोई और बताया जाता है। नामों और जगहों को किसी तारीख वाले स्रोत से मिलाएँ।';
+
+  @override
+  String get techniqueDistortedEventTitle => 'बदली हुई घटना';
+
+  @override
+  String get techniqueDistortedEventBody =>
+      'किसी घटना को प्रकाशित स्रोतों की रिपोर्ट से अलग ढंग से बताया जाता है। एक से ज़्यादा समाचार स्रोतों की रिपोर्ट देखें।';
+
+  @override
+  String get timelineTitle => 'समय-रेखा';
+
+  @override
+  String get timelineFirstChecked => 'Facify ने पहली बार जाँचा';
+
+  @override
+  String get timelineRetrieved => 'इस नतीजे के लिए साक्ष्य जुटाए गए';
+
+  @override
+  String get inputAnchorLabel => 'आपकी भेजी सामग्री में यह कहाँ है';
+
+  @override
+  String inputAnchorCharacters(int start, int end) {
+    return 'अक्षर $start–$end';
+  }
+
+  @override
+  String inputAnchorPage(int page) {
+    return 'पेज $page';
+  }
+
+  @override
+  String inputAnchorMoment(int seconds) {
+    return 'वीडियो में $seconds सेकंड पर';
+  }
+
+  @override
+  String get mediaMatchYours => 'आपकी तस्वीर';
+
+  @override
+  String get mediaMatchEarlier => 'पहले प्रकाशित तस्वीर से मेल खाती है';
+
+  @override
+  String strengthComponentCitations(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count स्रोत',
+      one: '1 स्रोत',
+    );
+    return '$_temp0';
+  }
 }

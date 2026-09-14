@@ -39,4 +39,23 @@ extension Phrases on AppLocalizations {
     if (start != null) return anchorCharacters(start, anchor.charEnd ?? start);
     return null;
   }
+
+  /// Where a claim sits in the submission, or null when nothing locates it.
+  String? describeInputAnchor(InputAnchor anchor) {
+    final page = anchor.pageNumber;
+    if (page != null) return inputAnchorPage(page);
+    final moment = anchor.frameStartMs;
+    if (moment != null) return inputAnchorMoment(moment ~/ 1000);
+    final start = anchor.charStart;
+    if (start != null) return inputAnchorCharacters(start, anchor.charEnd ?? start);
+    return null;
+  }
+
+  /// A cited source named for a reader: its publisher, else its site.
+  String describeSource(Evidence evidence) {
+    final publisher = evidence.publisher;
+    if (publisher != null && publisher.isNotEmpty) return publisher;
+    final host = Uri.tryParse(evidence.citationUrl)?.host.replaceFirst(RegExp(r'^www\.'), '');
+    return host == null || host.isEmpty ? correctionSourceFallback : host;
+  }
 }

@@ -128,5 +128,33 @@
   "advisoryHeader": "फोरेंसिक संकेत — पारदर्शिता के लिए दिखाए गए। ये निर्णय में उपयोग नहीं किए जाते और इसे बदल नहीं सकते।",
   "advisoryCount": "{count, plural, =1{1 संकेत} other{{count} संकेत}}",
   "advisoryFooter": "इनमें से कोई भी यह स्थापित नहीं कर सकता कि सामग्री असली है या गढ़ी हुई। ऊपर का निर्णय केवल उद्धृत स्रोतों पर आधारित है।",
-  "advisoryRowExcluded": "फोरेंसिक संकेत — इस निर्णय में उपयोग नहीं किए गए।"
+  "advisoryRowExcluded": "फोरेंसिक संकेत — इस निर्णय में उपयोग नहीं किए गए।",
+
+  "techniqueLabel": "ऐसी पोस्ट कैसे गुमराह करती हैं",
+  "techniqueRecycledMediaTitle": "पुरानी तस्वीर, नई कहानी",
+  "techniqueRecycledMediaBody": "पहले प्रकाशित हो चुकी तस्वीर को फिर ऐसे फैलाया जाता है जैसे वह कुछ नया दिखा रही हो। किसी फ़ोटो पर भरोसा करने से पहले देखें कि वह पहली बार कब सामने आई।",
+  "techniqueMissingContextTitle": "अधूरा संदर्भ",
+  "techniqueMissingContextBody": "प्रकाशित सामग्री को ऐसे पेश किया जाता है कि वह कुछ ऐसा जताए जो उसके स्रोत नहीं कहते। सोचें कि पोस्ट क्या छोड़ रही है।",
+  "techniqueMisattributedQuoteTitle": "किसी के मुँह में डाले गए शब्द",
+  "techniqueMisattributedQuoteBody": "किसी के नाम से ऐसा बयान, जिसे कहते हुए प्रकाशित स्रोतों में उनका कोई रिकॉर्ड नहीं। मूल भाषण या बयान खोजें।",
+  "techniqueTwistedNumberTitle": "तोड़ा-मरोड़ा आँकड़ा",
+  "techniqueTwistedNumberBody": "कोई संख्या बदल दी जाती है, या ऐसे स्रोत से ली जाती है जो कुछ और कहता है। आँकड़े को उसके मूल स्रोत में खोजें।",
+  "techniqueWrongIdentityTitle": "गलत पहचान",
+  "techniqueWrongIdentityBody": "किसी व्यक्ति या जगह को कोई और बताया जाता है। नामों और जगहों को किसी तारीख वाले स्रोत से मिलाएँ।",
+  "techniqueDistortedEventTitle": "बदली हुई घटना",
+  "techniqueDistortedEventBody": "किसी घटना को प्रकाशित स्रोतों की रिपोर्ट से अलग ढंग से बताया जाता है। एक से ज़्यादा समाचार स्रोतों की रिपोर्ट देखें।",
+
+  "timelineTitle": "समय-रेखा",
+  "timelineFirstChecked": "Facify ने पहली बार जाँचा",
+  "timelineRetrieved": "इस नतीजे के लिए साक्ष्य जुटाए गए",
+
+  "inputAnchorLabel": "आपकी भेजी सामग्री में यह कहाँ है",
+  "inputAnchorCharacters": "अक्षर {start}–{end}",
+  "inputAnchorPage": "पेज {page}",
+  "inputAnchorMoment": "वीडियो में {seconds} सेकंड पर",
+
+  "mediaMatchYours": "आपकी तस्वीर",
+  "mediaMatchEarlier": "पहले प्रकाशित तस्वीर से मेल खाती है",
+
+  "strengthComponentCitations": "{count, plural, =1{1 स्रोत} other{{count} स्रोत}}"
 }

@@ -497,4 +497,94 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get advisoryRowExcluded =>
       'Forensic signal - not used in this verdict.';
+
+  @override
+  String get techniqueLabel => 'How posts like this mislead';
+
+  @override
+  String get techniqueRecycledMediaTitle => 'Recycled picture';
+
+  @override
+  String get techniqueRecycledMediaBody =>
+      'A picture published earlier, shared again as if it showed something new. Before trusting a photo, look for when it first appeared.';
+
+  @override
+  String get techniqueMissingContextTitle => 'Missing context';
+
+  @override
+  String get techniqueMissingContextBody =>
+      'Published material framed to suggest something its sources do not say. Ask what the post leaves out.';
+
+  @override
+  String get techniqueMisattributedQuoteTitle =>
+      'Words put in someone\'s mouth';
+
+  @override
+  String get techniqueMisattributedQuoteBody =>
+      'A quote credited to someone that published sources do not record them saying. Look for the original speech or statement.';
+
+  @override
+  String get techniqueTwistedNumberTitle => 'Twisted number';
+
+  @override
+  String get techniqueTwistedNumberBody =>
+      'A figure changed, or taken from a source that says something different. Find the number in its original source.';
+
+  @override
+  String get techniqueWrongIdentityTitle => 'Wrong label';
+
+  @override
+  String get techniqueWrongIdentityBody =>
+      'A person or place presented as someone or somewhere else. Check names and places against a dated source.';
+
+  @override
+  String get techniqueDistortedEventTitle => 'Distorted event';
+
+  @override
+  String get techniqueDistortedEventBody =>
+      'An event described differently from how published sources report it. Look for reporting from more than one outlet.';
+
+  @override
+  String get timelineTitle => 'Timeline';
+
+  @override
+  String get timelineFirstChecked => 'First checked by Facify';
+
+  @override
+  String get timelineRetrieved => 'Evidence gathered for this result';
+
+  @override
+  String get inputAnchorLabel => 'Where your submission says this';
+
+  @override
+  String inputAnchorCharacters(int start, int end) {
+    return 'Characters $start–$end';
+  }
+
+  @override
+  String inputAnchorPage(int page) {
+    return 'Page $page';
+  }
+
+  @override
+  String inputAnchorMoment(int seconds) {
+    return 'At $seconds s in the video';
+  }
+
+  @override
+  String get mediaMatchYours => 'Your picture';
+
+  @override
+  String get mediaMatchEarlier => 'Matches a picture published earlier';
+
+  @override
+  String strengthComponentCitations(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count sources',
+      one: '1 source',
+    );
+    return '$_temp0';
+  }
 }

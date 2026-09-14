@@ -226,5 +226,49 @@
     "placeholders": { "count": { "type": "int" } }
   },
   "advisoryFooter": "None of these can establish that content is authentic or fabricated. The verdict above is based only on cited sources.",
-  "advisoryRowExcluded": "Forensic signal - not used in this verdict."
+  "advisoryRowExcluded": "Forensic signal - not used in this verdict.",
+
+  "techniqueLabel": "How posts like this mislead",
+  "@techniqueLabel": {
+    "description": "Heads the teaching-mode line. Techniques are named only for claims a cited source contradicted or recontextualised, and never claim anything is true."
+  },
+  "techniqueRecycledMediaTitle": "Recycled picture",
+  "techniqueRecycledMediaBody": "A picture published earlier, shared again as if it showed something new. Before trusting a photo, look for when it first appeared.",
+  "techniqueMissingContextTitle": "Missing context",
+  "techniqueMissingContextBody": "Published material framed to suggest something its sources do not say. Ask what the post leaves out.",
+  "techniqueMisattributedQuoteTitle": "Words put in someone's mouth",
+  "techniqueMisattributedQuoteBody": "A quote credited to someone that published sources do not record them saying. Look for the original speech or statement.",
+  "techniqueTwistedNumberTitle": "Twisted number",
+  "techniqueTwistedNumberBody": "A figure changed, or taken from a source that says something different. Find the number in its original source.",
+  "techniqueWrongIdentityTitle": "Wrong label",
+  "techniqueWrongIdentityBody": "A person or place presented as someone or somewhere else. Check names and places against a dated source.",
+  "techniqueDistortedEventTitle": "Distorted event",
+  "techniqueDistortedEventBody": "An event described differently from how published sources report it. Look for reporting from more than one outlet.",
+
+  "timelineTitle": "Timeline",
+  "timelineFirstChecked": "First checked by Facify",
+  "timelineRetrieved": "Evidence gathered for this result",
+
+  "inputAnchorLabel": "Where your submission says this",
+  "inputAnchorCharacters": "Characters {start}–{end}",
+  "@inputAnchorCharacters": {
+    "placeholders": { "start": { "type": "int" }, "end": { "type": "int" } }
+  },
+  "inputAnchorPage": "Page {page}",
+  "@inputAnchorPage": {
+    "placeholders": { "page": { "type": "int" } }
+  },
+  "inputAnchorMoment": "At {seconds} s in the video",
+  "@inputAnchorMoment": {
+    "placeholders": { "seconds": { "type": "int" } }
+  },
+
+  "mediaMatchYours": "Your picture",
+  "mediaMatchEarlier": "Matches a picture published earlier",
+
+  "strengthComponentCitations": "{count, plural, =1{1 source} other{{count} sources}}",
+  "@strengthComponentCitations": {
+    "description": "On a strength row that leads to the citations it was computed from.",
+    "placeholders": { "count": { "type": "int" } }
+  }
 }
