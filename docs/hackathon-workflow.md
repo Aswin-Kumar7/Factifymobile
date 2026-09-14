@@ -72,7 +72,7 @@ Verified: `flutter analyze` clean; widget and ARB tests 29/29, including a real 
 captured and handed to the share call with the links, the card in Hindi without truth
 words, and the sheet at phone width in both languages and both text directions; the
 release APK builds (52 MB) with `share_plus` and its `path_provider`/`jni` native
-library.
+library, which loads at startup on the emulator without error.
 
 **Not yet exercised on a device: the share sheet itself.** No live check currently
 produces a verdict that shows the button. The ledger holds only `SEND_TO_REVIEW` (61)
@@ -81,23 +81,18 @@ and `SHARE_WITH_CONTEXT` (7), and all 7 came from the one registered image
 not on this machine. Needs that image (a download to approve) or corpus content that
 yields a correction.
 
-### FL-4 · Evidence screen completeness (M44 · §1.7.4 · §1.7.7)
-- Timeline of dates and instances (absent)
-- Media match preview (absent)
-- Claim anchor shown with the claim
-- Strength rows tappable through to their citations — **needs the components from the
-  server first**: on 2026-09-14 a cached text verdict arrived with
-  `strength.components: []` (band `none`), while a live media verdict carried all
-  five. Find which path drops them — the cache hit or the text abstention.
-- Teaching-mode line
+### FL-4 · Evidence screen completeness (M44 · §1.7.4 · §1.7.7) — 🔨 in progress 2026-09-14
+Built in the app so that each element renders only from data the response carries,
+and shows nothing — not a guess — when that data is absent. **Most of the data is not
+sent today** (B6–B10), so on live results these stay empty until the backend lands:
 
-### FL-5 · Intake completeness (M44 · §1.7.2)
-- Upload progress for files (indeterminate spinner only today)
-- Clipboard-on-open prompt
-- URL share verified end to end; gallery share verified on a real phone
-
-### FL-6 · On-device pre-processing (§1.7.3)
-- dHash + EXIF read on device; local phash → verdict cache
+| Element | App | Needs |
+|---|---|---|
+| Teaching-mode line — the technique a contradicted or recontextualised claim fits, by rule from claim type, status and evidence kind | built | — (shows only on decisive claims, which the current corpus rarely yields) |
+| Timeline of dates and instances | built | **B7** (source dates never stored), **B6** (read-back) |
+| Claim anchor shown with the claim, marked inside the reader's own message | built | **B8** (nothing sets `input_anchor`), **B6** |
+| Strength rows tappable through to their citations | built | **B9** (components carry no citations), **B6** (components dropped on read-back) |
+| Media match preview | submitted picture beside the match | **B10** (no image of the earlier publication) |
 
 ## Phase B — Backend blockers (verified)
 | ID | Defect | Where |
@@ -107,6 +102,11 @@ yields a correction.
 | B3 | Extraction still on Gemini default thinking (25s alone) | `app/extraction/llm.py` |
 | B4 | Ingestion trigger never runs a tick; no worker composed; no CLI — corpus stuck at 2026-08-18 | `app/api/verify.py:509` |
 | B5 | Request `language` is ignored and the Hindi phrasing templates (M21) are never called; the file endpoint does not declare a `language` form field (the app already sends one) | `app/api/verify.py`; `app/extraction/phrasing.py` |
+| B6 | **Ledger read-back is lossy.** `CaseReader.get` rebuilds strength without components or advisory exclusions, and evidence without publisher or input anchor; it restores no advisories, skipped checks, recurrence, media provenance or source risk. Every cache hit is served through it — a repeat check arrived with `components: []`, and a stored case with `publisher: null` although the publisher was written | `app/orchestration/ledger.py:236–264`; `app/api/verify.py:127` |
+| B7 | Evidence insert never writes `observed_at`, while the read orders by it — every stored citation loses its date | `app/db/repositories.py:361–365`, `:393` |
+| B8 | Nothing produces `input_anchor`: the field exists from domain model to database to contract, but no resolver sets it | `app/domain/evidence.py:161` |
+| B9 | `ComponentResponse` carries no citations, although every strength component records them | `app/api/schemas.py:161`; `app/api/verify.py:171`; `app/verdict/strength.py:68` |
+| B10 | The contract has no image of the earlier publication, so a media match can show only the submitted picture | `app/api/schemas.py:122` |
 | R1 | `gemini-3-flash-preview` slow and capacity-limited (13–17s for "say ok") | provider |
 | G1 | 42 commits exist only locally; GitHub has an unrelated history | git |
 
@@ -139,3 +139,5 @@ yields a correction.
   align with the server's "Real content, misleading context"?
 - Download the registered Wikimedia image (see FL-3), so the recycled-image verdict and
   the correction card can be exercised on a device?
+- Order: B6, B7 and B9 are small and decide whether FL-3 and FL-4 show anything on live
+  results — do them before FL-5 and FL-6, or keep the app-first order?
