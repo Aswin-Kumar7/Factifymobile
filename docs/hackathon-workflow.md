@@ -60,9 +60,26 @@ bar.
 Still open, owned by **B5**: verdict reasons, summaries and notes arrive in English;
 the Hindi screens say so in a one-line note until the server phrases them.
 
-### FL-3 · Correction share-out (M44 · §1.7.5)
-"Share correction" only copies text to the clipboard today.
-- Rendered correction card image, shared back through the system share sheet.
+### FL-3 · Correction share-out (M44 · §1.7.5) — ✅ built 2026-09-14 · device share pending
+"Share correction" used to copy text to the clipboard and nothing more. It now opens a
+preview of the correction card — the verdict's own wording, the decided claims, who
+said so and when, the retrieval time, never an advisory — captured as a 1080-px PNG and
+handed to the system share sheet (`share_plus`) with the source links as text beside
+it. "Copy text only" remains. The card is also offered for `SHARE_WITH_CONTEXT`, whose
+own advice is to share the context; an abstention still gets no button.
+
+Verified: `flutter analyze` clean; widget and ARB tests 29/29, including a real PNG
+captured and handed to the share call with the links, the card in Hindi without truth
+words, and the sheet at phone width in both languages and both text directions; the
+release APK builds (52 MB) with `share_plus` and its `path_provider`/`jni` native
+library.
+
+**Not yet exercised on a device: the share sheet itself.** No live check currently
+produces a verdict that shows the button. The ledger holds only `SEND_TO_REVIEW` (61)
+and `SHARE_WITH_CONTEXT` (7), and all 7 came from the one registered image
+(`commons.wikimedia.org/wiki/File:Glimpses_of_the_new_Parliament_Building.jpg`), which is
+not on this machine. Needs that image (a download to approve) or corpus content that
+yields a correction.
 
 ### FL-4 · Evidence screen completeness (M44 · §1.7.4 · §1.7.7)
 - Timeline of dates and instances (absent)
@@ -97,7 +114,11 @@ the Hindi screens say so in a one-line note until the server phrases them.
 - M29 attribution/quote · M31 temporal · M32 source risk — compose into the pipeline
 - M18 OCR for screenshots
 - M49 deploy (Cloud Run from Cloud Shell) · M24 Cloud Scheduler
-- M46 clean audit run · M48 pre-warm + offline rehearsal
+- M46 clean audit run · M48 pre-warm + offline rehearsal — **the demo set must include
+  content that yields `DO_NOT_SHARE` or `SHARE_WITH_CORRECTION`**: as of 2026-09-14 the
+  ledger has never produced either, so the red and orange verdicts and the correction
+  card cannot be shown with live data. The one registered media fingerprint is also the
+  only source of `SHARE_WITH_CONTEXT`, and its image is not on this machine.
 
 ## Phase D — Remaining original-plan modules (sequenced, not dropped)
 - M45 web evidence console
@@ -116,3 +137,5 @@ the Hindi screens say so in a one-line note until the server phrases them.
 - Wording: the `SHARE_WITH_CONTEXT` headline reads "True, but missing context" — the one
   headline that speaks about truth rather than evidence (the Hindi mirrors it). Keep, or
   align with the server's "Real content, misleading context"?
+- Download the registered Wikimedia image (see FL-3), so the recycled-image verdict and
+  the correction card can be exercised on a device?
