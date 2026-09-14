@@ -27,19 +27,64 @@ const String apiBaseUrl = String.fromEnvironment(
 /// the emulator's host address — which no real phone can reach.
 const bool apiUsesEmulatorDefault = !bool.hasEnvironment('FACIFY_API');
 
+/// Why a request failed, named rather than worded.
+///
+/// This client used to carry English sentences, which pinned every error to one
+/// language however the interface was set. It now says *what* went wrong, and
+/// the screen puts that into the reader's language (`lib/l10n/phrases.dart`).
+enum FailureKind {
+  /// The server did not answer within the client's budget.
+  timeout,
+
+  /// No route to the server at all.
+  unreachable,
+
+  /// The connection dropped part-way through.
+  interrupted,
+
+  /// The chosen file could not be read on the phone.
+  unreadableFile,
+
+  /// The reply was not the JSON the contract promises.
+  badReply,
+
+  /// 400 or 422: the request itself was wrong.
+  invalidInput,
+
+  /// 413.
+  tooLarge,
+
+  /// 429.
+  dailyLimit,
+
+  /// 503: the service is up but cannot verify.
+  unavailable,
+
+  /// Anything else.
+  generic,
+}
+
 /// A failure the interface can act on.
 ///
 /// [retryable] separates "your request was wrong" from "try again shortly",
 /// which is the difference between showing a correction and showing a spinner.
 class ApiFailure implements Exception {
-  const ApiFailure(this.message, {this.retryable = false, this.statusCode});
+  const ApiFailure(this.kind, {this.retryable = false, this.statusCode, this.detail});
 
-  final String message;
+  final FailureKind kind;
   final bool retryable;
   final int? statusCode;
 
+  /// The server's own explanation, when it sent one. Kept for logs and never
+  /// shown: the API writes these for developers ("unavailable", "the upload
+  /// exceeds 26214400 bytes"), and only in English.
+  final String? detail;
+
   @override
-  String toString() => message;
+  String toString() =>
+      'ApiFailure(${kind.name}'
+      '${statusCode == null ? '' : ', HTTP $statusCode'}'
+      '${detail == null ? '' : ': $detail'})';
 }
 
 class FacifyClient {
@@ -53,6 +98,8 @@ class FacifyClient {
   /// for a cold start rather than failing a request that was about to succeed.
   static const Duration _timeout = Duration(seconds: 45);
 
+  /// [language] is the interface language, so the verdict can be phrased in the
+  /// language it will be read in (PLAN 1.7.6).
   Future<Verdict> verifyText(String text, {String? language}) =>
       _verify({'text': text, 'language': ?language});
 
@@ -77,22 +124,30 @@ class FacifyClient {
   ///
   /// Sent through the injected client rather than `request.send()`, so the
   /// upload path is testable like every other call.
-  Future<VerifyFileOutcome> verifyFile(File file, {bool consentToProcessMedia = false}) =>
-      _guard(() async {
-        final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/v1/verify/file'))
-          ..files.add(await http.MultipartFile.fromPath('file', file.path))
-          ..fields['consent_to_process_media'] = consentToProcessMedia.toString();
+  ///
+  /// [language] travels as a form field, like the JSON endpoints' field. The file
+  /// endpoint does not read it yet (B5 in docs/hackathon-workflow.md); sending it
+  /// now means the server can start honouring it without an app release.
+  Future<VerifyFileOutcome> verifyFile(
+    File file, {
+    bool consentToProcessMedia = false,
+    String? language,
+  }) => _guard(() async {
+    final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/v1/verify/file'))
+      ..files.add(await http.MultipartFile.fromPath('file', file.path))
+      ..fields['consent_to_process_media'] = consentToProcessMedia.toString();
+    if (language != null) request.fields['language'] = language;
 
-        final streamed = await _http.send(request).timeout(_timeout);
-        final response = await http.Response.fromStream(streamed).timeout(_timeout);
-        _raiseFor(response);
+    final streamed = await _http.send(request).timeout(_timeout);
+    final response = await http.Response.fromStream(streamed).timeout(_timeout);
+    _raiseFor(response);
 
-        final payload = jsonDecode(response.body) as Map<String, dynamic>;
-        if (response.statusCode == 202) {
-          return VerifyFileOutcome.accepted(payload['case_id'] as String);
-        }
-        return VerifyFileOutcome.done(Verdict.fromJson(payload));
-      });
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode == 202) {
+      return VerifyFileOutcome.accepted(payload['case_id'] as String);
+    }
+    return VerifyFileOutcome.done(Verdict.fromJson(payload));
+  });
 
   /// Retrieve a case previously computed, for polling an accepted video.
   Future<Verdict?> getCase(String caseId) => _guard(() async {
@@ -164,56 +219,50 @@ class FacifyClient {
     } on ApiFailure {
       rethrow;
     } on TimeoutException {
-      throw const ApiFailure(
-        'Facify is taking longer than usual. Try again in a moment.',
-        retryable: true,
-      );
+      throw const ApiFailure(FailureKind.timeout, retryable: true);
     } on SocketException {
-      throw const ApiFailure(
-        'Could not reach Facify. Check your connection and try again.',
-        retryable: true,
-      );
+      throw const ApiFailure(FailureKind.unreachable, retryable: true);
     } on http.ClientException {
-      throw const ApiFailure(
-        'The connection to Facify was interrupted. Try again.',
-        retryable: true,
-      );
+      throw const ApiFailure(FailureKind.interrupted, retryable: true);
     } on FileSystemException {
-      throw const ApiFailure('That file could not be read from this phone.');
+      throw const ApiFailure(FailureKind.unreadableFile);
     } on FormatException {
-      throw const ApiFailure('Facify sent a reply this app could not read.', retryable: true);
+      throw const ApiFailure(FailureKind.badReply, retryable: true);
     } on Exception {
-      throw const ApiFailure('Facify could not complete that check.', retryable: true);
+      throw const ApiFailure(FailureKind.generic, retryable: true);
     }
   }
 
-  /// Turn a status code into a message a person can act on.
+  /// Turn a status code into a failure the interface can phrase and act on.
   ///
   /// 503 is called out separately: it means the service is up but not fully
   /// configured, which is a different situation from being down and a different
   /// one again from the request being wrong.
   void _raiseFor(http.Response response) {
-    if (response.statusCode < 400) return;
+    final code = response.statusCode;
+    if (code < 400) return;
 
     final detail = _detailOf(response.body);
-    throw switch (response.statusCode) {
-      400 ||
-      422 => ApiFailure(detail ?? 'That input could not be read.', statusCode: response.statusCode),
-      413 => const ApiFailure('That file is too large to check.', statusCode: 413),
-      429 => const ApiFailure(
-        'Facify is at its daily limit. Please try again tomorrow.',
+    throw switch (code) {
+      400 || 422 => ApiFailure(FailureKind.invalidInput, statusCode: code, detail: detail),
+      413 => ApiFailure(FailureKind.tooLarge, statusCode: code, detail: detail),
+      429 => ApiFailure(
+        FailureKind.dailyLimit,
         retryable: true,
-        statusCode: 429,
+        statusCode: code,
+        detail: detail,
       ),
       503 => ApiFailure(
-        detail ?? 'Verification is not available right now.',
+        FailureKind.unavailable,
         retryable: true,
-        statusCode: 503,
+        statusCode: code,
+        detail: detail,
       ),
       _ => ApiFailure(
-        'Facify could not complete that check.',
-        retryable: response.statusCode >= 500,
-        statusCode: response.statusCode,
+        FailureKind.generic,
+        retryable: code >= 500,
+        statusCode: code,
+        detail: detail,
       ),
     };
   }

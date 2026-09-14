@@ -24,8 +24,9 @@ class SharedContent {
   bool get isFile => kind == 'file';
   bool get isUrl => kind == 'url';
 
-  /// The share arrived but could not be read. [value] then carries a message for
-  /// the person, not content.
+  /// The share arrived but could not be read. [value] then carries the native
+  /// side's English description, for logs — the interface shows its own message,
+  /// in the reader's language.
   bool get isError => kind == 'error';
 
   static SharedContent? fromMap(Map<Object?, Object?>? map) {

@@ -4,27 +4,46 @@
 /// not cover. The limits block is not a disclaimer bolted on at the end — it is
 /// the difference between a tool people can calibrate their trust against and
 /// one they either over-trust or abandon at the first miss.
+///
+/// M44 puts the language toggle on this screen. Someone reading the evidence is
+/// the person most likely to want it in the other language, and sending them
+/// back to the home screen to switch would lose their place.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../l10n/app_localizations.dart';
+import '../l10n/language_preference.dart';
+import '../l10n/phrases.dart';
 import '../models/verdict.dart';
 import '../widgets/advisory_panel.dart';
+import '../widgets/english_only_note.dart';
+import '../widgets/language_menu.dart';
 
 class EvidenceScreen extends StatelessWidget {
-  const EvidenceScreen({super.key, required this.verdict});
+  const EvidenceScreen({super.key, required this.verdict, required this.language});
 
   final Verdict verdict;
+  final LanguagePreference language;
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Evidence')),
+      appBar: AppBar(
+        title: Text(l10n.evidenceTitle),
+        actions: [
+          LanguageMenu(preference: language),
+          const SizedBox(width: 12),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          const EnglishOnlyNote(padding: EdgeInsets.only(bottom: 10)),
           for (final claim in verdict.claims) _ClaimSection(claim: claim),
           if (verdict.allEvidence.isEmpty) const _NoEvidenceBlock(),
           if (verdict.recurrence != null && verdict.recurrence!.timesSeen > 0) ...[
@@ -64,6 +83,7 @@ class _ClaimSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -74,7 +94,7 @@ class _ClaimSection extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('The claim', style: theme.textTheme.labelMedium),
+                Text(l10n.theClaim, style: theme.textTheme.labelMedium),
                 const SizedBox(height: 4),
                 Text(claim.text, style: theme.textTheme.bodyLarge),
                 const SizedBox(height: 8),
@@ -104,17 +124,20 @@ class _StrengthBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
+    final muted = theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            Text(
-              'Evidence strength: ${strength.band.toLowerCase()}',
-              style: theme.textTheme.labelMedium,
+            Expanded(
+              child: Text(
+                l10n.evidenceStrength(l10n.strengthBand(strength.band.toLowerCase())),
+                style: theme.textTheme.labelMedium,
+              ),
             ),
-            const Spacer(),
             Text(strength.score.toStringAsFixed(2), style: theme.textTheme.labelMedium),
           ],
         ),
@@ -125,20 +148,18 @@ class _StrengthBar extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: 2),
             child: Text(
-              '${component.name}: ${component.explanation}',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+              // The component is named for a reader; its explanation is the
+              // server's, and stays English until B5.
+              '${l10n.strengthComponent(component.name)}: ${component.explanation}',
+              style: muted,
             ),
           ),
         if (strength.advisoryExcluded.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Text(
-              'Excluded from this score: ${strength.advisoryExcluded.join(', ')}',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+              l10n.excludedFromScore(strength.advisoryExcluded.join(', ')),
+              style: muted,
             ),
           ),
       ],
@@ -155,9 +176,12 @@ class _EvidenceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
+    final muted = theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
     final date = evidence.observedAt == null
         ? null
-        : DateFormat('d MMM yyyy').format(evidence.observedAt!.toLocal());
+        : DateFormat('d MMM yyyy', l10n.localeName).format(evidence.observedAt!.toLocal());
+    final anchor = l10n.describeAnchor(evidence.sourceAnchor);
 
     return Card(
       margin: const EdgeInsets.only(top: 6),
@@ -171,40 +195,32 @@ class _EvidenceCard extends StatelessWidget {
                 _DirectionChip(direction: evidence.direction),
                 const SizedBox(width: 6),
                 Expanded(
-                  child: Text(
-                    evidence.tierLabel,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
+                  // What the tier means, in words rather than a letter nobody
+                  // can decode.
+                  child: Text(l10n.tierLabel(evidence.tier), style: muted),
                 ),
               ],
             ),
             const SizedBox(height: 8),
             if (evidence.publisher != null)
               Text(evidence.publisher!, style: theme.textTheme.titleSmall),
-            if (date != null)
-              Text(
-                date,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
+            if (date != null) Text(date, style: muted),
             const SizedBox(height: 8),
             // The quoted passage, which is what makes this a citation rather
             // than a link. An evidence row without it is a search result.
             // Styled as a blockquote — the accent bar says "this text is the
-            // source speaking, not us".
+            // source speaking, not us". The bar sits on the reading-start edge,
+            // so it stays on the correct side in a right-to-left layout.
             Container(
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
               decoration: BoxDecoration(
                 color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-                borderRadius: const BorderRadius.only(
-                  topRight: Radius.circular(10),
-                  bottomRight: Radius.circular(10),
+                borderRadius: const BorderRadiusDirectional.only(
+                  topEnd: Radius.circular(10),
+                  bottomEnd: Radius.circular(10),
                 ),
-                border: Border(
-                  left: BorderSide(color: theme.colorScheme.primary, width: 3),
+                border: BorderDirectional(
+                  start: BorderSide(color: theme.colorScheme.primary, width: 3),
                 ),
               ),
               child: Text(
@@ -212,33 +228,28 @@ class _EvidenceCard extends StatelessWidget {
                 style: theme.textTheme.bodySmall?.copyWith(height: 1.45),
               ),
             ),
-            if (evidence.sourceAnchor.describe != null)
+            if (anchor != null)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  'Found at ${evidence.sourceAnchor.describe}',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
+                child: Text(anchor, style: muted),
               ),
             const SizedBox(height: 6),
             // How the match was judged, so a reader can recompute it instead of
             // taking our word for the quality label.
             Text(
-              '${evidence.matchBasis.metric} '
-              '${evidence.matchBasis.value.toStringAsFixed(3)} '
-              '(threshold ${evidence.matchBasis.threshold.toStringAsFixed(3)})',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+              l10n.matchBasis(
+                evidence.matchBasis.metric,
+                evidence.matchBasis.value.toStringAsFixed(3),
+                evidence.matchBasis.threshold.toStringAsFixed(3),
               ),
+              style: muted,
             ),
             const SizedBox(height: 6),
             TextButton.icon(
               onPressed: () =>
                   launchUrl(Uri.parse(evidence.citationUrl), mode: LaunchMode.externalApplication),
               icon: const Icon(Icons.open_in_new, size: 16),
-              label: const Text('Open source'),
+              label: Text(l10n.openSource),
             ),
           ],
         ),
@@ -254,11 +265,12 @@ class _DirectionChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (label, colour) = switch (direction) {
-      'supports' => ('Supports', const Color(0xFF2E7D32)),
-      'contradicts' => ('Contradicts', const Color(0xFFC62828)),
-      'risk_signal' => ('Risk signal', const Color(0xFFEF6C00)),
-      _ => ('Context', const Color(0xFF01579B)),
+    final label = AppLocalizations.of(context).directionLabel(direction);
+    final colour = switch (direction) {
+      'supports' => const Color(0xFF2E7D32),
+      'contradicts' => const Color(0xFFC62828),
+      'risk_signal' => const Color(0xFFEF6C00),
+      _ => const Color(0xFF01579B),
     };
 
     return Container(
@@ -282,19 +294,16 @@ class _NoEvidenceBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('No citable source was found', style: theme.textTheme.titleSmall),
+            Text(l10n.noEvidenceTitle, style: theme.textTheme.titleSmall),
             const SizedBox(height: 6),
-            Text(
-              'This does not mean the content is false. It means nothing we could '
-              'cite either supports or contradicts it, so Facify did not decide.',
-              style: theme.textTheme.bodySmall,
-            ),
+            Text(l10n.noEvidenceBody, style: theme.textTheme.bodySmall),
           ],
         ),
       ),
@@ -310,21 +319,20 @@ class _RecurrenceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('History', style: theme.textTheme.titleSmall),
+            Text(l10n.historyCardTitle, style: theme.textTheme.titleSmall),
             const SizedBox(height: 6),
             Text(recurrence.summary, style: theme.textTheme.bodySmall),
             if (recurrence.hasContradictoryCaptions) ...[
               const SizedBox(height: 8),
               Text(
-                'The same media has carried ${recurrence.distinctCaptions} different '
-                'captions. An authentic photograph does not usually acquire several '
-                'mutually exclusive stories.',
+                l10n.recurrenceCaptions(recurrence.distinctCaptions),
                 style: theme.textTheme.bodySmall,
               ),
             ],
@@ -349,7 +357,10 @@ class _ProvenanceCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Content credentials', style: theme.textTheme.titleSmall),
+            Text(
+              AppLocalizations.of(context).contentCredentials,
+              style: theme.textTheme.titleSmall,
+            ),
             const SizedBox(height: 6),
             Text(provenance.summary, style: theme.textTheme.bodySmall),
           ],
@@ -373,7 +384,10 @@ class _SkippedCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('What could not be checked', style: theme.textTheme.titleSmall),
+            Text(
+              AppLocalizations.of(context).notCheckedTitle,
+              style: theme.textTheme.titleSmall,
+            ),
             const SizedBox(height: 6),
             for (final item in skipped)
               Padding(
@@ -400,6 +414,7 @@ class _LimitsBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
 
     return Card(
       child: Padding(
@@ -407,17 +422,13 @@ class _LimitsBlock extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('What Facify cannot establish', style: theme.textTheme.titleSmall),
+            Text(l10n.limitsTitle, style: theme.textTheme.titleSmall),
             const SizedBox(height: 8),
             ...[
-              'Whether an image or video was generated by AI. No detector is '
-                  'reliable enough to say so, and we do not pretend otherwise.',
-              'Whether something unreported is false. Absence of coverage is not '
-                  'evidence either way.',
-              'Anything about private content, or claims no published source has '
-                  'addressed.',
-              'Intent. We can show what a source said and when, not why someone '
-                  'shared it.',
+              l10n.limitAi,
+              l10n.limitUnreported,
+              l10n.limitPrivate,
+              l10n.limitIntent,
             ].map(
               (line) => Padding(
                 padding: const EdgeInsets.only(bottom: 6),
@@ -445,19 +456,20 @@ class _CaseFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     final muted = theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Case ${verdict.caseId}', style: muted),
-        Text('Checked in ${verdict.elapsedMs} ms', style: muted),
+        Text(l10n.caseLabel(verdict.caseId), style: muted),
+        Text(l10n.checkedIn(verdict.elapsedMs), style: muted),
         if (verdict.receiptUrl != null)
           TextButton.icon(
             onPressed: () =>
                 launchUrl(Uri.parse(verdict.receiptUrl!), mode: LaunchMode.externalApplication),
             icon: const Icon(Icons.verified_outlined, size: 16),
-            label: const Text('Verify this result'),
+            label: Text(l10n.verifyResult),
           ),
       ],
     );
@@ -479,24 +491,7 @@ class _SourceRiskCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final (label, detail) = switch (risk) {
-      'HIGH' => (
-        'Publisher has a high risk profile',
-        'Recently registered, or with a record of unreliable material. This '
-            'describes the publisher, not this claim.',
-      ),
-      'MEDIUM' => (
-        'Publisher has a mixed record',
-        'Some signals worth noting about the source. This describes the '
-            'publisher, not this claim.',
-      ),
-      'LOW' => (
-        'Publisher has an established record',
-        'No adverse signals about the source. This is not evidence that the '
-            'claim itself is true.',
-      ),
-      _ => ('Publisher risk not assessed', 'Nothing is known either way.'),
-    };
+    final l10n = AppLocalizations.of(context);
 
     return Card(
       child: Padding(
@@ -508,12 +503,12 @@ class _SourceRiskCard extends StatelessWidget {
               children: [
                 Icon(Icons.storefront_outlined, size: 18, color: theme.colorScheme.onSurfaceVariant),
                 const SizedBox(width: 8),
-                Expanded(child: Text(label, style: theme.textTheme.titleSmall)),
+                Expanded(child: Text(l10n.sourceRiskTitle(risk), style: theme.textTheme.titleSmall)),
               ],
             ),
             const SizedBox(height: 6),
             Text(
-              detail,
+              l10n.sourceRiskDetail(risk),
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),

@@ -9,6 +9,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/submission.dart';
 import '../models/verdict.dart';
 
@@ -29,13 +30,14 @@ class HistoryStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     if (entries.isEmpty) return const SizedBox.shrink();
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            Text('Earlier this session', style: theme.textTheme.titleSmall),
+            Flexible(child: Text(l10n.historyTitle, style: theme.textTheme.titleSmall)),
             const SizedBox(width: 8),
             Text(
               '${entries.length}',
@@ -63,6 +65,7 @@ class _HistoryRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     final action = entry.verdict.action;
 
     return Card(
@@ -82,11 +85,7 @@ class _HistoryRow extends StatelessWidget {
         subtitle: Text(
           // The citation count, not a confidence figure. How many sources were
           // quoted is checkable; a percentage is not.
-          switch (entry.verdict.allEvidence.length) {
-            0 => 'No citable evidence',
-            1 => '1 citation',
-            final n => '$n citations',
-          },
+          l10n.historyCitations(entry.verdict.allEvidence.length),
           style: theme.textTheme.labelSmall,
         ),
         trailing: const Icon(Icons.chevron_right),

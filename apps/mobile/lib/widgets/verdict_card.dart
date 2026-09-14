@@ -18,9 +18,10 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/verdict.dart';
+import 'english_only_note.dart';
 
 class VerdictCard extends StatelessWidget {
   const VerdictCard({
@@ -44,7 +45,8 @@ class VerdictCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final style = _ActionStyle.of(verdict.action, theme.brightness);
+    final l10n = AppLocalizations.of(context);
+    final style = _ActionStyle.of(verdict.action, theme.brightness, l10n);
     final citations = verdict.allEvidence.length;
 
     return Card(
@@ -103,11 +105,7 @@ class VerdictCard extends StatelessWidget {
                   children: [
                     _MetaChip(
                       icon: Icons.receipt_long_outlined,
-                      label: switch (citations) {
-                        0 => 'No citations',
-                        1 => '1 citation',
-                        final n => '$n citations',
-                      },
+                      label: l10n.citationCount(citations),
                       tone: style.onContainer,
                     ),
                     // Stated in words, not implied by a bare date. The redesign
@@ -116,15 +114,13 @@ class VerdictCard extends StatelessWidget {
                     // claim about the present made from evidence about the past.
                     _MetaChip(
                       icon: Icons.schedule,
-                      label:
-                          'Evidence retrieved '
-                          '${DateFormat('d MMM, HH:mm').format(verdict.retrievedAt.toLocal())}',
+                      label: l10n.evidenceRetrievedAt(verdict.retrievedAt.toLocal()),
                       tone: style.onContainer,
                     ),
                     if (verdict.fromCache)
                       _MetaChip(
                         icon: Icons.bolt,
-                        label: 'Checked earlier',
+                        label: l10n.checkedEarlier,
                         tone: style.onContainer,
                       ),
                   ],
@@ -137,6 +133,7 @@ class VerdictCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                const EnglishOnlyNote(padding: EdgeInsets.only(bottom: 8)),
                 Text(verdict.actionReason, style: theme.textTheme.bodyMedium),
                 if (verdict.claims.isNotEmpty) ...[
                   const SizedBox(height: 14),
@@ -153,8 +150,7 @@ class VerdictCard extends StatelessWidget {
                 if (verdict.fromCache) ...[
                   const SizedBox(height: 10),
                   Text(
-                    'Reused from an earlier check of the same content. The evidence '
-                    'below is from that check.',
+                    l10n.reusedNote,
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -168,7 +164,7 @@ class VerdictCard extends StatelessWidget {
                         onPressed: onSeeEvidence,
                         icon: const Icon(Icons.receipt_long, size: 18),
                         label: Text(
-                          citations == 0 ? 'Why no verdict?' : 'See evidence ($citations)',
+                          citations == 0 ? l10n.whyNoVerdict : l10n.seeEvidence(citations),
                         ),
                       ),
                     ),
@@ -183,7 +179,7 @@ class VerdictCard extends StatelessWidget {
                         child: OutlinedButton.icon(
                           onPressed: onShareCorrection,
                           icon: const Icon(Icons.reply, size: 18),
-                          label: const Text('Share correction'),
+                          label: Text(l10n.shareCorrection),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -198,7 +194,7 @@ class VerdictCard extends StatelessWidget {
                                 child: CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Icon(Icons.flag_outlined, size: 18),
-                        label: Text(reporting ? 'Reporting…' : 'Report'),
+                        label: Text(reporting ? l10n.reporting : l10n.report),
                       ),
                     ),
                   ],
@@ -231,11 +227,16 @@ class _MetaChip extends StatelessWidget {
       children: [
         Icon(icon, size: 13, color: tone),
         const SizedBox(width: 4),
-        Text(
-          label,
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: tone,
-            fontWeight: FontWeight.w600,
+        // Flexible, so a long label wraps inside the chip instead of running
+        // past the card's edge — which a Hindi label, or any label at a large
+        // system font size, otherwise does.
+        Flexible(
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: tone,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
       ],
@@ -245,8 +246,9 @@ class _MetaChip extends StatelessWidget {
 
 /// Wording and colour per action.
 ///
-/// Every headline is a statement about *evidence*, never about truth. "Nothing
-/// contradicts this" is what we can support; "this is true" is not.
+/// Every headline is a statement about *evidence*, never about truth — in every
+/// language. The ARB descriptions carry that rule to whoever translates them, and
+/// test/widget_test.dart checks the Hindi card for the words that would break it.
 class _ActionStyle {
   const _ActionStyle({
     required this.headline,
@@ -286,53 +288,54 @@ class _ActionStyle {
     );
   }
 
-  static _ActionStyle of(VerdictAction action, Brightness brightness) => switch (action) {
-    VerdictAction.safeToShare => _tinted(
-      headline: 'Nothing contradicts this',
-      subhead: 'Independent sources agree',
-      icon: Icons.verified_outlined,
-      tone: const Color(0xFF2E7D32),
-      brightness: brightness,
-    ),
-    VerdictAction.shareWithContext => _tinted(
-      headline: 'True, but missing context',
-      subhead: 'Share the context with it',
-      icon: Icons.info_outline,
-      tone: const Color(0xFF0277BD),
-      brightness: brightness,
-    ),
-    VerdictAction.shareWithCorrection => _tinted(
-      headline: 'A detail here is wrong',
-      subhead: 'Share only with a correction',
-      icon: Icons.error_outline,
-      tone: const Color(0xFFEF6C00),
-      brightness: brightness,
-    ),
-    VerdictAction.doNotShare => _tinted(
-      headline: 'Contradicted by sources',
-      subhead: 'Published sources say otherwise',
-      icon: Icons.gpp_bad_outlined,
-      tone: const Color(0xFFC62828),
-      brightness: brightness,
-    ),
-    VerdictAction.waitAndRecheck => _tinted(
-      headline: 'Still developing',
-      subhead: 'Early reports are often revised',
-      icon: Icons.schedule,
-      tone: const Color(0xFF5E35B1),
-      brightness: brightness,
-    ),
-    // Deliberately neutral, not red. Abstaining is the designed answer for a
-    // case with no citable evidence, and colouring it as danger would tell
-    // people we found something when we found nothing.
-    VerdictAction.sendToReview => _tinted(
-      headline: 'Not enough evidence to decide',
-      subhead: 'Queued for human review',
-      icon: Icons.help_outline,
-      tone: const Color(0xFF546E7A),
-      brightness: brightness,
-    ),
-  };
+  static _ActionStyle of(VerdictAction action, Brightness brightness, AppLocalizations l10n) =>
+      switch (action) {
+        VerdictAction.safeToShare => _tinted(
+          headline: l10n.headlineSafeToShare,
+          subhead: l10n.subheadSafeToShare,
+          icon: Icons.verified_outlined,
+          tone: const Color(0xFF2E7D32),
+          brightness: brightness,
+        ),
+        VerdictAction.shareWithContext => _tinted(
+          headline: l10n.headlineShareWithContext,
+          subhead: l10n.subheadShareWithContext,
+          icon: Icons.info_outline,
+          tone: const Color(0xFF0277BD),
+          brightness: brightness,
+        ),
+        VerdictAction.shareWithCorrection => _tinted(
+          headline: l10n.headlineShareWithCorrection,
+          subhead: l10n.subheadShareWithCorrection,
+          icon: Icons.error_outline,
+          tone: const Color(0xFFEF6C00),
+          brightness: brightness,
+        ),
+        VerdictAction.doNotShare => _tinted(
+          headline: l10n.headlineDoNotShare,
+          subhead: l10n.subheadDoNotShare,
+          icon: Icons.gpp_bad_outlined,
+          tone: const Color(0xFFC62828),
+          brightness: brightness,
+        ),
+        VerdictAction.waitAndRecheck => _tinted(
+          headline: l10n.headlineWaitAndRecheck,
+          subhead: l10n.subheadWaitAndRecheck,
+          icon: Icons.schedule,
+          tone: const Color(0xFF5E35B1),
+          brightness: brightness,
+        ),
+        // Deliberately neutral, not red. Abstaining is the designed answer for a
+        // case with no citable evidence, and colouring it as danger would tell
+        // people we found something when we found nothing.
+        VerdictAction.sendToReview => _tinted(
+          headline: l10n.headlineSendToReview,
+          subhead: l10n.subheadSendToReview,
+          icon: Icons.help_outline,
+          tone: const Color(0xFF546E7A),
+          brightness: brightness,
+        ),
+      };
 }
 
 class _ClaimRow extends StatelessWidget {

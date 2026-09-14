@@ -9,6 +9,8 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
+
 enum IntakeSource { gallery, camera, document }
 
 class IntakeBar extends StatelessWidget {
@@ -28,6 +30,7 @@ class IntakeBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -39,8 +42,8 @@ class IntakeBar extends StatelessWidget {
           textInputAction: TextInputAction.newline,
           decoration: InputDecoration(
             border: const OutlineInputBorder(),
-            labelText: 'Paste a message or a link',
-            hintText: 'Or share straight from WhatsApp, a browser, or the gallery',
+            labelText: l10n.inputLabel,
+            hintText: l10n.inputHint,
             filled: true,
             fillColor: theme.colorScheme.surface,
             suffixIcon: ValueListenableBuilder<TextEditingValue>(
@@ -49,7 +52,7 @@ class IntakeBar extends StatelessWidget {
                   ? const SizedBox.shrink()
                   : IconButton(
                       icon: const Icon(Icons.clear),
-                      tooltip: 'Clear',
+                      tooltip: l10n.clear,
                       onPressed: controller.clear,
                     ),
             ),
@@ -64,7 +67,7 @@ class IntakeBar extends StatelessWidget {
             // worse experience than a button that plainly is not ready.
             onPressed: busy || value.text.trim().isEmpty ? null : onCheck,
             icon: const Icon(Icons.fact_check_outlined),
-            label: const Text('Check this'),
+            label: Text(l10n.checkThis),
             style: FilledButton.styleFrom(
               minimumSize: const Size.fromHeight(48),
             ),
@@ -75,19 +78,19 @@ class IntakeBar extends StatelessWidget {
           children: [
             _SourceButton(
               icon: Icons.photo_library_outlined,
-              label: 'Gallery',
+              label: l10n.sourceGallery,
               onPressed: busy ? null : () => onPick(IntakeSource.gallery),
             ),
             const SizedBox(width: 8),
             _SourceButton(
               icon: Icons.photo_camera_outlined,
-              label: 'Camera',
+              label: l10n.sourceCamera,
               onPressed: busy ? null : () => onPick(IntakeSource.camera),
             ),
             const SizedBox(width: 8),
             _SourceButton(
               icon: Icons.description_outlined,
-              label: 'File',
+              label: l10n.sourceFile,
               onPressed: busy ? null : () => onPick(IntakeSource.document),
             ),
           ],

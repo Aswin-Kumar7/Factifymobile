@@ -18,8 +18,12 @@ void main() {
   });
 
   test('a text submission parses into a Verdict', () async {
+    // Sent with the interface language, exactly as the app sends it. The request
+    // model forbids unknown fields, so a field the server does not declare fails
+    // here as a 422 instead of on a phone.
     final verdict = await client.verifyText(
       'The government announced a relief scheme on Friday.',
+      language: 'hi',
     );
 
     expect(verdict.caseId, isNotEmpty);

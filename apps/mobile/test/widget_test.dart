@@ -2,16 +2,26 @@
 ///
 /// The server enforces these rules in its types; these tests check that the
 /// interface does not undo them. The failure mode they exist to catch is not a
-/// crash — it is a screen that renders an honest payload dishonestly.
+/// crash — it is a screen that renders an honest payload dishonestly. A
+/// translation counts: a Hindi headline that says "true" breaks the law exactly
+/// as an English one would.
 library;
 
 import 'dart:convert';
 
+import 'package:facify_mobile/api/client.dart';
+import 'package:facify_mobile/l10n/app_localizations.dart';
+import 'package:facify_mobile/l10n/language_preference.dart';
+import 'package:facify_mobile/main.dart';
 import 'package:facify_mobile/models/verdict.dart';
+import 'package:facify_mobile/screens/evidence_screen.dart';
 import 'package:facify_mobile/widgets/advisory_panel.dart';
+import 'package:facify_mobile/widgets/language_menu.dart';
 import 'package:facify_mobile/widgets/verdict_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 /// A response shaped exactly as the server emits one.
 Map<String, dynamic> _payload({
@@ -86,11 +96,37 @@ Map<String, dynamic> _advisory() => {
   'excluded_note': 'Forensic signal - not used in this verdict.',
 };
 
-Future<void> _pump(WidgetTester tester, Widget child) => tester.pumpWidget(
-  MaterialApp(
-    home: Scaffold(body: SingleChildScrollView(child: child)),
-  ),
+const Locale _english = Locale('en');
+const Locale _hindi = Locale('hi');
+
+/// [home] under the app's own localization setup, so it renders exactly the
+/// strings a phone set to [locale] would show.
+Widget _app(Widget home, {Locale locale = _english}) => MaterialApp(
+  locale: locale,
+  supportedLocales: AppLocalizations.supportedLocales,
+  localizationsDelegates: AppLocalizations.localizationsDelegates,
+  home: home,
 );
+
+Future<void> _pump(WidgetTester tester, Widget child, {Locale locale = _english}) =>
+    tester.pumpWidget(_app(Scaffold(body: SingleChildScrollView(child: child)), locale: locale));
+
+/// A result card whose actions do nothing.
+VerdictCard _card(Verdict verdict) => VerdictCard(
+  verdict: verdict,
+  onSeeEvidence: () {},
+  onShareCorrection: () {},
+  onReportForReview: () {},
+);
+
+/// A 411-dp-wide phone: the width the longer Hindi strings have to fit into.
+/// [height] is in physical pixels; a tall one lays out a whole scrolling screen,
+/// including the parts a real phone would build only once scrolled to.
+void _phoneSized(WidgetTester tester, {double height = 2340}) {
+  tester.view.physicalSize = Size(1080, height);
+  tester.view.devicePixelRatio = 2.625;
+  addTearDown(tester.view.reset);
+}
 
 void main() {
   group('parsing the contract', () {
@@ -281,6 +317,159 @@ void main() {
       expect(find.textContaining('Not enough evidence to decide'), findsOneWidget);
       // No correction to share when nothing was established.
       expect(find.text('Share correction'), findsNothing);
+    });
+  });
+
+  group('the design law, in Hindi', () {
+    testWidgets('an abstention still reads as undecided, not as danger', (tester) async {
+      await _pump(
+        tester,
+        _card(Verdict.fromJson(_payload(action: 'SEND_TO_REVIEW'))),
+        locale: _hindi,
+      );
+
+      expect(find.text('निर्णय के लिए पर्याप्त साक्ष्य नहीं'), findsOneWidget);
+      expect(find.textContaining('Not enough evidence'), findsNothing);
+      expect(find.text('सुधार साझा करें'), findsNothing);
+    });
+
+    testWidgets('"nothing contradicts this" is not translated into "true"', (tester) async {
+      await _pump(
+        tester,
+        _card(Verdict.fromJson(_payload(action: 'SAFE_TO_SHARE'))),
+        locale: _hindi,
+      );
+
+      expect(find.text('इसका कोई खंडन नहीं मिला'), findsOneWidget);
+      // सच and सही say "true"; सत्य is "truth", and also begins सत्यापित, "verified".
+      for (final word in const ['सच', 'सही', 'सत्य']) {
+        expect(find.textContaining(word), findsNothing, reason: 'the card says "$word"');
+      }
+    });
+
+    testWidgets('states when the evidence was retrieved, and what is still English', (
+      tester,
+    ) async {
+      await _pump(tester, _card(Verdict.fromJson(_payload())), locale: _hindi);
+
+      expect(find.textContaining('साक्ष्य जुटाए गए'), findsOneWidget);
+      // Reasons still arrive from the server in English (B5), and the card says
+      // so rather than switching language halfway down without a word.
+      expect(find.text('नीचे के कुछ विवरण अभी सिर्फ़ अंग्रेज़ी में हैं।'), findsOneWidget);
+    });
+
+    testWidgets('the advisory exclusion header survives translation', (tester) async {
+      await _pump(
+        tester,
+        AdvisoryPanel(advisories: [Advisory.fromJson(_advisory())]),
+        locale: _hindi,
+      );
+
+      // Collapsed, like the English test: the caveat may not wait for a tap.
+      expect(find.textContaining('निर्णय में उपयोग नहीं'), findsOneWidget);
+
+      await tester.tap(find.byType(ExpansionTile));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('0.87'), findsNothing);
+    });
+  });
+
+  group('languages (PLAN 1.7.6)', () {
+    testWidgets('an English card carries no English-only note', (tester) async {
+      await _pump(tester, _card(Verdict.fromJson(_payload())));
+
+      expect(find.textContaining('shown in English'), findsNothing);
+    });
+
+    testWidgets('the toggle switches the interface, and the language sent with a check', (
+      tester,
+    ) async {
+      _phoneSized(tester);
+      final sent = <Map<String, dynamic>>[];
+      final client = FacifyClient(
+        baseUrl: 'http://facify.test',
+        httpClient: MockClient((request) async {
+          if (request.url.path == '/readyz') {
+            return http.Response('{"ready": true, "missing": []}', 200);
+          }
+          sent.add(jsonDecode(request.body) as Map<String, dynamic>);
+          return http.Response(jsonEncode(_payload(action: 'SEND_TO_REVIEW')), 200);
+        }),
+      );
+
+      await tester.pumpWidget(FacifyApp(language: LanguagePreference.inMemory(), client: client));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('never from a model score'), findsOneWidget);
+
+      await tester.tap(find.byType(LanguageMenu));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('हिन्दी'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('मॉडल स्कोर से कभी नहीं'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), 'The scheme was cancelled on Friday.');
+      await tester.pump();
+      await tester.tap(find.text('इसे जाँचें'));
+      await tester.pumpAndSettle();
+
+      expect(sent.single['language'], 'hi');
+      expect(find.text('निर्णय के लिए पर्याप्त साक्ष्य नहीं'), findsOneWidget);
+    });
+
+    testWidgets('with nothing chosen, the phone language decides, falling back to English', (
+      tester,
+    ) async {
+      _phoneSized(tester);
+      addTearDown(tester.platformDispatcher.clearLocalesTestValue);
+      final client = FacifyClient(
+        baseUrl: 'http://facify.test',
+        httpClient: MockClient((_) async => http.Response('{"ready": true, "missing": []}', 200)),
+      );
+
+      tester.platformDispatcher.localesTestValue = const [Locale('hi', 'IN')];
+      await tester.pumpWidget(FacifyApp(language: LanguagePreference.inMemory(), client: client));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('मॉडल स्कोर से कभी नहीं'), findsOneWidget);
+
+      // A phone in a language Facify has no strings for gets English.
+      tester.platformDispatcher.localesTestValue = const [Locale('ta', 'IN')];
+      await tester.pumpAndSettle();
+      expect(find.textContaining('never from a model score'), findsOneWidget);
+    });
+
+    testWidgets('the result and the evidence lay out at phone width, in both languages and '
+        'right to left', (tester) async {
+      _phoneSized(tester, height: 12000);
+      final verdict = Verdict.fromJson(
+        _payload(
+          claims: [
+            _claim(evidence: [_evidence()]),
+          ],
+          advisories: [_advisory()],
+          skipped: [
+            {'check': 'factcheck', 'reason': 'not configured'},
+          ],
+          completenessNote: 'Not everything could be checked.',
+        ),
+      );
+
+      for (final locale in const [_english, _hindi]) {
+        for (final direction in TextDirection.values) {
+          for (final screen in <Widget>[
+            Scaffold(body: SingleChildScrollView(child: _card(verdict))),
+            EvidenceScreen(verdict: verdict, language: LanguagePreference.inMemory()),
+          ]) {
+            // An overflowing row is reported to the framework, which fails the
+            // test and names the offending widget. Taking the exception here
+            // would keep only its message and lose that name.
+            printOnFailure('${screen.runtimeType}, $locale, ${direction.name}');
+            await tester.pumpWidget(
+              _app(Directionality(textDirection: direction, child: screen), locale: locale),
+            );
+            await tester.pumpAndSettle();
+          }
+        }
+      }
     });
   });
 }

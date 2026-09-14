@@ -22,10 +22,14 @@ import 'package:image_picker/image_picker.dart';
 
 import '../api/client.dart';
 import '../api/share_intake.dart';
+import '../l10n/app_localizations.dart';
+import '../l10n/language_preference.dart';
+import '../l10n/phrases.dart';
 import '../models/submission.dart';
 import '../models/verdict.dart';
 import '../widgets/history_strip.dart';
 import '../widgets/intake_bar.dart';
+import '../widgets/language_menu.dart';
 import '../widgets/submission_card.dart';
 import '../widgets/verdict_card.dart';
 import 'evidence_screen.dart';
@@ -34,10 +38,18 @@ import 'evidence_screen.dart';
 /// [Submission.image] for why the bytes are kept rather than the path.
 const int _thumbnailBytesLimit = 2 * 1024 * 1024;
 
+/// A message chosen now and put into words when the screen is drawn.
+///
+/// Errors are stored this way rather than as finished strings. A string built
+/// when the error happened stays in that language, so a reader who switches to
+/// Hindi to understand an error would find the error still in English.
+typedef _Phrase = String Function(AppLocalizations l10n);
+
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.client});
+  const HomeScreen({super.key, required this.client, required this.language});
 
   final FacifyClient client;
+  final LanguagePreference language;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -52,7 +64,7 @@ class _HomeScreenState extends State<HomeScreen> {
   int _tab = 0;
   Verdict? _verdict;
   Submission? _submission;
-  String? _error;
+  _Phrase? _error;
   bool _errorRetryable = false;
   bool _busy = false;
   bool _reporting = false;
@@ -69,6 +81,11 @@ class _HomeScreenState extends State<HomeScreen> {
   /// knew "try again shortly" from "your request was wrong" and the interface
   /// collapsed both into a dead end.
   Future<void> Function()? _lastRun;
+
+  /// The interface language, sent with every check so the verdict can come back
+  /// in the language it will be read in (PLAN 1.7.6). The phone's language unless
+  /// the reader picked another from the language menu.
+  String get _language => Localizations.localeOf(context).languageCode;
 
   @override
   void initState() {
@@ -87,9 +104,7 @@ class _HomeScreenState extends State<HomeScreen> {
       // misconfigured rather than offline, and whoever installed it needs to
       // know which.
       if (!ready && kReleaseMode && apiUsesEmulatorDefault) {
-        _error =
-            'This build has no server address. Rebuild it with '
-            '--dart-define=FACIFY_API=https://your-server.';
+        _error = (l10n) => l10n.errorNoServerAddress;
         _errorRetryable = false;
       }
     });
@@ -104,7 +119,10 @@ class _HomeScreenState extends State<HomeScreen> {
   void _listenForShares() {
     _shareSubscription = _intake.stream.listen(
       _handleShared,
-      onError: (Object error) => setState(() => _error = 'Could not read the shared item.'),
+      onError: (Object error) => setState(() {
+        _error = (l10n) => l10n.errorShareUnreadable;
+        _errorRetryable = false;
+      }),
     );
     _intake.initial().then((content) {
       if (content != null) _handleShared(content);
@@ -118,7 +136,7 @@ class _HomeScreenState extends State<HomeScreen> {
       // grant did not reach us. Said out loud, and whatever result is already on
       // screen stays there: a failed share must not look like a cleared one.
       setState(() {
-        _error = content.value;
+        _error = (l10n) => l10n.errorShareFileUnopenable;
         _errorRetryable = false;
       });
       return;
@@ -154,7 +172,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _fail(ApiFailure failure) {
     setState(() {
-      _error = failure.message;
+      _error = (l10n) => l10n.describeFailure(failure);
       _errorRetryable = failure.retryable;
     });
     // A failure is the moment the status dot is most likely stale.
@@ -165,6 +183,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final value = raw.trim();
     if (value.isEmpty) return;
     _lastRun = () => _verify(raw);
+    final language = _language;
 
     // A bare URL and a block of text are different endpoints on the server, so
     // the distinction is made here rather than asking the person to.
@@ -173,8 +192,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final verdict = looksLikeUrl
-          ? await widget.client.verifyUrl(value)
-          : await widget.client.verifyText(value);
+          ? await widget.client.verifyUrl(value, language: language)
+          : await widget.client.verifyText(value, language: language);
       if (mounted) _finish(verdict);
     } on ApiFailure catch (failure) {
       if (mounted) _fail(failure);
@@ -185,12 +204,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _verifyFile(File file, {Submission? submission}) async {
     _lastRun = () => _verifyFile(file, submission: submission);
+    final language = _language;
     _beginRun(submission ?? await _describe(file));
 
     try {
       // Consent is implied by choosing the file: the person picked this image
       // for checking, which is the only thing the flag governs.
-      final outcome = await widget.client.verifyFile(file, consentToProcessMedia: true);
+      final outcome = await widget.client.verifyFile(
+        file,
+        consentToProcessMedia: true,
+        language: language,
+      );
       if (!mounted) return;
 
       if (outcome.isPending) {
@@ -253,7 +277,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) {
       setState(() {
         _pendingCaseId = null;
-        _error = 'That video is taking longer than expected. Case $caseId is still processing.';
+        _error = (l10n) => l10n.errorVideoSlow(caseId);
         _errorRetryable = false;
       });
     }
@@ -286,11 +310,10 @@ class _HomeScreenState extends State<HomeScreen> {
     } on PlatformException catch (error) {
       // A denied camera permission is an ordinary answer, not a crash.
       if (mounted) {
-        setState(
-          () => _error = error.code == 'camera_access_denied'
-              ? 'Facify needs camera access to check a photo you take.'
-              : 'That file could not be opened.',
-        );
+        final _Phrase message = error.code == 'camera_access_denied'
+            ? (l10n) => l10n.errorCameraDenied
+            : (l10n) => l10n.errorFileUnopenable;
+        setState(() => _error = message);
       }
     }
   }
@@ -300,22 +323,24 @@ class _HomeScreenState extends State<HomeScreen> {
   /// The previous version showed "Reported for human review" while sending
   /// nothing anywhere: a fabricated confirmation in a product whose one claim
   /// is that it does not fabricate. It now calls the endpoint, and the
-  /// confirmation is the server's own reply.
+  /// confirmation appears only once the server has queued the case.
   Future<void> _reportCase() async {
     final verdict = _verdict;
     if (verdict == null || _reporting) return;
 
     setState(() => _reporting = true);
     try {
-      final status = await widget.client.reportCase(verdict.caseId);
+      await widget.client.reportCase(verdict.caseId);
       if (!mounted) return;
       _reported.add(verdict.caseId);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Reported — $status')));
+      final l10n = AppLocalizations.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.reportSent)));
     } on ApiFailure catch (failure) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not report: ${failure.message}')));
+      final l10n = AppLocalizations.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.reportFailed(l10n.describeFailure(failure)))),
+      );
     } finally {
       if (mounted) setState(() => _reporting = false);
     }
@@ -329,9 +354,10 @@ class _HomeScreenState extends State<HomeScreen> {
   void _shareCorrection() {
     final verdict = _verdict;
     if (verdict == null) return;
+    final l10n = AppLocalizations.of(context);
 
     final buffer = StringBuffer()
-      ..writeln('Checked with Facify:')
+      ..writeln(l10n.correctionHeader)
       ..writeln();
 
     for (final claim in verdict.claims.where((c) => c.isDecisive)) {
@@ -339,7 +365,9 @@ class _HomeScreenState extends State<HomeScreen> {
         ..writeln('"${claim.text}"')
         ..writeln(claim.reason);
       for (final evidence in claim.evidence.take(2)) {
-        buffer.writeln('- ${evidence.publisher ?? 'Source'}: ${evidence.citationUrl}');
+        buffer.writeln(
+          '- ${evidence.publisher ?? l10n.correctionSourceFallback}: ${evidence.citationUrl}',
+        );
       }
       buffer.writeln();
     }
@@ -347,18 +375,18 @@ class _HomeScreenState extends State<HomeScreen> {
     // Said explicitly rather than left as an empty card. "Nothing could confirm
     // this" is a useful thing to send back; a blank message is not.
     if (verdict.claims.every((c) => !c.isDecisive)) {
-      buffer.writeln('No published source could confirm or contradict this.');
+      buffer.writeln(l10n.correctionNoSource);
     }
 
     Clipboard.setData(ClipboardData(text: buffer.toString().trim()));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Correction copied - paste it back into the chat')),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.correctionCopied)));
   }
 
-  void _openEvidence(Verdict verdict) => Navigator.of(
-    context,
-  ).push(MaterialPageRoute<void>(builder: (_) => EvidenceScreen(verdict: verdict)));
+  void _openEvidence(Verdict verdict) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => EvidenceScreen(verdict: verdict, language: widget.language),
+    ),
+  );
 
   void _openHistoryEntry(HistoryEntry entry) => setState(() {
     _tab = 0;
@@ -376,6 +404,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -390,10 +420,15 @@ class _HomeScreenState extends State<HomeScreen> {
               child: const Icon(Icons.fact_check_outlined, color: Colors.white, size: 18),
             ),
             const SizedBox(width: 10),
-            const Text('Facify'),
+            // The product name, the same in every interface language. It gives
+            // way first on a narrow phone or at a large font size, so the language
+            // and status pills beside it keep their room.
+            const Flexible(child: Text('Facify', overflow: TextOverflow.ellipsis)),
           ],
         ),
         actions: [
+          LanguageMenu(preference: widget.language),
+          const SizedBox(width: 8),
           _StatusDot(ready: _serviceReady, onTap: _probeService),
           const SizedBox(width: 12),
         ],
@@ -408,10 +443,10 @@ class _HomeScreenState extends State<HomeScreen> {
         selectedIndex: _tab,
         onDestinationSelected: (index) => setState(() => _tab = index),
         destinations: [
-          const NavigationDestination(
-            icon: Icon(Icons.fact_check_outlined),
-            selectedIcon: Icon(Icons.fact_check),
-            label: 'Check',
+          NavigationDestination(
+            icon: const Icon(Icons.fact_check_outlined),
+            selectedIcon: const Icon(Icons.fact_check),
+            label: l10n.tabCheck,
           ),
           NavigationDestination(
             icon: Badge(
@@ -420,7 +455,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: const Icon(Icons.history_outlined),
             ),
             selectedIcon: const Icon(Icons.history),
-            label: 'Activity',
+            label: l10n.tabActivity,
           ),
         ],
       ),
@@ -429,19 +464,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _checkTab(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     final verdict = _verdict;
     final submission = _submission;
+    final error = _error;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       children: [
         Text(
-          'Verdicts from cited sources,\nnever from a model score',
+          l10n.heroTitle,
           style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700, height: 1.25),
         ),
         const SizedBox(height: 4),
         Text(
-          'Paste a forward, drop a link, or check a picture.',
+          l10n.heroSubtitle,
           style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
         const SizedBox(height: 16),
@@ -469,9 +506,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
         if (_busy) const _Working(),
         if (_pendingCaseId != null) const _Pending(),
-        if (_error != null)
+        if (error != null)
           _ErrorNote(
-            message: _error!,
+            message: error(l10n),
             onRetry: _errorRetryable && _lastRun != null && !_busy
                 ? () {
                     final run = _lastRun!;
@@ -493,7 +530,7 @@ class _HomeScreenState extends State<HomeScreen> {
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Text(
-              'Reported. A reviewer will see this case.',
+              l10n.reportedNote,
               style: theme.textTheme.labelSmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -508,6 +545,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _activityTab(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
 
     if (_history.isEmpty) {
       return Center(
@@ -520,13 +558,12 @@ class _HomeScreenState extends State<HomeScreen> {
               color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
             ),
             const SizedBox(height: 12),
-            Text('No checks this session', style: theme.textTheme.titleSmall),
+            Text(l10n.activityEmptyTitle, style: theme.textTheme.titleSmall),
             const SizedBox(height: 6),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 40),
               child: Text(
-                'Results stay on this device for the session and are gone when '
-                'the app closes — what you check is nobody\'s record.',
+                l10n.activityEmptyBody,
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
@@ -544,8 +581,7 @@ class _HomeScreenState extends State<HomeScreen> {
         HistoryStrip(entries: _history, onOpen: _openHistoryEntry),
         const SizedBox(height: 12),
         Text(
-          'Session only, by design: what you check is a record of what you were '
-          'suspicious about, and this app does not keep one.',
+          l10n.activityFooter,
           style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           textAlign: TextAlign.center,
         ),
@@ -564,10 +600,11 @@ class _StatusDot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     final (colour, label) = switch (ready) {
-      true => (const Color(0xFF2E7D32), 'Online'),
-      false => (theme.colorScheme.error, 'Offline'),
-      null => (theme.colorScheme.outline, 'Checking'),
+      true => (const Color(0xFF2E7D32), l10n.statusOnline),
+      false => (theme.colorScheme.error, l10n.statusOffline),
+      null => (theme.colorScheme.outline, l10n.statusChecking),
     };
 
     return InkWell(
@@ -608,6 +645,7 @@ class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 28),
       child: Column(
@@ -618,14 +656,12 @@ class _EmptyState extends StatelessWidget {
             color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.45),
           ),
           const SizedBox(height: 12),
-          Text('Nothing checked yet', style: theme.textTheme.titleSmall),
+          Text(l10n.emptyTitle, style: theme.textTheme.titleSmall),
           const SizedBox(height: 6),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Text(
-              'Share a forward straight into Facify, paste it above, or check a '
-              'picture. Every verdict comes with the sources behind it — and when '
-              'there are none, it says so.',
+              l10n.emptyBody,
               textAlign: TextAlign.center,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
@@ -649,7 +685,7 @@ class _Working extends StatelessWidget {
         const LinearProgressIndicator(),
         const SizedBox(height: 12),
         Text(
-          'Looking for sources that address this',
+          AppLocalizations.of(context).working,
           style: Theme.of(context).textTheme.bodySmall,
         ),
       ],
@@ -661,17 +697,20 @@ class _Pending extends StatelessWidget {
   const _Pending();
 
   @override
-  Widget build(BuildContext context) => const Card(
-    child: ListTile(
-      leading: SizedBox(
-        width: 24,
-        height: 24,
-        child: CircularProgressIndicator(strokeWidth: 2),
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Card(
+      child: ListTile(
+        leading: const SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+        title: Text(l10n.videoAcceptedTitle),
+        subtitle: Text(l10n.videoAcceptedBody),
       ),
-      title: Text('Video accepted'),
-      subtitle: Text('Longer than a request can stay open. Checking now.'),
-    ),
-  );
+    );
+  }
 }
 
 class _ErrorNote extends StatelessWidget {
@@ -686,7 +725,9 @@ class _ErrorNote extends StatelessWidget {
     return Card(
       color: scheme.errorContainer,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+        // Start and end rather than left and right, so the retry button stays at
+        // the trailing edge in a right-to-left layout (PLAN 1.7.6).
+        padding: const EdgeInsetsDirectional.fromSTEB(14, 10, 8, 10),
         child: Row(
           children: [
             Icon(Icons.error_outline, color: scheme.onErrorContainer),
@@ -697,7 +738,10 @@ class _ErrorNote extends StatelessWidget {
             if (onRetry != null)
               TextButton(
                 onPressed: onRetry,
-                child: Text('Retry', style: TextStyle(color: scheme.onErrorContainer)),
+                child: Text(
+                  AppLocalizations.of(context).retry,
+                  style: TextStyle(color: scheme.onErrorContainer),
+                ),
               ),
           ],
         ),

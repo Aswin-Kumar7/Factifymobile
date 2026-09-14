@@ -6,53 +6,82 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'api/client.dart';
+import 'l10n/app_localizations.dart';
+import 'l10n/language_preference.dart';
 import 'screens/home_screen.dart';
 
-void main() => runApp(const FacifyApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Read before the first frame, so a reader who chose Hindi never sees a frame
+  // of English first.
+  final language = await LanguagePreference.load();
+  runApp(FacifyApp(language: language));
+}
 
 class FacifyApp extends StatefulWidget {
-  const FacifyApp({super.key});
+  const FacifyApp({super.key, required this.language, this.client});
+
+  final LanguagePreference language;
+
+  /// Supplied by tests. The app otherwise builds, and closes, its own.
+  final FacifyClient? client;
 
   @override
   State<FacifyApp> createState() => _FacifyAppState();
 }
 
 class _FacifyAppState extends State<FacifyApp> {
-  final FacifyClient _client = FacifyClient();
+  late final FacifyClient _client = widget.client ?? FacifyClient();
 
   @override
   void dispose() {
-    _client.close();
+    if (widget.client == null) _client.close();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Facify',
-      debugShowCheckedModeBanner: false,
-      theme: _theme(Brightness.light),
-      darkTheme: _theme(Brightness.dark),
-      // Follows the system. A verification tool gets opened in a hurry, often
-      // from a chat at night, and forcing a light surface at that moment is the
-      // kind of small friction that loses the check.
-      themeMode: ThemeMode.system,
-      // English and Hindi. Hinglish is deliberately absent as an interface
-      // language: it is a register rather than a locale, and the embedding model
-      // cannot represent it (measured, see docs/ops-notes.md), so offering it
-      // here would promise retrieval quality the backend cannot deliver.
-      supportedLocales: const [Locale('en'), Locale('hi')],
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      home: HomeScreen(client: _client),
+    return ValueListenableBuilder<Locale?>(
+      valueListenable: widget.language,
+      builder: (context, chosen, _) => MaterialApp(
+        title: 'Facify',
+        debugShowCheckedModeBanner: false,
+        theme: _theme(Brightness.light),
+        darkTheme: _theme(Brightness.dark),
+        // Follows the system. A verification tool gets opened in a hurry, often
+        // from a chat at night, and forcing a light surface at that moment is the
+        // kind of small friction that loses the check.
+        themeMode: ThemeMode.system,
+        // English and Hindi. Hinglish is deliberately absent as an interface
+        // language: it is a register rather than a locale, and the embedding model
+        // cannot represent it (measured, see docs/ops-notes.md), so offering it
+        // here would promise retrieval quality the backend cannot deliver.
+        //
+        // The list comes from the ARB files in lib/l10n: a language is added
+        // there, with its strings, rather than here.
+        locale: chosen,
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        localeListResolutionCallback: _resolveLocale,
+        home: HomeScreen(client: _client, language: widget.language),
+      ),
     );
   }
+}
+
+/// The phone's language when Facify has strings for it, English otherwise.
+///
+/// Written out rather than left to the default, which falls back to whichever
+/// supported locale happens to be listed first.
+Locale _resolveLocale(List<Locale>? preferred, Iterable<Locale> supported) {
+  for (final locale in preferred ?? const <Locale>[]) {
+    for (final candidate in supported) {
+      if (candidate.languageCode == locale.languageCode) return candidate;
+    }
+  }
+  return const Locale('en');
 }
 
 /// One theme built twice, so light and dark cannot drift apart.

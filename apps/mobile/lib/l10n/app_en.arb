@@ -1,0 +1,220 @@
+{
+  "@@locale": "en",
+
+  "tabCheck": "Check",
+  "tabActivity": "Activity",
+
+  "statusOnline": "Online",
+  "statusOffline": "Offline",
+  "statusChecking": "Checking",
+
+  "languageMenuTooltip": "Language",
+  "languagePhone": "Phone language",
+
+  "heroTitle": "Verdicts from cited sources,\nnever from a model score",
+  "heroSubtitle": "Paste a forward, drop a link, or check a picture.",
+
+  "inputLabel": "Paste a message or a link",
+  "inputHint": "Or share straight from WhatsApp, a browser, or the gallery",
+  "clear": "Clear",
+  "checkThis": "Check this",
+  "sourceGallery": "Gallery",
+  "sourceCamera": "Camera",
+  "sourceFile": "File",
+
+  "checkingSubmission": "{kind, select, text{Checking this message} link{Checking this link} image{Checking this image} other{Checking this document}}",
+  "@checkingSubmission": {
+    "description": "Label above the preview of what was submitted. kind is text, link, image or document.",
+    "placeholders": { "kind": { "type": "String" } }
+  },
+
+  "emptyTitle": "Nothing checked yet",
+  "emptyBody": "Share a forward straight into Facify, paste it above, or check a picture. Every verdict comes with the sources behind it — and when there are none, it says so.",
+  "working": "Looking for sources that address this",
+  "videoAcceptedTitle": "Video accepted",
+  "videoAcceptedBody": "Longer than a request can stay open. Checking now.",
+  "retry": "Retry",
+  "reportedNote": "Reported. A reviewer will see this case.",
+
+  "activityEmptyTitle": "No checks this session",
+  "activityEmptyBody": "Results stay on this device for the session and are gone when the app closes — what you check is nobody's record.",
+  "activityFooter": "Session only, by design: what you check is a record of what you were suspicious about, and this app does not keep one.",
+  "historyTitle": "Earlier this session",
+  "historyCitations": "{count, plural, =0{No citable evidence} =1{1 citation} other{{count} citations}}",
+  "@historyCitations": {
+    "description": "How many sources a past check quoted. A count of citations, never a confidence figure.",
+    "placeholders": { "count": { "type": "int" } }
+  },
+
+  "errorNoServerAddress": "This build has no server address. Rebuild it with --dart-define=FACIFY_API=https://your-server.",
+  "errorShareUnreadable": "Could not read the shared item.",
+  "errorShareFileUnopenable": "That file could not be opened. Share it again, or use the Gallery button in Facify.",
+  "errorVideoSlow": "That video is taking longer than expected. Case {caseId} is still processing.",
+  "@errorVideoSlow": {
+    "placeholders": { "caseId": { "type": "String" } }
+  },
+  "errorCameraDenied": "Facify needs camera access to check a photo you take.",
+  "errorFileUnopenable": "That file could not be opened.",
+
+  "reportSent": "Sent for human review",
+  "@reportSent": {
+    "description": "Shown only after the server has accepted the report."
+  },
+  "reportFailed": "Could not report: {reason}",
+  "@reportFailed": {
+    "placeholders": { "reason": { "type": "String" } }
+  },
+
+  "correctionCopied": "Correction copied - paste it back into the chat",
+  "correctionHeader": "Checked with Facify:",
+  "correctionSourceFallback": "Source",
+  "correctionNoSource": "No published source could confirm or contradict this.",
+
+  "failureTimeout": "Facify is taking longer than usual. Try again in a moment.",
+  "failureUnreachable": "Could not reach Facify. Check your connection and try again.",
+  "failureInterrupted": "The connection to Facify was interrupted. Try again.",
+  "failureUnreadableFile": "That file could not be read from this phone.",
+  "failureBadReply": "Facify sent a reply this app could not read.",
+  "failureInvalidInput": "That input could not be read.",
+  "failureTooLarge": "That file is too large to check.",
+  "failureDailyLimit": "Facify is at its daily limit. Please try again tomorrow.",
+  "failureUnavailable": "Verification is not available right now.",
+  "failureGeneric": "Facify could not complete that check.",
+
+  "headlineSafeToShare": "Nothing contradicts this",
+  "@headlineSafeToShare": {
+    "description": "Design law: a statement about evidence, never a claim that the content is true."
+  },
+  "subheadSafeToShare": "Independent sources agree",
+  "headlineShareWithContext": "True, but missing context",
+  "subheadShareWithContext": "Share the context with it",
+  "headlineShareWithCorrection": "A detail here is wrong",
+  "subheadShareWithCorrection": "Share only with a correction",
+  "headlineDoNotShare": "Contradicted by sources",
+  "subheadDoNotShare": "Published sources say otherwise",
+  "headlineWaitAndRecheck": "Still developing",
+  "subheadWaitAndRecheck": "Early reports are often revised",
+  "headlineSendToReview": "Not enough evidence to decide",
+  "@headlineSendToReview": {
+    "description": "Abstention. Neutral wording: not deciding is the designed answer, not a failure."
+  },
+  "subheadSendToReview": "Queued for human review",
+
+  "citationCount": "{count, plural, =0{No citations} =1{1 citation} other{{count} citations}}",
+  "@citationCount": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "evidenceRetrievedAt": "Evidence retrieved {time}",
+  "@evidenceRetrievedAt": {
+    "description": "When the evidence behind a verdict was gathered. Always shown.",
+    "placeholders": {
+      "time": { "type": "DateTime", "format": "d MMM, HH:mm", "isCustomDateFormat": "true" }
+    }
+  },
+  "checkedEarlier": "Checked earlier",
+  "reusedNote": "Reused from an earlier check of the same content. The evidence below is from that check.",
+  "englishOnlyNote": "Some details below are shown in English for now.",
+  "@englishOnlyNote": {
+    "description": "Shown only when the interface is not in English: verdict reasons still arrive from the server in English."
+  },
+  "whyNoVerdict": "Why no verdict?",
+  "seeEvidence": "See evidence ({count})",
+  "@seeEvidence": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "shareCorrection": "Share correction",
+  "report": "Report",
+  "reporting": "Reporting…",
+
+  "evidenceTitle": "Evidence",
+  "theClaim": "The claim",
+  "evidenceStrength": "Evidence strength: {band}",
+  "@evidenceStrength": {
+    "placeholders": { "band": { "type": "String" } }
+  },
+  "strengthBand": "{band, select, none{none} weak{weak} moderate{moderate} strong{strong} conclusive{conclusive} other{{band}}}",
+  "@strengthBand": {
+    "placeholders": { "band": { "type": "String" } }
+  },
+  "strengthComponent": "{name, select, tier_composition{Evidence tiers} independent_origins{Independent origins} temporal_confidence{Dating} source_transparency{Publisher transparency} conflict_penalty{Conflicting evidence} other{{name}}}",
+  "@strengthComponent": {
+    "description": "One term of the explainable strength score, named for a reader.",
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "excludedFromScore": "Excluded from this score: {providers}",
+  "@excludedFromScore": {
+    "placeholders": { "providers": { "type": "String" } }
+  },
+  "tierLabel": "{tier, select, A{Signed content credential} B{Dated source} C{Published fact-check} other{Corroboration}}",
+  "@tierLabel": {
+    "placeholders": { "tier": { "type": "String" } }
+  },
+  "directionLabel": "{direction, select, supports{Supports} contradicts{Contradicts} risk_signal{Risk signal} other{Context}}",
+  "@directionLabel": {
+    "placeholders": { "direction": { "type": "String" } }
+  },
+  "anchorPage": "Found at page {page}",
+  "@anchorPage": {
+    "placeholders": { "page": { "type": "int" } }
+  },
+  "anchorParagraph": "Found at paragraph {paragraph}",
+  "@anchorParagraph": {
+    "placeholders": { "paragraph": { "type": "int" } }
+  },
+  "anchorCharacters": "Found at characters {start} to {end}",
+  "@anchorCharacters": {
+    "placeholders": { "start": { "type": "int" }, "end": { "type": "int" } }
+  },
+  "matchBasis": "{metric} {value} (threshold {threshold})",
+  "@matchBasis": {
+    "placeholders": {
+      "metric": { "type": "String" },
+      "value": { "type": "String" },
+      "threshold": { "type": "String" }
+    }
+  },
+  "openSource": "Open source",
+  "noEvidenceTitle": "No citable source was found",
+  "noEvidenceBody": "This does not mean the content is false. It means nothing we could cite either supports or contradicts it, so Facify did not decide.",
+  "historyCardTitle": "History",
+  "recurrenceCaptions": "The same media has carried {count} different captions. An authentic photograph does not usually acquire several mutually exclusive stories.",
+  "@recurrenceCaptions": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "contentCredentials": "Content credentials",
+  "notCheckedTitle": "What could not be checked",
+  "limitsTitle": "What Facify cannot establish",
+  "limitAi": "Whether an image or video was generated by AI. No detector is reliable enough to say so, and we do not pretend otherwise.",
+  "limitUnreported": "Whether something unreported is false. Absence of coverage is not evidence either way.",
+  "limitPrivate": "Anything about private content, or claims no published source has addressed.",
+  "limitIntent": "Intent. We can show what a source said and when, not why someone shared it.",
+  "caseLabel": "Case {caseId}",
+  "@caseLabel": {
+    "placeholders": { "caseId": { "type": "String" } }
+  },
+  "checkedIn": "Checked in {ms} ms",
+  "@checkedIn": {
+    "placeholders": { "ms": { "type": "int" } }
+  },
+  "verifyResult": "Verify this result",
+  "sourceRiskTitle": "{risk, select, HIGH{Publisher has a high risk profile} MEDIUM{Publisher has a mixed record} LOW{Publisher has an established record} other{Publisher risk not assessed}}",
+  "@sourceRiskTitle": {
+    "placeholders": { "risk": { "type": "String" } }
+  },
+  "sourceRiskDetail": "{risk, select, HIGH{Recently registered, or with a record of unreliable material. This describes the publisher, not this claim.} MEDIUM{Some signals worth noting about the source. This describes the publisher, not this claim.} LOW{No adverse signals about the source. This is not evidence that the claim itself is true.} other{Nothing is known either way.}}",
+  "@sourceRiskDetail": {
+    "description": "A risky publisher is a reason to look harder, never a finding that the content is false.",
+    "placeholders": { "risk": { "type": "String" } }
+  },
+
+  "advisoryHeader": "Forensic signals - shown for transparency. These are not used in the verdict and cannot change it.",
+  "@advisoryHeader": {
+    "description": "Permanent exclusion header. Must stay visible and must keep saying the signals are not used in the verdict."
+  },
+  "advisoryCount": "{count, plural, =1{1 signal} other{{count} signals}}",
+  "@advisoryCount": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "advisoryFooter": "None of these can establish that content is authentic or fabricated. The verdict above is based only on cited sources.",
+  "advisoryRowExcluded": "Forensic signal - not used in this verdict."
+}

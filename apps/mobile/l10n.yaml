@@ -1,0 +1,11 @@
+# Interface strings (M44, PLAN 1.7.6).
+#
+# English is the template: a key added there and missing from any other ARB fails
+# test/l10n_test.dart, so a half-translated screen cannot ship quietly.
+arb-dir: lib/l10n
+template-arb-file: app_en.arb
+output-localization-file: app_localizations.dart
+output-class: AppLocalizations
+# Non-nullable: every screen sits under MaterialApp's delegates, and a nullable
+# getter would put a `!` on every string in the app.
+nullable-getter: false

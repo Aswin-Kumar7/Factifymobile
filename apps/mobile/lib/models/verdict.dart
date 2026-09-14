@@ -66,14 +66,6 @@ class SourceAnchor {
     paragraphIndex: json['paragraph_index'] as int?,
     pageNumber: json['page_number'] as int?,
   );
-
-  /// Where in the source the excerpt sits, phrased for a reader.
-  String? get describe {
-    if (pageNumber != null) return 'page $pageNumber';
-    if (paragraphIndex != null) return 'paragraph ${paragraphIndex! + 1}';
-    if (charStart != null) return 'characters $charStart to ${charEnd ?? charStart}';
-    return null;
-  }
 }
 
 /// The metric behind a match and the threshold it was judged against.
@@ -150,14 +142,6 @@ class Evidence {
 
   bool get contradicts => direction == 'contradicts';
   bool get supports => direction == 'supports';
-
-  /// What the tier means, in words rather than a letter nobody can decode.
-  String get tierLabel => switch (tier) {
-    'A' => 'Signed content credential',
-    'B' => 'Dated source',
-    'C' => 'Published fact-check',
-    _ => 'Corroboration',
-  };
 }
 
 /// A Tier E signal.

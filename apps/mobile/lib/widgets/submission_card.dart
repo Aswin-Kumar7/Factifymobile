@@ -8,6 +8,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/submission.dart';
 
 class SubmissionCard extends StatelessWidget {
@@ -19,6 +20,7 @@ class SubmissionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     final thumbnail = submission.thumbnail;
 
     return Card(
@@ -50,7 +52,10 @@ class SubmissionCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Checking this ${submission.label.toLowerCase()}',
+                    // One whole sentence per kind rather than "Checking this" plus
+                    // a noun: Hindi puts the verb last and agrees it with the
+                    // noun's gender, which a spliced-in word cannot do.
+                    l10n.checkingSubmission(submission.kind.name),
                     style: theme.textTheme.labelMedium?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -69,7 +74,7 @@ class SubmissionCard extends StatelessWidget {
               IconButton(
                 onPressed: onClear,
                 icon: const Icon(Icons.close),
-                tooltip: 'Clear',
+                tooltip: l10n.clear,
                 visualDensity: VisualDensity.compact,
               ),
           ],

@@ -18,6 +18,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/verdict.dart';
 
 class AdvisoryPanel extends StatelessWidget {
@@ -31,6 +32,7 @@ class AdvisoryPanel extends StatelessWidget {
     if (advisories.isEmpty) return const SizedBox.shrink();
 
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     // Muted on purpose. This panel must never compete visually with the cited
     // evidence above it.
     final muted = theme.colorScheme.onSurfaceVariant;
@@ -53,8 +55,7 @@ class AdvisoryPanel extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Forensic signals - shown for transparency. '
-                    'These are not used in the verdict and cannot change it.',
+                    l10n.advisoryHeader,
                     style: theme.textTheme.labelMedium?.copyWith(
                       color: muted,
                       fontWeight: FontWeight.w600,
@@ -67,7 +68,7 @@ class AdvisoryPanel extends StatelessWidget {
           const Divider(height: 1),
           ExpansionTile(
             title: Text(
-              '${advisories.length} signal${advisories.length == 1 ? '' : 's'}',
+              l10n.advisoryCount(advisories.length),
               style: theme.textTheme.bodyMedium?.copyWith(color: muted),
             ),
             childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -75,8 +76,7 @@ class AdvisoryPanel extends StatelessWidget {
               for (final advisory in advisories) _AdvisoryRow(advisory: advisory, muted: muted),
               const SizedBox(height: 8),
               Text(
-                'None of these can establish that content is authentic or fabricated. '
-                'The verdict above is based only on cited sources.',
+                l10n.advisoryFooter,
                 style: theme.textTheme.labelSmall?.copyWith(color: muted),
               ),
             ],
@@ -96,6 +96,7 @@ class _AdvisoryRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -109,16 +110,23 @@ class _AdvisoryRow extends StatelessWidget {
               // iconography, which is the failure this panel exists to avoid.
               Icon(Icons.remove_circle_outline, size: 14, color: muted),
               const SizedBox(width: 6),
-              Text(advisory.provider, style: theme.textTheme.labelSmall?.copyWith(color: muted)),
+              Flexible(
+                child: Text(
+                  advisory.provider,
+                  style: theme.textTheme.labelSmall?.copyWith(color: muted),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 2),
           Text(advisory.note, style: theme.textTheme.bodySmall?.copyWith(color: muted)),
           const SizedBox(height: 2),
           // Carried from the server so the caveat is data, not something a
-          // future refactor of this widget could drop.
+          // future refactor of this widget could drop. The server writes it in
+          // English only until B5, so another interface language shows the same
+          // caveat in the reader's own words rather than a line they may not read.
           Text(
-            advisory.excludedNote,
+            l10n.localeName == 'en' ? advisory.excludedNote : l10n.advisoryRowExcluded,
             style: theme.textTheme.labelSmall?.copyWith(color: muted, fontStyle: FontStyle.italic),
           ),
         ],

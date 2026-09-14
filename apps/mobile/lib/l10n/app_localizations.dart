@@ -1,0 +1,770 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:intl/intl.dart' as intl;
+
+import 'app_localizations_en.dart';
+import 'app_localizations_hi.dart';
+
+// ignore_for_file: type=lint
+
+/// Callers can lookup localized strings with an instance of AppLocalizations
+/// returned by `AppLocalizations.of(context)`.
+///
+/// Applications need to include `AppLocalizations.delegate()` in their app's
+/// `localizationDelegates` list, and the locales they support in the app's
+/// `supportedLocales` list. For example:
+///
+/// ```dart
+/// import 'l10n/app_localizations.dart';
+///
+/// return MaterialApp(
+///   localizationsDelegates: AppLocalizations.localizationsDelegates,
+///   supportedLocales: AppLocalizations.supportedLocales,
+///   home: MyApplicationHome(),
+/// );
+/// ```
+///
+/// ## Update pubspec.yaml
+///
+/// Please make sure to update your pubspec.yaml to include the following
+/// packages:
+///
+/// ```yaml
+/// dependencies:
+///   # Internationalization support.
+///   flutter_localizations:
+///     sdk: flutter
+///   intl: any # Use the pinned version from flutter_localizations
+///
+///   # Rest of dependencies
+/// ```
+///
+/// ## iOS Applications
+///
+/// iOS applications define key application metadata, including supported
+/// locales, in an Info.plist file that is built into the application bundle.
+/// To configure the locales supported by your app, you’ll need to edit this
+/// file.
+///
+/// First, open your project’s ios/Runner.xcworkspace Xcode workspace file.
+/// Then, in the Project Navigator, open the Info.plist file under the Runner
+/// project’s Runner folder.
+///
+/// Next, select the Information Property List item, select Add Item from the
+/// Editor menu, then select Localizations from the pop-up menu.
+///
+/// Select and expand the newly-created Localizations item then, for each
+/// locale your application supports, add a new item and select the locale
+/// you wish to add from the pop-up menu in the Value field. This list should
+/// be consistent with the languages listed in the AppLocalizations.supportedLocales
+/// property.
+abstract class AppLocalizations {
+  AppLocalizations(String locale)
+    : localeName = intl.Intl.canonicalizedLocale(locale.toString());
+
+  final String localeName;
+
+  static AppLocalizations of(BuildContext context) {
+    return Localizations.of<AppLocalizations>(context, AppLocalizations)!;
+  }
+
+  static const LocalizationsDelegate<AppLocalizations> delegate =
+      _AppLocalizationsDelegate();
+
+  /// A list of this localizations delegate along with the default localizations
+  /// delegates.
+  ///
+  /// Returns a list of localizations delegates containing this delegate along with
+  /// GlobalMaterialLocalizations.delegate, GlobalCupertinoLocalizations.delegate,
+  /// and GlobalWidgetsLocalizations.delegate.
+  ///
+  /// Additional delegates can be added by appending to this list in
+  /// MaterialApp. This list does not have to be used at all if a custom list
+  /// of delegates is preferred or required.
+  static const List<LocalizationsDelegate<dynamic>> localizationsDelegates =
+      <LocalizationsDelegate<dynamic>>[
+        delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+      ];
+
+  /// A list of this localizations delegate's supported locales.
+  static const List<Locale> supportedLocales = <Locale>[
+    Locale('en'),
+    Locale('hi'),
+  ];
+
+  /// No description provided for @tabCheck.
+  ///
+  /// In en, this message translates to:
+  /// **'Check'**
+  String get tabCheck;
+
+  /// No description provided for @tabActivity.
+  ///
+  /// In en, this message translates to:
+  /// **'Activity'**
+  String get tabActivity;
+
+  /// No description provided for @statusOnline.
+  ///
+  /// In en, this message translates to:
+  /// **'Online'**
+  String get statusOnline;
+
+  /// No description provided for @statusOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Offline'**
+  String get statusOffline;
+
+  /// No description provided for @statusChecking.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking'**
+  String get statusChecking;
+
+  /// No description provided for @languageMenuTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Language'**
+  String get languageMenuTooltip;
+
+  /// No description provided for @languagePhone.
+  ///
+  /// In en, this message translates to:
+  /// **'Phone language'**
+  String get languagePhone;
+
+  /// No description provided for @heroTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Verdicts from cited sources,\nnever from a model score'**
+  String get heroTitle;
+
+  /// No description provided for @heroSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste a forward, drop a link, or check a picture.'**
+  String get heroSubtitle;
+
+  /// No description provided for @inputLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste a message or a link'**
+  String get inputLabel;
+
+  /// No description provided for @inputHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Or share straight from WhatsApp, a browser, or the gallery'**
+  String get inputHint;
+
+  /// No description provided for @clear.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear'**
+  String get clear;
+
+  /// No description provided for @checkThis.
+  ///
+  /// In en, this message translates to:
+  /// **'Check this'**
+  String get checkThis;
+
+  /// No description provided for @sourceGallery.
+  ///
+  /// In en, this message translates to:
+  /// **'Gallery'**
+  String get sourceGallery;
+
+  /// No description provided for @sourceCamera.
+  ///
+  /// In en, this message translates to:
+  /// **'Camera'**
+  String get sourceCamera;
+
+  /// No description provided for @sourceFile.
+  ///
+  /// In en, this message translates to:
+  /// **'File'**
+  String get sourceFile;
+
+  /// Label above the preview of what was submitted. kind is text, link, image or document.
+  ///
+  /// In en, this message translates to:
+  /// **'{kind, select, text{Checking this message} link{Checking this link} image{Checking this image} other{Checking this document}}'**
+  String checkingSubmission(String kind);
+
+  /// No description provided for @emptyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing checked yet'**
+  String get emptyTitle;
+
+  /// No description provided for @emptyBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Share a forward straight into Facify, paste it above, or check a picture. Every verdict comes with the sources behind it — and when there are none, it says so.'**
+  String get emptyBody;
+
+  /// No description provided for @working.
+  ///
+  /// In en, this message translates to:
+  /// **'Looking for sources that address this'**
+  String get working;
+
+  /// No description provided for @videoAcceptedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Video accepted'**
+  String get videoAcceptedTitle;
+
+  /// No description provided for @videoAcceptedBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Longer than a request can stay open. Checking now.'**
+  String get videoAcceptedBody;
+
+  /// No description provided for @retry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get retry;
+
+  /// No description provided for @reportedNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Reported. A reviewer will see this case.'**
+  String get reportedNote;
+
+  /// No description provided for @activityEmptyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No checks this session'**
+  String get activityEmptyTitle;
+
+  /// No description provided for @activityEmptyBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Results stay on this device for the session and are gone when the app closes — what you check is nobody\'s record.'**
+  String get activityEmptyBody;
+
+  /// No description provided for @activityFooter.
+  ///
+  /// In en, this message translates to:
+  /// **'Session only, by design: what you check is a record of what you were suspicious about, and this app does not keep one.'**
+  String get activityFooter;
+
+  /// No description provided for @historyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Earlier this session'**
+  String get historyTitle;
+
+  /// How many sources a past check quoted. A count of citations, never a confidence figure.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No citable evidence} =1{1 citation} other{{count} citations}}'**
+  String historyCitations(int count);
+
+  /// No description provided for @errorNoServerAddress.
+  ///
+  /// In en, this message translates to:
+  /// **'This build has no server address. Rebuild it with --dart-define=FACIFY_API=https://your-server.'**
+  String get errorNoServerAddress;
+
+  /// No description provided for @errorShareUnreadable.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not read the shared item.'**
+  String get errorShareUnreadable;
+
+  /// No description provided for @errorShareFileUnopenable.
+  ///
+  /// In en, this message translates to:
+  /// **'That file could not be opened. Share it again, or use the Gallery button in Facify.'**
+  String get errorShareFileUnopenable;
+
+  /// No description provided for @errorVideoSlow.
+  ///
+  /// In en, this message translates to:
+  /// **'That video is taking longer than expected. Case {caseId} is still processing.'**
+  String errorVideoSlow(String caseId);
+
+  /// No description provided for @errorCameraDenied.
+  ///
+  /// In en, this message translates to:
+  /// **'Facify needs camera access to check a photo you take.'**
+  String get errorCameraDenied;
+
+  /// No description provided for @errorFileUnopenable.
+  ///
+  /// In en, this message translates to:
+  /// **'That file could not be opened.'**
+  String get errorFileUnopenable;
+
+  /// Shown only after the server has accepted the report.
+  ///
+  /// In en, this message translates to:
+  /// **'Sent for human review'**
+  String get reportSent;
+
+  /// No description provided for @reportFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not report: {reason}'**
+  String reportFailed(String reason);
+
+  /// No description provided for @correctionCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Correction copied - paste it back into the chat'**
+  String get correctionCopied;
+
+  /// No description provided for @correctionHeader.
+  ///
+  /// In en, this message translates to:
+  /// **'Checked with Facify:'**
+  String get correctionHeader;
+
+  /// No description provided for @correctionSourceFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'Source'**
+  String get correctionSourceFallback;
+
+  /// No description provided for @correctionNoSource.
+  ///
+  /// In en, this message translates to:
+  /// **'No published source could confirm or contradict this.'**
+  String get correctionNoSource;
+
+  /// No description provided for @failureTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'Facify is taking longer than usual. Try again in a moment.'**
+  String get failureTimeout;
+
+  /// No description provided for @failureUnreachable.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not reach Facify. Check your connection and try again.'**
+  String get failureUnreachable;
+
+  /// No description provided for @failureInterrupted.
+  ///
+  /// In en, this message translates to:
+  /// **'The connection to Facify was interrupted. Try again.'**
+  String get failureInterrupted;
+
+  /// No description provided for @failureUnreadableFile.
+  ///
+  /// In en, this message translates to:
+  /// **'That file could not be read from this phone.'**
+  String get failureUnreadableFile;
+
+  /// No description provided for @failureBadReply.
+  ///
+  /// In en, this message translates to:
+  /// **'Facify sent a reply this app could not read.'**
+  String get failureBadReply;
+
+  /// No description provided for @failureInvalidInput.
+  ///
+  /// In en, this message translates to:
+  /// **'That input could not be read.'**
+  String get failureInvalidInput;
+
+  /// No description provided for @failureTooLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'That file is too large to check.'**
+  String get failureTooLarge;
+
+  /// No description provided for @failureDailyLimit.
+  ///
+  /// In en, this message translates to:
+  /// **'Facify is at its daily limit. Please try again tomorrow.'**
+  String get failureDailyLimit;
+
+  /// No description provided for @failureUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Verification is not available right now.'**
+  String get failureUnavailable;
+
+  /// No description provided for @failureGeneric.
+  ///
+  /// In en, this message translates to:
+  /// **'Facify could not complete that check.'**
+  String get failureGeneric;
+
+  /// Design law: a statement about evidence, never a claim that the content is true.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing contradicts this'**
+  String get headlineSafeToShare;
+
+  /// No description provided for @subheadSafeToShare.
+  ///
+  /// In en, this message translates to:
+  /// **'Independent sources agree'**
+  String get subheadSafeToShare;
+
+  /// No description provided for @headlineShareWithContext.
+  ///
+  /// In en, this message translates to:
+  /// **'True, but missing context'**
+  String get headlineShareWithContext;
+
+  /// No description provided for @subheadShareWithContext.
+  ///
+  /// In en, this message translates to:
+  /// **'Share the context with it'**
+  String get subheadShareWithContext;
+
+  /// No description provided for @headlineShareWithCorrection.
+  ///
+  /// In en, this message translates to:
+  /// **'A detail here is wrong'**
+  String get headlineShareWithCorrection;
+
+  /// No description provided for @subheadShareWithCorrection.
+  ///
+  /// In en, this message translates to:
+  /// **'Share only with a correction'**
+  String get subheadShareWithCorrection;
+
+  /// No description provided for @headlineDoNotShare.
+  ///
+  /// In en, this message translates to:
+  /// **'Contradicted by sources'**
+  String get headlineDoNotShare;
+
+  /// No description provided for @subheadDoNotShare.
+  ///
+  /// In en, this message translates to:
+  /// **'Published sources say otherwise'**
+  String get subheadDoNotShare;
+
+  /// No description provided for @headlineWaitAndRecheck.
+  ///
+  /// In en, this message translates to:
+  /// **'Still developing'**
+  String get headlineWaitAndRecheck;
+
+  /// No description provided for @subheadWaitAndRecheck.
+  ///
+  /// In en, this message translates to:
+  /// **'Early reports are often revised'**
+  String get subheadWaitAndRecheck;
+
+  /// Abstention. Neutral wording: not deciding is the designed answer, not a failure.
+  ///
+  /// In en, this message translates to:
+  /// **'Not enough evidence to decide'**
+  String get headlineSendToReview;
+
+  /// No description provided for @subheadSendToReview.
+  ///
+  /// In en, this message translates to:
+  /// **'Queued for human review'**
+  String get subheadSendToReview;
+
+  /// No description provided for @citationCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No citations} =1{1 citation} other{{count} citations}}'**
+  String citationCount(int count);
+
+  /// When the evidence behind a verdict was gathered. Always shown.
+  ///
+  /// In en, this message translates to:
+  /// **'Evidence retrieved {time}'**
+  String evidenceRetrievedAt(DateTime time);
+
+  /// No description provided for @checkedEarlier.
+  ///
+  /// In en, this message translates to:
+  /// **'Checked earlier'**
+  String get checkedEarlier;
+
+  /// No description provided for @reusedNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Reused from an earlier check of the same content. The evidence below is from that check.'**
+  String get reusedNote;
+
+  /// Shown only when the interface is not in English: verdict reasons still arrive from the server in English.
+  ///
+  /// In en, this message translates to:
+  /// **'Some details below are shown in English for now.'**
+  String get englishOnlyNote;
+
+  /// No description provided for @whyNoVerdict.
+  ///
+  /// In en, this message translates to:
+  /// **'Why no verdict?'**
+  String get whyNoVerdict;
+
+  /// No description provided for @seeEvidence.
+  ///
+  /// In en, this message translates to:
+  /// **'See evidence ({count})'**
+  String seeEvidence(int count);
+
+  /// No description provided for @shareCorrection.
+  ///
+  /// In en, this message translates to:
+  /// **'Share correction'**
+  String get shareCorrection;
+
+  /// No description provided for @report.
+  ///
+  /// In en, this message translates to:
+  /// **'Report'**
+  String get report;
+
+  /// No description provided for @reporting.
+  ///
+  /// In en, this message translates to:
+  /// **'Reporting…'**
+  String get reporting;
+
+  /// No description provided for @evidenceTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Evidence'**
+  String get evidenceTitle;
+
+  /// No description provided for @theClaim.
+  ///
+  /// In en, this message translates to:
+  /// **'The claim'**
+  String get theClaim;
+
+  /// No description provided for @evidenceStrength.
+  ///
+  /// In en, this message translates to:
+  /// **'Evidence strength: {band}'**
+  String evidenceStrength(String band);
+
+  /// No description provided for @strengthBand.
+  ///
+  /// In en, this message translates to:
+  /// **'{band, select, none{none} weak{weak} moderate{moderate} strong{strong} conclusive{conclusive} other{{band}}}'**
+  String strengthBand(String band);
+
+  /// One term of the explainable strength score, named for a reader.
+  ///
+  /// In en, this message translates to:
+  /// **'{name, select, tier_composition{Evidence tiers} independent_origins{Independent origins} temporal_confidence{Dating} source_transparency{Publisher transparency} conflict_penalty{Conflicting evidence} other{{name}}}'**
+  String strengthComponent(String name);
+
+  /// No description provided for @excludedFromScore.
+  ///
+  /// In en, this message translates to:
+  /// **'Excluded from this score: {providers}'**
+  String excludedFromScore(String providers);
+
+  /// No description provided for @tierLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'{tier, select, A{Signed content credential} B{Dated source} C{Published fact-check} other{Corroboration}}'**
+  String tierLabel(String tier);
+
+  /// No description provided for @directionLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'{direction, select, supports{Supports} contradicts{Contradicts} risk_signal{Risk signal} other{Context}}'**
+  String directionLabel(String direction);
+
+  /// No description provided for @anchorPage.
+  ///
+  /// In en, this message translates to:
+  /// **'Found at page {page}'**
+  String anchorPage(int page);
+
+  /// No description provided for @anchorParagraph.
+  ///
+  /// In en, this message translates to:
+  /// **'Found at paragraph {paragraph}'**
+  String anchorParagraph(int paragraph);
+
+  /// No description provided for @anchorCharacters.
+  ///
+  /// In en, this message translates to:
+  /// **'Found at characters {start} to {end}'**
+  String anchorCharacters(int start, int end);
+
+  /// No description provided for @matchBasis.
+  ///
+  /// In en, this message translates to:
+  /// **'{metric} {value} (threshold {threshold})'**
+  String matchBasis(String metric, String value, String threshold);
+
+  /// No description provided for @openSource.
+  ///
+  /// In en, this message translates to:
+  /// **'Open source'**
+  String get openSource;
+
+  /// No description provided for @noEvidenceTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No citable source was found'**
+  String get noEvidenceTitle;
+
+  /// No description provided for @noEvidenceBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This does not mean the content is false. It means nothing we could cite either supports or contradicts it, so Facify did not decide.'**
+  String get noEvidenceBody;
+
+  /// No description provided for @historyCardTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'History'**
+  String get historyCardTitle;
+
+  /// No description provided for @recurrenceCaptions.
+  ///
+  /// In en, this message translates to:
+  /// **'The same media has carried {count} different captions. An authentic photograph does not usually acquire several mutually exclusive stories.'**
+  String recurrenceCaptions(int count);
+
+  /// No description provided for @contentCredentials.
+  ///
+  /// In en, this message translates to:
+  /// **'Content credentials'**
+  String get contentCredentials;
+
+  /// No description provided for @notCheckedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'What could not be checked'**
+  String get notCheckedTitle;
+
+  /// No description provided for @limitsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'What Facify cannot establish'**
+  String get limitsTitle;
+
+  /// No description provided for @limitAi.
+  ///
+  /// In en, this message translates to:
+  /// **'Whether an image or video was generated by AI. No detector is reliable enough to say so, and we do not pretend otherwise.'**
+  String get limitAi;
+
+  /// No description provided for @limitUnreported.
+  ///
+  /// In en, this message translates to:
+  /// **'Whether something unreported is false. Absence of coverage is not evidence either way.'**
+  String get limitUnreported;
+
+  /// No description provided for @limitPrivate.
+  ///
+  /// In en, this message translates to:
+  /// **'Anything about private content, or claims no published source has addressed.'**
+  String get limitPrivate;
+
+  /// No description provided for @limitIntent.
+  ///
+  /// In en, this message translates to:
+  /// **'Intent. We can show what a source said and when, not why someone shared it.'**
+  String get limitIntent;
+
+  /// No description provided for @caseLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Case {caseId}'**
+  String caseLabel(String caseId);
+
+  /// No description provided for @checkedIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Checked in {ms} ms'**
+  String checkedIn(int ms);
+
+  /// No description provided for @verifyResult.
+  ///
+  /// In en, this message translates to:
+  /// **'Verify this result'**
+  String get verifyResult;
+
+  /// No description provided for @sourceRiskTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{risk, select, HIGH{Publisher has a high risk profile} MEDIUM{Publisher has a mixed record} LOW{Publisher has an established record} other{Publisher risk not assessed}}'**
+  String sourceRiskTitle(String risk);
+
+  /// A risky publisher is a reason to look harder, never a finding that the content is false.
+  ///
+  /// In en, this message translates to:
+  /// **'{risk, select, HIGH{Recently registered, or with a record of unreliable material. This describes the publisher, not this claim.} MEDIUM{Some signals worth noting about the source. This describes the publisher, not this claim.} LOW{No adverse signals about the source. This is not evidence that the claim itself is true.} other{Nothing is known either way.}}'**
+  String sourceRiskDetail(String risk);
+
+  /// Permanent exclusion header. Must stay visible and must keep saying the signals are not used in the verdict.
+  ///
+  /// In en, this message translates to:
+  /// **'Forensic signals - shown for transparency. These are not used in the verdict and cannot change it.'**
+  String get advisoryHeader;
+
+  /// No description provided for @advisoryCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 signal} other{{count} signals}}'**
+  String advisoryCount(int count);
+
+  /// No description provided for @advisoryFooter.
+  ///
+  /// In en, this message translates to:
+  /// **'None of these can establish that content is authentic or fabricated. The verdict above is based only on cited sources.'**
+  String get advisoryFooter;
+
+  /// No description provided for @advisoryRowExcluded.
+  ///
+  /// In en, this message translates to:
+  /// **'Forensic signal - not used in this verdict.'**
+  String get advisoryRowExcluded;
+}
+
+class _AppLocalizationsDelegate
+    extends LocalizationsDelegate<AppLocalizations> {
+  const _AppLocalizationsDelegate();
+
+  @override
+  Future<AppLocalizations> load(Locale locale) {
+    return SynchronousFuture<AppLocalizations>(lookupAppLocalizations(locale));
+  }
+
+  @override
+  bool isSupported(Locale locale) =>
+      <String>['en', 'hi'].contains(locale.languageCode);
+
+  @override
+  bool shouldReload(_AppLocalizationsDelegate old) => false;
+}
+
+AppLocalizations lookupAppLocalizations(Locale locale) {
+  // Lookup logic when only language code is specified.
+  switch (locale.languageCode) {
+    case 'en':
+      return AppLocalizationsEn();
+    case 'hi':
+      return AppLocalizationsHi();
+  }
+
+  throw FlutterError(
+    'AppLocalizations.delegate failed to load unsupported locale "$locale". This is likely '
+    'an issue with the localizations generation tool. Please file an issue '
+    'on GitHub with a reproducible sample app and the gen-l10n configuration '
+    'that was used.',
+  );
+}
