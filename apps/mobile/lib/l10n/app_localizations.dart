@@ -913,6 +913,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{count, plural, =1{1 source} other{{count} sources}}'**
   String strengthComponentCitations(int count);
+
+  /// No description provided for @uploading.
+  ///
+  /// In en, this message translates to:
+  /// **'Uploading {percent}%'**
+  String uploading(int percent);
+
+  /// Shown when the clipboard holds text. The text itself is not read until the person taps.
+  ///
+  /// In en, this message translates to:
+  /// **'You have text copied. Check it?'**
+  String get clipboardOffer;
+
+  /// No description provided for @clipboardPasteAndCheck.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste and check'**
+  String get clipboardPasteAndCheck;
+
+  /// No description provided for @clipboardDismiss.
+  ///
+  /// In en, this message translates to:
+  /// **'Not now'**
+  String get clipboardDismiss;
 }
 
 class _AppLocalizationsDelegate

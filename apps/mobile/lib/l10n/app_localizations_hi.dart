@@ -583,4 +583,18 @@ class AppLocalizationsHi extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String uploading(int percent) {
+    return 'अपलोड हो रहा है $percent%';
+  }
+
+  @override
+  String get clipboardOffer => 'आपने कुछ टेक्स्ट कॉपी किया है। उसे जाँचें?';
+
+  @override
+  String get clipboardPasteAndCheck => 'चिपकाएँ और जाँचें';
+
+  @override
+  String get clipboardDismiss => 'अभी नहीं';
 }

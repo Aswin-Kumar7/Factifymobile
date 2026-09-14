@@ -128,17 +128,21 @@ class FacifyClient {
   /// [language] travels as a form field, like the JSON endpoints' field. The file
   /// endpoint does not read it yet (B5 in docs/hackathon-workflow.md); sending it
   /// now means the server can start honouring it without an app release.
+  ///
+  /// [onProgress] reports bytes the connection has taken against the whole body,
+  /// so a slow upload shows how far it has got instead of an endless spinner.
   Future<VerifyFileOutcome> verifyFile(
     File file, {
     bool consentToProcessMedia = false,
     String? language,
+    void Function(int sent, int total)? onProgress,
   }) => _guard(() async {
     final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/v1/verify/file'))
       ..files.add(await http.MultipartFile.fromPath('file', file.path))
       ..fields['consent_to_process_media'] = consentToProcessMedia.toString();
     if (language != null) request.fields['language'] = language;
 
-    final streamed = await _http.send(request).timeout(_timeout);
+    final streamed = await _http.send(_CountedUpload(request, onProgress)).timeout(_timeout);
     final response = await http.Response.fromStream(streamed).timeout(_timeout);
     _raiseFor(response);
 
@@ -291,4 +295,37 @@ class VerifyFileOutcome {
   final String? pendingCaseId;
 
   bool get isPending => pendingCaseId != null;
+}
+
+/// A multipart upload whose body is counted as the connection takes it.
+///
+/// Counted in the stream the HTTP client consumes, not while the file is read
+/// into a buffer: the client pulls chunks only as fast as the socket accepts them,
+/// so the count follows the upload rather than jumping to done before a byte has
+/// left the phone.
+class _CountedUpload extends http.BaseRequest {
+  _CountedUpload(this._request, this._onProgress) : super(_request.method, _request.url);
+
+  final http.MultipartRequest _request;
+  final void Function(int sent, int total)? _onProgress;
+
+  @override
+  http.ByteStream finalize() {
+    // Read before finalizing the inner request, which is what writes the
+    // multipart boundary into its headers.
+    final total = _request.contentLength;
+    final body = _request.finalize();
+    headers.addAll(_request.headers);
+    contentLength = total;
+    super.finalize();
+
+    var sent = 0;
+    return http.ByteStream(
+      body.map((chunk) {
+        sent += chunk.length;
+        _onProgress?.call(sent, total);
+        return chunk;
+      }),
+    );
+  }
 }

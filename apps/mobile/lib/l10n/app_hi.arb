@@ -156,5 +156,10 @@
   "mediaMatchYours": "आपकी तस्वीर",
   "mediaMatchEarlier": "पहले प्रकाशित तस्वीर से मेल खाती है",
 
-  "strengthComponentCitations": "{count, plural, =1{1 स्रोत} other{{count} स्रोत}}"
+  "strengthComponentCitations": "{count, plural, =1{1 स्रोत} other{{count} स्रोत}}",
+
+  "uploading": "अपलोड हो रहा है {percent}%",
+  "clipboardOffer": "आपने कुछ टेक्स्ट कॉपी किया है। उसे जाँचें?",
+  "clipboardPasteAndCheck": "चिपकाएँ और जाँचें",
+  "clipboardDismiss": "अभी नहीं"
 }

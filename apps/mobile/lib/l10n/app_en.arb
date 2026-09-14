@@ -270,5 +270,16 @@
   "@strengthComponentCitations": {
     "description": "On a strength row that leads to the citations it was computed from.",
     "placeholders": { "count": { "type": "int" } }
-  }
+  },
+
+  "uploading": "Uploading {percent}%",
+  "@uploading": {
+    "placeholders": { "percent": { "type": "int" } }
+  },
+  "clipboardOffer": "You have text copied. Check it?",
+  "@clipboardOffer": {
+    "description": "Shown when the clipboard holds text. The text itself is not read until the person taps."
+  },
+  "clipboardPasteAndCheck": "Paste and check",
+  "clipboardDismiss": "Not now"
 }

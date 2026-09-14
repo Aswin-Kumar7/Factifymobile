@@ -56,7 +56,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final TextEditingController _input = TextEditingController();
   final ShareIntake _intake = ShareIntake();
   final ImagePicker _camera = ImagePicker();
@@ -72,6 +72,18 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _pendingCaseId;
   final List<HistoryEntry> _history = [];
   final Set<String> _reported = {};
+
+  /// How much of a file upload has gone, from 0 to 1, or null when no upload is
+  /// under way.
+  double? _uploadProgress;
+
+  /// Whether copied text is waiting to be checked (PLAN 1.7.2).
+  ///
+  /// Set from `Clipboard.hasStrings`, which asks whether text is there without
+  /// reading it. Nothing on the clipboard is read until the person taps, and
+  /// Android then shows its own notice that the app pasted — which is the honest
+  /// moment for that notice to appear.
+  bool _clipboardOffer = false;
 
   /// Whether the service can verify right now. Three states, honestly:
   /// unknown (null) until the first probe answers, then ready or not.
@@ -91,8 +103,41 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _listenForShares();
     _probeService();
+    // After the first frame: Android answers clipboard queries only for the app
+    // that has focus, and the window does not have it during initState.
+    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_offerClipboard()));
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Coming back to Facify is the moment someone has usually just copied the
+    // thing they want checked.
+    if (state == AppLifecycleState.resumed) unawaited(_offerClipboard());
+  }
+
+  Future<void> _offerClipboard() async {
+    if (_busy || _input.text.trim().isNotEmpty) return;
+    final bool hasText;
+    try {
+      hasText = await Clipboard.hasStrings();
+    } on Exception {
+      // A platform that cannot answer has nothing to offer.
+      return;
+    }
+    if (mounted && hasText != _clipboardOffer) setState(() => _clipboardOffer = hasText);
+  }
+
+  /// Reads the clipboard — only now, because the person asked — and checks it.
+  Future<void> _checkClipboard() async {
+    setState(() => _clipboardOffer = false);
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = data?.text?.trim() ?? '';
+    if (!mounted || text.isEmpty) return;
+    _input.text = text;
+    await _verify(text);
   }
 
   Future<void> _probeService() async {
@@ -131,7 +176,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _handleShared(SharedContent content) {
-    setState(() => _tab = 0);
+    setState(() {
+      _tab = 0;
+      // Something arrived to be checked; an offer to check the clipboard instead
+      // would only compete with it.
+      _clipboardOffer = false;
+    });
     if (content.isError) {
       // The share arrived but could not be read — typically a gallery app whose
       // grant did not reach us. Said out loud, and whatever result is already on
@@ -156,6 +206,8 @@ class _HomeScreenState extends State<HomeScreen> {
       _error = null;
       _verdict = null;
       _pendingCaseId = null;
+      _uploadProgress = null;
+      _clipboardOffer = false;
       _submission = submission;
     });
   }
@@ -215,8 +267,10 @@ class _HomeScreenState extends State<HomeScreen> {
         file,
         consentToProcessMedia: true,
         language: language,
+        onProgress: _showUploadProgress,
       );
       if (!mounted) return;
+      setState(() => _uploadProgress = null);
 
       if (outcome.isPending) {
         // Video: accepted, not finished. Poll rather than hold the request open,
@@ -229,7 +283,24 @@ class _HomeScreenState extends State<HomeScreen> {
     } on ApiFailure catch (failure) {
       if (mounted) _fail(failure);
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _uploadProgress = null;
+        });
+      }
+    }
+  }
+
+  /// Redrawn in steps of two percent rather than on every chunk: a large file
+  /// arrives in hundreds of chunks, and a rebuild for each is work the eye cannot
+  /// see.
+  void _showUploadProgress(int sent, int total) {
+    if (!mounted || total <= 0) return;
+    final value = sent / total;
+    final shown = _uploadProgress;
+    if (shown == null || value - shown >= 0.02 || value >= 1) {
+      setState(() => _uploadProgress = value);
     }
   }
 
@@ -378,6 +449,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _shareSubscription?.cancel();
     _input.dispose();
     super.dispose();
@@ -463,6 +535,11 @@ class _HomeScreenState extends State<HomeScreen> {
           style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
         const SizedBox(height: 16),
+        if (_clipboardOffer && !_busy)
+          _ClipboardOffer(
+            onCheck: _checkClipboard,
+            onDismiss: () => setState(() => _clipboardOffer = false),
+          ),
         IntakeBar(
           controller: _input,
           busy: _busy,
@@ -485,7 +562,7 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 12),
         ],
 
-        if (_busy) const _Working(),
+        if (_busy) _Working(uploadProgress: _uploadProgress),
         if (_pendingCaseId != null) const _Pending(),
         if (error != null)
           _ErrorNote(
@@ -619,6 +696,51 @@ class _StatusDot extends StatelessWidget {
   }
 }
 
+/// Offers to check what was copied, without reading it until asked.
+class _ClipboardOffer extends StatelessWidget {
+  const _ClipboardOffer({required this.onCheck, required this.onDismiss});
+
+  final VoidCallback onCheck;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final l10n = AppLocalizations.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: scheme.primaryContainer.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsetsDirectional.fromSTEB(12, 4, 4, 4),
+          child: Row(
+            children: [
+              Icon(Icons.content_paste, size: 18, color: scheme.onPrimaryContainer),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  l10n.clipboardOffer,
+                  style: theme.textTheme.bodySmall?.copyWith(color: scheme.onPrimaryContainer),
+                ),
+              ),
+              TextButton(onPressed: onCheck, child: Text(l10n.clipboardPasteAndCheck)),
+              IconButton(
+                onPressed: onDismiss,
+                icon: const Icon(Icons.close, size: 18),
+                tooltip: l10n.clipboardDismiss,
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// What the app is for, said once, before anything has been checked.
 class _EmptyState extends StatelessWidget {
   const _EmptyState();
@@ -655,23 +777,36 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
+/// Work in progress: a measured upload first, then the search for sources.
+///
+/// The bar is determinate only while there is something to measure. Once the file
+/// is sent, how long the server takes is unknown, and a bar that pretended to
+/// know would be a small fabrication.
 class _Working extends StatelessWidget {
-  const _Working();
+  const _Working({this.uploadProgress});
+
+  final double? uploadProgress;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 20),
-    child: Column(
-      children: [
-        const LinearProgressIndicator(),
-        const SizedBox(height: 12),
-        Text(
-          AppLocalizations.of(context).working,
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-      ],
-    ),
-  );
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final progress = uploadProgress;
+    final uploading = progress != null && progress < 1;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      child: Column(
+        children: [
+          LinearProgressIndicator(value: uploading ? progress : null),
+          const SizedBox(height: 12),
+          Text(
+            uploading ? l10n.uploading((progress * 100).round()) : l10n.working,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _Pending extends StatelessWidget {
