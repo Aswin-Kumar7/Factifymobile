@@ -14,7 +14,7 @@ import 'package:flutter/services.dart';
 class SharedContent {
   const SharedContent({required this.kind, required this.value, this.mimeType});
 
-  /// One of `text`, `url` or `file`.
+  /// One of `text`, `url`, `file` or `error`.
   final String kind;
 
   /// The text itself, or a path to a file already copied into our cache.
@@ -23,6 +23,10 @@ class SharedContent {
 
   bool get isFile => kind == 'file';
   bool get isUrl => kind == 'url';
+
+  /// The share arrived but could not be read. [value] then carries a message for
+  /// the person, not content.
+  bool get isError => kind == 'error';
 
   static SharedContent? fromMap(Map<Object?, Object?>? map) {
     if (map == null) return null;

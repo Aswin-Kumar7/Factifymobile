@@ -6,6 +6,7 @@
 /// where it can be extracted from the APK in minutes.
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -21,6 +22,10 @@ const String apiBaseUrl = String.fromEnvironment(
   // 10.0.2.2 is the host machine as seen from the Android emulator.
   defaultValue: 'http://10.0.2.2:8000',
 );
+
+/// Whether this build was compiled without `FACIFY_API`, and so still points at
+/// the emulator's host address — which no real phone can reach.
+const bool apiUsesEmulatorDefault = !bool.hasEnvironment('FACIFY_API');
 
 /// A failure the interface can act on.
 ///
@@ -69,29 +74,33 @@ class FacifyClient {
 
   /// Submit a file. Images and PDFs resolve synchronously; video returns 202
   /// with a case id to poll, because it cannot finish inside the budget.
-  Future<VerifyFileOutcome> verifyFile(File file, {bool consentToProcessMedia = false}) async {
-    final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/v1/verify/file'))
-      ..files.add(await http.MultipartFile.fromPath('file', file.path))
-      ..fields['consent_to_process_media'] = consentToProcessMedia.toString();
+  ///
+  /// Sent through the injected client rather than `request.send()`, so the
+  /// upload path is testable like every other call.
+  Future<VerifyFileOutcome> verifyFile(File file, {bool consentToProcessMedia = false}) =>
+      _guard(() async {
+        final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/v1/verify/file'))
+          ..files.add(await http.MultipartFile.fromPath('file', file.path))
+          ..fields['consent_to_process_media'] = consentToProcessMedia.toString();
 
-    final streamed = await request.send().timeout(_timeout);
-    final response = await http.Response.fromStream(streamed);
-    _raiseFor(response);
+        final streamed = await _http.send(request).timeout(_timeout);
+        final response = await http.Response.fromStream(streamed).timeout(_timeout);
+        _raiseFor(response);
 
-    final payload = jsonDecode(response.body) as Map<String, dynamic>;
-    if (response.statusCode == 202) {
-      return VerifyFileOutcome.accepted(payload['case_id'] as String);
-    }
-    return VerifyFileOutcome.done(Verdict.fromJson(payload));
-  }
+        final payload = jsonDecode(response.body) as Map<String, dynamic>;
+        if (response.statusCode == 202) {
+          return VerifyFileOutcome.accepted(payload['case_id'] as String);
+        }
+        return VerifyFileOutcome.done(Verdict.fromJson(payload));
+      });
 
   /// Retrieve a case previously computed, for polling an accepted video.
-  Future<Verdict?> getCase(String caseId) async {
+  Future<Verdict?> getCase(String caseId) => _guard(() async {
     final response = await _http.get(Uri.parse('$baseUrl/v1/cases/$caseId')).timeout(_timeout);
     if (response.statusCode == 404) return null;
     _raiseFor(response);
     return Verdict.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
-  }
+  });
 
   /// Flag a verdict for human review. Returns the queue confirmation.
   ///
@@ -136,19 +145,46 @@ class FacifyClient {
   }
 
   Future<http.Response> _send(Future<http.Response> Function() call) async {
-    late final http.Response response;
+    final response = await _guard(call);
+    _raiseFor(response);
+    return response;
+  }
+
+  /// Every transport failure becomes an [ApiFailure] here, and only here.
+  ///
+  /// Image upload and case polling used to bypass this. They called `.timeout()`
+  /// directly while the screen catches only [ApiFailure], so a timeout or a
+  /// dropped connection on those paths escaped as an uncaught exception and the
+  /// check simply stopped with nothing on screen. The text path fared little
+  /// better: a timeout reached a catch-all and rendered, verbatim, as
+  /// "Something went wrong: TimeoutException after 0:00:45.000000".
+  Future<T> _guard<T>(Future<T> Function() call) async {
     try {
-      response = await call();
+      return await call();
+    } on ApiFailure {
+      rethrow;
+    } on TimeoutException {
+      throw const ApiFailure(
+        'Facify is taking longer than usual. Try again in a moment.',
+        retryable: true,
+      );
     } on SocketException {
       throw const ApiFailure(
         'Could not reach Facify. Check your connection and try again.',
         retryable: true,
       );
-    } on Object catch (error) {
-      throw ApiFailure('Something went wrong: $error', retryable: true);
+    } on http.ClientException {
+      throw const ApiFailure(
+        'The connection to Facify was interrupted. Try again.',
+        retryable: true,
+      );
+    } on FileSystemException {
+      throw const ApiFailure('That file could not be read from this phone.');
+    } on FormatException {
+      throw const ApiFailure('Facify sent a reply this app could not read.', retryable: true);
+    } on Exception {
+      throw const ApiFailure('Facify could not complete that check.', retryable: true);
     }
-    _raiseFor(response);
-    return response;
   }
 
   /// Turn a status code into a message a person can act on.

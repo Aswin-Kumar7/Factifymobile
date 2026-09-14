@@ -107,7 +107,17 @@ class MainActivity : FlutterActivity() {
                 ?: intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)?.firstOrNull())
         }
 
-        val path = uri?.let(::copyIntoCache) ?: return null
+        if (uri == null) return null
+
+        // A file share that cannot be copied is reported, not dropped. Returning
+        // null here used to make the share vanish: the app did nothing visible and
+        // the result already on screen was lost with no explanation.
+        val path = copyIntoCache(uri)
+            ?: return mapOf(
+                "kind" to "error",
+                "value" to "That file could not be opened. Share it again, or use the Gallery button in Facify.",
+                "mimeType" to type,
+            )
         return mapOf("kind" to "file", "value" to path, "mimeType" to type)
     }
 
@@ -132,8 +142,8 @@ class MainActivity : FlutterActivity() {
 
         if (target.length() > 0) target.absolutePath else null
     } catch (error: Exception) {
-        // A share we cannot read is reported as absent rather than crashing the
-        // launch. The user sees an empty box, which is recoverable.
+        // A share we cannot read must not crash the launch, and must not vanish
+        // either: `parse` turns this null into an error share the person can see.
         null
     }
 

@@ -24,12 +24,23 @@ void main() {
 
     expect(verdict.caseId, isNotEmpty);
     expect(verdict.retrievedAt.year, greaterThan(2020));
-    // With no extraction configured the service abstains and says why, rather
-    // than returning an empty result that reads as a clean bill of health.
-    expect(verdict.abstained, isTrue);
-    expect(verdict.isComplete, isFalse);
-    expect(verdict.skipped.map((s) => s.check), contains('claim_extraction'));
-    expect(verdict.completenessNote, isNotNull);
+
+    // Environment-agnostic on purpose. This test used to assert that extraction
+    // was *unconfigured*, and it failed the moment a model key was added. What
+    // must hold in every environment is honesty about gaps: a run that skipped a
+    // check is incomplete and says so, and a complete run skipped nothing.
+    if (verdict.skipped.isEmpty) {
+      expect(verdict.isComplete, isTrue);
+      expect(verdict.completenessNote, isNull);
+    } else {
+      expect(verdict.isComplete, isFalse);
+      expect(verdict.completenessNote, isNotNull);
+    }
+
+    // And a decisive answer never arrives without a citation behind it.
+    for (final claim in verdict.claims.where((c) => c.isDecisive)) {
+      expect(claim.evidence, isNotEmpty, reason: 'a decisive claim arrived with no citation');
+    }
   });
 
   test('a malformed request surfaces as a non-retryable failure', () async {

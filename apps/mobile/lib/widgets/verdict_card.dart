@@ -110,9 +110,15 @@ class VerdictCard extends StatelessWidget {
                       },
                       tone: style.onContainer,
                     ),
+                    // Stated in words, not implied by a bare date. The redesign
+                    // reduced this to "14 Sep, 10:49", which reads as when the
+                    // card was drawn; a verdict without its retrieval time is a
+                    // claim about the present made from evidence about the past.
                     _MetaChip(
                       icon: Icons.schedule,
-                      label: DateFormat('d MMM, HH:mm').format(verdict.retrievedAt.toLocal()),
+                      label:
+                          'Evidence retrieved '
+                          '${DateFormat('d MMM, HH:mm').format(verdict.retrievedAt.toLocal())}',
                       tone: style.onContainer,
                     ),
                     if (verdict.fromCache)

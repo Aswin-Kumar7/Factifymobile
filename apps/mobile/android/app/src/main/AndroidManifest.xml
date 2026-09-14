@@ -1,17 +1,22 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!--
-        NO PERMISSIONS ARE DECLARED, AND NONE ARE NEEDED.
+        INTERNET is the only permission, and it has to be declared.
 
-        Share-sheet intake receives a file the sender already chose, and manual
-        selection goes through the system picker, which grants access to exactly
-        one file without READ_MEDIA_* or READ_EXTERNAL_STORAGE. Requesting
-        storage access would ask for the whole gallery to check one image — a
-        trade no verification tool has earned, and one that costs installs from
-        precisely the cautious users this is for.
+        This comment used to say INTERNET "is granted implicitly". It is not: it is
+        a normal permission, granted automatically only when it is declared here.
+        Debug and profile builds hid the mistake because Flutter's own debug and
+        profile manifests declare it, so the release APK's merged manifest had no
+        INTERNET line at all and an installed release build could not reach the
+        server. Verified against the merged manifest on 2026-09-14.
 
-        INTERNET is granted implicitly on Android and is the only capability the
-        app actually uses.
+        No storage permission is requested. Share-sheet intake receives a file the
+        sender already chose, and manual selection goes through the system picker,
+        which grants access to exactly one file without READ_MEDIA or
+        READ_EXTERNAL_STORAGE. Asking for the whole gallery to check one image is a
+        trade no verification tool has earned.
     -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:label="Facify"
         android:name="${applicationName}"

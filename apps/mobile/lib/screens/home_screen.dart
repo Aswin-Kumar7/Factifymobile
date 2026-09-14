@@ -15,6 +15,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -78,7 +79,20 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _probeService() async {
     final ready = await widget.client.ready();
-    if (mounted) setState(() => _serviceReady = ready);
+    if (!mounted) return;
+    setState(() {
+      _serviceReady = ready;
+      // A release build compiled without FACIFY_API still points at the
+      // emulator's host address, which no real phone can reach. That build is
+      // misconfigured rather than offline, and whoever installed it needs to
+      // know which.
+      if (!ready && kReleaseMode && apiUsesEmulatorDefault) {
+        _error =
+            'This build has no server address. Rebuild it with '
+            '--dart-define=FACIFY_API=https://your-server.';
+        _errorRetryable = false;
+      }
+    });
   }
 
   /// Two channels, and both are needed.
@@ -99,6 +113,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _handleShared(SharedContent content) {
     setState(() => _tab = 0);
+    if (content.isError) {
+      // The share arrived but could not be read — typically a gallery app whose
+      // grant did not reach us. Said out loud, and whatever result is already on
+      // screen stays there: a failed share must not look like a cleared one.
+      setState(() {
+        _error = content.value;
+        _errorRetryable = false;
+      });
+      return;
+    }
     if (content.isFile) {
       unawaited(_verifyFile(File(content.value)));
       return;
@@ -208,7 +232,18 @@ class _HomeScreenState extends State<HomeScreen> {
     for (var attempt = 0; attempt < 15; attempt++) {
       await Future<void>.delayed(const Duration(seconds: 2));
       if (!mounted) return;
-      final verdict = await widget.client.getCase(caseId);
+      Verdict? verdict;
+      try {
+        verdict = await widget.client.getCase(caseId);
+      } on ApiFailure catch (failure) {
+        // A poll that cannot reach the server stops and says so, rather than
+        // escaping as an uncaught exception and leaving a spinner forever.
+        if (mounted) {
+          setState(() => _pendingCaseId = null);
+          _fail(failure);
+        }
+        return;
+      }
       if (verdict != null) {
         setState(() => _pendingCaseId = null);
         _finish(verdict);
