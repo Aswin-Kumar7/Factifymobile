@@ -41,7 +41,7 @@ PROVIDER = "llm"
 
 # Bumped whenever the prompt or the schema changes, because either changes what the
 # same document extracts to — and the extraction cache is keyed on it.
-EXTRACTOR_VERSION = "2026.08.3"
+EXTRACTOR_VERSION = "2026.09.1"
 
 MAX_CLAIMS_PER_DOCUMENT = 7
 
@@ -110,6 +110,12 @@ _SYSTEM_INSTRUCTION = (
     "the JSON described by the schema. Extract at most "
     f"{MAX_CLAIMS_PER_DOCUMENT} claims, choosing the ones that are consequential and "
     "verifiable. For each claim, report where in the document it appeared. "
+    "Each claim must be a COMPLETE, self-contained assertion that can be checked on its "
+    "own — a full statement about who did what, when or where. Never emit a sentence "
+    "fragment, a bare noun or place ('Odisha'), a date on its own ('after five days'), "
+    "or a prepositional phrase ('in floodwaters') as a claim. If one sentence makes one "
+    "assertion, extract ONE claim carrying the whole assertion, not several pieces of "
+    "it. A fragment cannot be verified and must never be extracted. "
     "OPINION means a value judgement or preference that no evidence could settle — "
     "'the scheme is inadequate', 'the film is boring'. It does NOT mean a claim you "
     "think is false, implausible, fringe or already debunked. "
