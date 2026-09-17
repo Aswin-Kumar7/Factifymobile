@@ -294,6 +294,25 @@ async def verify(payload: VerifyRequest, request: Request) -> VerifyResponse:
         ) from rejected
 
     case_id = uuid4()
+
+    # A repeat is answered before anything is spent on it. Extraction is a metered
+    # model call — and for a link, a page fetch as well — and it used to run first,
+    # so every repeat of a viral message paid for a fresh extraction only to be
+    # served the stored verdict afterwards.
+    hit = await orchestrator.cached(intake, case_id=case_id)  # type: ignore[attr-defined]
+    if hit is not None:
+        event(
+            logger,
+            "verify request served",
+            module="api.verify",
+            outcome="ok",
+            action=hit.action.value,
+            claims=0,
+            from_cache=True,
+            elapsed_ms=hit.elapsed_ms,
+        )
+        return await cached_full_response(request, hit) or to_response(hit)
+
     extracted = await extract_claims_for(request, intake)
 
     result = await orchestrator.verify(  # type: ignore[attr-defined]
@@ -406,6 +425,12 @@ async def verify_file(
         return JSONResponse(
             status_code=status.HTTP_202_ACCEPTED, content=accepted.model_dump(mode="json")
         )
+
+    # Probed before media preparation (hashing, embedding, OCR), for the same reason
+    # the text path probes before extraction: a repeat should cost nothing.
+    hit = await orchestrator.cached(intake, case_id=case_id)  # type: ignore[attr-defined]
+    if hit is not None:
+        return await cached_full_response(request, hit) or to_response(hit)
 
     result = await orchestrator.verify(intake, case_id=case_id, claims=[])  # type: ignore[attr-defined]
 

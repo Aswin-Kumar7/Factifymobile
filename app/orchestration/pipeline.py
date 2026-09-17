@@ -33,7 +33,7 @@ from uuid import UUID
 from app.cache.keys import CacheKeyParts
 from app.cache.service import CachedVerdict
 from app.domain.claim import Claim
-from app.domain.enums import Action, ClaimStatus, Direction, SourceRisk
+from app.domain.enums import Action, ClaimStatus, Direction, Importance, SourceRisk
 from app.domain.evidence import Advisory, Evidence
 from app.governor.governor import Skip
 from app.intake.normalizer import NormalisedIntake
@@ -70,6 +70,21 @@ REASONING_TARGET_SECONDS = 40.0
 # they do not depend on each other; the ceiling exists so a burst of claims cannot
 # open forty sockets against six publishers.
 DEFAULT_CONCURRENCY = 6
+
+# How many claims in one verification may reach a fallback resolver — the metered,
+# open-web kind (`fallback = True`, today web search: a search-API call plus a model
+# read per source). The most important claims go first. A forwarded message carries
+# one to three claims and is unaffected; a long article can yield seven, and reading
+# the open web for every supporting detail multiplied the model calls per check
+# several times over for little change in the verdict.
+MAX_FALLBACK_CLAIMS = 3
+
+_IMPORTANCE_ORDER = {
+    Importance.HEADLINE: 0,
+    Importance.MAIN_THESIS: 1,
+    Importance.SUPPORTING_DETAIL: 2,
+    Importance.BACKGROUND: 3,
+}
 
 
 class Corroboration(Protocol):
@@ -234,6 +249,35 @@ class Orchestrator:
         clone._semaphore = self._semaphore
         return clone
 
+    def _cache_key(self, intake: NormalisedIntake) -> CacheKeyParts:
+        """The verdict-cache key for an input — computable before anything is extracted."""
+        return CacheKeyParts(
+            # `cache_identity` rather than the primary object's hash: for a URL it is
+            # the canonicalised address, so two people sharing the same article with
+            # different tracking parameters hit one entry instead of two.
+            content_hash=intake.cache_identity,
+            rule_version=RULE_VERSION,
+            extractor_version=self._extractor_version,
+            language=intake.language.language.value,
+            model_id=self._model_id,
+        )
+
+    async def cached(self, intake: NormalisedIntake, *, case_id: UUID) -> VerificationResult | None:
+        """The stored verdict for this input, or `None` — asked before any work is done.
+
+        `verify` probes the cache too, but only after its caller has already extracted
+        claims: for text that is a metered model call, for a link a page fetch plus
+        that call, spent on every repeat just to learn the answer was stored. The key
+        depends only on the input and the versions, never on the claims, so the probe
+        can move to the front — and a repeat then costs nothing external at all, which
+        is what the M13 gate always claimed.
+        """
+        started = time.perf_counter()
+        stored = await self._cache.get_verdict(self._cache_key(intake))
+        if stored is None:
+            return None
+        return self._from_cache(stored, case_id=case_id, intake=intake, started=started)
+
     async def verify(
         self,
         intake: NormalisedIntake,
@@ -254,16 +298,7 @@ class Orchestrator:
 
         # Cache probe, before the governor and before any provider. A repeat costs
         # nothing external; the M13 gate asserts exactly this.
-        cache_key = CacheKeyParts(
-            # `cache_identity` rather than the primary object's hash: for a URL it is
-            # the canonicalised address, so two people sharing the same article with
-            # different tracking parameters hit one entry instead of two.
-            content_hash=intake.cache_identity,
-            rule_version=RULE_VERSION,
-            extractor_version=self._extractor_version,
-            language=intake.language.language.value,
-            model_id=self._model_id,
-        )
+        cache_key = self._cache_key(intake)
         cached = await self._cache.get_verdict(cache_key)
         if cached is not None:
             return self._from_cache(cached, case_id=case_id, intake=intake, started=started)
@@ -277,9 +312,7 @@ class Orchestrator:
         # source with a model measures 31 seconds; word overlap measures
         # milliseconds. One deadline for both would either cut every reasoned answer
         # off mid-call or let every lexical one dawdle.
-        deadline = started + (
-            REASONING_TARGET_SECONDS if self._reads_sources else TARGET_SECONDS
-        )
+        deadline = started + (REASONING_TARGET_SECONDS if self._reads_sources else TARGET_SECONDS)
 
         outcomes = await self._resolve_all(claims, skipped=skipped, deadline=deadline)
 
@@ -428,17 +461,42 @@ class Orchestrator:
         skipped: list[SkippedCheck],
         deadline: float | None = None,
     ) -> list[ClaimOutcome]:
-        """Resolve every claim, bounded by the concurrency ceiling."""
+        """Resolve every claim, bounded by the concurrency ceiling.
+
+        Only the `MAX_FALLBACK_CLAIMS` most important claims may reach a fallback
+        resolver. The ranking is stable, so equally important claims keep the order the
+        extractor gave them.
+        """
         if not claims:
             return []
 
+        unranked = len(_IMPORTANCE_ORDER)
+        ranked = sorted(
+            range(len(claims)),
+            key=lambda index: _IMPORTANCE_ORDER.get(claims[index].importance, unranked),
+        )
+        may_fall_back = set(ranked[:MAX_FALLBACK_CLAIMS])
+
         results = await asyncio.gather(
-            *(self._resolve_claim(claim, skipped=skipped, deadline=deadline) for claim in claims)
+            *(
+                self._resolve_claim(
+                    claim,
+                    skipped=skipped,
+                    deadline=deadline,
+                    allow_fallback=index in may_fall_back,
+                )
+                for index, claim in enumerate(claims)
+            )
         )
         return list(results)
 
     async def _resolve_claim(
-        self, claim: Claim, *, skipped: list[SkippedCheck], deadline: float | None = None
+        self,
+        claim: Claim,
+        *,
+        skipped: list[SkippedCheck],
+        deadline: float | None = None,
+        allow_fallback: bool = True,
     ) -> ClaimOutcome:
         """Gather evidence for one claim, then decide on it.
 
@@ -446,24 +504,90 @@ class Orchestrator:
         bypassable: there is no branch in this function that produces a status any
         other way.
 
+        Evidence is gathered in two stages, cheapest first. The primary resolvers — the
+        local corpus and published fact-checks — run together. A **fallback** resolver
+        (`fallback = True`: the open-web search, a metered search call plus a model
+        read per source) runs only when their evidence does not already decide the
+        claim. A published adjudication is decisive on its own, so reading five more
+        web pages after one would spend search and model calls to reach the same
+        verdict. This changes what is *consulted*, never how anything is decided: the
+        final `decide` still runs over every citation gathered.
+        """
+        primary = [r for r in self._resolvers if not getattr(r, "fallback", False)]
+        fallback = [r for r in self._resolvers if getattr(r, "fallback", False)]
+
+        evidence = await self._run_stage(primary, claim, skipped=skipped, deadline=deadline)
+
+        # Corroboration is counted after the evidence exists and before anything
+        # decides. Rule 4 reads `independent_origin_count` off the claim, and nothing
+        # in this codebase ever wrote it: the field was read and never set, so a claim
+        # carried by several independent outlets still fell through to
+        # `rule.insufficient_origins`. The count must come from the citations rather
+        # than from what retrieval shortlisted — an earlier version counted the
+        # shortlist and handed the engine "6 independent origins" for a claim only one
+        # document actually supported.
+        #
+        # Counted into a scratch list first, so a recount after the fallback stage
+        # cannot report the same corroboration failure twice.
+        scratch: list[SkippedCheck] = []
+        counted = await self._count_origins(claim, evidence=evidence, skipped=scratch)
+
+        if fallback and allow_fallback and not decide(counted, evidence).status.is_decisive:
+            found = await self._run_stage(fallback, claim, skipped=skipped, deadline=deadline)
+            if found:
+                evidence.extend(found)
+                scratch = []
+                counted = await self._count_origins(claim, evidence=evidence, skipped=scratch)
+        elif fallback:
+            event(
+                logger,
+                "fallback resolvers not consulted",
+                module="orchestration",
+                outcome="ok",
+                reason="already decisive" if allow_fallback else "claim below the fallback cap",
+            )
+        skipped.extend(scratch)
+
+        decision = decide(counted, evidence)
+        strength = evidence_strength(
+            evidence,
+            independent_origin_count=counted.independent_origin_count,
+            document_count=counted.document_count,
+            source_risk=counted.source_risk,
+        )
+
+        return ClaimOutcome(claim=counted, decision=decision, strength=strength, evidence=evidence)
+
+    async def _run_stage(
+        self,
+        resolvers: list[SourceResolver],
+        claim: Claim,
+        *,
+        skipped: list[SkippedCheck],
+        deadline: float | None,
+    ) -> list[Evidence]:
+        """Run a set of resolvers concurrently for one claim and collect their evidence.
+
         Each resolver runs under what remains of the request deadline. Per resolver
         rather than around the gather: a timeout on the gather cancels everything,
         discarding the evidence the fast resolvers already produced, and a partial
         answer that says what was skipped beats an empty one that took just as long.
         """
         evidence: list[Evidence] = []
+        if not resolvers:
+            return evidence
 
         remaining = max(2.0, deadline - time.perf_counter()) if deadline is not None else None
 
         gathered = await asyncio.gather(
             *(
                 asyncio.wait_for(self._run_resolver(resolver, claim), timeout=remaining)
-                for resolver in self._resolvers
+                for resolver in resolvers
             ),
             return_exceptions=True,
         )
 
-        for resolver, outcome in zip(self._resolvers, gathered, strict=True):
+        for resolver, outcome in zip(resolvers, gathered, strict=True):
             name = getattr(resolver, "name", type(resolver).__name__)
 
             if isinstance(outcome, TimeoutError):
@@ -485,26 +609,7 @@ class Orchestrator:
                 skipped.append(SkippedCheck(check=name, reason=skip))
             evidence.extend(found)
 
-        # Corroboration is counted here — after the evidence exists and before
-        # anything decides. Rule 4 reads `independent_origin_count` off the claim,
-        # and nothing in this codebase ever wrote it: the field was read and never
-        # set, so a claim carried by several independent outlets still fell through
-        # to `rule.insufficient_origins`.
-        #
-        # The count must come from the citations rather than from what retrieval
-        # shortlisted. An earlier version counted the shortlist and handed the engine
-        # "6 independent origins" for a claim only one document actually supported.
-        claim = await self._count_origins(claim, evidence=evidence, skipped=skipped)
-
-        decision = decide(claim, evidence)
-        strength = evidence_strength(
-            evidence,
-            independent_origin_count=claim.independent_origin_count,
-            document_count=claim.document_count,
-            source_risk=claim.source_risk,
-        )
-
-        return ClaimOutcome(claim=claim, decision=decision, strength=strength, evidence=evidence)
+        return evidence
 
     async def _count_origins(
         self, claim: Claim, *, evidence: list[Evidence], skipped: list[SkippedCheck]

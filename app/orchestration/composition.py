@@ -89,6 +89,15 @@ class ServedOrchestrator:
         self._media = media
         self._review_queue = review_queue
 
+    async def cached(self, intake: NormalisedIntake, *, case_id: UUID) -> VerificationResult | None:
+        """The stored verdict for this input, probed before extraction or media work.
+
+        `verify` below prepares media — hashing, embedding, OCR — before the inner
+        orchestrator reaches its own cache probe, and the endpoint extracts claims
+        before calling `verify` at all. Asking here first lets a repeat skip both.
+        """
+        return await self._orchestrator.cached(intake, case_id=case_id)
+
     async def verify(
         self,
         intake: NormalisedIntake,

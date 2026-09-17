@@ -835,7 +835,13 @@ class CacheRepository(_Repository):
                                           model_id, expires_at)
             VALUES (%s, %s, %s, %s, %s)
             ON CONFLICT (content_hash, extractor_version) DO UPDATE
-                SET payload = EXCLUDED.payload, created_at = now()
+                SET payload = EXCLUDED.payload,
+                    model_id = EXCLUDED.model_id,
+                    -- Renewed with the payload. Without it an expired row was
+                    -- rewritten but stayed expired, so every later read missed and
+                    -- every repeat paid for a fresh model extraction.
+                    expires_at = EXCLUDED.expires_at,
+                    created_at = now()
             """,
             (content_hash, extractor_version, json.dumps(payload), model_id, expires_at),
         )

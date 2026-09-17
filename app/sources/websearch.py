@@ -49,10 +49,10 @@ NAME = "web_search"
 VERSION = "2026.09.1"
 PROVIDER = "web_search"
 
-# How many credible sources to read — enough for corroboration across independent
-# origins, few enough that reading them all fits the per-request budget (each is a
-# metered reasoning call).
-_MAX_RESULTS = 5
+# How many credible sources to read. Each is a metered model call, and corroboration
+# needs two independent origins — three reads leaves one spare for a page the reasoner
+# finds irrelevant, without paying for five.
+_MAX_RESULTS = 3
 
 # How many results to *request* from the provider. Wider than what is read, because the
 # credibility gate drops most open-web results — a query where four of five hits are
@@ -73,6 +73,11 @@ class WebSearchResolver:
     tier = Tier.D
     kind = EvidenceKind.CORROBORATION
     method = Method.SEARCH_SNIPPET
+
+    # The costliest producer in the pipeline — a search-API call plus a model read per
+    # page — so the orchestrator consults it only for a claim the corpus and published
+    # fact-checks have not already decided, and only for the most important claims.
+    fallback = True
 
     def __init__(
         self,

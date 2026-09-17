@@ -794,3 +794,202 @@ class TestCacheRoundTrip:
         assert result.from_cache
         assert result.source_case_id is None
         assert result.action is Action.SAFE_TO_SHARE
+
+
+# ------------------------------------------------------------ call economy
+
+
+class _StubResolver:
+    """A resolver that yields one citation per claim — or none — and records calls."""
+
+    name = "stub"
+    version = "v"
+    allowed_domains: frozenset[str] = frozenset()
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        tier: Any,
+        kind: Any,
+        method: Any,
+        relation: Any | None,
+        fallback: bool = False,
+    ) -> None:
+        self.name = name
+        self.tier = tier
+        self.kind = kind
+        self.method = method
+        self.fallback = fallback
+        self._relation = relation
+        self.asked: list[str] = []
+
+    async def candidates(self, claim: Any) -> list[Any]:
+        from app.sources.base import SourceCandidate
+
+        self.asked.append(claim.id)
+        if self._relation is None:
+            return []
+        return [SourceCandidate(url=f"https://{self.name}.example/{claim.id}", publisher=self.name)]
+
+    async def snapshot(self, candidate: Any) -> Any:
+        from app.sources.base import SourceSnapshot
+
+        return SourceSnapshot(
+            id=f"snap:{candidate.url}",
+            url=candidate.url,
+            final_url=candidate.url,
+            content_hash=f"sha256:{candidate.url}",
+            fetched_at=datetime.now(UTC),
+            text="A published fact-check rated this claim false.",
+        )
+
+    async def relate(self, claim: Any, snapshot: Any) -> Any:
+        from app.sources.base import SourceRelation
+
+        return SourceRelation(
+            relation=self._relation,
+            validator=self.name,
+            validator_version="v",
+            excerpt="rated this claim false",
+            anchor={"char_start": 20, "char_end": 42},
+            metric="claim_similarity",
+            value=0.9,
+            threshold=0.62,
+        )
+
+
+def _fact_check(relation: Any | None) -> _StubResolver:
+    from app.domain.enums import EvidenceKind, Method, Tier
+
+    return _StubResolver(
+        name="factcheck",
+        tier=Tier.C,
+        kind=EvidenceKind.FACT_CHECK,
+        method=Method.CLAIM_REVIEW,
+        relation=relation,
+    )
+
+
+def _web_search() -> _StubResolver:
+    from app.domain.enums import EvidenceKind, Method, Relation, Tier
+
+    return _StubResolver(
+        name="web_search",
+        tier=Tier.D,
+        kind=EvidenceKind.CORROBORATION,
+        method=Method.SEARCH_SNIPPET,
+        relation=Relation.CONTRADICTS,
+        fallback=True,
+    )
+
+
+def _economy_orchestrator(resolvers: list[Any]) -> Orchestrator:
+    return Orchestrator(
+        cache=NullCache(),  # type: ignore[arg-type]
+        governor=RecordingGovernor(),  # type: ignore[arg-type]
+        resolvers=resolvers,
+        extractor_version="test",
+    )
+
+
+class TestTheFallbackStage:
+    """The costly open-web resolver runs only when the cheap evidence cannot decide."""
+
+    @pytest.mark.anyio
+    async def test_a_published_contradiction_means_the_web_is_never_searched(self) -> None:
+        from app.domain.enums import Relation
+
+        fact_check, web = _fact_check(Relation.CONTRADICTS), _web_search()
+        intake = normalise_text("Drinking bleach cures COVID-19.")
+
+        result = await _economy_orchestrator([fact_check, web]).verify(
+            intake, case_id=uuid4(), claims=[_claim()]
+        )
+
+        assert result.claims[0].decision.status.is_decisive
+        assert fact_check.asked == ["cl_1"]
+        assert web.asked == []  # no search call, no model reads
+
+    @pytest.mark.anyio
+    async def test_the_web_is_searched_when_nothing_cheaper_decided(self) -> None:
+        fact_check, web = _fact_check(None), _web_search()
+        intake = normalise_text("A claim no fact-checker has covered.")
+
+        result = await _economy_orchestrator([fact_check, web]).verify(
+            intake, case_id=uuid4(), claims=[_claim()]
+        )
+
+        assert web.asked == ["cl_1"]
+        # and what it found is part of the decision, like any other citation
+        assert any(e.kind.value == "corroboration" for e in result.evidence)
+
+    @pytest.mark.anyio
+    async def test_only_the_most_important_claims_reach_the_web(self) -> None:
+        from app.orchestration.pipeline import MAX_FALLBACK_CLAIMS
+
+        web = _web_search()
+        claims = [
+            _claim(claim_id="background", importance=Importance.BACKGROUND),
+            _claim(claim_id="detail_1", importance=Importance.SUPPORTING_DETAIL),
+            _claim(claim_id="headline", importance=Importance.HEADLINE),
+            _claim(claim_id="detail_2", importance=Importance.SUPPORTING_DETAIL),
+            _claim(claim_id="thesis", importance=Importance.MAIN_THESIS),
+        ]
+
+        await _economy_orchestrator([_fact_check(None), web]).verify(
+            normalise_text("A long article with five claims."), case_id=uuid4(), claims=claims
+        )
+
+        assert len(web.asked) == MAX_FALLBACK_CLAIMS == 3
+        # the top three by importance; the tie between details keeps extraction order
+        assert set(web.asked) == {"headline", "thesis", "detail_1"}
+
+
+class TestTheCacheIsAskedFirst:
+    """A repeat is answered before extraction or media work is paid for."""
+
+    @pytest.mark.anyio
+    async def test_cached_is_none_on_a_miss(self) -> None:
+        orchestrator = _economy_orchestrator([])
+
+        assert await orchestrator.cached(normalise_text("new text"), case_id=uuid4()) is None
+
+    @pytest.mark.anyio
+    async def test_cached_serves_a_stored_verdict(self) -> None:
+        orchestrator = Orchestrator(
+            cache=HittingCache({"action": "DO_NOT_SHARE"}),  # type: ignore[arg-type]
+            governor=RecordingGovernor(),  # type: ignore[arg-type]
+            resolvers=[],
+            extractor_version="test",
+        )
+
+        hit = await orchestrator.cached(normalise_text("a viral forward"), case_id=uuid4())
+
+        assert hit is not None and hit.from_cache
+        assert hit.action is Action.DO_NOT_SHARE
+
+    def test_a_repeat_check_never_calls_the_extractor(self) -> None:
+        from fastapi.testclient import TestClient
+
+        from app.main import create_app
+
+        class CachedOrchestrator:
+            async def cached(self, intake: Any, *, case_id: UUID) -> VerificationResult:
+                return _result(case_id=case_id, from_cache=True)
+
+            async def verify(self, *args: Any, **kwargs: Any) -> VerificationResult:
+                raise AssertionError("a cache hit must not run the pipeline")
+
+        class ExplodingPipeline:
+            async def extract(self, *args: Any, **kwargs: Any) -> Any:
+                raise AssertionError("a cache hit must not pay for extraction")
+
+        app = create_app()
+        app.state.orchestrator = CachedOrchestrator()
+        app.state.claim_pipeline = ExplodingPipeline()
+
+        response = TestClient(app).post("/v1/verify", json={"text": "A repeated viral forward."})
+
+        assert response.status_code == 200
+        assert response.json()["from_cache"] is True

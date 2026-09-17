@@ -97,6 +97,32 @@ class TestExtractionCache:
 
         assert payload == {"claims": [1, 2]}
 
+    async def test_an_expired_row_is_renewed_when_rewritten(self, conn: Any) -> None:
+        """A rewrite used to replace the payload but keep the old expiry, so a row that
+        had expired once stayed expired forever and every repeat re-ran extraction."""
+        from datetime import UTC, datetime, timedelta
+
+        from app.db.repositories import CacheRepository
+
+        await CacheRepository(conn).put_extraction(
+            content_hash="sha256:renewed",
+            extractor_version="1",
+            payload={"claims": ["old"]},
+            expires_at=datetime.now(UTC) - timedelta(days=1),
+        )
+        cache = CacheService(conn)
+        assert (
+            await cache.get_extraction(content_hash="sha256:renewed", extractor_version="1") is None
+        )
+
+        # The production write path: the service sets a fresh expiry on every put.
+        await cache.put_extraction(
+            content_hash="sha256:renewed", extractor_version="1", payload={"claims": ["new"]}
+        )
+
+        payload = await cache.get_extraction(content_hash="sha256:renewed", extractor_version="1")
+        assert payload == {"claims": ["new"]}
+
     async def test_a_new_extractor_version_misses(self, conn: Any) -> None:
         cache = CacheService(conn)
         await cache.put_extraction(
