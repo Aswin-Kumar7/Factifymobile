@@ -33,7 +33,7 @@ from app.domain.claim import Claim
 from app.domain.enums import EvidenceKind, Method, Relation, Tier
 from app.embeddings.image import cosine
 from app.embeddings.text import TextEmbedder
-from app.governor.governor import Governor, Skip
+from app.governor.governor import Governor, ProviderUnavailable, Skip
 from app.observability.logging import event
 from app.security.fetcher import FetchResult, SecureFetcher
 from app.sources.base import (
@@ -275,7 +275,12 @@ class FactCheckResolver:
                     provider=PROVIDER,
                     failure_reason=outcome.reason.value,
                 )
-                return []
+                # Raised, not returned empty. "We could not ask" and "nobody has
+                # checked this" are different answers, and returning [] made them
+                # identical: the run counted as complete, so an abstention caused by
+                # an exhausted daily budget was written to the cache and served for
+                # thirty days as though it were the finding.
+                raise ProviderUnavailable(PROVIDER, outcome.reason)
 
             fetched = await self._query_api(claim)
             api_shortlist = [

@@ -1133,3 +1133,40 @@ class TestSyndicationIsNotIndependence:
             )
             == set()
         )
+
+
+class TestAGapIsReportedNotAbsorbed:
+    """ "We could not ask" and "nobody has checked this" are different answers.
+
+    The fact-check resolver returned an empty candidate list when the governor
+    refused it, which made the two identical: the run counted as complete, so
+    `cacheable` stored an abstention caused by an exhausted daily budget and served
+    it for thirty days as though it were the finding. Observed live — a morning of
+    testing exhausted a 100-call budget and five claims a fact-checker had already
+    settled came back as review.
+    """
+
+    @staticmethod
+    def _result(*skipped: SkippedCheck) -> VerificationResult:
+        return VerificationResult(
+            case_id=uuid4(),
+            content_hash="sha256:abc",
+            action=Action.SEND_TO_REVIEW,
+            case_decision=CaseDecision(action=Action.SEND_TO_REVIEW, reason="r", rule_id="rule.x"),
+            skipped=list(skipped),
+        )
+
+    def test_a_run_missing_a_check_is_not_written_to_the_cache(self) -> None:
+        starved = self._result(SkippedCheck(check="factcheck", reason="capacity limited"))
+
+        assert not cacheable(starved)
+
+    def test_a_complete_run_still_is(self) -> None:
+        assert cacheable(self._result())
+
+    def test_the_reason_survives_into_the_response(self) -> None:
+        """ "capacity limited" tells a reader the budget ran out; the exception's name
+        would only say something went wrong."""
+        starved = self._result(SkippedCheck(check="factcheck", reason="capacity limited"))
+
+        assert starved.skipped[0].describe() == "factcheck was not checked: capacity limited"

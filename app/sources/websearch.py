@@ -34,6 +34,7 @@ from urllib.parse import urlsplit
 
 from app.domain.claim import Claim
 from app.domain.enums import EvidenceKind, Method, Tier
+from app.governor.governor import ProviderUnavailable, Skip
 from app.observability.logging import event
 from app.security.fetcher import FetchResult, SecureFetcher
 from app.sources.base import (
@@ -93,8 +94,10 @@ class WebSearchResolver:
         endpoint: str,
         api_key: str,
         credibility: SourceCredibility | None = None,
+        governor: Any | None = None,
         max_results: int = _MAX_RESULTS,
     ) -> None:
+        self._governor = governor
         self._fetcher = fetcher
         self._reasoner = reasoner
         self._provider = provider
@@ -131,6 +134,27 @@ class WebSearchResolver:
         return Tier.D, EvidenceKind.CORROBORATION, Method.PASSAGE_ENTAILMENT
 
     async def candidates(self, claim: Claim) -> list[SourceCandidate]:
+        # Through the governor, like every other metered provider. This resolver was
+        # written without one and spent a paid search quota that the configured caps
+        # only appeared to protect: `FACIFY_WEBSEARCH__DAILY_CAP` was read into the
+        # governor's provider table and never consulted, so nothing enforced it.
+        #
+        # Raised rather than returned empty, because the pipeline distinguishes "no
+        # results" from "not asked": the second marks the run incomplete, and an
+        # incomplete run is not written to the cache.
+        if self._governor is not None:
+            outcome = await self._governor.try_acquire(PROVIDER)
+            if isinstance(outcome, Skip):
+                event(
+                    logger,
+                    "web search not consulted",
+                    module="sources.websearch",
+                    outcome="skipped",
+                    provider=PROVIDER,
+                    failure_reason=outcome.reason.value,
+                )
+                raise ProviderUnavailable(PROVIDER, outcome.reason)
+
         rows = await self._search(claim.text)
 
         shortlist: list[SourceCandidate] = []

@@ -297,6 +297,7 @@ async def build(settings: Settings) -> dict[str, Any]:
                 else "",
                 # Only credible publishers are read and cited from the open web.
                 credibility=SourceCredibility.load(),
+                governor=governor,
             )
         )
 

@@ -35,7 +35,7 @@ from app.cache.service import CachedVerdict
 from app.domain.claim import Claim
 from app.domain.enums import Action, ClaimStatus, Direction, Importance, SourceRisk
 from app.domain.evidence import Advisory, Evidence
-from app.governor.governor import Skip
+from app.governor.governor import ProviderUnavailable, Skip
 from app.intake.normalizer import NormalisedIntake
 from app.observability.logging import event
 from app.sources.base import SourceCandidate, SourceResolver, build_evidence
@@ -650,7 +650,14 @@ class Orchestrator:
         response distinguishes them.
         """
         async with self._semaphore:
-            candidates = await resolver.candidates(claim)
+            try:
+                candidates = await resolver.candidates(claim)
+            except ProviderUnavailable as unavailable:
+                # The reason, not just the exception name: "capacity limited" tells a
+                # reader the budget ran out, where `ProviderUnavailable` only says
+                # something went wrong. It also marks the run incomplete, which is
+                # what keeps `cacheable` from freezing the gap into a stored verdict.
+                return [], unavailable.reason.value
 
         if not candidates:
             return [], None
