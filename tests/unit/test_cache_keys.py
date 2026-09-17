@@ -39,6 +39,8 @@ class TestEveryDimensionParticipates:
             ("corpus_version", "8"),
             ("policy_profile", "newsroom_three_origins"),
             ("language", "hi"),
+            ("model_id", "gpt-4.1-mini"),
+            ("reader_version", "2026.09.1"),
         ],
     )
     def test_changing_any_dimension_changes_the_key(self, field: str, changed: str) -> None:
@@ -53,6 +55,18 @@ class TestEveryDimensionParticipates:
         after = _parts(rule_version="2026.08.2").derive()
 
         assert before != after
+
+    def test_a_new_reader_cannot_hit_an_entry_judged_by_the_old_one(self) -> None:
+        """The reading decides the verdict as surely as the rules do.
+
+        When the passage reasoner's prompt changes — the fix that stopped a debunk's
+        restatement of a myth being read as support for it — the verdicts computed
+        under the old reading are wrong in precisely the way the change addressed.
+        """
+        assert (
+            _parts(reader_version="2026.08.1").derive()
+            != _parts(reader_version="2026.09.1").derive()
+        )
 
     def test_a_stricter_policy_profile_does_not_reuse_a_looser_verdict(self) -> None:
         """A newsroom demanding three origins must not receive a two-origin answer."""

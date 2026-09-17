@@ -13,7 +13,13 @@ import pytest
 from app.domain.enums import CoverageExpectation, Relation, SourceRisk
 from app.knowledge.clustering import OriginClusterer
 from app.sources.attribution import find_cited_sources
-from app.sources.base import SourceRelation, insufficient, keyword_overlap, locate_excerpt
+from app.sources.base import (
+    SourceRelation,
+    SourceSnapshot,
+    insufficient,
+    keyword_overlap,
+    locate_excerpt,
+)
 from app.sources.corroboration import (
     CorroborationResolver,
     silence_is_meaningful,
@@ -24,7 +30,13 @@ from app.sources.factcheck import (
     FactCheckResolver,
     parse_rating_from_title,
 )
-from app.sources.reasoning import PassageJudgement, ReasoningOutcome
+from app.sources.reasoning import (
+    _SYSTEM_INSTRUCTION,
+    Passage,
+    PassageJudgement,
+    PassageReasoner,
+    ReasoningOutcome,
+)
 from app.sources.risk import (
     SourceRiskProfiler,
     assess_domain_age,
@@ -33,6 +45,7 @@ from app.sources.risk import (
     injection_signal,
 )
 from app.sources.temporal import DatedInstance, TemporalResolver, oldest_instance
+from app.sources.websearch import WebSearchResolver
 from tests.unit.factories import claim
 
 pytestmark = pytest.mark.unit
@@ -561,3 +574,77 @@ class TestFactCheckRelevanceIsRead:
         reader = self._Reader(ReasoningOutcome(reason="provider failed"))
 
         assert await self._resolver(reader)._addresses(claim(), self._record())
+
+
+class TestTheReaderIsToldWhatItIsReading:
+    """A paragraph read in isolation cannot tell a debunk from an endorsement.
+
+    "Myth: drinking cow urine cures COVID-19" is the same sentence whether the page
+    sells the cure or refutes it, and in a live run a Mayo Clinic page and an NDTV
+    page were each read as *supporting* the claim they exist to demolish. The
+    headline is the signal that settles it, so the reader is given it — as context
+    only, never as something it may quote.
+    """
+
+    @staticmethod
+    def _passages() -> list[Passage]:
+        return [Passage(index=0, text="Myth: cow urine cures COVID-19.", char_start=0, char_end=31)]
+
+    def test_the_headline_reaches_the_prompt(self) -> None:
+        rendered = PassageReasoner._render(
+            None,  # type: ignore[arg-type]
+            "cow urine cures COVID-19",
+            self._passages(),
+            "Fact check: cow urine does not cure COVID-19",
+        )
+        assert "ARTICLE TITLE: Fact check: cow urine does not cure COVID-19" in rendered
+
+    def test_a_source_with_no_headline_renders_no_title_line(self) -> None:
+        """An empty title must not become an empty label the model has to interpret."""
+        rendered = PassageReasoner._render(
+            None,  # type: ignore[arg-type]
+            "cow urine cures COVID-19",
+            self._passages(),
+            "   ",
+        )
+        assert "ARTICLE TITLE" not in rendered
+
+    def test_the_instruction_forbids_reading_a_restatement_as_support(self) -> None:
+        """The rule the live misreads needed; stated, so its removal is a visible change."""
+        assert "Restating a claim is not asserting it" in _SYSTEM_INSTRUCTION
+        assert "never SUPPORTS" in _SYSTEM_INSTRUCTION
+
+    @pytest.mark.anyio
+    async def test_the_web_reader_passes_the_pages_own_title(self) -> None:
+        """Threading it through the resolver is the half that is easy to forget."""
+        seen: dict[str, object] = {}
+
+        class _Reader:
+            reads_sources = True
+
+            async def judge(
+                self, claim_text: str, passages: list[object], *, title: str | None = None
+            ) -> ReasoningOutcome:
+                seen["title"] = title
+                return ReasoningOutcome(judgements=(), passages_read=len(passages))
+
+        resolver = WebSearchResolver(
+            fetcher=None,  # type: ignore[arg-type]
+            reasoner=_Reader(),  # type: ignore[arg-type]
+            provider="tavily",
+            endpoint="https://example.invalid/search",
+            api_key="k",
+        )
+        snapshot = SourceSnapshot(
+            id="s1",
+            url="https://www.mayoclinic.org/myths",
+            final_url="https://www.mayoclinic.org/myths",
+            content_hash="sha256:1",
+            fetched_at=datetime.now(UTC),
+            text="Myth: cow urine cures COVID-19. " + "There is no evidence for this. " * 8,
+            title="COVID-19 myths debunked",
+        )
+
+        await resolver.relate(claim(), snapshot)
+
+        assert seen["title"] == "COVID-19 myths debunked"

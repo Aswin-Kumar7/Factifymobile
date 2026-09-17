@@ -40,6 +40,7 @@ from app.intake.normalizer import NormalisedIntake
 from app.observability.logging import event
 from app.sources.base import SourceCandidate, SourceResolver, build_evidence
 from app.sources.corpus import CorroborationSignal
+from app.sources.reasoning import REASONER_VERSION
 from app.verdict.engine import RULE_VERSION, CaseDecision, Decision, decide, roll_up
 from app.verdict.strength import Strength, evidence_strength
 
@@ -260,6 +261,7 @@ class Orchestrator:
             extractor_version=self._extractor_version,
             language=intake.language.language.value,
             model_id=self._model_id,
+            reader_version=REASONER_VERSION,
         )
 
     async def cached(self, intake: NormalisedIntake, *, case_id: UUID) -> VerificationResult | None:

@@ -370,8 +370,10 @@ class TestReview:
             item_id=item_id, human_label="CONTRADICTED", reviewer="analyst"
         )
 
+        # This item specifically, not an empty table: the queue is shared, and a
+        # labelled item leaving it is the behaviour under test either way.
         pending = await review.pending()
-        assert pending == []
+        assert item_id not in {row["id"] for row in pending}
 
 
 class TestAudit:

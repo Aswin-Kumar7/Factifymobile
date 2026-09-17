@@ -213,7 +213,7 @@ class WebSearchResolver:
         if not passages:
             return insufficient(NAME, VERSION, "the page returned no readable passages")
 
-        outcome = await self._reasoner.judge(claim.text, passages)
+        outcome = await self._reasoner.judge(claim.text, passages, title=snapshot.title)
         if not outcome.succeeded:
             return insufficient(NAME, VERSION, f"reasoning unavailable: {outcome.reason}")
 

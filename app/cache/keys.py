@@ -50,6 +50,15 @@ class CacheKeyParts:
     # it means a model change simply misses and recomputes.
     model_id: str = ""
 
+    # The reader that judged the sources, for the same reason as `model_id`.
+    #
+    # What a source is taken to say about a claim is decided by the passage reasoner
+    # and its prompt, not by the verdict rules. When that prompt changes — say, to
+    # stop reading a debunk's restatement of a myth as support for it — every cached
+    # verdict computed with the old reading is wrong in exactly the way the change
+    # was meant to fix, and without this it would keep being served.
+    reader_version: str = ""
+
     def derive(self) -> str:
         """A stable, opaque key.
 
@@ -66,6 +75,7 @@ class CacheKeyParts:
                 self.policy_profile,
                 self.language or "-",
                 self.model_id or "-",
+                self.reader_version or "-",
             )
         )
         return hashlib.sha256(material.encode("utf-8")).hexdigest()
