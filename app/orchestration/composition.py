@@ -261,6 +261,9 @@ async def build(settings: Settings) -> dict[str, Any]:
             api_key=(
                 settings.factcheck.api_key.get_secret_value() if settings.factcheck.api_key else ""
             ),
+            # Semantic relevance, so a paraphrased fact-check ("Coronavirus is a result
+            # of 5G") is recognised as adjudicating the claim it restates.
+            embedder=embedder,
         ),
     ]
 

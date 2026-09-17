@@ -20,6 +20,7 @@ what happens on a free tier at the wrong moment.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -30,6 +31,8 @@ from urllib.parse import urlencode
 
 from app.domain.claim import Claim
 from app.domain.enums import EvidenceKind, Method, Relation, Tier
+from app.embeddings.image import cosine
+from app.embeddings.text import TextEmbedder
 from app.governor.governor import Governor, Skip
 from app.observability.logging import event
 from app.security.fetcher import FetchResult, SecureFetcher
@@ -50,7 +53,23 @@ PROVIDER = "factcheck"
 # A fact-check must be about *this* claim before its rating means anything. Below
 # this, the publisher adjudicated something else that happens to share vocabulary,
 # and citing it would attribute a verdict its author never gave.
+#
+# This is the *lexical* gate, kept only as the fallback when no embedder is available.
+# It is too strict for real matching on its own: a fact-checker writes "Coronavirus is
+# a result of 5G" where the claim says "5G networks cause the coronavirus" — the same
+# assertion, 0.20 word overlap. The primary gate is semantic (see `_SEMANTIC_GATE`).
 MIN_CLAIM_OVERLAP = 0.55
+
+# The semantic gate: cosine between the claim and the adjudicated claim, in the shared
+# embedding space. High enough that a paraphrase of the same claim passes and a
+# different claim about the same subject ("Bill Gates funds vaccines" vs "Bill Gates
+# created the virus") does not. Tuned against real fact-check pairs.
+_SEMANTIC_GATE = 0.62
+
+# A loose lexical prefilter for the candidate shortlist only — wide enough that a
+# paraphrase reaches the semantic gate in `relate`, which is where relevance is
+# actually decided. API results are already ranked by the provider and skip this.
+_CANDIDATE_PREFILTER = 0.15
 
 # Ratings that constitute a contradiction. Deliberately explicit rather than
 # "anything that isn't true": fact-checkers use a wide vocabulary and a rating we do
@@ -171,9 +190,14 @@ class FactCheckResolver:
         fetcher: SecureFetcher | None = None,
         endpoint: str = "",
         api_key: str = "",
+        embedder: TextEmbedder | None = None,
     ) -> None:
         self._records = records
         self._governor = governor
+        # Judges whether an adjudication is about *this* claim by meaning rather than
+        # shared words. Without it, relevance falls back to lexical overlap, which
+        # rejects most real paraphrased fact-checks.
+        self._embedder = embedder
         # The API path is live only when it has everywhere to go: a fetcher, an
         # endpoint and a key. Missing any of them, it stays on the local records.
         self._api_available = api_available and bool(fetcher and endpoint and api_key)
@@ -202,7 +226,7 @@ class FactCheckResolver:
             )
             for record in self._records
         ]
-        shortlist = [c for c in shortlist if c.prior_score >= MIN_CLAIM_OVERLAP]
+        shortlist = [c for c in shortlist if c.prior_score >= _CANDIDATE_PREFILTER]
         shortlist.sort(key=lambda candidate: -candidate.prior_score)
 
         if shortlist:
@@ -241,7 +265,9 @@ class FactCheckResolver:
                 )
                 for record in fetched
             ]
-            api_shortlist = [c for c in api_shortlist if c.prior_score >= MIN_CLAIM_OVERLAP]
+            # No lexical prefilter here: the provider already ranked these by
+            # relevance to the query, and the semantic gate in `relate` is what decides
+            # whether each is about this claim.
             api_shortlist.sort(key=lambda candidate: -candidate.prior_score)
             event(
                 logger,
@@ -341,10 +367,10 @@ class FactCheckResolver:
         if record is None:
             return insufficient(NAME, VERSION, "record no longer available")
 
-        overlap = keyword_overlap(claim.text, record.claim_text)
-        if overlap < MIN_CLAIM_OVERLAP:
+        score, metric, threshold = await self._relevance(claim, record.claim_text)
+        if score < threshold:
             return insufficient(
-                NAME, VERSION, f"adjudicates a different claim (overlap {overlap:.2f})"
+                NAME, VERSION, f"adjudicates a different claim ({metric} {score:.2f})"
             )
 
         verdict = record.verdict
@@ -358,7 +384,31 @@ class FactCheckResolver:
             excerpt=f"{record.publisher or 'A fact-checker'} rated this {record.rating}: "
             f"{record.claim_text[:200]}",
             anchor={"char_start": 0, "char_end": min(len(record.claim_text), 200)},
-            metric="claim_overlap",
-            value=round(overlap, 4),
-            threshold=MIN_CLAIM_OVERLAP,
+            metric=metric,
+            value=round(score, 4),
+            threshold=threshold,
         )
+
+    async def _relevance(self, claim: Claim, adjudicated: str) -> tuple[float, str, float]:
+        """How well an adjudicated claim matches this one — semantic, or lexical.
+
+        Returns (score, metric, threshold). The semantic path embeds both claims and
+        compares them by meaning, so "Coronavirus is a result of 5G" matches "5G
+        networks cause the coronavirus" that lexical overlap scores at 0.20. Lexical
+        overlap remains the fallback when no embedder is configured, and its stricter
+        threshold reflects that it cannot see a paraphrase.
+        """
+        if self._embedder is not None:
+            try:
+                result = await asyncio.to_thread(
+                    self._embedder.embed, [claim.text, adjudicated], language=claim.language
+                )
+                if len(result.vectors) == 2:
+                    similarity = cosine(result.vectors[0], result.vectors[1])
+                    return similarity, "claim_similarity", _SEMANTIC_GATE
+            except Exception:
+                # A representation failure falls through to the lexical gate rather
+                # than rejecting the claim outright.
+                logger.debug("semantic relevance unavailable; falling back to overlap")
+
+        return keyword_overlap(claim.text, adjudicated), "claim_overlap", MIN_CLAIM_OVERLAP
