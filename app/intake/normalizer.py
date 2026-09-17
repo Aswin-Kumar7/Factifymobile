@@ -131,8 +131,30 @@ def normalise_url(url: str, *, consent: bool = False) -> NormalisedIntake:
     Note what does *not* happen here: no fetch. Normalisation is local, the cache is
     probed on the canonical form, and only a miss justifies going to the network.
     """
-    canonical = _canonical_url(url)
+    try:
+        canonical = _canonical_url(url)
+    except ValueError as malformed:  # an unclosed IPv6 bracket, a bad port
+        raise IntakeRejected(f"not a usable URL: {url!r}") from malformed
     if not canonical or "://" not in canonical:
+        raise IntakeRejected(f"not a usable URL: {url!r}")
+
+    # Checked here rather than left to the fetcher. A link this service can never
+    # follow — a `htp://` typo, a `file:` path, a host with no dot — is the caller's
+    # mistake, and answering 200 with "the linked page could not be read" reports it
+    # as a gap in the evidence instead of as the bad request it is. The SSRF guard
+    # still re-checks everything at fetch time; this only refuses the obviously
+    # unusable before a case is opened.
+    from urllib.parse import urlsplit
+
+    try:
+        parts = urlsplit(canonical)
+        _ = parts.hostname
+    except ValueError as malformed:  # an unclosed IPv6 bracket, a bad port
+        raise IntakeRejected(f"not a usable URL: {url!r}") from malformed
+    if parts.scheme not in {"http", "https"}:
+        raise IntakeRejected(f"only http and https links can be checked, not {parts.scheme!r}")
+    host = (parts.hostname or "").strip()
+    if not host or "." not in host.strip(".") or " " in host:
         raise IntakeRejected(f"not a usable URL: {url!r}")
 
     identity = f"sha256:{hashlib.sha256(canonical.encode('utf-8')).hexdigest()}"

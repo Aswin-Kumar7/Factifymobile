@@ -91,6 +91,32 @@ class TestIntakeUrl:
         assert intake.primary.source_url == "https://example.org/story"
         assert intake.primary.data is None
 
+    @pytest.mark.parametrize(
+        "unusable",
+        [
+            "htp://example.org/story",  # a typo this service can never follow
+            "file:///etc/passwd",  # a local path dressed as a link
+            "javascript:alert(1)",  # not a document at all
+            "https://localhost/admin",  # a host with no public name
+            "not a url at all",
+            "https://",
+            "http://[::1",  # an unclosed bracket: urlsplit raises on this
+        ],
+    )
+    def test_a_link_that_can_never_be_followed_is_refused_at_intake(self, unusable: str) -> None:
+        """Answering 200 with "the linked page could not be read" reports the caller's
+        mistake as a gap in the evidence. The SSRF guard still re-checks at fetch time;
+        this only refuses the obviously unusable before a case is opened."""
+        with pytest.raises(IntakeRejected):
+            normalise_url(unusable)
+
+    def test_a_usable_link_with_an_unusual_shape_is_still_accepted(self) -> None:
+        """The check must not become a second, stricter allowlist of its own."""
+        assert normalise_url("http://thehindu.com/a/b?utm_source=x").primary.source_url == (
+            "http://thehindu.com/a/b"
+        )
+        assert normalise_url("https://timesofindia.indiatimes.com/city/x/1.cms").input_type
+
 
 class TestIntakeUpload:
     def _png(self) -> bytes:
