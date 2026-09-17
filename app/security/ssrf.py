@@ -68,12 +68,27 @@ class Destination:
     addresses: tuple[str, ...]
 
 
+# NAT64 well-known prefix (RFC 6052): a DNS64 resolver embeds a real IPv4 address in
+# the low 32 bits of an IPv6 address under this prefix. Networks that run NAT64/DNS64
+# hand these back for ordinary public hosts.
+_NAT64_WELL_KNOWN = ipaddress.ip_network("64:ff9b::/96")
+
+
 def is_blocked_address(address: str) -> str | None:
     """Return the reason this address is unreachable, or None if it is allowed."""
     try:
         ip = ipaddress.ip_address(address)
     except ValueError:
         return "not a valid IP address"
+
+    # A NAT64 address is validated by the IPv4 it carries, not its IPv6 wrapper. On a
+    # DNS64 network an ordinary public API resolves to e.g. 64:ff9b::6439:fbcd, whose
+    # IPv6 form reads as "reserved" and would be blocked — but it is the public IPv4
+    # 100.57.251.205. This *narrows* the guard rather than skipping it: a NAT64 address
+    # embedding 10.0.0.1 (64:ff9b::a00:1) still fails the IPv4 private-range check.
+    if ip.version == 6 and ip in _NAT64_WELL_KNOWN:
+        embedded = ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
+        return is_blocked_address(str(embedded))
 
     # Each property is checked explicitly. `is_global` alone is not sufficient:
     # multicast and some reserved ranges report as global, so relying on it would

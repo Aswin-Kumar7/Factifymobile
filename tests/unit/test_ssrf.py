@@ -82,6 +82,21 @@ class TestBlockedAddressRanges:
         assert reason is not None
         assert "169.254.169.254" in reason
 
+    def test_nat64_is_judged_by_its_embedded_ipv4(self) -> None:
+        """A DNS64 network wraps a real IPv4 in 64:ff9b::/96.
+
+        The address must be judged by the IPv4 it carries, not blocked wholesale as a
+        reserved IPv6 range (which stopped every outbound fetch on a NAT64 network),
+        and not waved through wholesale (which would smuggle a private IPv4 past the
+        guard).
+        """
+        # 64:ff9b::6439:fbcd embeds the public 100.57.251.205 — allowed.
+        assert is_blocked_address("64:ff9b::6439:fbcd") is None
+        # 64:ff9b::a00:1 embeds 10.0.0.1, and 64:ff9b::7f00:1 embeds 127.0.0.1 — the
+        # guard must still block both.
+        assert is_blocked_address("64:ff9b::a00:1") is not None
+        assert is_blocked_address("64:ff9b::7f00:1") is not None
+
 
 class TestResolution:
     def _resolver(self, *addresses: str) -> object:

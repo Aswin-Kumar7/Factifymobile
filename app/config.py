@@ -192,6 +192,13 @@ class Settings(BaseSettings):
     factcheck: ProviderSettings = ProviderSettings()
     vision: ProviderSettings = ProviderSettings()
     archive: ProviderSettings = ProviderSettings()
+    # Live web search — the open-web evidence path. Off by default like the rest.
+    websearch: ProviderSettings = ProviderSettings()
+
+    # Which search provider `websearch` speaks to: "tavily" (search + clean extract in
+    # one call) or "exa" (neural search with page text). Determines the request shape
+    # and auth header, exactly as api_format does for the LLM.
+    websearch_provider: str = Field(default="tavily", pattern="^(tavily|exa)$")
 
     @model_validator(mode="after")
     def _model_ids_required_when_llm_enabled(self) -> Self:
@@ -232,6 +239,7 @@ class Settings(BaseSettings):
             "factcheck": self.factcheck,
             "vision": self.vision,
             "archive": self.archive,
+            "web_search": self.websearch,
         }
 
     def redacted(self) -> dict[str, Any]:

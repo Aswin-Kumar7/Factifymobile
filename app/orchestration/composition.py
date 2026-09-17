@@ -47,6 +47,7 @@ from app.sources.base import SourceResolver
 from app.sources.corpus import CorpusCorroboration, CorpusResolver
 from app.sources.factcheck import FactCheckRecord, FactCheckResolver, parse_rating_from_title
 from app.sources.reasoning import PassageReasoner
+from app.sources.websearch import WebSearchResolver
 
 logger = logging.getLogger("facify.composition")
 
@@ -266,6 +267,23 @@ async def build(settings: Settings) -> dict[str, Any]:
             embedder=embedder,
         ),
     ]
+
+    # The open-web path, when a search provider is configured. Reaches the web through
+    # a search API to find pages no local source covers, and reads them with the same
+    # reasoner — corroboration-grade evidence, gated by a verbatim quote like every
+    # other resolver. Off unless FACIFY_WEBSEARCH__* is set.
+    if settings.websearch.usable and reasoner is not None:
+        resolvers.append(
+            WebSearchResolver(
+                fetcher=source_fetcher,
+                reasoner=reasoner,
+                provider=settings.websearch_provider,
+                endpoint=settings.websearch.endpoint,
+                api_key=settings.websearch.api_key.get_secret_value()
+                if settings.websearch.api_key
+                else "",
+            )
+        )
 
     review_queue = PoolReviewQueue(database)
 
