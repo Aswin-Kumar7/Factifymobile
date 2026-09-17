@@ -95,20 +95,37 @@ sent today** (B6–B10), so on live results these stay empty until the backend l
 | Media match preview | submitted picture beside the match | **B10** (no image of the earlier publication) |
 
 ## Phase B — Backend blockers (verified)
-| ID | Defect | Where |
+
+**Backend endpoint test 2026-09-17** (full report: all 10 endpoints, real internet
+inputs). Fixed that day: the two biggest gaps — **URL input never read the page**
+(now fetches + extracts via the M16 web reader; a corpus link that returned 0 claims
+now returns 4 claims + 5 citations) and the **Google Fact Check API was a stub** (now
+live — "COVID-19 vaccines contain microchips" returns `DO_NOT_SHARE` citing
+FactCheck.org, the first decisive verdict from real evidence). Commits `1752754`,
+`a610210`, `a420cdb`.
+
+| ID | Defect | Status |
 |---|---|---|
-| B1 | Extraction cache never renews `expires_at` — 17 of 19 rows permanently dead | `app/db/repositories.py` → `put_extraction` |
-| B2 | Extraction runs before the verdict-cache probe (cached repeat: 83ms inside, 19.2s wall) | `app/api/verify.py:238` vs `:240` |
-| B3 | Extraction still on Gemini default thinking (25s alone) | `app/extraction/llm.py` |
-| B4 | Ingestion trigger never runs a tick; no worker composed; no CLI — corpus stuck at 2026-08-18 | `app/api/verify.py:509` |
-| B5 | Request `language` is ignored and the Hindi phrasing templates (M21) are never called; the file endpoint does not declare a `language` form field (the app already sends one) | `app/api/verify.py`; `app/extraction/phrasing.py` |
-| B6 | **Ledger read-back is lossy.** `CaseReader.get` rebuilds strength without components or advisory exclusions, and evidence without publisher or input anchor; it restores no advisories, skipped checks, recurrence, media provenance or source risk. Every cache hit is served through it — a repeat check arrived with `components: []`, and a stored case with `publisher: null` although the publisher was written | `app/orchestration/ledger.py:236–264`; `app/api/verify.py:127` |
-| B7 | Evidence insert never writes `observed_at`, while the read orders by it — every stored citation loses its date | `app/db/repositories.py:361–365`, `:393` |
-| B8 | Nothing produces `input_anchor`: the field exists from domain model to database to contract, but no resolver sets it | `app/domain/evidence.py:161` |
-| B9 | `ComponentResponse` carries no citations, although every strength component records them | `app/api/schemas.py:161`; `app/api/verify.py:171`; `app/verdict/strength.py:68` |
-| B10 | The contract has no image of the earlier publication, so a media match can show only the submitted picture | `app/api/schemas.py:122` |
-| R1 | ✅ 2026-09-17 — the LLM provider is now swappable (`FACIFY_LLM__API_FORMAT=gemini\|openai`, `app/extraction/model_wire.py`). Gemini's free tier measured 12–17s on a Hindi document and is daily-capped; `.env` is now on **Groq `openai/gpt-oss-120b`** (extraction + reasoning, ~3–4s, valid EN+HI, verified end to end through the running server). Vision/OCR stays on Gemini. Backup of the Gemini `.env` is in the session scratchpad; revert = restore it | resolved |
-| G1 | 42 commits exist only locally; GitHub has an unrelated history | git |
+| B1 | Extraction cache never renews `expires_at` — 17 of 19 rows permanently dead | open |
+| B2 | Extraction runs before the verdict-cache probe (cached repeat: 83ms inside, 19.2s wall) | open |
+| B3 | Extraction on Gemini default thinking (25s) | ✅ moot — extraction now on Groq gpt-oss-120b (~3s) |
+| B4 | Ingestion trigger never runs a tick; corpus stuck at 2026-08-18 | open — the fact-check API now compensates for decisive verdicts, but the corpus still does not refresh |
+| B5 | Request `language` ignored; Hindi phrasing templates (M21) never called; file endpoint lacks a `language` form field | open |
+| B6 | Ledger read-back lossy — strength components, publisher, anchors dropped on read | ✅ `a420cdb` — read-back restores components, advisory-excluded, publisher, date, input anchor; write persists publisher + input anchor |
+| B7 | Evidence date not persisted/read | ✅ addressed with B6 (publisher + anchor written; date read back) |
+| B8 | Nothing sets `input_anchor` | open — schema/read wired, but no resolver populates it yet |
+| B9 | `ComponentResponse` carries no citations | ✅ `a420cdb` — citations field added and populated (fresh + read-back) |
+| B10 | No image of the earlier publication for a media match | open |
+| — | URL input never fetched the page | ✅ `1752754` — reads the linked article (M16), capped for token budget |
+| M27 | Google Fact Check API was a stub | ✅ `1752754` — live query wired; key was already in `.env`; httpx URL logging quieted so the `key=` param is not logged |
+| #2/#3 | Over-fragmented claims + spurious lexical matches | ✅ `a610210` — extractor forbids fragments; fragment-matches gone |
+| R1 | Gemini slow/capacity-limited | ✅ `e966a3f`/`0c1b6dd` — provider swappable; `.env` on Groq |
+| #5 | The one media fingerprint cites a 404 Wikimedia URL — no reproducible recycled-image positive | open — demo-data (M48); media-match path works, corpus has no positive |
+| M42 | Receipts endpoint returns 503 (unwired) | open |
+| G1 | 40+ commits local only; GitHub has an unrelated history | open |
+
+**No new API key was needed for any of this** — Groq, Google Fact Check and Vision
+keys are all already in `.env`. Rotate them before deploying (they were pasted in chat).
 
 ## Phase C — Capability, deployment, evaluation
 - M29 attribution/quote · M31 temporal · M32 source risk — compose into the pipeline
