@@ -125,6 +125,7 @@ class TestCoverage:
             "https://www.lokmat.com/maharashtra/x/",  # Marathi
             "https://www.gujaratsamachar.com/news/gujarat/x",  # Gujarati
             "https://www.asomiyapratidin.in/assam/x",  # Assamese
+            "https://sambad.in/odisha/x",  # Odia
             "https://www.greaterkashmir.com/srinagar/x",  # Jammu & Kashmir
         ):
             assert cred.is_credible(url), url
