@@ -247,7 +247,21 @@ async def build(settings: Settings) -> dict[str, Any]:
     )
     resolvers: list[SourceResolver] = [
         corpus,
-        FactCheckResolver(records=records, api_available=False),
+        FactCheckResolver(
+            records=records,
+            governor=governor,
+            # Live only when the provider is configured and credentialled. The API is
+            # the strongest, cheapest evidence class — one adjudication settles a claim
+            # that would otherwise need corroboration across several origins — so it is
+            # on whenever the key is present, and falls back to the ingested records
+            # (and a clean skip) when quota or credentials are not.
+            api_available=settings.factcheck.usable,
+            fetcher=source_fetcher,
+            endpoint=settings.factcheck.endpoint,
+            api_key=(
+                settings.factcheck.api_key.get_secret_value() if settings.factcheck.api_key else ""
+            ),
+        ),
     ]
 
     review_queue = PoolReviewQueue(database)
@@ -264,6 +278,11 @@ async def build(settings: Settings) -> dict[str, Any]:
     state: dict[str, Any] = {
         "database": database,
         "embedder": embedder,
+        # Reused to read a submitted link: a URL carries no text of its own, so the
+        # verify path fetches the page and runs it through the same web reader (M16)
+        # that reads retrieved sources. Shared with the corpus resolver rather than a
+        # second client, so one connection pool serves both.
+        "url_reader": source_fetcher,
         "case_reader": CaseReader(database),
         "review_queue": review_queue,
         "orchestrator": ServedOrchestrator(

@@ -20,15 +20,19 @@ what happens on a free tier at the wrong moment.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
+from urllib.parse import urlencode
 
 from app.domain.claim import Claim
 from app.domain.enums import EvidenceKind, Method, Relation, Tier
 from app.governor.governor import Governor, Skip
 from app.observability.logging import event
+from app.security.fetcher import FetchResult, SecureFetcher
 from app.sources.base import (
     SourceCandidate,
     SourceRelation,
@@ -106,6 +110,17 @@ class FactCheckRecord:
         return None
 
 
+def _parse_review_date(value: object) -> datetime | None:
+    """A ClaimReview's reviewDate (ISO-8601) as an aware datetime, or None."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
 def parse_rating_from_title(title: str) -> str | None:
     """Read a verdict out of a fact-checker's headline.
 
@@ -153,10 +168,21 @@ class FactCheckResolver:
         records: list[FactCheckRecord],
         governor: Governor | None = None,
         api_available: bool = False,
+        fetcher: SecureFetcher | None = None,
+        endpoint: str = "",
+        api_key: str = "",
     ) -> None:
         self._records = records
         self._governor = governor
-        self._api_available = api_available
+        # The API path is live only when it has everywhere to go: a fetcher, an
+        # endpoint and a key. Missing any of them, it stays on the local records.
+        self._api_available = api_available and bool(fetcher and endpoint and api_key)
+        self._fetcher = fetcher
+        self._endpoint = endpoint
+        self._api_key = api_key
+        # Adjudications fetched live this run, keyed by their URL, so `snapshot` and
+        # `relate` can find a record the API produced without persisting it first.
+        self._api_cache: dict[str, FactCheckRecord] = {}
 
     async def candidates(self, claim: Claim) -> list[SourceCandidate]:
         """Shortlist adjudications that might be about this claim.
@@ -201,10 +227,90 @@ class FactCheckResolver:
                     provider=PROVIDER,
                     failure_reason=outcome.reason.value,
                 )
-            # The external query itself is wired in when credentials exist. Until
-            # then this deliberately returns nothing rather than a placeholder.
+                return []
+
+            fetched = await self._query_api(claim)
+            api_shortlist = [
+                SourceCandidate(
+                    url=record.url,
+                    publisher=record.publisher,
+                    title=record.claim_text,
+                    published_at=record.published_at,
+                    proposed_by="factcheck_api",
+                    prior_score=keyword_overlap(claim.text, record.claim_text),
+                )
+                for record in fetched
+            ]
+            api_shortlist = [c for c in api_shortlist if c.prior_score >= MIN_CLAIM_OVERLAP]
+            api_shortlist.sort(key=lambda candidate: -candidate.prior_score)
+            event(
+                logger,
+                "fact-check candidates from API",
+                module="sources.factcheck",
+                outcome="ok",
+                provider=PROVIDER,
+                candidates=len(api_shortlist),
+                api_consulted=True,
+            )
+            return api_shortlist[:5]
 
         return []
+
+    async def _query_api(self, claim: Claim) -> list[FactCheckRecord]:
+        """Query the Google Fact Check Tools API and map its ClaimReviews to records.
+
+        Language is deliberately not constrained: a Hindi claim is often adjudicated in
+        English and vice versa, and the overlap gate filters relevance afterwards. A
+        transport or parse failure yields no records rather than an exception — a
+        missing fact-check is an absence of evidence, never an outage of the request.
+        """
+        assert self._fetcher is not None
+        query = urlencode({"query": claim.text[:300], "pageSize": 10, "key": self._api_key})
+        result = await self._fetcher.fetch(f"{self._endpoint}?{query}", provider=PROVIDER)
+        if not isinstance(result, FetchResult):
+            return []
+
+        try:
+            payload = json.loads(result.text)
+        except json.JSONDecodeError:
+            return []
+
+        records = [
+            record
+            for entry in payload.get("claims", [])
+            if (record := self._to_record(entry)) is not None
+        ]
+        for record in records:
+            self._api_cache[record.url] = record
+        return records
+
+    @staticmethod
+    def _to_record(entry: dict[str, Any]) -> FactCheckRecord | None:
+        """One API claim + its first ClaimReview → a record, or None if unusable."""
+        claim_text = str(entry.get("text") or "").strip()
+        reviews = entry.get("claimReview") or []
+        if not claim_text or not reviews:
+            return None
+
+        review = reviews[0]
+        url = str(review.get("url") or "").strip()
+        if not url:
+            return None
+
+        publisher = review.get("publisher") or {}
+        return FactCheckRecord(
+            claim_text=claim_text,
+            normalized_text=claim_text.lower(),
+            url=url,
+            rating=(review.get("textualRating") or None),
+            publisher=(publisher.get("name") or publisher.get("site") or None),
+            published_at=_parse_review_date(review.get("reviewDate")),
+            retrieved_at=datetime.now(UTC),
+        )
+
+    def _record_for(self, url: str) -> FactCheckRecord | None:
+        """A record by URL, from either the ingested corpus or this run's API results."""
+        return next((r for r in self._records if r.url == url), None) or self._api_cache.get(url)
 
     async def snapshot(self, candidate: SourceCandidate) -> SourceSnapshot | None:
         """Fact-check records are already snapshotted at retrieval.
@@ -213,7 +319,7 @@ class FactCheckResolver:
         there is a real fetch behind the citation even though this call does not
         make one.
         """
-        record = next((r for r in self._records if r.url == candidate.url), None)
+        record = self._record_for(candidate.url)
         if record is None:
             return None
 
@@ -231,7 +337,7 @@ class FactCheckResolver:
 
     async def relate(self, claim: Claim, snapshot: SourceSnapshot) -> SourceRelation:
         """Decide what this adjudication says about the claim."""
-        record = next((r for r in self._records if r.url == snapshot.url), None)
+        record = self._record_for(snapshot.url)
         if record is None:
             return insufficient(NAME, VERSION, "record no longer available")
 

@@ -119,6 +119,13 @@ def configure(level: str = "INFO") -> None:
     root.addHandler(handler)
     root.setLevel(level.upper())
 
+    # httpx logs every request line at INFO, including the full URL. The fact-check
+    # provider authenticates with a `key=` query parameter (its API takes no header
+    # from our fetcher), so that line would write the API key into the logs. Our own
+    # fetch events already record status and latency without the URL, so httpx's line
+    # is redundant as well as unsafe — quiet it to WARNING.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+
 
 def event(
     logger: logging.Logger,

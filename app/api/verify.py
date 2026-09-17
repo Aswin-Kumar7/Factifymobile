@@ -37,6 +37,8 @@ from app.api.schemas import (
     evidence_to_response,
 )
 from app.extraction.claims import ExtractedClaims
+from app.extraction.language import detect
+from app.extraction.web import extract as extract_article
 from app.intake.normalizer import (
     InputType,
     IntakeRejected,
@@ -49,6 +51,7 @@ from app.knowledge.registry import authenticate_trigger
 from app.observability.logging import event
 from app.orchestration.pipeline import SkippedCheck, VerificationResult
 from app.orchestration.review import HumanLabel
+from app.security.fetcher import FetchResult
 
 logger = logging.getLogger("facify.api.verify")
 
@@ -88,6 +91,21 @@ async def extract_claims_for(request: Request, intake: NormalisedIntake) -> Extr
         return ExtractedClaims(reason="claim extraction is not configured")
 
     text = intake.primary.text or ""
+    language = intake.language.language.value
+
+    if not text.strip() and intake.input_type is InputType.URL:
+        # A submitted link carries no text of its own — normalisation is local and
+        # deliberately does not fetch. Read the page here, the same way a retrieved
+        # source is read (M16), so "check this link" checks the article instead of
+        # abstaining on an empty body. This was the gap that made every URL a no-op.
+        article = await _read_linked_article(request, intake.primary.source_url or "")
+        if article is None:
+            return ExtractedClaims(reason="the linked page could not be read")
+        text = article
+        # The article's own language, detected on its body — not the URL's, which
+        # was detected on an empty string and is always the default.
+        language = detect(text).language.value
+
     if not text.strip():
         return ExtractedClaims(reason="no readable text in this submission")
 
@@ -95,8 +113,48 @@ async def extract_claims_for(request: Request, intake: NormalisedIntake) -> Extr
         text,
         content_hash=intake.primary.sha256,
         input_kind=intake.input_type.value,
-        language=intake.language.language.value,
+        language=language,
     )
+
+
+# Longest article body sent to extraction. A news story fits well within this; a
+# very long reference page is truncated to its opening, where the headline claims sit.
+_MAX_ARTICLE_CHARS = 6000
+
+
+async def _read_linked_article(request: Request, url: str) -> str | None:
+    """Fetch a submitted link and return its readable article text, or None.
+
+    Only HTML is read here: a PDF or image shared as a link is a file, and the file
+    endpoint handles those. A page with no extractable body — a login wall, a
+    JavaScript shell, a social-media permalink — returns None, and the caller says so
+    plainly rather than presenting an empty read as "nothing to check".
+    """
+    reader = getattr(request.app.state, "url_reader", None)
+    if reader is None or not url:
+        return None
+
+    result = await reader.fetch(url, provider="url_intake")
+    if not isinstance(result, FetchResult):
+        return None
+
+    content_type = (result.content_type or "").lower()
+    if content_type and "html" not in content_type and "xml" not in content_type:
+        return None
+
+    article = extract_article(result.text, url=url)
+    if not article.is_usable:
+        return None
+
+    # Title and body together: the headline carries the primary claim, the body the
+    # rest, so even a one-paragraph story yields something to check. The body is
+    # capped: extraction takes at most a handful of claims and the consequential ones
+    # sit near the top, while a long page (a Wikipedia article runs to tens of
+    # thousands of characters) would push one extraction call past the model's
+    # per-minute token budget and come back 429.
+    body = (article.body or "")[:_MAX_ARTICLE_CHARS]
+    parts = [part for part in (article.title, body) if part and part.strip()]
+    return "\n\n".join(parts) if parts else None
 
 
 async def cached_full_response(
