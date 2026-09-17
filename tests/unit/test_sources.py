@@ -33,7 +33,6 @@ from app.sources.factcheck import (
 from app.sources.reasoning import (
     _SYSTEM_INSTRUCTION,
     Passage,
-    PassageJudgement,
     PassageReasoner,
     ReasoningOutcome,
     _ReasoningResponse,
@@ -502,6 +501,11 @@ class TestFactCheckRelevanceIsRead:
     "Chandrayaan sent footage of Earth" scores 0.63 against the true claim
     "Chandrayaan landed near the south pole" — close enough to pass a gate, and its
     False rating turned a true statement into DO_NOT_SHARE in a live run.
+
+    What is asked is equivalence, not support. Asked as support, a Snopes check of
+    whose ceasefire deal it was came back yes for the claim that a ceasefire happened
+    — the reviewed claim takes the agreement for granted — and carried a False rating
+    onto a true statement.
     """
 
     @staticmethod
@@ -519,60 +523,43 @@ class TestFactCheckRelevanceIsRead:
         return FactCheckResolver(records=[], reasoner=reasoner)  # type: ignore[arg-type]
 
     class _Reader:
-        def __init__(self, outcome: object) -> None:
-            self._outcome = outcome
+        """Answers the one question `_addresses` asks."""
+
+        def __init__(self, verdict: bool | None) -> None:
+            self._verdict = verdict
             self.calls = 0
+            self.asked: tuple[str, str] | None = None
 
-        async def judge(self, claim_text: str, passages: list[object]) -> object:
+        async def same_claim(self, claim_text: str, reviewed_text: str) -> bool | None:
             self.calls += 1
-            return self._outcome
-
-    @staticmethod
-    def _outcome(relation: Relation | None) -> ReasoningOutcome:
-        if relation is None:
-            return ReasoningOutcome(judgements=(), passages_read=1)
-        return ReasoningOutcome(
-            judgements=(
-                PassageJudgement(
-                    relation=relation,
-                    quote="rated this False",
-                    reason="r",
-                    relevance=0.9,
-                    passage_index=0,
-                ),
-            ),
-            passages_read=1,
-        )
+            self.asked = (claim_text, reviewed_text)
+            return self._verdict
 
     @pytest.mark.anyio
-    async def test_a_reader_that_sees_no_relation_rejects_the_rating(self) -> None:
-        reader = self._Reader(self._outcome(None))
+    async def test_a_different_claim_rejects_the_rating(self) -> None:
+        reader = self._Reader(False)
 
         assert not await self._resolver(reader)._addresses(claim(), self._record())
         assert reader.calls == 1
 
     @pytest.mark.anyio
-    async def test_an_explicit_not_relevant_also_rejects(self) -> None:
-        """`best()` ranks NOT_RELEVANT last but still returns it."""
-        reader = self._Reader(self._outcome(Relation.NOT_RELEVANT))
-
-        assert not await self._resolver(reader)._addresses(claim(), self._record())
+    async def test_the_same_claim_accepts_it(self) -> None:
+        assert await self._resolver(self._Reader(True))._addresses(claim(), self._record())
 
     @pytest.mark.anyio
-    async def test_a_check_of_a_merely_related_claim_is_rejected(self) -> None:
-        """Snopes rated False the claim that Trump's ceasefire deal was "the exact
-        deal" Biden brokered, and that rating landed on the true statement that a
-        ceasefire was agreed at all. Same subject, same vocabulary, different claim —
-        which a reader calls CONTEXTUALIZES, not a match."""
-        reader = self._Reader(self._outcome(Relation.CONTEXTUALIZES))
+    async def test_both_statements_are_put_to_the_reader(self) -> None:
+        """The comparison is of the two claims, and the rating is deliberately not
+        named: "rated this False" asks whether you agree with a verdict, when the
+        question is whether the verdict is even about this."""
+        reader = self._Reader(True)
 
-        assert not await self._resolver(reader)._addresses(claim(), self._record())
+        await self._resolver(reader)._addresses(claim(), self._record())
 
-    @pytest.mark.anyio
-    async def test_a_reader_that_finds_the_claim_addressed_accepts(self) -> None:
-        reader = self._Reader(self._outcome(Relation.CONTRADICTS))
-
-        assert await self._resolver(reader)._addresses(claim(), self._record())
+        asked = reader.asked
+        assert asked is not None
+        assert asked[0] == claim().text
+        assert asked[1] == self._record().claim_text
+        assert "False" not in asked[1]
 
     @pytest.mark.anyio
     async def test_without_a_reader_the_score_decides_alone(self) -> None:
@@ -582,9 +569,8 @@ class TestFactCheckRelevanceIsRead:
 
     @pytest.mark.anyio
     async def test_a_reader_outage_does_not_drop_the_evidence(self) -> None:
-        reader = self._Reader(ReasoningOutcome(reason="provider failed"))
-
-        assert await self._resolver(reader)._addresses(claim(), self._record())
+        """`None` is "could not ask", which must not read as "no"."""
+        assert await self._resolver(self._Reader(None))._addresses(claim(), self._record())
 
 
 class TestTheReaderIsToldWhatItIsReading:

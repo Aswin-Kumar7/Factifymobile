@@ -43,7 +43,7 @@ from app.sources.base import (
     insufficient,
     keyword_overlap,
 )
-from app.sources.reasoning import Passage, PassageReasoner
+from app.sources.reasoning import PassageReasoner
 
 logger = logging.getLogger("facify.factcheck")
 
@@ -426,10 +426,14 @@ class FactCheckResolver:
     async def _addresses(self, claim: Claim, record: FactCheckRecord) -> bool:
         """Whether this adjudication is about *this* claim, read rather than scored.
 
-        The same reader the corpus uses, asked the same way: it is handed the
-        adjudicated claim as a passage and must find something in it bearing on ours.
-        Nothing, or an explicit "not relevant", is the answer that stops a fact-check of
-        a neighbouring claim from having its rating applied here.
+        The question is equivalence, and it is put as one: would this check's verdict
+        be a verdict on our claim? Asked instead through the passage reader — "does
+        this adjudicated claim support ours?" — the answer came back yes for a Snopes
+        check of whether Trump's ceasefire deal was "the exact deal" Biden brokered,
+        because a claim about *whose* deal it was takes for granted that a deal
+        happened, and so supports the claim that one did. That entailment carried a
+        False rating onto a true statement. Support is not sameness, so it is no
+        longer what is asked.
 
         Without a reader configured this returns True: the embedding gate is then the
         only judge available, and refusing everything would silently disable the
@@ -438,36 +442,10 @@ class FactCheckResolver:
         if self._reasoner is None:
             return True
 
-        # Built directly rather than through `split_passages`, which is for articles
-        # and drops anything under 120 characters — an adjudicated claim is one
-        # sentence, so every check silently found no passage to read and this
-        # confirmation degraded open, which is how the Chandrayaan error survived it.
-        #
-        # The rating is deliberately left out. Naming it ("rated this False") frames
-        # the question as agreement with a verdict; what is being asked is narrower:
-        # are these two statements the same claim? A different claim about the same
-        # subject reads as not relevant, which is the answer that protects the rating
-        # from being applied where its author never applied it.
-        text = f"The claim reviewed by this fact-check is: {record.claim_text}"
-        passage = Passage(index=0, text=text, char_start=0, char_end=len(text))
-        outcome = await self._reasoner.judge(claim.text, [passage])
-        if not outcome.succeeded:
-            # The reader could not run. Fall back to the score alone rather than
-            # dropping evidence because a provider was briefly unavailable.
-            return True
-
-        best = outcome.best()
-        # The reviewed claim must *be* this claim, not merely bear on it.
-        #
-        # Anything short of that — a check of a related claim about the same event,
-        # the same people, the same week — is CONTEXTUALIZES, and accepting it is how
-        # Snopes on "whose ceasefire deal was it" came to rate a claim about whether
-        # there was a ceasefire at all. Only a reader that finds the two statements
-        # say the same thing, or opposite things, has found the same claim.
-        return best is not None and best.relation in {
-            Relation.SUPPORTS,
-            Relation.CONTRADICTS,
-        }
+        verdict = await self._reasoner.same_claim(claim.text, record.claim_text)
+        # `None` is "could not ask", not "no". Falling back to the score alone keeps a
+        # brief provider outage from dropping every published adjudication.
+        return verdict is not False
 
     async def _relevance(self, claim: Claim, adjudicated: str) -> tuple[float, str, float]:
         """How well an adjudicated claim matches this one — semantic, or lexical.
