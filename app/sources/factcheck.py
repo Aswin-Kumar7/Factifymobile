@@ -48,7 +48,7 @@ from app.sources.reasoning import Passage, PassageReasoner
 logger = logging.getLogger("facify.factcheck")
 
 NAME = "factcheck"
-VERSION = "2026.09.1"
+VERSION = "2026.09.2"
 PROVIDER = "factcheck"
 
 # A fact-check must be about *this* claim before its rating means anything. Below
@@ -77,7 +77,14 @@ _SEMANTIC_GATE = 0.62
 # 0.69 is a real match and 0.63 is not — so no single threshold separates them, because
 # an embedding carries the subject far more than the predicate. A number cannot tell
 # "landed on the Moon" from "sent footage of Earth"; reading them can.
-_CONFIDENT_MATCH = 0.82
+# Raised from 0.82 after a live false positive. Snopes rated False the claim that
+# "Trump's October 2025 ceasefire deal was the *exact deal* brokered by Biden", and
+# that rating landed on the true statement "Israel and Hamas agreed a ceasefire in
+# January 2025" — same subject, same vocabulary, different claim, and a similarity
+# above 0.82, so the read that would have caught it was skipped as unnecessary. At
+# 0.95 only a near-verbatim restatement skips the read, which is the case the shortcut
+# was for: the same rumour reposted in the same words.
+_CONFIDENT_MATCH = 0.95
 
 # A loose lexical prefilter for the candidate shortlist only — wide enough that a
 # paraphrase reaches the semantic gate in `relate`, which is where relevance is
@@ -450,11 +457,16 @@ class FactCheckResolver:
             return True
 
         best = outcome.best()
-        # `best()` ranks NOT_RELEVANT last but still returns it, so the relation has to
-        # be checked rather than the presence of a judgement.
-        return best is not None and best.relation not in {
-            Relation.NOT_RELEVANT,
-            Relation.INSUFFICIENT,
+        # The reviewed claim must *be* this claim, not merely bear on it.
+        #
+        # Anything short of that — a check of a related claim about the same event,
+        # the same people, the same week — is CONTEXTUALIZES, and accepting it is how
+        # Snopes on "whose ceasefire deal was it" came to rate a claim about whether
+        # there was a ceasefire at all. Only a reader that finds the two statements
+        # say the same thing, or opposite things, has found the same claim.
+        return best is not None and best.relation in {
+            Relation.SUPPORTS,
+            Relation.CONTRADICTS,
         }
 
     async def _relevance(self, claim: Claim, adjudicated: str) -> tuple[float, str, float]:

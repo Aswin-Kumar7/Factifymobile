@@ -559,6 +559,16 @@ class TestFactCheckRelevanceIsRead:
         assert not await self._resolver(reader)._addresses(claim(), self._record())
 
     @pytest.mark.anyio
+    async def test_a_check_of_a_merely_related_claim_is_rejected(self) -> None:
+        """Snopes rated False the claim that Trump's ceasefire deal was "the exact
+        deal" Biden brokered, and that rating landed on the true statement that a
+        ceasefire was agreed at all. Same subject, same vocabulary, different claim —
+        which a reader calls CONTEXTUALIZES, not a match."""
+        reader = self._Reader(self._outcome(Relation.CONTEXTUALIZES))
+
+        assert not await self._resolver(reader)._addresses(claim(), self._record())
+
+    @pytest.mark.anyio
     async def test_a_reader_that_finds_the_claim_addressed_accepts(self) -> None:
         reader = self._Reader(self._outcome(Relation.CONTRADICTS))
 
