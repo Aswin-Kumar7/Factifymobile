@@ -216,3 +216,65 @@ class TestCredibilityData:
             assert prefixes, host
             for prefix in prefixes:
                 assert prefix.startswith("/") and prefix.endswith("/"), (host, prefix)
+
+
+class TestFactCheckerClassification:
+    """What a page found on the open web *is* depends on who published it."""
+
+    def test_verified_fact_checkers_are_recognised(self) -> None:
+        cred = _credibility()
+        for url in (
+            "https://www.factcheck.org/2026/01/x/",
+            "https://www.snopes.com/fact-check/x/",
+            "https://www.altnews.in/x/",  # accreditation lapsed; still a fact-checker
+            "https://www.boomlive.in/fact-check/x",
+        ):
+            assert cred.is_fact_checker(url), url
+
+    def test_ordinary_publishers_and_unknowns_are_not(self) -> None:
+        cred = _credibility()
+        for url in (
+            "https://www.thehindu.com/news/national/x",  # credible, but reporting
+            "https://www.bbc.com/news/x",
+            "https://frankreport.com/x",  # not credible at all
+        ):
+            assert not cred.is_fact_checker(url), url
+
+    def test_the_resolver_labels_each_source_for_what_it_is(self) -> None:
+        from datetime import UTC, datetime
+
+        from app.domain.enums import EvidenceKind, Method, Tier
+        from app.sources.base import SourceSnapshot
+        from app.sources.websearch import WebSearchResolver
+
+        resolver = WebSearchResolver(
+            fetcher=object(),  # type: ignore[arg-type]
+            reasoner=None,
+            provider="tavily",
+            endpoint="https://example.invalid/search",
+            api_key="",
+            credibility=_credibility(),
+        )
+
+        def _snapshot(url: str) -> SourceSnapshot:
+            return SourceSnapshot(
+                id="s",
+                url=url,
+                final_url=url,
+                content_hash="sha256:x",
+                fetched_at=datetime.now(UTC),
+                text="...",
+            )
+
+        # A published adjudication, reached by search instead of by the fact-check API.
+        assert resolver.classify(_snapshot("https://www.factcheck.org/2026/01/x/")) == (
+            Tier.C,
+            EvidenceKind.FACT_CHECK,
+            Method.CLAIM_REVIEW,
+        )
+        # Credible reporting that bears on the claim.
+        assert resolver.classify(_snapshot("https://www.bbc.com/news/x")) == (
+            Tier.D,
+            EvidenceKind.CORROBORATION,
+            Method.PASSAGE_ENTAILMENT,
+        )

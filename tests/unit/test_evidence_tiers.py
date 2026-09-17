@@ -482,3 +482,45 @@ class TestMixedTierSets:
         )
 
         assert conflicting.score < agreeing.score
+
+
+class TestResolverClassification:
+    """A resolver reaching several classes of publisher labels each honestly."""
+
+    def test_build_evidence_asks_the_resolver_rather_than_assuming(self) -> None:
+        from app.sources.base import SourceRelation, build_evidence
+
+        class _Stub:
+            name = "web_search"
+            version = "v"
+            allowed_domains: frozenset[str] = frozenset()
+            tier = Tier.D
+            kind = EvidenceKind.CORROBORATION
+            method = Method.PASSAGE_ENTAILMENT
+
+            def classify(self, snapshot: object) -> tuple[Tier, EvidenceKind, Method]:
+                return Tier.C, EvidenceKind.FACT_CHECK, Method.CLAIM_REVIEW
+
+        built = build_evidence(
+            resolver=_Stub(),  # type: ignore[arg-type]
+            claim_id="cl_1",
+            snapshot=_snapshot(),
+            relation=SourceRelation(
+                relation=Relation.CONTRADICTS,
+                validator="web_search",
+                validator_version="v",
+                excerpt="the quoted passage",
+                anchor={"char_start": 0, "char_end": 18},
+                metric="passage_entailment",
+                value=0.9,
+                threshold=0.0,
+            ),
+        )
+
+        assert built is not None
+        assert (built.tier, built.kind, built.method) == (
+            Tier.C,
+            EvidenceKind.FACT_CHECK,
+            Method.CLAIM_REVIEW,
+        )
+        assert built.is_decisive_capable

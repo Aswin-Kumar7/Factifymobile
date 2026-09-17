@@ -15,9 +15,12 @@ exactly as everywhere else. This is the one line that separates Facify from a
 search-and-summarise tool — those let a confident model write the answer from the same
 pages; here the answer is the citations, and the model is only a reader.
 
-Tier D, corroboration: a page found by search is corroboration-grade, never decisive on
-its own. Several independent origins saying the same thing is what makes it count — the
-corroboration rule doing its job, and precisely the discipline a summariser skips.
+What a page *is* depends on who published it (`classify`). A page on a verified
+fact-checker is a published adjudication — Tier C, the same class the fact-check API
+returns, reached by another route — and one of them settles a claim. Everything else is
+a credible publisher's reporting: Tier D corroboration, which decides only when several
+independent publishers agree. That is the corroboration rule doing its job, and
+precisely the discipline a search-and-summarise tool skips.
 """
 
 from __future__ import annotations
@@ -46,7 +49,7 @@ from app.sources.reasoning import REASONER_VERSION, PassageReasoner, split_passa
 logger = logging.getLogger("facify.sources.websearch")
 
 NAME = "web_search"
-VERSION = "2026.09.1"
+VERSION = "2026.09.2"
 PROVIDER = "web_search"
 
 # How many credible sources to read. Each is a metered model call, and corroboration
@@ -70,9 +73,11 @@ class WebSearchResolver:
     # every citation regardless of where the page came from.
     allowed_domains: frozenset[str] = frozenset()
 
+    # Defaults for a page from a credible publisher that is not a fact-checker;
+    # `classify` below says what any particular source produced.
     tier = Tier.D
     kind = EvidenceKind.CORROBORATION
-    method = Method.SEARCH_SNIPPET
+    method = Method.PASSAGE_ENTAILMENT
 
     # The costliest producer in the pipeline — a search-API call plus a model read per
     # page — so the orchestrator consults it only for a claim the corpus and published
@@ -107,6 +112,23 @@ class WebSearchResolver:
     def reads_sources(self) -> bool:
         """Whether this resolver may spend model calls reading pages."""
         return self._reasoner is not None
+
+    def classify(self, snapshot: SourceSnapshot) -> tuple[Tier, EvidenceKind, Method]:
+        """What class of finding a page from this publisher is.
+
+        A page on a verified fact-checker is a published adjudication — the same thing
+        the fact-check API returns, reached by another route — so it is Tier C, and
+        one of them settles a claim. Everything else is a credible publisher's
+        reporting that bears on the claim: Tier D corroboration.
+
+        Both are `PASSAGE_ENTAILMENT` rather than `SEARCH_SNIPPET`: the page was
+        fetched, read and quoted verbatim. A snippet nobody opened is what that other
+        method names, and it is excluded from deciding anything for good reason.
+        """
+        source = snapshot.final_url or snapshot.url
+        if self._credibility.is_fact_checker(source):
+            return Tier.C, EvidenceKind.FACT_CHECK, Method.CLAIM_REVIEW
+        return Tier.D, EvidenceKind.CORROBORATION, Method.PASSAGE_ENTAILMENT
 
     async def candidates(self, claim: Claim) -> list[SourceCandidate]:
         rows = await self._search(claim.text)

@@ -82,9 +82,14 @@ class SourceCredibility:
         self,
         trusted: frozenset[str],
         user_content_paths: Mapping[str, tuple[str, ...]] | None = None,
+        fact_checkers: frozenset[str] = frozenset(),
     ) -> None:
         self._trusted = trusted
         self._user_content_paths = dict(user_content_paths or {})
+        # Publishers whose business is adjudicating claims. A page of theirs is a
+        # published fact-check wherever it was found, which is a stronger class of
+        # evidence than a news report that happens to bear on the claim.
+        self._fact_checkers = fact_checkers
 
     @classmethod
     def load(cls, path: Path | str | None = None) -> SourceCredibility:
@@ -102,10 +107,17 @@ class SourceCredibility:
             return cls(frozenset())
 
         domains: set[str] = set()
+        fact_checkers: set[str] = set()
         for key, value in raw.items():
             if key.startswith("_") or not isinstance(value, list):
                 continue
-            domains.update(_normalise_host(d) for d in value if isinstance(d, str))
+            hosts = {_normalise_host(d) for d in value if isinstance(d, str)}
+            domains.update(hosts)
+            # Every `fact_checkers_*` category, including the formerly accredited
+            # ones: a lapsed IFCN renewal does not turn a published adjudication into
+            # something else.
+            if key.startswith("fact_checkers"):
+                fact_checkers.update(hosts)
 
         user_paths: dict[str, tuple[str, ...]] = {}
         declared = raw.get(_USER_CONTENT_KEY)
@@ -116,7 +128,7 @@ class SourceCredibility:
                         p.lower() for p in prefixes if isinstance(p, str) and p.startswith("/")
                     )
 
-        return cls(frozenset(domains), user_paths)
+        return cls(frozenset(domains), user_paths, frozenset(fact_checkers))
 
     def is_credible(self, url_or_domain: str | None) -> bool:
         """Whether this source may be cited as open-web evidence."""
@@ -134,6 +146,18 @@ class SourceCredibility:
             return False
 
         return not self._is_user_content(names, url_or_domain or "")
+
+    def is_fact_checker(self, url_or_domain: str | None) -> bool:
+        """Whether this source publishes fact-checks, rather than reporting generally.
+
+        Used to classify what a page found on the open web *is*: an adjudication from a
+        verified fact-checker is the same class of evidence the fact-check API returns,
+        reached by another route, and is treated as such.
+        """
+        domain = self._domain_of(url_or_domain)
+        if not domain:
+            return False
+        return any(name in self._fact_checkers for name in _suffixes(domain))
 
     def _is_user_content(self, names: list[str], url: str) -> bool:
         """Whether the URL falls in a section of a credible host that anyone can post to."""

@@ -134,16 +134,63 @@ class TestHardDesignRules:
 
         assert decision.status is not ClaimStatus.CONTRADICTED
 
-    def test_conflicting_evidence_is_surfaced_not_averaged(self) -> None:
-        """Hard rule 7. A disagreement is reported as one, not split down the middle."""
+    def test_conflicting_evidence_of_comparable_weight_is_surfaced_not_averaged(self) -> None:
+        """Hard rule 7. A real disagreement is reported as one, not split down the middle.
+
+        "Comparable" is the qualifier: two findings of the same evidence class pointing
+        opposite ways is the case a human must look at.
+        """
         decision = decide(
             claim(independent_origin_count=5),
-            [_contradicting_factcheck(), _supporting_source()],  # type: ignore[list-item]
+            [  # type: ignore[list-item]
+                evidence(
+                    kind=EvidenceKind.CORROBORATION,
+                    direction=Direction.CONTRADICTS,
+                    tier=Tier.D,
+                    method=Method.ORIGIN_CLUSTER_COUNT,
+                ),
+                _supporting_source(),
+            ],
         )
 
         assert decision.status is ClaimStatus.UNVERIFIED
         assert decision.rule_id == "rule.conflicting_evidence"
         assert decision.conflicting
+
+    def test_a_stronger_class_of_evidence_settles_a_disagreement(self) -> None:
+        """A published adjudication outranks a page that merely reads as agreeing.
+
+        Without this, one misread source — a model quoting the myth a page states in
+        order to debunk it — could veto a fact-check and send everything to review.
+        """
+        decision = decide(
+            claim(independent_origin_count=5),
+            [_contradicting_factcheck(), _supporting_source()],  # type: ignore[list-item]
+        )
+
+        assert decision.status is ClaimStatus.CONTRADICTED
+        assert decision.rule_id == "rule.factcheck_contradiction"
+        # the dissent is not hidden: it is named in the reason and still cited
+        assert "disagree" in decision.reason
+
+    def test_only_the_protective_direction_is_resolved(self) -> None:
+        """Weaker evidence contradicting stronger support stays a question for a human:
+        the error that matters is telling someone a false claim is safe to share."""
+        decision = decide(
+            claim(independent_origin_count=5),
+            [  # type: ignore[list-item]
+                evidence(kind=EvidenceKind.FACT_CHECK, direction=Direction.SUPPORTS, tier=Tier.C),
+                evidence(
+                    kind=EvidenceKind.CORROBORATION,
+                    direction=Direction.CONTRADICTS,
+                    tier=Tier.D,
+                    method=Method.PASSAGE_ENTAILMENT,
+                ),
+            ],
+        )
+
+        assert decision.status is ClaimStatus.UNVERIFIED
+        assert decision.rule_id == "rule.conflicting_evidence"
 
     def test_weak_evidence_cannot_decide(self) -> None:
         item = evidence(basis=weak_basis())
@@ -343,3 +390,89 @@ class TestWorkedExample:
 
         assert case.action is Action.DO_NOT_SHARE
         assert case.rule_id == "rollup.contradicted_material"
+
+
+class TestContradictionByIndependentPublishers:
+    """Rule 3b: credible reporting may contradict, on the same terms support may carry.
+
+    Before this rule, only a published fact-check, an attribution check or a dated-media
+    conflict could contradict anything — so three outlets refuting a claim still left it
+    UNVERIFIED, which a reader sees as "nothing found".
+    """
+
+    @staticmethod
+    def _web(url: str, direction: Direction = Direction.CONTRADICTS) -> object:
+        return evidence(
+            kind=EvidenceKind.CORROBORATION,
+            direction=direction,
+            tier=Tier.D,
+            method=Method.PASSAGE_ENTAILMENT,
+            citation_url=url,
+        )
+
+    def test_two_independent_publishers_contradict(self) -> None:
+        decision = decide(
+            claim(),
+            [  # type: ignore[list-item]
+                self._web("https://www.bbc.com/news/article-1"),
+                self._web("https://timesofindia.indiatimes.com/india/x/articleshow/2.cms"),
+            ],
+        )
+
+        assert decision.status is ClaimStatus.CONTRADICTED
+        assert decision.rule_id == "rule.independent_contradiction"
+        assert decision.supporting_evidence_ids  # a decisive status always cites
+
+    def test_one_publisher_is_not_enough(self) -> None:
+        decision = decide(claim(), [self._web("https://www.bbc.com/news/article-1")])  # type: ignore[list-item]
+
+        assert decision.status is ClaimStatus.UNVERIFIED
+
+    def test_one_publisher_speaking_twice_is_still_one(self) -> None:
+        """Subdomains of one masthead are one origin; counting them twice would
+        manufacture the independence the rule is asking about."""
+        decision = decide(
+            claim(),
+            [  # type: ignore[list-item]
+                self._web("https://www.mayoclinic.org/diseases/x"),
+                self._web("https://newsnetwork.mayoclinic.org/discussion/y"),
+            ],
+        )
+
+        assert decision.status is ClaimStatus.UNVERIFIED
+
+    def test_a_country_suffix_does_not_collapse_publishers(self) -> None:
+        decision = decide(
+            claim(),
+            [  # type: ignore[list-item]
+                self._web("https://www.bbc.co.uk/news/1"),
+                self._web("https://www.theguardian.co.uk/news/2"),
+            ],
+        )
+
+        assert decision.status is ClaimStatus.CONTRADICTED
+
+    def test_support_gets_no_such_relaxation(self) -> None:
+        """The asymmetry is deliberate: this path may withhold sharing, never bless it."""
+        decision = decide(
+            claim(independent_origin_count=0),
+            [  # type: ignore[list-item]
+                self._web("https://www.bbc.com/news/1", Direction.SUPPORTS),
+                self._web("https://www.reuters.com/world/2", Direction.SUPPORTS),
+            ],
+        )
+
+        assert decision.status is ClaimStatus.UNVERIFIED
+        assert decision.rule_id == "rule.insufficient_origins"
+
+    def test_a_disagreement_is_still_surfaced_not_resolved(self) -> None:
+        decision = decide(
+            claim(),
+            [  # type: ignore[list-item]
+                self._web("https://www.bbc.com/news/1"),
+                self._web("https://www.reuters.com/world/2"),
+                self._web("https://www.thehindu.com/news/3", Direction.SUPPORTS),
+            ],
+        )
+
+        assert decision.rule_id == "rule.conflicting_evidence"

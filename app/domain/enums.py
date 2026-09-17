@@ -187,6 +187,10 @@ class Method(StrEnum):
     MATCHED_PAGE_DATE = "matched_page_date"
     ARCHIVE_CAPTURE = "archive_capture"
     SEARCH_SNIPPET = "search_snippet"
+    # A model read the fetched passages and the quote it returned was located, word
+    # for word, in that text. Distinct from SEARCH_SNIPPET, which is a result listing
+    # nobody opened.
+    PASSAGE_ENTAILMENT = "passage_entailment"
     DOMAIN_AGE = "domain_age"
     C2PA_VALIDATION = "c2pa_validation"
     ORIGIN_CLUSTER_COUNT = "origin_cluster_count"

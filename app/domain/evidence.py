@@ -45,6 +45,10 @@ _DECISIVE_METHODS = frozenset(
         Method.ARCHIVE_CAPTURE,
         Method.C2PA_VALIDATION,
         Method.ORIGIN_CLUSTER_COUNT,
+        # The page was fetched, read and quoted verbatim — exactly what SEARCH_SNIPPET
+        # is excluded for lacking. The quote is verified against the fetched text
+        # before the relation is kept, so a finding that reaches here is anchored.
+        Method.PASSAGE_ENTAILMENT,
     }
 )
 

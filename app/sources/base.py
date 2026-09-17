@@ -174,6 +174,12 @@ def build_evidence(
     measured. Nothing is asserted by the assembler, and `match_quality` is derived
     from the basis by the model itself — so this function cannot upgrade a finding
     even if it wanted to.
+
+    A resolver whose sources are not all one class may implement `classify(snapshot)`
+    and return the tier, kind and method for that particular source — the open-web
+    resolver reaches both verified fact-checkers and ordinary reporting. The producer
+    still decides, which is the point of declaring these on the resolver: this
+    function only asks, and has no branch that could promote a finding on its own.
     """
     if not relation.is_citable:
         return None
@@ -187,13 +193,20 @@ def build_evidence(
         char_end=relation.anchor.get("char_end"),
     )
 
+    classify = getattr(resolver, "classify", None)
+    tier, kind, method = (
+        classify(snapshot)
+        if classify is not None
+        else (resolver.tier, resolver.kind, resolver.method)
+    )
+
     return Evidence.build(
         id=f"ev:{resolver.name}:{snapshot.content_hash[:16]}:{claim_id}",
         claim_id=claim_id,
-        tier=resolver.tier,
-        kind=resolver.kind,
+        tier=tier,
+        kind=kind,
         direction=direction,
-        method=resolver.method,
+        method=method,
         finding=relation.excerpt[:400],
         citation_url=snapshot.final_url or snapshot.url,
         snapshot_id=snapshot.id,

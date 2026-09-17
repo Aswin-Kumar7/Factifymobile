@@ -11,7 +11,7 @@ guard catches the untyped caller as well.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from app.domain.claim import Claim
 from app.domain.enums import (
@@ -22,12 +22,13 @@ from app.domain.enums import (
     Importance,
     Severity,
     SourceRisk,
+    Tier,
 )
 from app.domain.evidence import Evidence
 
 # Stamped on every verdict. A cached verdict produced under older rules is therefore
 # identifiable, and the cache can refuse to serve it (M13).
-RULE_VERSION = "2026.08.1"
+RULE_VERSION = "2026.09.2"
 
 # Default number of genuinely independent origins required before corroboration can
 # support a claim. Tenant-configurable later; never below two, because one origin is
@@ -93,6 +94,41 @@ def _decisive(
     ]
 
 
+# How much authority a tier carries about a claim, mirroring the weights the strength
+# score uses. Consulted only to resolve a disagreement between classes of evidence:
+# a published adjudication (C) outranks corroborating reporting (D).
+_TIER_AUTHORITY = {Tier.A: 1.00, Tier.B: 0.90, Tier.C: 0.95, Tier.D: 0.70}
+
+
+# Second-level domains that are themselves suffixes, so `bbc.co.uk` collapses to
+# itself rather than to `co.uk`. Enough for counting publishers; this module stays
+# pure and takes no dependency on a public-suffix list.
+_SUFFIX_LABELS = frozenset({"co", "com", "org", "net", "ac", "gov", "edu", "or", "go", "ne"})
+
+
+def _publishers(evidence: list[Evidence]) -> set[str]:
+    """The distinct publishers behind a set of citations.
+
+    Counted by registrable domain, not by host: `newsnetwork.mayoclinic.org` and
+    `mayoclinic.org` are one publisher saying something twice, and counting them as
+    two would manufacture the independence the rules are asking about.
+    """
+    found: set[str] = set()
+    for item in evidence:
+        # Parsed by hand: this package may not import urllib, because a pure core is
+        # what makes a verdict reproducible from plain values (see the design-law
+        # test). Splitting a URL needs no library.
+        rest = item.citation_url.split("://", 1)[-1]
+        host = rest.split("/", 1)[0].split("?", 1)[0].split("@")[-1]
+        host = host.split(":", 1)[0].lower().removeprefix("www.")
+        labels = [label for label in host.split(".") if label]
+        if len(labels) < 2:
+            continue
+        keep = 3 if len(labels) >= 3 and labels[-2] in _SUFFIX_LABELS else 2
+        found.add(".".join(labels[-keep:]))
+    return found
+
+
 def decide(
     claim: Claim,
     evidence: list[Evidence],
@@ -132,17 +168,61 @@ def decide(
     contradicting = [
         e for e in evidence if e.direction is Direction.CONTRADICTS and e.is_decisive_capable
     ]
+    outranked = 0
     if supporting and contradicting:
-        return Decision(
-            status=ClaimStatus.UNVERIFIED,
-            rule_id="rule.conflicting_evidence",
-            reason=(
-                f"Evidence conflicts: {len(supporting)} decisive item(s) support this "
-                f"claim and {len(contradicting)} contradict it."
-            ),
-            conflicting=True,
-        )
+        strongest_for = max(_TIER_AUTHORITY[e.tier] for e in supporting)
+        strongest_against = max(_TIER_AUTHORITY[e.tier] for e in contradicting)
+        if strongest_against > strongest_for:
+            # A stronger class of evidence contradicts. Resolved rather than averaged:
+            # a published adjudication outranks a page that merely reads as agreeing,
+            # and a model that misreads one source — quoting a myth a page states in
+            # order to debunk it — should not be able to veto a fact-check.
+            #
+            # Only ever in this direction. Weaker evidence contradicting stronger
+            # support stays a genuine disagreement and goes to a human, because the
+            # error that matters is telling someone a false claim is safe to share.
+            outranked = len(supporting)
+            supporting = []
+        else:
+            return Decision(
+                status=ClaimStatus.UNVERIFIED,
+                rule_id="rule.conflicting_evidence",
+                reason=(
+                    f"Evidence conflicts: {len(supporting)} decisive item(s) support this "
+                    f"claim and {len(contradicting)} contradict it."
+                ),
+                conflicting=True,
+            )
 
+    decision = _decide_rules(
+        claim,
+        evidence,
+        supporting=supporting,
+        contradicting=contradicting,
+        min_origins=min_origins,
+    )
+    if outranked and decision.status.is_decisive:
+        # Said plainly, because the dissenting citation is attached to the claim and a
+        # reader will see it: the verdict rests on the stronger class of evidence.
+        return replace(
+            decision,
+            reason=(
+                f"{decision.reason} {outranked} source(s) of weaker evidence appear to "
+                "disagree and are cited alongside."
+            ),
+        )
+    return decision
+
+
+def _decide_rules(
+    claim: Claim,
+    evidence: list[Evidence],
+    *,
+    supporting: list[Evidence],
+    contradicting: list[Evidence],
+    min_origins: int,
+) -> Decision:
+    """The rule ladder in the fixed §9 order; the first match wins."""
     # Rule 1 — an adjudicated contradiction. The strongest claim-level finding
     # available, because someone has already done the work and published it.
     factcheck_against = _decisive(
@@ -187,6 +267,32 @@ def decide(
                 "asserted date or place."
             ),
             supporting_evidence_ids=tuple(e.id for e in context_conflict),
+        )
+
+    # Rule 3b — a contradiction carried by several independent publishers.
+    #
+    # Until this existed, only a published fact-check, an attribution check or a
+    # dated-media conflict could contradict anything. Credible reporting could not,
+    # at any volume: three outlets refuting a claim left it UNVERIFIED, which reads to
+    # a user as "we found nothing" when what was found was a refutation. Support has
+    # always been allowed to rest on independent origins (rule 4); this is the same
+    # standard applied to the other direction.
+    #
+    # The remaining asymmetry is deliberate. This path can reach CONTRADICTED, which
+    # withholds sharing, but there is no matching relaxation toward SUPPORTED:
+    # wrongly assuring someone that a false claim is safe to share is the costlier
+    # error, and syndication makes a count of publishers a weaker guarantee of
+    # independence than the corroboration signal rule 4 requires.
+    against_origins = _publishers(contradicting)
+    if len(against_origins) >= min_origins:
+        return Decision(
+            status=ClaimStatus.CONTRADICTED,
+            rule_id="rule.independent_contradiction",
+            reason=(
+                f"{len(against_origins)} independent sources contradict this claim: "
+                f"{', '.join(sorted(against_origins))}."
+            ),
+            supporting_evidence_ids=tuple(e.id for e in contradicting),
         )
 
     # Rule 5 — inside the developing-news window, silence is ambiguous. Checked
