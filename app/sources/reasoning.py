@@ -53,7 +53,7 @@ from app.sources.corpus_text import is_navigation
 logger = logging.getLogger("facify.sources.reasoning")
 
 PROVIDER = "llm"
-REASONER_VERSION = "2026.09.1"
+REASONER_VERSION = "2026.09.2"
 
 # How many passages go to the model in one call. One call per source, not one per
 # passage: the model needs to see the alternatives to judge which actually bears on
