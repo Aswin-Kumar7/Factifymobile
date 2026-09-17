@@ -737,3 +737,74 @@ class TestSupportMustBeTheArticlesOwnVoice:
         outcome = reasoner._verify(response, self._passages())
 
         assert outcome.judgements[0].relation is Relation.SUPPORTS
+
+
+class TestContradictionMustBeAboutThisClaim:
+    """ "A giant tsunami hit Mumbai last week" came back CONTRADICTED.
+
+    The three contradicting citations were NOAA on the 2004 Indian Ocean tsunami,
+    Wikipedia on Krakatoa, and a report of an earthquake in Flores. The claim is
+    merely absent from all of them, and rule 4 has always said absence of mention is
+    not contradiction. Blocking an invented disaster looks like the right answer,
+    which is exactly what makes it dangerous — the same mechanism blocks a true
+    report of a breaking event, which nothing in the corpus mentions yet either.
+    """
+
+    @staticmethod
+    def _passages() -> list[Passage]:
+        text = (
+            "The tsunami that followed killed more people than any other tsunami in "
+            "recorded history, with 227,898 dead or missing across the Indian Ocean."
+        )
+        return [Passage(index=0, text=text, char_start=0, char_end=len(text))]
+
+    def _judge(self, basis: str) -> ReasoningOutcome:
+        response = _ReasoningResponse.model_validate(
+            {
+                "judgements": [
+                    {
+                        "passage_index": 0,
+                        "relation": "CONTRADICTS",
+                        "contradiction_basis": basis,
+                        "quote": "with 227,898 dead or missing across the Indian Ocean",
+                        "reason": "r",
+                        "relevance": 0.8,
+                    }
+                ]
+            }
+        )
+        reasoner = PassageReasoner.__new__(PassageReasoner)
+        reasoner._model_id = "test"
+        return reasoner._verify(response, self._passages())
+
+    def test_a_passage_about_another_event_is_not_evidence_at_all(self) -> None:
+        """Dropped rather than demoted: a different disaster is not context either."""
+        assert self._judge("DIFFERENT_SUBJECT").judgements == ()
+
+    def test_an_explicit_denial_still_contradicts(self) -> None:
+        assert self._judge("DENIES").judgements[0].relation is Relation.CONTRADICTS
+
+    def test_an_incompatible_fact_still_contradicts(self) -> None:
+        assert self._judge("INCOMPATIBLE").judgements[0].relation is Relation.CONTRADICTS
+
+    def test_a_missing_basis_keeps_the_contradiction(self) -> None:
+        """A provider that drops the field degrades to the previous behaviour."""
+        response = _ReasoningResponse.model_validate(
+            {
+                "judgements": [
+                    {
+                        "passage_index": 0,
+                        "relation": "CONTRADICTS",
+                        "quote": "with 227,898 dead or missing across the Indian Ocean",
+                        "reason": "r",
+                        "relevance": 0.8,
+                    }
+                ]
+            }
+        )
+        reasoner = PassageReasoner.__new__(PassageReasoner)
+        reasoner._model_id = "test"
+
+        outcome = reasoner._verify(response, self._passages())
+
+        assert outcome.judgements[0].relation is Relation.CONTRADICTS

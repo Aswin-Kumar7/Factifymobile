@@ -53,7 +53,7 @@ from app.sources.corpus_text import is_navigation
 logger = logging.getLogger("facify.sources.reasoning")
 
 PROVIDER = "llm"
-REASONER_VERSION = "2026.09.2"
+REASONER_VERSION = "2026.09.3"
 
 # How many passages go to the model in one call. One call per source, not one per
 # passage: the model needs to see the alternatives to judge which actually bears on
@@ -227,6 +227,7 @@ class _Judgement(BaseModel):
     passage_index: int = Field(ge=0)
     relation: str
     asserted_by: str = "THE_ARTICLE"
+    contradiction_basis: str = "DENIES"
     quote: str = ""
     reason: str = ""
     relevance: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -269,6 +270,14 @@ _RESPONSE_SCHEMA: dict[str, Any] = {
                         "type": "string",
                         "enum": ["THE_ARTICLE", "SOMEONE_ELSE", "NOBODY"],
                     },
+                    # The same question asked of a contradiction. A passage about the
+                    # 2004 Indian Ocean tsunami was returned as CONTRADICTS for a
+                    # claim about Mumbai last week: true, in the sense that the claim
+                    # is absent from it, and worthless as evidence.
+                    "contradiction_basis": {
+                        "type": "string",
+                        "enum": ["DENIES", "INCOMPATIBLE", "DIFFERENT_SUBJECT"],
+                    },
                     "quote": {"type": "string"},
                     "reason": {"type": "string"},
                     "relevance": {"type": "number"},
@@ -277,6 +286,7 @@ _RESPONSE_SCHEMA: dict[str, Any] = {
                     "passage_index",
                     "relation",
                     "asserted_by",
+                    "contradiction_basis",
                     "quote",
                     "reason",
                     "relevance",
@@ -316,6 +326,17 @@ For each judgement:
     person, survey respondents, "posts circulating online", beliefs a study
     describes. The article is telling you what they claim, not claiming it.
   * NOBODY - the article states it in order to deny it, or nobody asserts it here.
+
+- contradiction_basis: required whenever the relation is CONTRADICTS, ignored
+  otherwise.
+  * DENIES - the passage says the claim is false, or denies the thing claimed.
+  * INCOMPATIBLE - the passage states a fact that cannot be true at the same time
+    as the claim: the same event, place, period or person, with a different
+    outcome.
+  * DIFFERENT_SUBJECT - the passage is about another event, place, time or person.
+    A report of a different disaster, a list that happens not to include this one,
+    an article from another year. Use this whenever the passage simply does not
+    address the claim, and use it freely.
 
 - quote: text copied EXACTLY from that passage, character for character, long
   enough to stand alone as evidence (at least one full sentence). Do not paraphrase,
@@ -440,6 +461,7 @@ class PassageReasoner:
         kept: list[PassageJudgement] = []
         rejected = 0
         demoted = 0
+        off_topic = 0
 
         for judgement in response.judgements:
             passage = by_index.get(judgement.passage_index)
@@ -478,6 +500,25 @@ class PassageReasoner:
                 relation = Relation.CONTEXTUALIZES
                 demoted += 1
 
+            # The same enforcement on the other side, for the same reason.
+            #
+            # "A giant tsunami hit Mumbai last week" came back CONTRADICTED — on
+            # NOAA's page about the 2004 Indian Ocean tsunami, Wikipedia on Krakatoa,
+            # and a report of an earthquake in Flores. None of them addresses Mumbai
+            # last week; the claim is merely absent from all three, and rule 4 has
+            # always said absence of mention is not contradiction.
+            #
+            # Blocking an invented disaster looks like the right answer, which is what
+            # makes this dangerous: the identical mechanism blocks a *true* report of
+            # a breaking event, because nothing in the corpus mentions it yet either.
+            # Wrongly telling someone a real earthquake did not happen is the worst
+            # failure this system has.
+            if relation is Relation.CONTRADICTS and judgement.contradiction_basis == (
+                "DIFFERENT_SUBJECT"
+            ):
+                off_topic += 1
+                continue
+
             located = verify_quote(judgement.quote, passage.text)
             if located is None:
                 rejected += 1
@@ -494,6 +535,18 @@ class PassageReasoner:
                     char_start=passage.char_start + offset,
                     char_end=passage.char_start + end,
                 )
+            )
+
+        if off_topic:
+            event(
+                logger,
+                "contradiction dropped: the passage is about a different subject",
+                module="sources.reasoning",
+                outcome="ok",
+                provider=PROVIDER,
+                model_id=self._model_id,
+                dropped=off_topic,
+                kept=len(kept),
             )
 
         if demoted:
