@@ -24,6 +24,7 @@ from app.sources.factcheck import (
     FactCheckResolver,
     parse_rating_from_title,
 )
+from app.sources.reasoning import PassageJudgement, ReasoningOutcome
 from app.sources.risk import (
     SourceRiskProfiler,
     assess_domain_age,
@@ -478,3 +479,85 @@ class TestKeywordOverlap:
         )
 
         assert overlap < 0.2
+
+
+class TestFactCheckRelevanceIsRead:
+    """A borderline adjudication is read before its rating is applied.
+
+    Embeddings carry the subject far more than the predicate, so a check of
+    "Chandrayaan sent footage of Earth" scores 0.63 against the true claim
+    "Chandrayaan landed near the south pole" — close enough to pass a gate, and its
+    False rating turned a true statement into DO_NOT_SHARE in a live run.
+    """
+
+    @staticmethod
+    def _record() -> FactCheckRecord:
+        return FactCheckRecord(
+            claim_text="India's lunar spacecraft Chandrayaan 3 sent footage of Earth",
+            normalized_text="india's lunar spacecraft chandrayaan 3 sent footage of earth",
+            url="https://factcheck.afp.com/doc.afp.com.33TA7C4",
+            rating="False",
+            publisher="AFP Fact Check",
+        )
+
+    @staticmethod
+    def _resolver(reasoner: object | None) -> FactCheckResolver:
+        return FactCheckResolver(records=[], reasoner=reasoner)  # type: ignore[arg-type]
+
+    class _Reader:
+        def __init__(self, outcome: object) -> None:
+            self._outcome = outcome
+            self.calls = 0
+
+        async def judge(self, claim_text: str, passages: list[object]) -> object:
+            self.calls += 1
+            return self._outcome
+
+    @staticmethod
+    def _outcome(relation: Relation | None) -> ReasoningOutcome:
+        if relation is None:
+            return ReasoningOutcome(judgements=(), passages_read=1)
+        return ReasoningOutcome(
+            judgements=(
+                PassageJudgement(
+                    relation=relation,
+                    quote="rated this False",
+                    reason="r",
+                    relevance=0.9,
+                    passage_index=0,
+                ),
+            ),
+            passages_read=1,
+        )
+
+    @pytest.mark.anyio
+    async def test_a_reader_that_sees_no_relation_rejects_the_rating(self) -> None:
+        reader = self._Reader(self._outcome(None))
+
+        assert not await self._resolver(reader)._addresses(claim(), self._record())
+        assert reader.calls == 1
+
+    @pytest.mark.anyio
+    async def test_an_explicit_not_relevant_also_rejects(self) -> None:
+        """`best()` ranks NOT_RELEVANT last but still returns it."""
+        reader = self._Reader(self._outcome(Relation.NOT_RELEVANT))
+
+        assert not await self._resolver(reader)._addresses(claim(), self._record())
+
+    @pytest.mark.anyio
+    async def test_a_reader_that_finds_the_claim_addressed_accepts(self) -> None:
+        reader = self._Reader(self._outcome(Relation.CONTRADICTS))
+
+        assert await self._resolver(reader)._addresses(claim(), self._record())
+
+    @pytest.mark.anyio
+    async def test_without_a_reader_the_score_decides_alone(self) -> None:
+        """Degrades open: refusing everything would disable the strongest evidence
+        class whenever no model is configured, rather than loosening one check."""
+        assert await self._resolver(None)._addresses(claim(), self._record())
+
+    @pytest.mark.anyio
+    async def test_a_reader_outage_does_not_drop_the_evidence(self) -> None:
+        reader = self._Reader(ReasoningOutcome(reason="provider failed"))
+
+        assert await self._resolver(reader)._addresses(claim(), self._record())

@@ -43,11 +43,12 @@ from app.sources.base import (
     insufficient,
     keyword_overlap,
 )
+from app.sources.reasoning import Passage, PassageReasoner
 
 logger = logging.getLogger("facify.factcheck")
 
 NAME = "factcheck"
-VERSION = "2026.08.1"
+VERSION = "2026.09.1"
 PROVIDER = "factcheck"
 
 # A fact-check must be about *this* claim before its rating means anything. Below
@@ -65,6 +66,18 @@ MIN_CLAIM_OVERLAP = 0.55
 # different claim about the same subject ("Bill Gates funds vaccines" vs "Bill Gates
 # created the virus") does not. Tuned against real fact-check pairs.
 _SEMANTIC_GATE = 0.62
+
+# Above this, the adjudication is plainly about the same claim and is taken as it
+# stands. Between the gate and here it is only a *candidate*, and the reader confirms.
+#
+# Measured cosines, this embedder, real pairs. Same claim: microchips 0.90, 5G 0.86,
+# bleach 0.75, cow urine 0.69. Different claim, same subject: "Chandrayaan sent footage
+# of Earth" against "Chandrayaan landed near the south pole" 0.63, "Bill Gates makes
+# $200bn from vaccines" against "Bill Gates created the virus" 0.59. The bands overlap —
+# 0.69 is a real match and 0.63 is not — so no single threshold separates them, because
+# an embedding carries the subject far more than the predicate. A number cannot tell
+# "landed on the Moon" from "sent footage of Earth"; reading them can.
+_CONFIDENT_MATCH = 0.82
 
 # A loose lexical prefilter for the candidate shortlist only — wide enough that a
 # paraphrase reaches the semantic gate in `relate`, which is where relevance is
@@ -191,6 +204,7 @@ class FactCheckResolver:
         endpoint: str = "",
         api_key: str = "",
         embedder: TextEmbedder | None = None,
+        reasoner: PassageReasoner | None = None,
     ) -> None:
         self._records = records
         self._governor = governor
@@ -198,6 +212,9 @@ class FactCheckResolver:
         # shared words. Without it, relevance falls back to lexical overlap, which
         # rejects most real paraphrased fact-checks.
         self._embedder = embedder
+        # Reads a borderline adjudication to confirm it is about this claim. Optional:
+        # without it the embedding gate decides alone, which is looser, not stricter.
+        self._reasoner = reasoner
         # The API path is live only when it has everywhere to go: a fetcher, an
         # endpoint and a key. Missing any of them, it stays on the local records.
         self._api_available = api_available and bool(fetcher and endpoint and api_key)
@@ -373,6 +390,16 @@ class FactCheckResolver:
                 NAME, VERSION, f"adjudicates a different claim ({metric} {score:.2f})"
             )
 
+        # A marginal match is read before it is believed. This caught a real error: an
+        # AFP check of "Chandrayaan 3 sent footage of Earth" scored 0.63 against the
+        # true claim "Chandrayaan 3 landed near the south pole", and its False rating
+        # turned a true statement into DO_NOT_SHARE. One rating wrongly attributed is
+        # the worst output this system has, so the borderline band pays for a read.
+        if score < _CONFIDENT_MATCH and not await self._addresses(claim, record):
+            return insufficient(
+                NAME, VERSION, f"adjudicates a different claim on the same subject ({score:.2f})"
+            )
+
         verdict = record.verdict
         if verdict is None:
             return insufficient(NAME, VERSION, f"rating {record.rating!r} is not one we interpret")
@@ -388,6 +415,47 @@ class FactCheckResolver:
             value=round(score, 4),
             threshold=threshold,
         )
+
+    async def _addresses(self, claim: Claim, record: FactCheckRecord) -> bool:
+        """Whether this adjudication is about *this* claim, read rather than scored.
+
+        The same reader the corpus uses, asked the same way: it is handed the
+        adjudicated claim as a passage and must find something in it bearing on ours.
+        Nothing, or an explicit "not relevant", is the answer that stops a fact-check of
+        a neighbouring claim from having its rating applied here.
+
+        Without a reader configured this returns True: the embedding gate is then the
+        only judge available, and refusing everything would silently disable the
+        strongest evidence class rather than degrade it.
+        """
+        if self._reasoner is None:
+            return True
+
+        # Built directly rather than through `split_passages`, which is for articles
+        # and drops anything under 120 characters — an adjudicated claim is one
+        # sentence, so every check silently found no passage to read and this
+        # confirmation degraded open, which is how the Chandrayaan error survived it.
+        #
+        # The rating is deliberately left out. Naming it ("rated this False") frames
+        # the question as agreement with a verdict; what is being asked is narrower:
+        # are these two statements the same claim? A different claim about the same
+        # subject reads as not relevant, which is the answer that protects the rating
+        # from being applied where its author never applied it.
+        text = f"The claim reviewed by this fact-check is: {record.claim_text}"
+        passage = Passage(index=0, text=text, char_start=0, char_end=len(text))
+        outcome = await self._reasoner.judge(claim.text, [passage])
+        if not outcome.succeeded:
+            # The reader could not run. Fall back to the score alone rather than
+            # dropping evidence because a provider was briefly unavailable.
+            return True
+
+        best = outcome.best()
+        # `best()` ranks NOT_RELEVANT last but still returns it, so the relation has to
+        # be checked rather than the presence of a judgement.
+        return best is not None and best.relation not in {
+            Relation.NOT_RELEVANT,
+            Relation.INSUFFICIENT,
+        }
 
     async def _relevance(self, claim: Claim, adjudicated: str) -> tuple[float, str, float]:
         """How well an adjudicated claim matches this one — semantic, or lexical.

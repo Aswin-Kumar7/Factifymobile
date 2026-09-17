@@ -275,6 +275,9 @@ async def build(settings: Settings) -> dict[str, Any]:
             # Semantic relevance, so a paraphrased fact-check ("Coronavirus is a result
             # of 5G") is recognised as adjudicating the claim it restates.
             embedder=embedder,
+            # And a reader for the borderline band, so a check of a neighbouring claim
+            # on the same subject cannot have its rating applied here.
+            reasoner=reasoner,
         ),
     ]
 
