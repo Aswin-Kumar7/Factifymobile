@@ -226,6 +226,7 @@ class _Judgement(BaseModel):
 
     passage_index: int = Field(ge=0)
     relation: str
+    asserted_by: str = "THE_ARTICLE"
     quote: str = ""
     reason: str = ""
     relevance: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -258,11 +259,28 @@ _RESPONSE_SCHEMA: dict[str, Any] = {
                     # No URL, no publisher, no date. The model cannot describe where
                     # this came from, only what it says — the provenance is the
                     # fetch's, and there is nowhere here to overwrite it.
+                    # Who puts their name to the statement. Asked separately from
+                    # the relation because the model answers it reliably and gets the
+                    # relation wrong: a study describing "implausible conspiracy
+                    # beliefs such as vaccines containing microchips" was read as
+                    # SUPPORTS, and so was a news report of a politician's claim.
+                    # Answered explicitly, it can be enforced in code below.
+                    "asserted_by": {
+                        "type": "string",
+                        "enum": ["THE_ARTICLE", "SOMEONE_ELSE", "NOBODY"],
+                    },
                     "quote": {"type": "string"},
                     "reason": {"type": "string"},
                     "relevance": {"type": "number"},
                 },
-                "required": ["passage_index", "relation", "quote", "reason", "relevance"],
+                "required": [
+                    "passage_index",
+                    "relation",
+                    "asserted_by",
+                    "quote",
+                    "reason",
+                    "relevance",
+                ],
             },
         }
     },
@@ -290,6 +308,14 @@ For each judgement:
   * CONTEXTUALIZES - the passage is about the same event and materially changes how
     the claim should be read, without settling it.
   * NOT_RELEVANT - same topic, different question. Use this freely.
+
+- asserted_by: who puts their name to the statement in this passage.
+  * THE_ARTICLE - the article states it as fact, in its own voice. Citing a source
+    for a fact it reports as true is still the article asserting it.
+  * SOMEONE_ELSE - the article reports that others say, believe or do it: a quoted
+    person, survey respondents, "posts circulating online", beliefs a study
+    describes. The article is telling you what they claim, not claiming it.
+  * NOBODY - the article states it in order to deny it, or nobody asserts it here.
 
 - quote: text copied EXACTLY from that passage, character for character, long
   enough to stand alone as evidence (at least one full sentence). Do not paraphrase,
@@ -413,6 +439,7 @@ class PassageReasoner:
         by_index = {p.index: p for p in passages}
         kept: list[PassageJudgement] = []
         rejected = 0
+        demoted = 0
 
         for judgement in response.judgements:
             passage = by_index.get(judgement.passage_index)
@@ -431,6 +458,26 @@ class PassageReasoner:
                 # so nothing downstream has to decide what a non-finding means.
                 continue
 
+            # Support requires the article's own voice, and this is enforced here
+            # rather than asked for in the prompt.
+            #
+            # Three live misreads share one shape: CIDRAP describing "implausible
+            # conspiracy beliefs such as the idea that vaccines contained microchips",
+            # a PMC survey listing bleach-drinking among "highly dangerous practices",
+            # and NDTV reporting an MP's claim that cow urine cures COVID — each read
+            # as SUPPORTS for the claim it was describing. The instruction already
+            # said not to; the model still answered the question it could see, because
+            # the passage does contain the sentence.
+            #
+            # Asked separately, `asserted_by` is answered correctly. So the model
+            # names the speaker and this code draws the conclusion: what someone else
+            # claims is context, never corroboration. Demoted rather than dropped,
+            # since the passage is genuinely about the claim and the conflict penalty
+            # should still see it.
+            if relation is Relation.SUPPORTS and judgement.asserted_by != "THE_ARTICLE":
+                relation = Relation.CONTEXTUALIZES
+                demoted += 1
+
             located = verify_quote(judgement.quote, passage.text)
             if located is None:
                 rejected += 1
@@ -447,6 +494,18 @@ class PassageReasoner:
                     char_start=passage.char_start + offset,
                     char_end=passage.char_start + end,
                 )
+            )
+
+        if demoted:
+            event(
+                logger,
+                "support demoted to context: the article was reporting someone else's claim",
+                module="sources.reasoning",
+                outcome="ok",
+                provider=PROVIDER,
+                model_id=self._model_id,
+                demoted=demoted,
+                kept=len(kept),
             )
 
         if rejected:

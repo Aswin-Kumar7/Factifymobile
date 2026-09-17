@@ -36,6 +36,7 @@ from app.sources.reasoning import (
     PassageJudgement,
     PassageReasoner,
     ReasoningOutcome,
+    _ReasoningResponse,
 )
 from app.sources.risk import (
     SourceRiskProfiler,
@@ -648,3 +649,91 @@ class TestTheReaderIsToldWhatItIsReading:
         await resolver.relate(claim(), snapshot)
 
         assert seen["title"] == "COVID-19 myths debunked"
+
+
+class TestSupportMustBeTheArticlesOwnVoice:
+    """Three live misreads shared one shape, and the prompt could not stop them.
+
+    CIDRAP describing "implausible conspiracy beliefs such as the idea that vaccines
+    contained microchips", a PMC survey listing bleach-drinking among "highly
+    dangerous practices", and NDTV reporting an MP's claim that cow urine cures
+    COVID — each came back as SUPPORTS for the claim it was describing, because the
+    passage really does contain the sentence. The model answers "who asserts this"
+    correctly even when it gets the relation wrong, so the answer is enforced here.
+    """
+
+    @staticmethod
+    def _response(relation: str, asserted_by: str) -> _ReasoningResponse:
+        return _ReasoningResponse.model_validate(
+            {
+                "judgements": [
+                    {
+                        "passage_index": 0,
+                        "relation": relation,
+                        "asserted_by": asserted_by,
+                        "quote": "vaccines contained microchips that could track people",
+                        "reason": "r",
+                        "relevance": 0.9,
+                    }
+                ]
+            }
+        )
+
+    @staticmethod
+    def _passages() -> list[Passage]:
+        text = (
+            "The second, smaller group adhered to implausible conspiracy beliefs such as "
+            "the idea that vaccines contained microchips that could track people."
+        )
+        return [Passage(index=0, text=text, char_start=0, char_end=len(text))]
+
+    def _judge(self, relation: str, asserted_by: str) -> ReasoningOutcome:
+        reasoner = PassageReasoner.__new__(PassageReasoner)
+        reasoner._model_id = "test"
+        return reasoner._verify(self._response(relation, asserted_by), self._passages())
+
+    def test_a_claim_the_article_only_reports_is_context_not_support(self) -> None:
+        outcome = self._judge("SUPPORTS", "SOMEONE_ELSE")
+
+        assert outcome.judgements[0].relation is Relation.CONTEXTUALIZES
+
+    def test_a_claim_nobody_asserts_is_not_support_either(self) -> None:
+        outcome = self._judge("SUPPORTS", "NOBODY")
+
+        assert outcome.judgements[0].relation is Relation.CONTEXTUALIZES
+
+    def test_the_articles_own_assertion_still_supports(self) -> None:
+        """The rule must not make support unreachable — only unearned support."""
+        outcome = self._judge("SUPPORTS", "THE_ARTICLE")
+
+        assert outcome.judgements[0].relation is Relation.SUPPORTS
+
+    def test_a_contradiction_is_untouched_by_who_said_it(self) -> None:
+        """A denial reported as a denial is still a contradiction, as the prompt says,
+        and the asymmetry is deliberate: the cautious direction is not clearing."""
+        outcome = self._judge("CONTRADICTS", "SOMEONE_ELSE")
+
+        assert outcome.judgements[0].relation is Relation.CONTRADICTS
+
+    def test_an_older_response_without_the_field_is_read_as_the_articles_voice(self) -> None:
+        """The field defaults rather than failing validation: a provider that drops an
+        enum must degrade to the previous behaviour, not to no evidence at all."""
+        response = _ReasoningResponse.model_validate(
+            {
+                "judgements": [
+                    {
+                        "passage_index": 0,
+                        "relation": "SUPPORTS",
+                        "quote": "vaccines contained microchips that could track people",
+                        "reason": "r",
+                        "relevance": 0.9,
+                    }
+                ]
+            }
+        )
+        reasoner = PassageReasoner.__new__(PassageReasoner)
+        reasoner._model_id = "test"
+
+        outcome = reasoner._verify(response, self._passages())
+
+        assert outcome.judgements[0].relation is Relation.SUPPORTS

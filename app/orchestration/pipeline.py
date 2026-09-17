@@ -628,13 +628,7 @@ class Orchestrator:
         if self._corroboration is None:
             return claim
 
-        urls = sorted(
-            {
-                e.citation_url
-                for e in evidence
-                if e.direction is Direction.SUPPORTS and e.citation_url
-            }
-        )
+        urls = sorted(_distinct_supporting_citations(evidence))
         if not urls:
             return claim
 
@@ -705,6 +699,31 @@ class Orchestrator:
         """
         outcome = await self._governor.try_acquire(provider)
         return outcome.reason.value if isinstance(outcome, Skip) else None
+
+
+def _distinct_supporting_citations(evidence: list[Evidence]) -> set[str]:
+    """Supporting citation URLs, with republished copies of one story collapsed.
+
+    Origins are what rule 4 counts, and two outlets carrying the same wire story are
+    one origin however many mastheads run it. For corpus documents the stored minhash
+    signatures settle that; for a page found on the open web there is no signature,
+    so the quote does the work instead. Two citations whose verified excerpt is the
+    same text are the same reporting, and only the first is counted.
+
+    The excerpt is the right thing to compare because it is already the part a
+    resolver proved is in the page — a shared boilerplate footer cannot merge two
+    genuinely different articles, since a footer is never what was quoted.
+    """
+    citations: dict[str, str] = {}
+    for item in evidence:
+        if item.direction is not Direction.SUPPORTS or not item.citation_url:
+            continue
+        excerpt = " ".join((item.source_excerpt or "").lower().split())
+        # Short or absent excerpts are not evidence of syndication, only of a short
+        # quote, so they are keyed by URL and always kept.
+        key = excerpt if len(excerpt) >= 120 else f"url:{item.citation_url}"
+        citations.setdefault(key, item.citation_url)
+    return set(citations.values())
 
 
 def cacheable(result: VerificationResult) -> bool:

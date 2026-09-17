@@ -25,6 +25,7 @@ from app.domain.enums import (
     Tier,
 )
 from app.domain.evidence import Evidence
+from app.domain.publishers import publishers_of
 
 # Stamped on every verdict. A cached verdict produced under older rules is therefore
 # identifiable, and the cache can refuse to serve it (M13).
@@ -103,30 +104,13 @@ _TIER_AUTHORITY = {Tier.A: 1.00, Tier.B: 0.90, Tier.C: 0.95, Tier.D: 0.70}
 # Second-level domains that are themselves suffixes, so `bbc.co.uk` collapses to
 # itself rather than to `co.uk`. Enough for counting publishers; this module stays
 # pure and takes no dependency on a public-suffix list.
-_SUFFIX_LABELS = frozenset({"co", "com", "org", "net", "ac", "gov", "edu", "or", "go", "ne"})
-
-
 def _publishers(evidence: list[Evidence]) -> set[str]:
     """The distinct publishers behind a set of citations.
 
-    Counted by registrable domain, not by host: `newsnetwork.mayoclinic.org` and
-    `mayoclinic.org` are one publisher saying something twice, and counting them as
-    two would manufacture the independence the rules are asking about.
+    Shared with the corroboration count, so the rules and the origin count cannot
+    drift apart on what "a different publisher" means.
     """
-    found: set[str] = set()
-    for item in evidence:
-        # Parsed by hand: this package may not import urllib, because a pure core is
-        # what makes a verdict reproducible from plain values (see the design-law
-        # test). Splitting a URL needs no library.
-        rest = item.citation_url.split("://", 1)[-1]
-        host = rest.split("/", 1)[0].split("?", 1)[0].split("@")[-1]
-        host = host.split(":", 1)[0].lower().removeprefix("www.")
-        labels = [label for label in host.split(".") if label]
-        if len(labels) < 2:
-            continue
-        keep = 3 if len(labels) >= 3 and labels[-2] in _SUFFIX_LABELS else 2
-        found.add(".".join(labels[-keep:]))
-    return found
+    return publishers_of([item.citation_url for item in evidence])
 
 
 def decide(

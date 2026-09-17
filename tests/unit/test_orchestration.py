@@ -11,6 +11,7 @@ Three gates are asserted here:
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
@@ -25,12 +26,13 @@ from app.api.schemas import (
     VerifyRequest,
     VerifyResponse,
 )
-from app.domain.enums import Action, ClaimStatus, ClaimType, Importance, Severity
+from app.domain.enums import Action, ClaimStatus, ClaimType, Direction, Importance, Severity
 from app.intake.normalizer import normalise_text
 from app.orchestration.pipeline import (
     Orchestrator,
     SkippedCheck,
     VerificationResult,
+    _distinct_supporting_citations,
     abstained,
     cacheable,
 )
@@ -42,9 +44,11 @@ from app.orchestration.receipt import (
     parse_receipt,
 )
 from app.orchestration.review import HumanLabel, ReviewQueue, ReviewReason, reason_for
+from app.sources.corpus import CorpusCorroboration, CorroborationSignal
 from app.verdict.engine import CaseDecision, Decision
 from app.verdict.strength import evidence_strength
 from tests.unit import factories
+from tests.unit.factories import claim, evidence
 
 pytestmark = pytest.mark.unit
 
@@ -993,3 +997,139 @@ class TestTheCacheIsAskedFirst:
 
         assert response.status_code == 200
         assert response.json()["from_cache"] is True
+
+
+class TestCountingOriginsBeyondTheCorpus:
+    """Rule 4 asks for independent origins, and the count has to see all of them.
+
+    A claim carried by the BBC, Wikipedia, the Press Information Bureau and Cornell
+    came back as "1 distinct origin across 4 documents" and abstained under
+    `rule.insufficient_origins`. `count_origins` reads stored minhash signatures, so
+    it can only speak for citations that matched a corpus row — and nothing found on
+    the open web ever does.
+    """
+
+    @staticmethod
+    def _signal(rows: list[dict[str, object]], urls: list[str]) -> CorroborationSignal:
+        class _Corpus:
+            async def _rows_for(self, _urls: list[str]) -> list[dict[str, object]]:
+                return rows
+
+            async def _corpus_size(self) -> int:
+                return 2064
+
+        corroboration = CorpusCorroboration.__new__(CorpusCorroboration)
+        corroboration._rows_for = _Corpus()._rows_for  # type: ignore[method-assign]
+        corroboration._corpus_size = _Corpus()._corpus_size  # type: ignore[method-assign]
+        return asyncio.run(corroboration.signal(claim(), citation_urls=urls))
+
+    def test_four_publishers_the_corpus_has_never_seen_are_four_origins(self) -> None:
+        signal = self._signal(
+            [],
+            [
+                "https://www.bbc.com/news/world-asia-india-1",
+                "https://en.wikipedia.org/wiki/Unified_Payments_Interface",
+                "https://pib.gov.in/PressRelease.aspx?PRID=1",
+                "https://business.cornell.edu/article/upi",
+            ],
+        )
+
+        assert signal.independent_origin_count == 4
+
+    def test_two_pages_from_one_outlet_are_one_origin(self) -> None:
+        """Counted by publisher, not by URL: one masthead twice is one origin."""
+        signal = self._signal(
+            [],
+            [
+                "https://indianexpress.com/article/one",
+                "https://indianexpress.com/article/two",
+            ],
+        )
+
+        assert signal.independent_origin_count == 1
+
+    def test_a_publisher_already_counted_in_the_corpus_is_not_counted_twice(self) -> None:
+        signal = self._signal(
+            [{"id": "1", "canonical_url": "https://www.bbc.com/news/a", "minhash_signature": None}],
+            ["https://www.bbc.com/news/a", "https://www.bbc.com/news/b"],
+        )
+
+        assert signal.independent_origin_count == 1
+
+
+class TestSyndicationIsNotIndependence:
+    """Twenty outlets running one wire story are one origin, however many mastheads.
+
+    The corpus settles this with stored signatures. A page from the open web has
+    none, so the verified quote stands in for one: two citations whose excerpt is the
+    same text are the same reporting.
+    """
+
+    def test_the_same_quote_from_two_outlets_is_counted_once(self) -> None:
+        wire = (
+            "The Reserve Bank of India said on Tuesday that the new rules would take "
+            "effect from the first of next month, and that banks had been informed of "
+            "the change in a circular issued earlier this year."
+        )
+        citations = _distinct_supporting_citations(
+            [
+                evidence(
+                    direction=Direction.SUPPORTS,
+                    citation_url="https://timesofindia.indiatimes.com/a",
+                    source_excerpt=wire,
+                ),
+                evidence(
+                    direction=Direction.SUPPORTS,
+                    citation_url="https://www.deccanherald.com/b",
+                    source_excerpt=wire,
+                ),
+            ]
+        )
+
+        assert len(citations) == 1
+
+    def test_different_reporting_from_two_outlets_is_counted_twice(self) -> None:
+        citations = _distinct_supporting_citations(
+            [
+                evidence(
+                    direction=Direction.SUPPORTS,
+                    citation_url="https://timesofindia.indiatimes.com/a",
+                    source_excerpt="The central bank confirmed the change in a circular. " * 3,
+                ),
+                evidence(
+                    direction=Direction.SUPPORTS,
+                    citation_url="https://www.deccanherald.com/b",
+                    source_excerpt="Branch managers described a rush of customers. " * 3,
+                ),
+            ]
+        )
+
+        assert len(citations) == 2
+
+    def test_a_short_quote_never_merges_two_sources(self) -> None:
+        """Below the length where identical text means anything, keep both."""
+        citations = _distinct_supporting_citations(
+            [
+                evidence(
+                    direction=Direction.SUPPORTS,
+                    citation_url="https://www.bbc.com/a",
+                    source_excerpt="It landed near the south pole.",
+                ),
+                evidence(
+                    direction=Direction.SUPPORTS,
+                    citation_url="https://www.nasa.gov/b",
+                    source_excerpt="It landed near the south pole.",
+                ),
+            ]
+        )
+
+        assert len(citations) == 2
+
+    def test_contradicting_evidence_is_not_counted_at_all(self) -> None:
+        """Only supporting citations corroborate; contradiction has its own rule."""
+        assert (
+            _distinct_supporting_citations(
+                [evidence(direction=Direction.CONTRADICTS, citation_url="https://www.bbc.com/a")]
+            )
+            == set()
+        )

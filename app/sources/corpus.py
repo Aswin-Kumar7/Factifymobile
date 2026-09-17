@@ -35,6 +35,7 @@ from typing import Any
 
 from app.domain.claim import Claim
 from app.domain.enums import EvidenceKind, Method, Relation, Tier
+from app.domain.publishers import publishers_of
 from app.embeddings.image import cosine
 from app.embeddings.text import TextEmbedder
 from app.extraction.web import extract
@@ -727,9 +728,28 @@ class CorpusCorroboration:
 
         rows = await self._rows_for(citation_urls)
 
+        # Citations the corpus has never seen still count.
+        #
+        # `count_origins` reads stored minhash signatures, so it can only speak for
+        # URLs that matched a corpus row — and everything the open-web search finds
+        # matches nothing. Those citations were dropped from the count entirely: a
+        # claim carried by the BBC, Wikipedia, the Press Information Bureau and
+        # Cornell came back as "1 distinct origin across 4 documents" and abstained
+        # under `rule.insufficient_origins`. Four publishers is precisely the
+        # corroboration rule 4 asks for.
+        #
+        # They are counted by publisher rather than by URL, so two pages from one
+        # outlet remain one origin, and a publisher already represented in the corpus
+        # rows is not counted a second time. Syndication is handled before this, in
+        # the pipeline: two outlets running one wire story quote the same sentence,
+        # and the duplicate is dropped before its URL arrives here.
+        matched = {row.get("canonical_url") for row in rows}
+        seen = publishers_of([url for url in matched if isinstance(url, str)])
+        beyond_corpus = publishers_of([url for url in citation_urls if url not in matched]) - seen
+
         return CorroborationSignal(
             document_count=len(citation_urls),
-            independent_origin_count=count_origins(rows) if rows else len(citation_urls),
+            independent_origin_count=count_origins(rows) + len(beyond_corpus),
             corpus_size=await self._corpus_size(),
         )
 
