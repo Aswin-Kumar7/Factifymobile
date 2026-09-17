@@ -43,6 +43,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.domain.enums import Relation
+from app.extraction.model_wire import WireFormat, build_call, response_text
 from app.governor.governor import ProviderUnavailable
 from app.observability.logging import event
 from app.security.fetcher import FetchResult
@@ -321,12 +322,14 @@ class PassageReasoner:
         endpoint: str,
         api_key: str,
         model_id: str,
+        api_format: WireFormat = WireFormat.GEMINI,
     ) -> None:
         self._fetcher = fetcher
         self._governor = governor
         self._endpoint = endpoint
         self._api_key = api_key
         self._model_id = model_id
+        self._api_format = api_format
 
     async def judge(self, claim_text: str, passages: list[Passage]) -> ReasoningOutcome:
         """Judge up to `MAX_PASSAGES` passages, returning only verified quotes."""
@@ -350,20 +353,32 @@ class PassageReasoner:
 
         fenced = fence(self._render(claim_text, selected), label="untrusted_source")
 
-        response = await self._fetcher.post_json(
-            self._endpoint.format(model=self._model_id),
-            self._build_request(fenced.prompt_block),
-            provider=PROVIDER,
-            headers={"x-goog-api-key": self._api_key},
+        url, headers, body = build_call(
+            fmt=self._api_format,
+            endpoint=self._endpoint,
+            model_id=self._model_id,
+            api_key=self._api_key,
+            system=_SYSTEM_INSTRUCTION,
+            user_block=fenced.prompt_block,
+            response_schema=_RESPONSE_SCHEMA,
+            # Zero, because this is classification and not composition: the same
+            # passage and claim must judge the same on Tuesday as on Monday, or the
+            # cached verdict is a lie.
+            temperature=0.0,
+            # Deliberation turned down — the single largest latency win in the reading
+            # path (measured 32.5s → 12.9s on Gemini), and safe because the task is a
+            # classification. Quality was checked before cutting it, not assumed:
+            # against four passages with known answers (a support, a contradiction, an
+            # irrelevant aside, a prompt injection) thinking-low scored 4/4.
+            thinking="low",
         )
+        response = await self._fetcher.post_json(url, body, provider=PROVIDER, headers=headers)
 
         if not isinstance(response, FetchResult):
             return ReasoningOutcome(reason=f"provider failed: {response.reason}")
 
         try:
-            payload = json.loads(
-                json.loads(response.text)["candidates"][0]["content"]["parts"][0]["text"]
-            )
+            payload = json.loads(response_text(self._api_format, json.loads(response.text)))
             validated = _ReasoningResponse.model_validate(payload)
         except (json.JSONDecodeError, ValidationError, KeyError, TypeError, IndexError) as exc:
             return ReasoningOutcome(reason=f"schema validation failed: {type(exc).__name__}")
@@ -437,36 +452,3 @@ class PassageReasoner:
             lines.append(f"[{passage.index}] {passage.text}")
             lines.append("")
         return "\n".join(lines)
-
-    def _build_request(self, prompt_block: str) -> dict[str, Any]:
-        return {
-            "systemInstruction": {"parts": [{"text": _SYSTEM_INSTRUCTION}]},
-            "contents": [{"role": "user", "parts": [{"text": prompt_block}]}],
-            "generationConfig": {
-                "responseMimeType": "application/json",
-                "responseSchema": _RESPONSE_SCHEMA,
-                # Zero, because this is a classification and not a composition. The
-                # same passage and the same claim should produce the same judgement
-                # on Tuesday as on Monday, or the cached verdict is a lie.
-                "temperature": 0.0,
-                # Thinking turned down, and this is the single largest latency win
-                # in the reading path. Measured on the same passages:
-                #
-                #     default        32.5s   2,353 thinking tokens
-                #     thinking low   12.9s           0
-                #
-                # Roughly twenty seconds of every read was invisible deliberation.
-                # Quality was checked before cutting it, not assumed — against four
-                # passages with known answers (a support, a contradiction, an
-                # irrelevant aside, and a prompt injection), thinking-low scored
-                # **4/4**: it found the contradiction, omitted the aside, and marked
-                # the injection NOT_RELEVANT.
-                #
-                # `gemini-3.1-flash-lite` runs the same probe in 2.1s but scores 3/4
-                # — it downgraded a plain SUPPORTS to CONTEXTUALIZES, which would
-                # quietly stop genuine support counting toward corroboration. Nine
-                # times faster is not worth a verdict engine that stops seeing
-                # support, so the model stays and the deliberation goes.
-                "thinkingConfig": {"thinkingLevel": "low"},
-            },
-        }

@@ -29,6 +29,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.domain.enums import ClaimType, CoverageExpectation, Importance, Severity
+from app.extraction.model_wire import WireFormat, build_call, response_text
 from app.governor.governor import Governor, ProviderUnavailable
 from app.observability.logging import event
 from app.security.fetcher import FetchResult, SecureFetcher
@@ -189,6 +190,7 @@ class LLMExtractor:
         api_key: str,
         model_id: str,
         escalation_model_id: str | None = None,
+        api_format: WireFormat = WireFormat.GEMINI,
     ) -> None:
         self._fetcher = fetcher
         self._governor = governor
@@ -196,6 +198,7 @@ class LLMExtractor:
         self._api_key = api_key
         self._model_id = model_id
         self._escalation_model_id = escalation_model_id
+        self._api_format = api_format
 
     async def extract_claims(self, text: str) -> ExtractionOutcome:
         """One call. One document. Every field at once.
@@ -239,12 +242,19 @@ class LLMExtractor:
 
         del grant
 
-        response = await self._fetcher.post_json(
-            self._endpoint.format(model=model_id),
-            self._build_request(fenced),
-            provider=PROVIDER,
-            headers={"x-goog-api-key": self._api_key},
+        url, headers, body = build_call(
+            fmt=self._api_format,
+            endpoint=self._endpoint,
+            model_id=model_id,
+            api_key=self._api_key,
+            system=_SYSTEM_INSTRUCTION,
+            # The document in a data position only, inside its nonce fence. It never
+            # touches the system instruction, and nothing is concatenated into it.
+            user_block=fenced.prompt_block,
+            response_schema=_RESPONSE_SCHEMA,
+            temperature=0.0,
         )
+        response = await self._fetcher.post_json(url, body, provider=PROVIDER, headers=headers)
 
         if not isinstance(response, FetchResult):
             return ExtractionOutcome(
@@ -274,30 +284,12 @@ class LLMExtractor:
             claims=tuple(validated.claims), model_id=model_id, injection_findings=findings
         )
 
-    def _build_request(self, fenced: FencedContent) -> dict[str, Any]:
-        """Assemble the request with external text in a data position only.
-
-        The document goes in a user part, inside its nonce fence. It never touches
-        the system instruction, and nothing is concatenated into it.
-        """
-        return {
-            "systemInstruction": {"parts": [{"text": _SYSTEM_INSTRUCTION}]},
-            "contents": [{"role": "user", "parts": [{"text": fenced.prompt_block}]}],
-            "generationConfig": {
-                "responseMimeType": "application/json",
-                # The schema is transmitted, not merely referred to. The system
-                # instruction says "the JSON described by the schema", and without
-                # this the model was being asked to match a shape it had never been
-                # shown — which it answered plausibly and differently every time,
-                # failing validation downstream.
-                "responseSchema": _RESPONSE_SCHEMA,
-                "temperature": 0.0,
-            },
-        }
-
     def _parse(self, response: FetchResult) -> dict[str, Any]:
+        # The schema is transmitted with the request (via `build_call`), not merely
+        # referred to: a model asked to match a shape it has never been shown answers
+        # plausibly and differently every time, and fails validation here.
         envelope = json.loads(response.text)
-        text = envelope["candidates"][0]["content"]["parts"][0]["text"]
+        text = response_text(self._api_format, envelope)
         parsed: dict[str, Any] = json.loads(text)
         return parsed
 

@@ -35,6 +35,7 @@ from app.embeddings.image import ImageEmbedder
 from app.embeddings.text import TextEmbedder
 from app.extraction.claims import ClaimPipeline
 from app.extraction.llm import LLMExtractor
+from app.extraction.model_wire import WireFormat
 from app.intake.normalizer import NormalisedIntake
 from app.observability.logging import event
 from app.orchestration.adapters import PoolCacheService, PoolGovernor, PoolReviewQueue
@@ -235,6 +236,7 @@ async def build(settings: Settings) -> dict[str, Any]:
             endpoint=settings.llm.endpoint,
             api_key=settings.llm.api_key.get_secret_value(),
             model_id=settings.models.extraction,
+            api_format=WireFormat(settings.llm.api_format),
         )
 
     corpus = CorpusResolver(
@@ -284,6 +286,7 @@ async def build(settings: Settings) -> dict[str, Any]:
                 endpoint=settings.llm.endpoint,
                 api_key=settings.llm.api_key.get_secret_value(),
                 model_id=settings.models.extraction,
+                api_format=WireFormat(settings.llm.api_format),
             ),
             cache=cache,  # type: ignore[arg-type]
         )

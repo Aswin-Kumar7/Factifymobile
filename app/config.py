@@ -58,6 +58,14 @@ class ProviderSettings(BaseModel):
     # `{model}` is substituted from `models.extraction` / `models.escalation`.
     endpoint: str = ""
 
+    # Which wire dialect the endpoint speaks: "gemini" (the Generative Language API's
+    # generateContent, x-goog-api-key) or "openai" (chat/completions, bearer token —
+    # Groq, OpenRouter, Azure). The model is a swappable dependency by design, so the
+    # provider is an environment change, not a code change. See app/extraction/
+    # model_wire.py. Vision (FACIFY_VISION__*) has its own block and stays whatever it
+    # is set to, because the OpenAI-compatible free tiers expose no vision model.
+    api_format: str = Field(default="gemini", pattern="^(gemini|openai)$")
+
     @model_validator(mode="after")
     def _enabled_providers_need_a_credential(self) -> Self:
         if self.enabled and self.api_key is None:
@@ -71,13 +79,15 @@ class ProviderSettings(BaseModel):
     def _bearer_endpoints_are_rejected(self) -> Self:
         """Vertex AI cannot be driven with an API key, so refuse it explicitly.
 
-        Every provider here authenticates with an `x-goog-api-key` header. Vertex AI
+        The Gemini format authenticates with an `x-goog-api-key` header. Vertex AI
         wants an OAuth bearer token from a service account, so pointing this
         configuration at `aiplatform.googleapis.com` would produce 401s on every
         call. Naming the reason at boot is worth more than a stack of auth failures
-        that look like an outage.
+        that look like an outage. Only relevant to the Gemini format: an
+        openai-format endpoint carries its own bearer token and is not Vertex.
         """
-        if self.endpoint and "aiplatform.googleapis.com" in self.endpoint:
+        is_vertex = self.endpoint and "aiplatform.googleapis.com" in self.endpoint
+        if self.api_format == "gemini" and is_vertex:
             raise ValueError(
                 "this endpoint is Vertex AI, which authenticates with an OAuth bearer "
                 "token rather than an API key. Use the Generative Language API "
