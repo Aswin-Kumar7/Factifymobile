@@ -107,7 +107,7 @@ sent today** (B6–B10), so on live results these stay empty until the backend l
 | B8 | Nothing produces `input_anchor`: the field exists from domain model to database to contract, but no resolver sets it | `app/domain/evidence.py:161` |
 | B9 | `ComponentResponse` carries no citations, although every strength component records them | `app/api/schemas.py:161`; `app/api/verify.py:171`; `app/verdict/strength.py:68` |
 | B10 | The contract has no image of the earlier publication, so a media match can show only the submitted picture | `app/api/schemas.py:122` |
-| R1 | `gemini-3-flash-preview` slow and capacity-limited (13–17s for "say ok") | provider |
+| R1 | ✅ 2026-09-17 — the LLM provider is now swappable (`FACIFY_LLM__API_FORMAT=gemini\|openai`, `app/extraction/model_wire.py`). Gemini's free tier measured 12–17s on a Hindi document and is daily-capped; `.env` is now on **Groq `openai/gpt-oss-120b`** (extraction + reasoning, ~3–4s, valid EN+HI, verified end to end through the running server). Vision/OCR stays on Gemini. Backup of the Gemini `.env` is in the session scratchpad; revert = restore it | resolved |
 | G1 | 42 commits exist only locally; GitHub has an unrelated history | git |
 
 ## Phase C — Capability, deployment, evaluation
