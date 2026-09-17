@@ -40,6 +40,7 @@ from app.sources.base import (
     insufficient,
     locate_excerpt,
 )
+from app.sources.credibility import SourceCredibility
 from app.sources.reasoning import REASONER_VERSION, PassageReasoner, split_passages
 
 logger = logging.getLogger("facify.sources.websearch")
@@ -48,9 +49,15 @@ NAME = "web_search"
 VERSION = "2026.09.1"
 PROVIDER = "web_search"
 
-# Enough results for corroboration across independent origins, few enough that reading
-# them all fits the per-request budget — each is a metered reasoning call.
+# How many credible sources to read — enough for corroboration across independent
+# origins, few enough that reading them all fits the per-request budget (each is a
+# metered reasoning call).
 _MAX_RESULTS = 5
+
+# How many results to *request* from the provider. Wider than what is read, because the
+# credibility gate drops most open-web results — a query where four of five hits are
+# blogs would otherwise leave a single credible source, too few to corroborate.
+_SEARCH_COUNT = 10
 
 
 class WebSearchResolver:
@@ -75,6 +82,7 @@ class WebSearchResolver:
         provider: str,
         endpoint: str,
         api_key: str,
+        credibility: SourceCredibility | None = None,
         max_results: int = _MAX_RESULTS,
     ) -> None:
         self._fetcher = fetcher
@@ -82,6 +90,9 @@ class WebSearchResolver:
         self._provider = provider
         self._endpoint = endpoint
         self._api_key = api_key
+        # Only credible publishers are read and cited from the open web. Junk is
+        # dropped here, before it costs a reasoning call or contradicts a real source.
+        self._credibility = credibility or SourceCredibility(frozenset())
         self._max_results = max_results
         # url -> the provider's result row, kept from the search call so snapshot and
         # relate need no second fetch — the search API already returned the content.
@@ -96,9 +107,18 @@ class WebSearchResolver:
         rows = await self._search(claim.text)
 
         shortlist: list[SourceCandidate] = []
+        dropped = 0
         for row in rows:
             url = row.get("url")
             if not url or not (row.get("content") or "").strip():
+                continue
+            # The credibility gate. An open-web page is read and cited only if its
+            # publisher is one we would cite — otherwise a conspiracy blog's "SUPPORTS"
+            # counts equally against a fact-checker's "CONTRADICTS", and the verdict
+            # engine, seeing conflict, abstains. Dropping it here is source selection,
+            # not a claim about the claim, and it never reaches the reasoner.
+            if not self._credibility.is_credible(url):
+                dropped += 1
                 continue
             self._pages[url] = row
             shortlist.append(
@@ -119,6 +139,7 @@ class WebSearchResolver:
             outcome="ok",
             provider=PROVIDER,
             candidates=len(shortlist),
+            dropped_not_credible=dropped,
         )
         return shortlist[: self._max_results]
 
@@ -214,7 +235,7 @@ class WebSearchResolver:
             self._endpoint,
             {
                 "query": query,
-                "max_results": self._max_results,
+                "max_results": _SEARCH_COUNT,
                 "search_depth": "basic",
                 "include_raw_content": False,
             },
@@ -241,7 +262,7 @@ class WebSearchResolver:
             self._endpoint,
             {
                 "query": query,
-                "numResults": self._max_results,
+                "numResults": _SEARCH_COUNT,
                 "contents": {"text": {"maxCharacters": 1200}},
             },
             provider=PROVIDER,

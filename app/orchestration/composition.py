@@ -45,6 +45,7 @@ from app.orchestration.pipeline import Orchestrator, SkippedCheck, VerificationR
 from app.security.fetcher import SecureFetcher
 from app.sources.base import SourceResolver
 from app.sources.corpus import CorpusCorroboration, CorpusResolver
+from app.sources.credibility import SourceCredibility
 from app.sources.factcheck import FactCheckRecord, FactCheckResolver, parse_rating_from_title
 from app.sources.reasoning import PassageReasoner
 from app.sources.websearch import WebSearchResolver
@@ -282,6 +283,8 @@ async def build(settings: Settings) -> dict[str, Any]:
                 api_key=settings.websearch.api_key.get_secret_value()
                 if settings.websearch.api_key
                 else "",
+                # Only credible publishers are read and cited from the open web.
+                credibility=SourceCredibility.load(),
             )
         )
 
