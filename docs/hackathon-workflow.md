@@ -119,7 +119,8 @@ FactCheck.org, the first decisive verdict from real evidence). Commits `1752754`
 | — | URL input never fetched the page | ✅ `1752754` — reads the linked article (M16), capped for token budget |
 | M27 | Google Fact Check API was a stub | ✅ `1752754` — live query wired; key was already in `.env`; httpx URL logging quieted so the `key=` param is not logged |
 | #2/#3 | Over-fragmented claims + spurious lexical matches | ✅ `a610210` — extractor forbids fragments; fragment-matches gone |
-| R1 | Gemini slow/capacity-limited | ✅ `e966a3f`/`0c1b6dd` — provider swappable; `.env` on Groq |
+| R1 | Gemini slow/capacity-limited | ✅ `e966a3f`/`0c1b6dd` — provider swappable; now on **Azure OpenAI `gpt-4.1-mini`** (Foundry deployment, GlobalStandard), measured 3.7s and ~$0.0007 per extraction call in EN and HI. Groq stays a one-line revert in `.env`. Azure for Students has 0 TPM for most models — gpt-4.1-mini was the one with quota |
+| — | Model and search calls per check | ✅ `9e8b847` — web search is a fallback (only when corpus + fact-check do not decide), capped at the 3 most important claims and 3 reads each; the verdict cache is probed before extraction; the extraction cache renews its expiry. Per check: 19 → 4 when a fact-check settles it, 19 → 13 when nothing does, up to 43 → 17 on a long article, and a repeat 1+ → 0 |
 | #5 | The one media fingerprint cites a 404 Wikimedia URL — no reproducible recycled-image positive | open — demo-data (M48); media-match path works, corpus has no positive |
 | M42 | Receipts endpoint returns 503 (unwired) | open |
 | G1 | 40+ commits local only; GitHub has an unrelated history | open |
