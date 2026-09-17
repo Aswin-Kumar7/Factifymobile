@@ -230,6 +230,7 @@ def to_response(result: VerificationResult, *, receipt_url: str | None = None) -
                         name=component.name,
                         value=component.value,
                         explanation=component.detail,
+                        citations=component.citations,
                     )
                     for component in outcome.strength.components
                 ),

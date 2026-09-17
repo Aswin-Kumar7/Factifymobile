@@ -168,6 +168,10 @@ class Ledger:
             method=item.method.value,
             match_quality=item.match_quality.value,
             match_basis=item.match_basis.model_dump(mode="json"),
+            # Persisted so the case reads back with its publisher and input anchor —
+            # a cited source with neither reads as anonymous and unplaceable.
+            publisher=item.publisher,
+            input_anchor=(item.input_anchor.model_dump(mode="json") if item.input_anchor else None),
         )
 
 
@@ -190,7 +194,9 @@ class CaseReader:
     async def get(self, case_id: UUID) -> Any:
         from app.api.schemas import (
             ClaimResponse,
+            ComponentResponse,
             EvidenceResponse,
+            InputAnchorResponse,
             MatchBasisResponse,
             SourceAnchorResponse,
             StrengthResponse,
@@ -233,10 +239,36 @@ class CaseReader:
                         reason=str(verdict["reason"]),
                         rule_id=str(verdict["rule_id"]),
                         rule_version=rule_version,
+                        # The stored strength carries its components and excluded
+                        # signals; reading back only score and band dropped the
+                        # explanation the evidence screen is built to show, and turned
+                        # a repeat check (served from cache through this reader) into a
+                        # verdict with an empty breakdown.
                         strength=StrengthResponse(
                             score=float(strength.get("score", 0.0)),
                             band=str(strength.get("band", "none")),
                             version=str(strength.get("version", "")),
+                            components=tuple(
+                                ComponentResponse(
+                                    name=str(component.get("name", "")),
+                                    value=float(component.get("value", 0.0)),
+                                    explanation=str(
+                                        component.get("detail")
+                                        or component.get("explanation")
+                                        or ""
+                                    ),
+                                    citations=tuple(component.get("citations", ())),
+                                )
+                                for component in strength.get("components", ())
+                            ),
+                            # Stored as full signal dicts (asdict of the Strength
+                            # dataclass); the wire form is the provider name only.
+                            advisory_excluded=tuple(
+                                signal.get("provider", "")
+                                if isinstance(signal, dict)
+                                else str(signal)
+                                for signal in strength.get("advisory_excluded", ())
+                            ),
                         ),
                         evidence=tuple(
                             EvidenceResponse(
@@ -252,6 +284,16 @@ class CaseReader:
                                 source_anchor=SourceAnchorResponse(**(e["source_anchor"] or {})),
                                 match_basis=MatchBasisResponse(**(e["match_basis"] or {})),
                                 match_quality=str(e["match_quality"]),
+                                # Publisher, date and input anchor are stored on the
+                                # row; dropping them made a cited source read as an
+                                # anonymous, undated one.
+                                publisher=e["publisher"],
+                                observed_at=e["observed_at"],
+                                input_anchor=(
+                                    InputAnchorResponse(**e["input_anchor"])
+                                    if e["input_anchor"]
+                                    else None
+                                ),
                             )
                             for e in evidence_rows
                         ),

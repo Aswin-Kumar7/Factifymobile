@@ -166,6 +166,10 @@ class ComponentResponse(BaseModel):
     name: str
     value: float
     explanation: str
+    # The citations this component was computed from, so a reader can tap a strength
+    # row through to the sources behind it (PLAN 1.7.7). Empty for components that
+    # rest on no specific citation (a conflict penalty, an absent-evidence term).
+    citations: tuple[str, ...] = ()
 
 
 class StrengthResponse(BaseModel):
