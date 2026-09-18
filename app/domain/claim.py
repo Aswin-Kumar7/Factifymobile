@@ -85,8 +85,22 @@ class Claim(BaseModel):
 
     @property
     def is_checkable(self) -> bool:
-        """Opinion is labelled and never fact-checked."""
-        return self.claim_type is not ClaimType.OPINION
+        """What evidence can settle. Opinion cannot, and neither can a prediction.
+
+        Prediction was missing here, and richer retrieval turned that omission into a
+        live false positive: "India will win the 2027 Cricket World Cup" came back
+        **SAFE_TO_SHARE**, carried by two outlets writing about India's prospects. The
+        extractor had typed it `PREDICTION` correctly; nothing downstream did anything
+        with that. With search snippets the claim had never gathered enough support to
+        reach a verdict, so the gap stayed hidden until the reader was given whole
+        articles.
+
+        No amount of evidence settles a statement about an event that has not happened.
+        Coverage of a forecast is evidence that the forecast was made, which is a
+        different claim, and treating the two as one is how a system ends up telling
+        someone it is safe to share a tip on a tournament nobody has played.
+        """
+        return self.claim_type not in {ClaimType.OPINION, ClaimType.PREDICTION}
 
     @property
     def is_material(self) -> bool:

@@ -476,3 +476,50 @@ class TestContradictionByIndependentPublishers:
         )
 
         assert decision.rule_id == "rule.conflicting_evidence"
+
+
+class TestAPredictionIsNotCheckable:
+    """No evidence settles a statement about something that has not happened.
+
+    This was a live false positive: "India will win the 2027 Cricket World Cup" came
+    back SAFE_TO_SHARE, carried by two outlets writing about India's prospects. The
+    extractor had typed it PREDICTION correctly and nothing downstream used that. With
+    search snippets it had never gathered enough support to reach a verdict, so richer
+    retrieval is what exposed the gap rather than caused it.
+    """
+
+    def test_a_prediction_is_never_supported_however_much_coverage_it_has(self) -> None:
+        decision = decide(
+            claim(claim_type=ClaimType.PREDICTION),
+            [
+                evidence(
+                    direction=Direction.SUPPORTS, tier=Tier.B, kind=EvidenceKind.CORROBORATION
+                ),
+                evidence(
+                    direction=Direction.SUPPORTS, tier=Tier.B, kind=EvidenceKind.CORROBORATION
+                ),
+            ],
+        )
+
+        assert decision.status is ClaimStatus.UNVERIFIED
+        assert decision.rule_id == "rule.prediction_not_checked"
+
+    def test_the_reason_says_why_rather_than_calling_it_an_opinion(self) -> None:
+        """A forecast is not an opinion, and telling a user it was read as one is wrong."""
+        decision = decide(claim(claim_type=ClaimType.PREDICTION), [])
+
+        assert "has not happened yet" in decision.reason
+        assert "opinion" not in decision.reason.lower()
+
+    def test_an_opinion_still_reports_as_an_opinion(self) -> None:
+        decision = decide(claim(claim_type=ClaimType.OPINION), [])
+
+        assert decision.rule_id == "rule.opinion_not_checked"
+
+    def test_an_ordinary_event_claim_is_unaffected(self) -> None:
+        decision = decide(
+            claim(claim_type=ClaimType.EVENT),
+            [evidence(direction=Direction.CONTRADICTS, tier=Tier.C, kind=EvidenceKind.FACT_CHECK)],
+        )
+
+        assert decision.status is ClaimStatus.CONTRADICTED

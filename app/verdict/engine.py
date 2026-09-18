@@ -17,6 +17,7 @@ from app.domain.claim import Claim
 from app.domain.enums import (
     Action,
     ClaimStatus,
+    ClaimType,
     Direction,
     EvidenceKind,
     Importance,
@@ -29,7 +30,7 @@ from app.domain.publishers import publishers_of
 
 # Stamped on every verdict. A cached verdict produced under older rules is therefore
 # identifiable, and the cache can refuse to serve it (M13).
-RULE_VERSION = "2026.09.5"
+RULE_VERSION = "2026.09.6"
 
 # Default number of genuinely independent origins required before corroboration can
 # support a claim. Tenant-configurable later; never below two, because one origin is
@@ -128,10 +129,16 @@ def decide(
     _reject_non_evidence(evidence)
 
     if not claim.is_checkable:
+        prediction = claim.claim_type is ClaimType.PREDICTION
         return Decision(
             status=ClaimStatus.UNVERIFIED,
-            rule_id="rule.opinion_not_checked",
-            reason="Labelled as opinion; opinions are not fact-checked.",
+            rule_id="rule.prediction_not_checked" if prediction else "rule.opinion_not_checked",
+            reason=(
+                "This is a claim about something that has not happened yet, so no "
+                "source can confirm or refute it."
+                if prediction
+                else "Labelled as opinion; opinions are not fact-checked."
+            ),
         )
 
     # Rule 7 (hoisted): no citable evidence means no verdict. Checked first because
