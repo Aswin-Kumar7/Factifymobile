@@ -12,6 +12,7 @@ from app.domain import (
     Action,
     ClaimStatus,
     ClaimType,
+    CoverageExpectation,
     Direction,
     EvidenceKind,
     Importance,
@@ -523,3 +524,56 @@ class TestAPredictionIsNotCheckable:
         )
 
         assert decision.status is ClaimStatus.CONTRADICTED
+
+
+class TestSilenceIsReportedWhenItMeansSomething:
+    """`coverage_expectation` was captured at extraction and read by nothing.
+
+    Its own docstring says why it exists: corroboration cannot interpret silence
+    without it, because a national claim absent from every source is meaningful and a
+    local one is not. For an invented disaster, "no source reports this" is the honest
+    thing to say — and saying nothing left the user to infer it from a citation about
+    a different disaster.
+    """
+
+    def test_a_high_coverage_claim_with_no_support_says_so(self) -> None:
+        decision = decide(
+            claim(coverage_expectation=CoverageExpectation.HIGH),
+            [
+                evidence(
+                    direction=Direction.CONTRADICTS, tier=Tier.D, kind=EvidenceKind.CORROBORATION
+                )
+            ],
+        )
+
+        assert "no source found reports it" in decision.reason
+
+    def test_a_local_claim_stays_silent_about_silence(self) -> None:
+        """A district event missing from national sources means nothing at all."""
+        decision = decide(
+            claim(coverage_expectation=CoverageExpectation.LOCAL),
+            [
+                evidence(
+                    direction=Direction.CONTRADICTS, tier=Tier.D, kind=EvidenceKind.CORROBORATION
+                )
+            ],
+        )
+
+        assert "no source found reports it" not in decision.reason
+
+    def test_a_supported_claim_is_not_told_it_is_unreported(self) -> None:
+        decision = decide(
+            claim(coverage_expectation=CoverageExpectation.HIGH),
+            [evidence(direction=Direction.SUPPORTS, tier=Tier.A, kind=EvidenceKind.PROVENANCE)],
+        )
+
+        assert "no source found reports it" not in decision.reason
+
+    def test_it_changes_the_explanation_and_never_the_status(self) -> None:
+        """A no-evidence assertion is a fact-checker's move, and doing it soundly needs
+        provenance we have not built. So: a sentence, not a verdict."""
+        loud = decide(claim(coverage_expectation=CoverageExpectation.HIGH), [])
+        quiet = decide(claim(coverage_expectation=CoverageExpectation.LOCAL), [])
+
+        assert loud.status is quiet.status
+        assert loud.rule_id == quiet.rule_id

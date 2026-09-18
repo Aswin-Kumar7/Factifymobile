@@ -18,6 +18,7 @@ from app.domain.enums import (
     Action,
     ClaimStatus,
     ClaimType,
+    CoverageExpectation,
     Direction,
     EvidenceKind,
     Importance,
@@ -30,7 +31,7 @@ from app.domain.publishers import publishers_of
 
 # Stamped on every verdict. A cached verdict produced under older rules is therefore
 # identifiable, and the cache can refuse to serve it (M13).
-RULE_VERSION = "2026.09.7"
+RULE_VERSION = "2026.09.8"
 
 # Default number of genuinely independent origins required before corroboration can
 # support a claim. Tenant-configurable later; never below two, because one origin is
@@ -112,6 +113,29 @@ def _publishers(evidence: list[Evidence]) -> set[str]:
     drift apart on what "a different publisher" means.
     """
     return publishers_of([item.citation_url for item in evidence])
+
+
+def _silence_clause(claim: Claim, supporting: list[Evidence]) -> str:
+    """What it means that nothing supports a claim this big.
+
+    `coverage_expectation` has been captured at extraction, written to the ledger and
+    read by nothing since. Its own docstring says why it exists: "corroboration cannot
+    interpret silence without it — a national claim absent from the corpus is
+    meaningful, a local one is not."
+
+    This is the smallest honest use of it. For an event that would certainly be
+    reported, the absence of any source reporting it *is* a finding, and a reader
+    deserves to be told that rather than left to infer it. It is added to the
+    explanation, never to the decision: professional fact-checkers refute roughly 7% of
+    false claims this way, but doing so soundly requires knowing that the sources
+    searched are ones that would have carried it, and that is the provenance work this
+    system has not built yet.
+
+    So: a sentence, not a verdict.
+    """
+    if supporting or claim.coverage_expectation is not CoverageExpectation.HIGH:
+        return ""
+    return " An event like this would be widely reported, and no source found reports it."
 
 
 def decide(
@@ -281,7 +305,7 @@ def _decide_rules(
             rule_id="rule.independent_contradiction",
             reason=(
                 f"{len(against_origins)} independent sources contradict this claim: "
-                f"{', '.join(sorted(against_origins))}."
+                f"{', '.join(sorted(against_origins))}.{_silence_clause(claim, supporting)}"
             ),
             supporting_evidence_ids=tuple(e.id for e in contradicting),
         )
@@ -335,7 +359,8 @@ def _decide_rules(
     return Decision(
         status=ClaimStatus.UNVERIFIED,
         rule_id="rule.no_qualifying_evidence",
-        reason="No evidence strong enough to decide this claim.",
+        reason="No evidence strong enough to decide this claim."
+        + _silence_clause(claim, supporting),
     )
 
 
