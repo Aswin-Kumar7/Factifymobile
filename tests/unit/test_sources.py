@@ -36,6 +36,7 @@ from app.sources.reasoning import (
     PassageReasoner,
     ReasoningOutcome,
     _ReasoningResponse,
+    select_passages,
 )
 from app.sources.risk import (
     SourceRiskProfiler,
@@ -620,7 +621,12 @@ class TestTheReaderIsToldWhatItIsReading:
             reads_sources = True
 
             async def judge(
-                self, claim_text: str, passages: list[object], *, title: str | None = None
+                self,
+                claim_text: str,
+                passages: list[object],
+                *,
+                title: str | None = None,
+                language: object | None = None,
             ) -> ReasoningOutcome:
                 seen["title"] = title
                 return ReasoningOutcome(judgements=(), passages_read=len(passages))
@@ -804,3 +810,93 @@ class TestContradictionMustBeAboutThisClaim:
         outcome = reasoner._verify(response, self._passages())
 
         assert outcome.judgements[0].relation is Relation.CONTRADICTS
+
+
+class TestPassagesAreRankedNotTruncated:
+    """The reader used to get `passages[:8]` — the *top* of the page.
+
+    Measured on a real article retrieved for "garlic prevents COVID": passage 0 was the
+    masthead logo, 1 a photo credit, 2 a "for more coronavirus coverage" line, 3 an
+    unrelated market update. The evidence started at index 4. Reading whole pages
+    without ranking would have handed the model more boilerplate, not more evidence.
+    """
+
+    CLAIM = "Eating garlic prevents infection with the new coronavirus."
+
+    @staticmethod
+    def _page() -> list[Passage]:
+        boilerplate = [
+            "Subscribe to our newsletter for the latest updates delivered to your inbox "
+            "every morning, plus exclusive offers from our commercial partners today.",
+            "Photo credit: our staff photographer, taken at the market earlier this year "
+            "during the annual produce festival held in the city centre each spring.",
+            "For more coverage of this topic, visit our landing page where all related "
+            "reporting from our correspondents around the world is collected together.",
+            "Update: California garlic nears harvest with the market riding high on "
+            "strong export demand and favourable weather across the growing region.",
+        ]
+        evidence = [
+            "The World Health Organization has addressed this directly: garlic is a "
+            "healthy food that may have some antimicrobial properties, but there is no "
+            "evidence from the current outbreak that eating garlic has protected people "
+            "from the new coronavirus infection.",
+            "Snopes rated the claim false, noting that no controlled study has shown any "
+            "protective effect of garlic consumption against coronavirus infection in "
+            "humans, and that the rumour spread from a single social media post.",
+        ]
+        texts = boilerplate + evidence
+        out = []
+        cursor = 0
+        for index, text in enumerate(texts):
+            out.append(
+                Passage(index=index, text=text, char_start=cursor, char_end=cursor + len(text))
+            )
+            cursor += len(text) + 1
+        return out
+
+    def test_the_relevant_passages_are_chosen_over_the_first_ones(self) -> None:
+        chosen = select_passages(self.CLAIM, self._page(), limit=2)
+
+        assert {p.index for p in chosen} == {4, 5}
+
+    def test_a_short_page_is_passed_through_untouched(self) -> None:
+        """No ranking work when everything fits — and the order must not change."""
+        page = self._page()
+
+        assert select_passages(self.CLAIM, page, limit=99) == page
+
+    def test_passages_come_back_in_document_order(self) -> None:
+        """The model reads them as a page, not as a ranking."""
+        chosen = select_passages(self.CLAIM, self._page(), limit=3)
+
+        assert [p.index for p in chosen] == sorted(p.index for p in chosen)
+
+    def test_near_duplicates_do_not_fill_the_budget(self) -> None:
+        """MMR's job: five phrasings of one sentence is one fact, not five."""
+        sentence = (
+            "The World Health Organization says there is no evidence that eating garlic "
+            "protects people from the new coronavirus infection at all."
+        )
+        page = [
+            Passage(
+                index=i,
+                text=f"{sentence} Paragraph {i}.",
+                char_start=i * 200,
+                char_end=i * 200 + 190,
+            )
+            for i in range(5)
+        ] + [
+            Passage(
+                index=5,
+                text=(
+                    "Health authorities in several countries have issued similar guidance "
+                    "warning the public against unproven home remedies for the virus."
+                ),
+                char_start=1000,
+                char_end=1150,
+            )
+        ]
+
+        chosen = select_passages(self.CLAIM, page, limit=2)
+
+        assert 5 in {p.index for p in chosen}

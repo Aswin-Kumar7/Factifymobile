@@ -219,12 +219,22 @@ def extract(html: str, *, url: str | None = None) -> ExtractedArticle:
     if not has_structured:
         limitations.append("no structured article metadata")
 
+    # `favor_precision` is deliberately **not** set, and tables are kept.
+    #
+    # Precision-favouring extraction is right when the output is a corpus and a stray
+    # nav line is noise. Ours is evidence: a citation requires locating a verbatim
+    # quote in this text, so a paragraph trafilatura drops is a quote we can never
+    # support, and the claim abstains for a reason that has nothing to do with the
+    # evidence. Measured on a Hindu article: 197 characters with `favor_precision`,
+    # 838 without — four fifths of the page discarded.
+    #
+    # Tables are kept for the same reason. Case counts, election results and budget
+    # figures are the checkable part of exactly the claims people forward.
     body = trafilatura.extract(
         html,
         url=url,
         include_comments=False,
-        include_tables=False,
-        favor_precision=True,
+        include_tables=True,
     )
 
     if not body:

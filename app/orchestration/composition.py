@@ -248,6 +248,9 @@ async def build(settings: Settings) -> dict[str, Any]:
             api_key=settings.llm.api_key.get_secret_value(),
             model_id=settings.models.extraction,
             api_format=WireFormat(settings.llm.api_format),
+            # Ranks a page's passages against the claim before any of them are read.
+            # Already loaded at startup, so this costs nothing per request.
+            embedder=embedder,
         )
 
     corpus = CorpusResolver(
