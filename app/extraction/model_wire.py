@@ -34,6 +34,7 @@ Not handled here, on purpose:
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
@@ -127,3 +128,42 @@ def response_text(fmt: WireFormat, envelope: dict[str, Any]) -> str:
     if fmt is WireFormat.GEMINI:
         return str(envelope["candidates"][0]["content"]["parts"][0]["text"])
     return str(envelope["choices"][0]["message"]["content"])
+
+
+@dataclass(frozen=True, slots=True)
+class TokenUsage:
+    """What one model call actually consumed, as the provider reported it.
+
+    Estimating this from character counts was the alternative and it is not good
+    enough to bill or budget against: the ratio varies by script, and a Devanagari
+    claim tokenises very differently from the same claim in English.
+    """
+
+    prompt: int = 0
+    completion: int = 0
+
+    @property
+    def total(self) -> int:
+        return self.prompt + self.completion
+
+
+def usage_of(fmt: WireFormat, envelope: dict[str, Any]) -> TokenUsage:
+    """Token counts from a response envelope, or zeros if the provider omitted them.
+
+    Never raises. A missing usage block is a reporting gap, not a failed call, and a
+    verdict must not depend on whether the meter was readable.
+    """
+    try:
+        if fmt is WireFormat.GEMINI:
+            block = envelope.get("usageMetadata") or {}
+            return TokenUsage(
+                prompt=int(block.get("promptTokenCount") or 0),
+                completion=int(block.get("candidatesTokenCount") or 0),
+            )
+        block = envelope.get("usage") or {}
+        return TokenUsage(
+            prompt=int(block.get("prompt_tokens") or 0),
+            completion=int(block.get("completion_tokens") or 0),
+        )
+    except (AttributeError, TypeError, ValueError):
+        return TokenUsage()

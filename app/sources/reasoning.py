@@ -44,7 +44,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.domain.enums import Relation
 from app.embeddings.image import cosine
-from app.extraction.model_wire import WireFormat, build_call, response_text
+from app.extraction.model_wire import WireFormat, build_call, response_text, usage_of
 from app.governor.governor import ProviderUnavailable
 from app.observability.logging import event
 from app.security.fetcher import FetchResult
@@ -664,7 +664,9 @@ class PassageReasoner:
             return ReasoningOutcome(reason=f"provider failed: {response.reason}")
 
         try:
-            payload = json.loads(response_text(self._api_format, json.loads(response.text)))
+            envelope = json.loads(response.text)
+            self._meter("judge", envelope, len(selected))
+            payload = json.loads(response_text(self._api_format, envelope))
             validated = _ReasoningResponse.model_validate(payload)
         except (json.JSONDecodeError, ValidationError, KeyError, TypeError, IndexError) as exc:
             return ReasoningOutcome(reason=f"schema validation failed: {type(exc).__name__}")
@@ -711,10 +713,37 @@ class PassageReasoner:
             return None
 
         try:
-            payload = json.loads(response_text(self._api_format, json.loads(response.text)))
+            envelope = json.loads(response.text)
+            self._meter("same_claim", envelope, 1)
+            payload = json.loads(response_text(self._api_format, envelope))
             return bool(payload["same_claim"])
         except (json.JSONDecodeError, KeyError, TypeError, IndexError, ValueError):
             return None
+
+    def _meter(self, call: str, envelope: dict[str, Any], passages: int) -> None:
+        """Record what this call cost, from the provider's own usage block.
+
+        Logged per call rather than summed per request, because the two questions a
+        cost line has to answer are "what does a verification cost" and "which call is
+        expensive" — and the second one needs the breakdown. Estimating tokens from
+        character counts was the alternative and it is not accurate enough to budget
+        against: a Devanagari claim tokenises very differently from its translation.
+        """
+        used = usage_of(self._api_format, envelope)
+        if not used.total:
+            return
+        event(
+            logger,
+            "model call metered",
+            module="sources.reasoning",
+            outcome="ok",
+            provider=PROVIDER,
+            model_id=self._model_id,
+            call=call,
+            prompt_tokens=used.prompt,
+            completion_tokens=used.completion,
+            passages=passages,
+        )
 
     def _verify(self, response: _ReasoningResponse, passages: list[Passage]) -> ReasoningOutcome:
         """Keep only judgements whose quote is genuinely in the passage."""

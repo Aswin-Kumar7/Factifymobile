@@ -29,7 +29,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.domain.enums import ClaimType, CoverageExpectation, Importance, Severity
-from app.extraction.model_wire import WireFormat, build_call, response_text
+from app.extraction.model_wire import WireFormat, build_call, response_text, usage_of
 from app.governor.governor import Governor, ProviderUnavailable
 from app.observability.logging import event
 from app.security.fetcher import FetchResult, SecureFetcher
@@ -295,6 +295,19 @@ class LLMExtractor:
         # referred to: a model asked to match a shape it has never been shown answers
         # plausibly and differently every time, and fails validation here.
         envelope = json.loads(response.text)
+        used = usage_of(self._api_format, envelope)
+        if used.total:
+            event(
+                logger,
+                "model call metered",
+                module="extraction.llm",
+                outcome="ok",
+                provider=PROVIDER,
+                model_id=self._model_id,
+                call="extract",
+                prompt_tokens=used.prompt,
+                completion_tokens=used.completion,
+            )
         text = response_text(self._api_format, envelope)
         parsed: dict[str, Any] = json.loads(text)
         return parsed
