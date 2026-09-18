@@ -6,14 +6,18 @@ to conclude, and why.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 
 from app.domain.enums import CoverageExpectation, Relation, SourceRisk
 from app.knowledge.clustering import OriginClusterer
+from app.security.fetcher import FetchResult
 from app.sources.attribution import find_cited_sources
 from app.sources.base import (
+    SourceCandidate,
     SourceRelation,
     SourceSnapshot,
     insufficient,
@@ -900,3 +904,127 @@ class TestPassagesAreRankedNotTruncated:
         chosen = select_passages(self.CLAIM, page, limit=2)
 
         assert 5 in {p.index for p in chosen}
+
+
+class TestThePageIsActuallyRead:
+    """The web path used to cite search snippets and call them sources.
+
+    Measured across every reader-based verdict this system had produced, the median
+    cited quote was 209 characters. A citation requires locating a verbatim quote in
+    the text we hold, so a snippet cannot support a quote that genuinely exists on the
+    page — the abstention was manufactured by the retrieval, not found in the evidence.
+    """
+
+    ARTICLE = (
+        "The World Health Organization has addressed this claim directly. Garlic is a "
+        "healthy food that may have some antimicrobial properties, but there is no "
+        "evidence from the current outbreak that eating garlic protects people from "
+        "the new coronavirus. Health authorities in several countries have issued "
+        "similar guidance warning against unproven home remedies.\n"
+    ) * 3
+
+    def _resolver(self, fetcher: object) -> WebSearchResolver:
+        resolver = WebSearchResolver(
+            fetcher=fetcher,  # type: ignore[arg-type]
+            reasoner=None,
+            provider="tavily",
+            endpoint="https://example.invalid/search",
+            api_key="k",
+        )
+        resolver._pages["https://www.who.int/a"] = {
+            "url": "https://www.who.int/a",
+            "title": "Myth busters",
+            "content": "A short snippet of a few hundred characters at most.",
+            "publisher": "who.int",
+            "published_at": None,
+        }
+        return resolver
+
+    class _Fetcher:
+        """Our own fetch: succeeds, fails, or returns a block page."""
+
+        def __init__(self, html: str | None, *, vendor: str = "") -> None:
+            self._html = html
+            self._vendor = vendor
+            self.vendor_calls = 0
+
+        async def fetch(self, url: str, *, provider: str = "web") -> object:
+            if self._html is None:
+                return SimpleNamespace(reason="blocked")
+            return FetchResult(
+                url=url,
+                final_url=url,
+                status_code=200,
+                content_type="text/html",
+                body=self._html.encode(),
+                byte_count=len(self._html),
+                fetched_at=datetime.now(UTC),
+            )
+
+        async def post_json(self, url: str, body: object, **kw: object) -> object:
+            self.vendor_calls += 1
+            payload = json.dumps({"results": [{"raw_content": self._vendor}]})
+            return FetchResult(
+                url=url,
+                final_url=url,
+                status_code=200,
+                content_type="application/json",
+                body=payload.encode(),
+                byte_count=len(payload),
+                fetched_at=datetime.now(UTC),
+            )
+
+    @pytest.mark.anyio
+    async def test_our_own_fetch_is_used_when_the_page_answers_us(self) -> None:
+        """Fourteen of twenty credible hosts do, and it costs nothing."""
+        fetcher = self._Fetcher(
+            f"<html><body><article><p>{self.ARTICLE}</p></article></body></html>"
+        )
+
+        snapshot = await self._resolver(fetcher).snapshot(
+            SourceCandidate(url="https://www.who.int/a", proposed_by="web_search:tavily")
+        )
+
+        assert snapshot is not None
+        assert snapshot.extraction_route == "web.fetched"
+        assert len(snapshot.text) > 600
+        assert fetcher.vendor_calls == 0
+
+    @pytest.mark.anyio
+    async def test_the_vendor_reads_the_pages_that_refuse_us(self) -> None:
+        """NDTV, PIB, Reuters and AP all 403 us; the vendor holds that relationship."""
+        fetcher = self._Fetcher(None, vendor=self.ARTICLE)
+
+        snapshot = await self._resolver(fetcher).snapshot(
+            SourceCandidate(url="https://www.who.int/a", proposed_by="web_search:tavily")
+        )
+
+        assert snapshot is not None
+        assert snapshot.extraction_route == "web.tavily_extract"
+        assert fetcher.vendor_calls == 1
+
+    @pytest.mark.anyio
+    async def test_a_block_page_is_not_mistaken_for_an_article(self) -> None:
+        """403 bodies are short and parse to almost nothing — that must escalate."""
+        fetcher = self._Fetcher(
+            "<html><body><h1>Access Denied</h1></body></html>", vendor=self.ARTICLE
+        )
+
+        snapshot = await self._resolver(fetcher).snapshot(
+            SourceCandidate(url="https://www.who.int/a", proposed_by="web_search:tavily")
+        )
+
+        assert snapshot is not None
+        assert snapshot.extraction_route == "web.tavily_extract"
+
+    @pytest.mark.anyio
+    async def test_the_snippet_is_the_last_rung_and_is_labelled(self) -> None:
+        """Better than nothing, but never presented as though it were the article."""
+        fetcher = self._Fetcher(None, vendor="")
+
+        snapshot = await self._resolver(fetcher).snapshot(
+            SourceCandidate(url="https://www.who.int/a", proposed_by="web_search:tavily")
+        )
+
+        assert snapshot is not None
+        assert snapshot.extraction_route == "web.snippet"

@@ -34,6 +34,7 @@ from urllib.parse import urlsplit
 
 from app.domain.claim import Claim
 from app.domain.enums import EvidenceKind, Method, Tier
+from app.extraction.web import extract
 from app.governor.governor import ProviderUnavailable, Skip
 from app.observability.logging import event
 from app.security.fetcher import FetchResult, SecureFetcher
@@ -50,13 +51,18 @@ from app.sources.reasoning import REASONER_VERSION, PassageReasoner, split_passa
 logger = logging.getLogger("facify.sources.websearch")
 
 NAME = "web_search"
-VERSION = "2026.09.2"
+VERSION = "2026.09.3"
 PROVIDER = "web_search"
 
 # How many credible sources to read. Each is a metered model call, and corroboration
 # needs two independent origins — three reads leaves one spare for a page the reasoner
 # finds irrelevant, without paying for five.
 _MAX_RESULTS = 3
+
+# Below this, what came back is a consent wall, a paywall stub or a block page rather
+# than an article, and the vendor's extraction is worth trying. Above it, our own fetch
+# already produced more text than the vendor's extract returns for the same page.
+_MIN_ARTICLE_CHARS = 600
 
 # How many results to *request* from the provider. Wider than what is read, because the
 # credibility gate drops most open-web results — a query where four of five hits are
@@ -195,30 +201,102 @@ class WebSearchResolver:
         return shortlist[: self._max_results]
 
     async def snapshot(self, candidate: SourceCandidate) -> SourceSnapshot | None:
-        """Build the snapshot from what the search API returned.
+        """Read the page — ours first, the vendor's second, the snippet last.
 
-        No second fetch: the provider already returned the page's content, and reading
-        that is what the reasoner judges. The content hash is over that text, so a
-        citation points at the exact bytes that were read.
+        This used to say "no second fetch: the provider already returned the page's
+        content". What it returned was a **search snippet**. Measured across every
+        reader-based verdict this system had ever produced, the median cited quote was
+        **209 characters** — a fragment with no surrounding text, which is what the
+        reader was asked to judge a claim against. Both classes of misreading this
+        module has been patched for are what a competent reader does with a fragment.
+
+        So the ladder, cheapest and best first:
+
+        1. **Fetch it ourselves.** Free, and richer than the vendor's extraction when it
+           works — 9,841 characters against 6,597 on the same Wikipedia page. Measured
+           over twenty credible hosts, fourteen answer us directly.
+        2. **The search vendor's extract endpoint**, for the ones that do not. Five of
+           those twenty refuse us at the edge, and they include Reuters, AP, NDTV and
+           PIB — the sources we most want. The vendor holds that relationship and we
+           pay them for it; that is the licensed route, and it is why the alternative
+           (presenting ourselves as a browser to get past a block) is not on this
+           ladder at all.
+        3. **The snippet**, which is what we had before, and is better than nothing.
+        4. Nothing, and the claim abstains — which for a page nobody can read is the
+           honest answer rather than a gap to engineer around.
+
+        Which rung produced the text is recorded in `extraction_route`, so a snippet is
+        never presented as though it were an article.
         """
         page = self._pages.get(candidate.url)
         if page is None:
             return None
-        text = (page.get("content") or "").strip()
+
+        text, route, final_url = await self._read(candidate.url)
+        if not text:
+            text = (page.get("content") or "").strip()
+            route, final_url = "web.snippet", candidate.url
         if not text:
             return None
 
         return SourceSnapshot(
             id=f"web:{hashlib.sha256(candidate.url.encode()).hexdigest()[:16]}",
             url=candidate.url,
-            final_url=candidate.url,
+            final_url=final_url or candidate.url,
             content_hash=f"sha256:{hashlib.sha256(text.encode()).hexdigest()}",
             fetched_at=datetime.now(UTC),
             text=text,
             title=page.get("title"),
             publisher=page.get("publisher"),
             published_at=page.get("published_at"),
+            extraction_route=route,
         )
+
+    async def _read(self, url: str) -> tuple[str, str, str]:
+        """Rungs one and two of the ladder. Returns (text, route, final_url)."""
+        try:
+            fetched = await self._fetcher.fetch(url, provider=PROVIDER)
+        except Exception:  # a page we cannot read is ordinary, not exceptional
+            fetched = None
+
+        if isinstance(fetched, FetchResult):
+            article = extract(fetched.text, url=url)
+            body = (article.body or "").strip()
+            if len(body) >= _MIN_ARTICLE_CHARS:
+                return body, "web.fetched", fetched.final_url or url
+
+        body = await self._vendor_extract(url)
+        if body:
+            return body, f"web.{self._provider}_extract", url
+        return "", "", url
+
+    async def _vendor_extract(self, url: str) -> str:
+        """Ask the search provider for the text of one page we could not read.
+
+        Only for the minority that refuse us, so the cost is a fraction of a request
+        rather than one per source. Exa returns page text with its search results
+        already, so there is nothing to ask for.
+        """
+        if self._provider != "tavily" or not self._api_key:
+            return ""
+
+        result = await self._fetcher.post_json(
+            "https://api.tavily.com/extract",
+            {"urls": [url], "extract_depth": "basic"},
+            provider=PROVIDER,
+            headers={"authorization": f"Bearer {self._api_key}"},
+        )
+        if not isinstance(result, FetchResult):
+            return ""
+        try:
+            payload = json.loads(result.text)
+        except json.JSONDecodeError:
+            return ""
+        for row in payload.get("results", []):
+            body = (row.get("raw_content") or "").strip()
+            if body:
+                return body
+        return ""
 
     async def relate(self, claim: Claim, snapshot: SourceSnapshot) -> SourceRelation:
         """Read the page and say what it does to the claim — the reasoner, verbatim.

@@ -74,6 +74,13 @@ class SourceSnapshot:
     published_at: datetime | None = None
     http_status: int | None = None
 
+    # How this text was obtained: our own fetch, a vendor's extraction endpoint, or a
+    # search snippet. Recorded because the three are not equivalent evidence and were
+    # being presented as though they were — a 209-character snippet cannot support a
+    # quote that genuinely exists on the page, so "we could not read this" and "the
+    # page does not say this" must stay distinguishable in the ledger.
+    extraction_route: str = ""
+
     @property
     def domain(self) -> str:
         return urlsplit(self.final_url).netloc.lower()
