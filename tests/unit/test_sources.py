@@ -12,7 +12,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.domain.enums import CoverageExpectation, Relation, SourceRisk
+from app.domain.enums import ClaimType, CoverageExpectation, Relation, SourceRisk
+from app.governor.governor import ProviderUnavailable, SkipReason
 from app.knowledge.clustering import OriginClusterer
 from app.security.fetcher import FetchResult
 from app.sources.attribution import find_cited_sources
@@ -1028,3 +1029,61 @@ class TestThePageIsActuallyRead:
 
         assert snapshot is not None
         assert snapshot.extraction_route == "web.snippet"
+
+
+class TestMediaClaimsAreNotSearchedAsText:
+    """An uploaded scam screenshot came back SAFE_TO_SHARE.
+
+    The media path generates a provenance claim in our own words — "This image has
+    been published before, at a date and by a publisher that can be cited" — and the
+    text resolvers searched that sentence. It retrieved two university library guides
+    on how to cite images and an NCBI print record, none of which had ever seen the
+    image, and two of them read as *supporting*.
+
+    Whether an image was published before is answerable by reverse-image search and
+    C2PA provenance. A text index cannot answer it and must not appear to.
+    """
+
+    @pytest.mark.anyio
+    async def test_the_web_search_does_not_run_for_a_media_claim(self) -> None:
+        calls: list[str] = []
+
+        class _Governor:
+            async def try_acquire(self, provider: str) -> object:
+                calls.append(provider)
+                raise AssertionError("a media claim must not reach the search provider")
+
+        resolver = WebSearchResolver(
+            fetcher=None,  # type: ignore[arg-type]
+            reasoner=None,
+            provider="tavily",
+            endpoint="https://example.invalid/search",
+            api_key="k",
+            governor=_Governor(),
+        )
+
+        assert await resolver.candidates(claim(claim_type=ClaimType.MEDIA)) == []
+        assert calls == []
+
+    @pytest.mark.anyio
+    async def test_an_ordinary_claim_still_reaches_the_provider(self) -> None:
+        """The guard must be about the claim type, not a blanket refusal."""
+        seen: list[str] = []
+
+        class _Governor:
+            async def try_acquire(self, provider: str) -> object:
+                seen.append(provider)
+                raise ProviderUnavailable(provider, SkipReason.CAPACITY_LIMITED)
+
+        resolver = WebSearchResolver(
+            fetcher=None,  # type: ignore[arg-type]
+            reasoner=None,
+            provider="tavily",
+            endpoint="https://example.invalid/search",
+            api_key="k",
+            governor=_Governor(),
+        )
+
+        with pytest.raises(ProviderUnavailable):
+            await resolver.candidates(claim(claim_type=ClaimType.EVENT))
+        assert seen == ["web_search"]

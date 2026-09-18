@@ -33,7 +33,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from app.domain.claim import Claim
-from app.domain.enums import EvidenceKind, Method, Tier
+from app.domain.enums import ClaimType, EvidenceKind, Method, Tier
 from app.extraction.web import extract
 from app.governor.governor import ProviderUnavailable, Skip
 from app.observability.logging import event
@@ -140,6 +140,21 @@ class WebSearchResolver:
         return Tier.D, EvidenceKind.CORROBORATION, Method.PASSAGE_ENTAILMENT
 
     async def candidates(self, claim: Claim) -> list[SourceCandidate]:
+        # A media provenance claim is not searchable text, and must never be treated as
+        # though it were.
+        #
+        # Its wording is ours, not a publisher's — "This image has been published
+        # before, at a date and by a publisher that can be cited" — so searching it
+        # retrieves pages *about how to cite images*. Live: an uploaded scam screenshot
+        # came back SAFE_TO_SHARE, corroborated by two university library citation
+        # guides and an NCBI print record, none of which had ever seen the image.
+        #
+        # Whether this image was published before is a question for reverse-image
+        # search and C2PA provenance, which is what the media resolvers answer. A text
+        # index cannot answer it, and must not appear to.
+        if claim.claim_type is ClaimType.MEDIA:
+            return []
+
         # Through the governor, like every other metered provider. This resolver was
         # written without one and spent a paid search quota that the configured caps
         # only appeared to protect: `FACIFY_WEBSEARCH__DAILY_CAP` was read into the
