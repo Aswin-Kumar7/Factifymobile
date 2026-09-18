@@ -5,6 +5,7 @@
 /// talks to the real service, so a field rename on either side fails here.
 ///
 ///   dart test test/integration/live_api_test.dart --define=FACIFY_API=http://127.0.0.1:8000
+@Tags(['integration'])
 library;
 
 import 'package:facify_mobile/api/client.dart';

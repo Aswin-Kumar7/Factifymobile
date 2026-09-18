@@ -176,6 +176,20 @@ class FacifyClient {
     return (payload['status'] as String?) ?? 'queued for human review';
   }
 
+  /// Fetch a receipt and the outcome of re-checking it against stored evidence.
+  ///
+  /// Takes the path the verdict handed us rather than building one from an id: the
+  /// server decides where its receipts live, and a client that guesses the route is
+  /// a client that breaks when the route changes. Returns null for 404 — a receipt
+  /// that does not exist is an answer, not an error.
+  Future<Receipt?> getReceipt(String receiptPath) => _guard(() async {
+    final path = receiptPath.startsWith('http') ? receiptPath : '$baseUrl$receiptPath';
+    final response = await _http.get(Uri.parse(path)).timeout(_timeout);
+    if (response.statusCode == 404) return null;
+    _raiseFor(response);
+    return Receipt.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  });
+
   /// Whether the service can actually verify, not merely whether it is up.
   /// Distinct from [healthy]: a booted service with no database answers
   /// healthz 200 and readyz false.

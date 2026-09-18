@@ -450,3 +450,45 @@ class Verdict {
   /// two: abstaining is the designed answer, not a failed one.
   bool get abstained => claims.isEmpty || claims.every((c) => !c.isDecisive);
 }
+
+/// A tamper-evident receipt for a verdict, and the result of checking it (M42).
+///
+/// The value is entirely in [verified]. A receipt that verifies says the evidence
+/// behind this verdict is byte-for-byte what was signed when the verdict was made;
+/// one that fails says it has changed since. Showing the receipt without the check
+/// would be showing a seal nobody looked at.
+class Receipt {
+  const Receipt({
+    required this.receiptId,
+    required this.caseId,
+    required this.evidenceDigest,
+    required this.issuedAt,
+    required this.action,
+    required this.evidenceCount,
+    required this.verified,
+    required this.verificationReason,
+    required this.disclaimer,
+  });
+
+  final String receiptId;
+  final String caseId;
+  final String evidenceDigest;
+  final DateTime issuedAt;
+  final String action;
+  final int evidenceCount;
+  final bool verified;
+  final String verificationReason;
+  final String disclaimer;
+
+  factory Receipt.fromJson(Map<String, dynamic> json) => Receipt(
+    receiptId: json['receipt_id'] as String,
+    caseId: json['case_id'] as String,
+    evidenceDigest: json['evidence_digest'] as String,
+    issuedAt: DateTime.parse(json['issued_at'] as String),
+    action: json['action'] as String? ?? '',
+    evidenceCount: (json['evidence_count'] as num?)?.toInt() ?? 0,
+    verified: json['verified'] as bool? ?? false,
+    verificationReason: json['verification_reason'] as String? ?? '',
+    disclaimer: json['disclaimer'] as String? ?? '',
+  );
+}

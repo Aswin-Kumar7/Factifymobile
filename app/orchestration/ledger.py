@@ -150,6 +150,7 @@ class Ledger:
             evidence_count=receipt.evidence_count,
             receipt_version=receipt.version,
         )
+        result.receipt_id = receipt.id
 
     async def _persist_claim(
         self, outcome: ClaimOutcome, *, case_id: UUID, language: str | None, action: str

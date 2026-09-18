@@ -1,0 +1,14 @@
+# Test configuration.
+#
+# The integration suites talk to a real Facify API. Run alongside each other they
+# contend for one server whose slowest path is a model call, and a request that would
+# answer in twelve seconds alone crosses the client's 45 second timeout — a failure
+# about scheduling, reported as a failure about the contract.
+#
+# The extra allowance is for that contention, not for a slow server: a verification
+# that fetches and reads several pages legitimately takes tens of seconds, and the
+# app's own client gives up at 45. The widget and unit tests keep the default.
+
+tags:
+  integration:
+    timeout: 3x

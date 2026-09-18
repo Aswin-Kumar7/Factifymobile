@@ -255,7 +255,10 @@ def to_response(result: VerificationResult, *, receipt_url: str | None = None) -
             SkippedCheckResponse(check=item.check, reason=item.reason) for item in result.skipped
         ),
         completeness_note=result.completeness_note(),
-        receipt_url=receipt_url,
+        # Offered only when one was actually issued and stored, so the link a
+        # client follows can never 404.
+        receipt_url=receipt_url
+        or (f"/v1/receipts/{result.receipt_id}" if result.receipt_id else None),
         retrieved_at=datetime.now(UTC),
         from_cache=result.from_cache,
         elapsed_ms=result.elapsed_ms,

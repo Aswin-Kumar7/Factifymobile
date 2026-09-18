@@ -178,6 +178,11 @@ class VerificationResult:
     # stored result instead of an action with nothing behind it.
     source_case_id: UUID | None = None
 
+    # Set by the ledger once a receipt has been issued and stored. Carried on the
+    # result rather than looked up by the endpoint so the response can only ever
+    # offer a receipt that actually exists.
+    receipt_id: str | None = None
+
     @property
     def evidence(self) -> list[Evidence]:
         """Every citation across every claim, in claim order."""
