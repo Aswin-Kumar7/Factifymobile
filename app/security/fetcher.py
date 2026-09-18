@@ -94,6 +94,32 @@ class FetchFailure:
     attempted_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
+def _www_variant(url: str) -> str | None:
+    """The `www.` form of a bare apex, or `None` if that is not what this URL is.
+
+    A DNS convention, not a guessing loop: one alternative, upward only, and never for
+    a name that already carries a subdomain.
+    """
+    from urllib.parse import urlsplit, urlunsplit
+
+    from app.domain.publishers import registrable_domain
+
+    try:
+        parts = urlsplit(url)
+        host = (parts.hostname or "").lower()
+    except ValueError:
+        return None
+    # An apex is a host equal to its own registrable domain. Counting dots does not
+    # work: `isro.gov.in` is an apex with two of them, because `gov.in` is a
+    # multi-label suffix, and that is precisely the case this exists for.
+    if not host or host.startswith("www.") or registrable_domain(host) != host:
+        return None
+    port = f":{parts.port}" if parts.port else ""
+    return urlunsplit(
+        (parts.scheme, f"www.{host}{port}", parts.path, parts.query, parts.fragment)
+    )
+
+
 class SecureFetcher:
     """Guarded HTTP client. Construct one per process and share it."""
 
@@ -138,9 +164,30 @@ class SecureFetcher:
             try:
                 resolve_and_validate(current)
             except BlockedDestination as blocked:
-                return self._failure(
-                    url, blocked.reason, kind="blocked", provider=provider, hop=hop
-                )
+                # A bare apex that does not resolve is often a site that publishes only
+                # `www`. `isro.gov.in` is one: no address at the apex, `www.isro.gov.in`
+                # answers over IPv6 — so we were reporting India's space agency as
+                # unreachable while checking claims about Indian space missions.
+                #
+                # The retry rewrites the URL rather than resolving one host and
+                # connecting to another, so the `www` form goes through every check
+                # from the top and the citation records the address that actually
+                # served. Tried once, only for a name with no subdomain of its own, and
+                # only when DNS was what failed — a blocked address is a decision, not
+                # a typo, and must never be retried around.
+                retry = _www_variant(current) if "does not resolve" in blocked.reason else None
+                if retry is None:
+                    return self._failure(
+                        url, blocked.reason, kind="blocked", provider=provider, hop=hop
+                    )
+                chain.append(current)
+                current = retry
+                try:
+                    resolve_and_validate(current)
+                except BlockedDestination as still_blocked:
+                    return self._failure(
+                        url, still_blocked.reason, kind="blocked", provider=provider, hop=hop
+                    )
 
             try:
                 response = await self._client.get(

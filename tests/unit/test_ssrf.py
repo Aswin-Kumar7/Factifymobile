@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.security.fetcher import _www_variant
 from app.security.ssrf import (
     BlockedDestination,
     is_blocked_address,
@@ -162,3 +163,32 @@ class TestBlockedDestinationCarriesItsReason:
             assert blocked.url == "file:///etc/passwd"
         else:
             pytest.fail("expected the fetch to be blocked")
+
+
+class TestAnApexThatOnlyPublishesWww:
+    """`isro.gov.in` has no address; `www.isro.gov.in` answers over IPv6.
+
+    We were reporting India's space agency as unreachable while checking claims about
+    Indian space missions. The retry rewrites the URL rather than resolving one host
+    and connecting to another, so the `www` form goes through every check from the top
+    and the citation records the address that actually served.
+    """
+
+    def test_a_bare_apex_offers_its_www_form(self) -> None:
+        assert _www_variant("https://isro.gov.in/a?b=1") == "https://www.isro.gov.in/a?b=1"
+
+    def test_a_multi_label_suffix_is_still_an_apex(self) -> None:
+        """Counting dots does not work: `gov.in` makes the apex two dots deep."""
+        assert _www_variant("https://pib.gov.in/") == "https://www.pib.gov.in/"
+
+    def test_a_host_that_already_has_a_subdomain_is_left_alone(self) -> None:
+        assert _www_variant("https://en.wikipedia.org/wiki/X") is None
+
+    def test_www_is_not_retried_into_www_www(self) -> None:
+        assert _www_variant("https://www.bbc.com/news") is None
+
+    def test_a_port_survives_the_rewrite(self) -> None:
+        assert _www_variant("https://example.com:8443/x") == "https://www.example.com:8443/x"
+
+    def test_nothing_is_offered_for_a_hostless_url(self) -> None:
+        assert _www_variant("https:///path") is None
