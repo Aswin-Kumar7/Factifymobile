@@ -60,6 +60,12 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  # Runs the real app on a real device. The suite under test/ exercises the client
+  # and the widgets on the host VM; this one boots the APK on the emulator, so it
+  # covers what neither can — that the app as shipped talks to the service, over
+  # the network the phone actually has.
+  integration_test:
+    sdk: flutter
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
