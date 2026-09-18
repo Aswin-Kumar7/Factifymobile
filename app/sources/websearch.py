@@ -263,12 +263,36 @@ class WebSearchResolver:
             article = extract(fetched.text, url=url)
             body = (article.body or "").strip()
             if len(body) >= _MIN_ARTICLE_CHARS:
+                self._read_event("web.fetched", url, len(body))
                 return body, "web.fetched", fetched.final_url or url
 
         body = await self._vendor_extract(url)
         if body:
-            return body, f"web.{self._provider}_extract", url
+            route = f"web.{self._provider}_extract"
+            self._read_event(route, url, len(body))
+            return body, route, url
+
+        self._read_event("web.unreadable", url, 0)
         return "", "", url
+
+    def _read_event(self, route: str, url: str, chars: int) -> None:
+        """Which rung read this page, and how much it yielded.
+
+        Logged because a ladder whose rungs are invisible cannot be tuned or trusted:
+        the share of pages falling through to the vendor is what the extract spend
+        tracks, and a sudden rise in `web.unreadable` is a publisher change, not a
+        change in the claims.
+        """
+        event(
+            logger,
+            "source read",
+            module="sources.websearch",
+            outcome="ok" if chars else "degraded",
+            provider=PROVIDER,
+            route=route,
+            chars=chars,
+            host=urlsplit(url).hostname or "",
+        )
 
     async def _vendor_extract(self, url: str) -> str:
         """Ask the search provider for the text of one page we could not read.

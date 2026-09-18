@@ -93,6 +93,11 @@ _MMR_LAMBDA = 0.75
 # two sections. One of them is evidence; the second is budget spent on nothing.
 _NEAR_DUPLICATE = 0.9
 
+# How many passages reach the dense scorer. Embedding is the one costly step in
+# passage selection and it shares a CPU with two other ONNX models; a page of 170
+# navigation fragments must not spend the request budget being vectorised.
+_EMBED_CEILING = 24
+
 
 @dataclass(frozen=True, slots=True)
 class Passage:
@@ -253,6 +258,23 @@ def select_passages(
         return passages
 
     claim_tokens = {word for word in _WORD.findall(claim_text.lower()) if len(word) > 2}
+
+    # Lexical first, and it is also the budget. Embedding is the only part of this
+    # function with a real cost, and it runs on CPU beside two other ONNX models inside
+    # a 40 second request deadline — a Wikipedia article is 29 passages and a social
+    # post can be 170, most of them navigation. So the cheap scorer shortlists and the
+    # expensive one ranks, which is the same cascade the retrieval literature settled
+    # on and 7 of 8 systems in the 2025 AVeriTeC task used. The ceiling is generous
+    # relative to `limit`, so the dense pass still has real choices to make.
+    scored = sorted(
+        range(len(passages)),
+        key=lambda i: _overlap(claim_tokens, passages[i].text),
+        reverse=True,
+    )
+    if len(passages) > _EMBED_CEILING:
+        keep = sorted(scored[:_EMBED_CEILING])
+        passages = [passages[i] for i in keep]
+
     lexical = _normalise_scores([_overlap(claim_tokens, p.text) for p in passages])
 
     vectors: list[tuple[float, ...]] | None = None
