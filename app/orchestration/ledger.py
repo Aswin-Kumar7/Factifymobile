@@ -27,12 +27,14 @@ from app.db.repositories import (
     CaseRepository,
     ClaimRepository,
     EvidenceRepository,
+    ReceiptRepository,
     SourceRepository,
     VerdictRepository,
 )
 from app.domain.evidence import Evidence
 from app.observability.logging import event
 from app.orchestration.pipeline import ClaimOutcome, VerificationResult
+from app.orchestration.receipt import ReceiptSigner, evidence_from_rows
 
 logger = logging.getLogger("facify.ledger")
 
@@ -40,7 +42,11 @@ logger = logging.getLogger("facify.ledger")
 class Ledger:
     """Writes one completed verification to the database."""
 
-    def __init__(self, conn: Any) -> None:
+    def __init__(self, conn: Any, *, signer: ReceiptSigner | None = None) -> None:
+        # Optional: without a signing key configured no receipt is issued, and the
+        # endpoint says so rather than handing out something unverifiable.
+        self._signer = signer
+        self._receipts = ReceiptRepository(conn)
         self._cases = CaseRepository(conn)
         self._claims = ClaimRepository(conn)
         self._evidence = EvidenceRepository(conn)
@@ -78,6 +84,8 @@ class Ledger:
                     action=result.action.value,
                 )
 
+            await self._issue_receipt(result)
+
         except Exception as error:
             # Deliberately swallowed. See the module docstring: the verdict stands.
             event(
@@ -100,6 +108,48 @@ class Ledger:
             evidence=len(result.evidence),
         )
         return True
+
+    async def _issue_receipt(self, result: VerificationResult) -> None:
+        """Sign this verdict's evidence, here, where that evidence is final.
+
+        Issued at write time rather than at read time on purpose. A receipt computed
+        when someone asks for it would sign whatever evidence is present at that
+        moment, so it would always verify — and a receipt that always verifies attests
+        to nothing. The gap between what was signed and what is stored now is the
+        entire mechanism.
+        """
+        if self._signer is None:
+            return
+
+        # Signed over the evidence **as stored**, read back after the write, rather
+        # than over the in-memory objects that produced it.
+        #
+        # Those are not the same values. In memory a citation carries the domain id the
+        # resolver gave it (`ev_1`); in the ledger it carries the identifier the
+        # database assigned. `canonicalise` includes the id and sorts by it, so a
+        # receipt signed before the write can never match a check made after it — the
+        # first version of this reported every receipt as tampered.
+        #
+        # Reading back is also the more honest attestation: what a receipt should
+        # certify is what a later reader will actually find.
+        rows = await self._evidence.for_case(result.case_id)
+        receipt = self._signer.issue(
+            case_id=result.case_id,
+            evidence=evidence_from_rows(rows),
+            action=result.action.value,
+            rule_version=result.rule_version,
+        )
+        await self._receipts.store(
+            receipt_id=receipt.id,
+            case_id=receipt.case_id,
+            evidence_digest=receipt.evidence_digest,
+            signature=receipt.signature,
+            issued_at=receipt.issued_at,
+            rule_version=receipt.rule_version,
+            action=receipt.action,
+            evidence_count=receipt.evidence_count,
+            receipt_version=receipt.version,
+        )
 
     async def _persist_claim(
         self, outcome: ClaimOutcome, *, case_id: UUID, language: str | None, action: str

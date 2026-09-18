@@ -25,6 +25,7 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from app.domain.evidence import Evidence
@@ -298,3 +299,100 @@ def parse_receipt(payload: dict[str, object]) -> Receipt:
 
 def dumps(receipt: Receipt) -> str:
     return json.dumps(receipt.to_payload(), sort_keys=True, separators=(",", ":"))
+
+
+class ReceiptReader:
+    """Loads a stored receipt and checks it against the evidence held now (M42).
+
+    The check runs on every read rather than being cached. A receipt that verified
+    yesterday and fails today is exactly the signal this endpoint exists to give, and
+    a cached answer would suppress it.
+    """
+
+    def __init__(self, *, database: Any, signer: ReceiptSigner) -> None:
+        self._database = database
+        self._signer = signer
+
+    async def verify(self, receipt_id: str) -> dict[str, Any] | None:
+        """The receipt, plus the outcome of checking it. `None` if there is no such id."""
+        from app.db.repositories import EvidenceRepository, ReceiptRepository
+
+        async with self._database.connection() as conn:
+            row = await ReceiptRepository(conn).by_id(receipt_id)
+            if row is None:
+                return None
+            case_id = UUID(str(row["case_id"]))
+            rows = await EvidenceRepository(conn).for_case(case_id)
+        evidence = evidence_from_rows(rows)
+
+        receipt = Receipt(
+            id=str(row["id"]),
+            case_id=case_id,
+            evidence_digest=str(row["evidence_digest"]),
+            signature=str(row["signature"]),
+            issued_at=row["issued_at"],
+            rule_version=str(row["rule_version"]),
+            action=str(row["action"]),
+            evidence_count=int(row["evidence_count"]),
+            version=str(row["receipt_version"]),
+        )
+        outcome = self._signer.verify(receipt, evidence)
+
+        event(
+            logger,
+            "receipt checked",
+            module="receipt",
+            outcome="ok" if outcome.valid else "degraded",
+            valid=outcome.valid,
+            evidence_count=len(evidence),
+        )
+
+        return {
+            "receipt_id": receipt.id,
+            "case_id": str(receipt.case_id),
+            "evidence_digest": receipt.evidence_digest,
+            "signature": receipt.signature,
+            "issued_at": receipt.issued_at,
+            "rule_version": receipt.rule_version,
+            "action": receipt.action,
+            "evidence_count": receipt.evidence_count,
+            "receipt_version": receipt.version,
+            "verified": outcome.valid,
+            "verification_reason": outcome.reason or "signature and evidence digest match",
+            "disclaimer": DISCLAIMER,
+        }
+
+
+def evidence_from_rows(rows: list[Any]) -> list[Evidence]:
+    """Rebuild evidence objects from stored rows, for re-checking a receipt.
+
+    The digest is computed over domain values, so verifying one later means
+    reconstructing those values exactly. Every field `canonicalise` reads is restored
+    here; a field it does not read is left at its default, because including more than
+    the digest covers would make this look stricter than it is.
+    """
+    from app.domain.enums import Direction, EvidenceKind, MatchQuality, Method, Tier
+    from app.domain.evidence import MatchBasis, SourceAnchor
+
+    restored: list[Evidence] = []
+    for row in rows:
+        anchor = row["source_anchor"] or {}
+        basis = row["match_basis"] or {}
+        restored.append(
+            Evidence(
+                id=str(row["id"]),
+                claim_id=str(row["claim_id"]),
+                tier=Tier(row["tier"]),
+                kind=EvidenceKind(row["kind"]),
+                direction=Direction(row["direction"]),
+                method=Method(row["method"]),
+                finding=str(row["finding"]),
+                citation_url=str(row["citation_url"]),
+                snapshot_id=str(row["snapshot_id"]),
+                source_excerpt=str(row["source_excerpt"]),
+                source_anchor=SourceAnchor(**anchor) if anchor else SourceAnchor(),
+                match_basis=MatchBasis(**basis),
+                match_quality=MatchQuality(row["match_quality"]),
+            )
+        )
+    return restored

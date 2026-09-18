@@ -388,6 +388,24 @@ class EvidenceRepository(_Repository):
         assert row is not None
         return UUID(str(row["id"]))
 
+    async def for_case(self, case_id: UUID) -> list[Row]:
+        """Every citation across every claim of one case, in a stable order.
+
+        Ordered by evidence id so a receipt check reads the set the same way the
+        digest was built — `canonicalise` sorts by id for the same reason, and a
+        comparison against a differently-ordered read would report tampering that
+        never happened.
+        """
+        return await self._all(
+            """
+            SELECT e.* FROM evidence e
+              JOIN claim c ON c.id = e.claim_id
+             WHERE c.case_id = %s
+             ORDER BY e.id
+            """,
+            (case_id,),
+        )
+
     async def for_claim(self, claim_id: UUID) -> list[Row]:
         return await self._all(
             "SELECT * FROM evidence WHERE claim_id = %s ORDER BY observed_at", (claim_id,)
@@ -1027,3 +1045,57 @@ class AuditRepository(_Repository):
 
     async def for_case(self, case_id: UUID) -> list[Row]:
         return await self._all("SELECT * FROM audit_log WHERE case_id = %s ORDER BY at", (case_id,))
+
+
+class ReceiptRepository(_Repository):
+    """Receipts (M42), stored so they can be checked against evidence later.
+
+    Recomputing a receipt at read time would produce one that always verifies, which
+    attests to nothing. The point is the gap between what was signed and what is there
+    now.
+    """
+
+    async def store(
+        self,
+        *,
+        receipt_id: str,
+        case_id: UUID,
+        evidence_digest: str,
+        signature: str,
+        issued_at: datetime,
+        rule_version: str,
+        action: str,
+        evidence_count: int,
+        receipt_version: str,
+    ) -> None:
+        # Idempotent on the content-addressed id: re-issuing an unchanged case is a
+        # no-op, and a case whose evidence changed produces a different id rather than
+        # overwriting what was already attested.
+        await self._execute(
+            """
+            INSERT INTO receipt (id, case_id, evidence_digest, signature, issued_at,
+                                 rule_version, action, evidence_count, receipt_version)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (id) DO NOTHING
+            """,
+            (
+                receipt_id,
+                case_id,
+                evidence_digest,
+                signature,
+                issued_at,
+                rule_version,
+                action,
+                evidence_count,
+                receipt_version,
+            ),
+        )
+
+    async def by_id(self, receipt_id: str) -> Row | None:
+        return await self._one("SELECT * FROM receipt WHERE id = %s", (receipt_id,))
+
+    async def latest_for_case(self, case_id: UUID) -> Row | None:
+        return await self._one(
+            "SELECT * FROM receipt WHERE case_id = %s ORDER BY issued_at DESC LIMIT 1",
+            (case_id,),
+        )

@@ -115,9 +115,7 @@ def _www_variant(url: str) -> str | None:
     if not host or host.startswith("www.") or registrable_domain(host) != host:
         return None
     port = f":{parts.port}" if parts.port else ""
-    return urlunsplit(
-        (parts.scheme, f"www.{host}{port}", parts.path, parts.query, parts.fragment)
-    )
+    return urlunsplit((parts.scheme, f"www.{host}{port}", parts.path, parts.query, parts.fragment))
 
 
 class SecureFetcher:

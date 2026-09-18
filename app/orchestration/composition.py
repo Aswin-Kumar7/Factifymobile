@@ -42,6 +42,7 @@ from app.orchestration.adapters import PoolCacheService, PoolGovernor, PoolRevie
 from app.orchestration.ledger import CaseReader, Ledger
 from app.orchestration.media import MediaVerification
 from app.orchestration.pipeline import Orchestrator, SkippedCheck, VerificationResult
+from app.orchestration.receipt import ReceiptReader, ReceiptSigner
 from app.security.fetcher import SecureFetcher
 from app.sources.base import SourceResolver
 from app.sources.corpus import CorpusCorroboration, CorpusResolver
@@ -83,11 +84,13 @@ class ServedOrchestrator:
         orchestrator: Orchestrator,
         media: MediaVerification | None = None,
         review_queue: PoolReviewQueue | None = None,
+        signer: ReceiptSigner | None = None,
     ) -> None:
         self._database = database
         self._orchestrator = orchestrator
         self._media = media
         self._review_queue = review_queue
+        self._signer = signer
 
     async def cached(self, intake: NormalisedIntake, *, case_id: UUID) -> VerificationResult | None:
         """The stored verdict for this input, probed before extraction or media work.
@@ -137,7 +140,7 @@ class ServedOrchestrator:
         # checked out here, after every fetch and model call has already finished.
         if not result.from_cache:
             async with self._database.connection() as conn:
-                written = await Ledger(conn).persist(
+                written = await Ledger(conn, signer=self._signer).persist(
                     result,
                     request_id=str(case_id),
                     input_type=intake.input_type.value,
@@ -306,6 +309,13 @@ async def build(settings: Settings) -> dict[str, Any]:
 
     review_queue = PoolReviewQueue(database)
 
+    # Receipts are issued only when a signing key is configured. Without one the
+    # endpoint reports unavailable rather than handing out something nobody can check
+    # — an unsigned receipt is a claim about a claim.
+    signer: ReceiptSigner | None = None
+    if settings.receipt_signing_key:
+        signer = ReceiptSigner(key=settings.receipt_signing_key.get_secret_value())
+
     orchestrator = Orchestrator(
         cache=cache,
         governor=governor,
@@ -330,8 +340,12 @@ async def build(settings: Settings) -> dict[str, Any]:
             orchestrator=orchestrator,
             media=MediaVerification(database=database, embedder=image_embedder),
             review_queue=review_queue,
+            signer=signer,
         ),
     }
+
+    if signer is not None:
+        state["receipt_reader"] = ReceiptReader(database=database, signer=signer)
 
     if settings.llm.enabled and settings.llm.api_key:
         # Built once. The previous shape checked a connection out and then held it
