@@ -6,6 +6,7 @@ to conclude, and why.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -1112,3 +1113,132 @@ class TestMediaClaimsAreNotSearchedAsText:
         with pytest.raises(ProviderUnavailable):
             await resolver.candidates(claim(claim_type=ClaimType.EVENT))
         assert seen == ["web_search"]
+
+
+class TestSearchingTheQuestionBehindTheClaim:
+    """The claim sentence alone retrieves the claim's topic, not a check of it.
+
+    "Doctors confirm that drinking cow urine daily cures cancer" returned a WSJ
+    video titled "Indian doctors use cow urine as medicine" and an NBC report —
+    coverage of the practice, not a word on whether it works. The reader was then
+    handed those pages and marked the claim CONTRADICTED on a Full Fact article
+    about the Cancer Act 1939.
+
+    Extraction has produced `search_phrases` for exactly this since it was written.
+    Nothing read them: the field went into the schema, the model filled it with no
+    instruction saying what for, and the conversion to `Claim` dropped it.
+    """
+
+    @staticmethod
+    def _resolver() -> WebSearchResolver:
+        return WebSearchResolver(
+            fetcher=None,  # type: ignore[arg-type]
+            reasoner=None,
+            provider="tavily",
+            endpoint="https://example.invalid/search",
+            api_key="k",
+        )
+
+    def _run(self, subject: WebSearchResolver, target: object) -> tuple[list[str], list[dict]]:
+        asked: list[str] = []
+
+        async def _search(query: str) -> list[dict]:
+            asked.append(query)
+            return [{"url": f"https://example.test/{len(asked)}", "content": "x"}]
+
+        subject._search = _search  # type: ignore[method-assign]
+        rows = asyncio.run(subject._queries(target))
+        return asked, rows
+
+    def test_the_claims_own_phrases_are_searched_alongside_it(self) -> None:
+        subject = self._resolver()
+        asked, rows = self._run(
+            subject,
+            claim(
+                text="Doctors confirm that drinking cow urine daily cures cancer.",
+                search_phrases=("does cow urine cure cancer", "cow urine cancer evidence"),
+            ),
+        )
+
+        assert asked[0] == "Doctors confirm that drinking cow urine daily cures cancer."
+        assert "does cow urine cure cancer" in asked
+        assert "cow urine cancer evidence" in asked
+        assert len(rows) == 3
+
+    def test_the_fan_out_is_capped(self) -> None:
+        """Each query is a metered call, and the marginal result falls off fast."""
+        subject = self._resolver()
+        asked, _ = self._run(
+            subject,
+            claim(search_phrases=tuple(f"a distinct query number {n}" for n in range(9))),
+        )
+
+        assert len(asked) == 3
+
+    def test_a_phrase_that_only_restates_the_claim_is_skipped(self) -> None:
+        subject = self._resolver()
+        asked, _ = self._run(
+            subject,
+            claim(text="The sky is green.", search_phrases=("the sky is green", "sky colour")),
+        )
+
+        assert asked == ["The sky is green.", "sky colour"]
+
+    def test_one_failing_query_does_not_lose_the_others(self) -> None:
+        """A search that could not run is an absence, never a failed verification."""
+        subject = self._resolver()
+        asked: list[str] = []
+
+        async def _search(query: str) -> list[dict]:
+            asked.append(query)
+            if "boom" in query:
+                raise RuntimeError("provider fell over")
+            return [{"url": "https://example.test/kept", "content": "x"}]
+
+        subject._search = _search  # type: ignore[method-assign]
+        rows = asyncio.run(
+            subject._queries(claim(text="A claim.", search_phrases=("boom query here",)))
+        )
+
+        assert len(asked) == 2
+        assert [row["url"] for row in rows] == ["https://example.test/kept"]
+
+    def test_the_same_url_from_two_queries_is_one_candidate(self) -> None:
+        subject = self._resolver()
+
+        async def _search(_query: str) -> list[dict]:
+            return [{"url": "https://example.test/same", "content": "x"}]
+
+        subject._search = _search  # type: ignore[method-assign]
+        rows = asyncio.run(
+            subject._queries(claim(text="A claim.", search_phrases=("another angle on it",)))
+        )
+
+        assert len(rows) == 1
+
+    def test_each_query_reaches_the_front_of_the_shortlist(self) -> None:
+        """Only a handful of pages are ever read, so order decides who is heard.
+
+        Concatenating the queries' results left the claim query's whole first page
+        ahead of everything else, so the supplementary queries changed the candidate
+        count and nothing else: 8 candidates became 16 and the same three pages were
+        read.
+        """
+        subject = self._resolver()
+
+        async def _search(query: str) -> list[dict]:
+            tag = "claim" if query.startswith("A claim") else query.split()[0]
+            return [{"url": f"https://example.test/{tag}/{n}", "content": "x"} for n in range(5)]
+
+        subject._search = _search  # type: ignore[method-assign]
+        rows = asyncio.run(
+            subject._queries(
+                claim(text="A claim.", search_phrases=("beta question here", "gamma question here"))
+            )
+        )
+
+        assert [row["url"] for row in rows[:3]] == [
+            "https://example.test/claim/0",
+            "https://example.test/beta/0",
+            "https://example.test/gamma/0",
+        ]

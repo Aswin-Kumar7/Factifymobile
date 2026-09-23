@@ -41,7 +41,7 @@ PROVIDER = "llm"
 
 # Bumped whenever the prompt or the schema changes, because either changes what the
 # same document extracts to — and the extraction cache is keyed on it.
-EXTRACTOR_VERSION = "2026.09.1"
+EXTRACTOR_VERSION = "2026.09.2"
 
 MAX_CLAIMS_PER_DOCUMENT = 7
 
@@ -124,7 +124,16 @@ _SYSTEM_INSTRUCTION = (
     "that evidence can address, so classify them by what they assert — a health "
     "claim is an EVENT or STATISTIC, not an OPINION. "
     "Misfiling a false factual claim as OPINION removes it from checking entirely, "
-    "which is the one outcome this extraction must never produce."
+    "which is the one outcome this extraction must never produce. "
+    "search_phrases: two or three short web queries that would find published "
+    "sources ADDRESSING this claim, in either direction. The claim's own sentence "
+    "is already searched, and on its own it retrieves the topic rather than any "
+    "check of it: 'doctors confirm drinking cow urine daily cures cancer' returns "
+    "reports of people doing it. Give the underlying question and the words a check "
+    "would carry - 'does cow urine cure cancer', 'cow urine cancer treatment "
+    "evidence', 'cow urine cancer fact check'. Keep each under eight words, use the "
+    "claim's own entities and plain nouns, no quotation marks, and never phrase one "
+    "so that it presumes an answer."
 )
 
 

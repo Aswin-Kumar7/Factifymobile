@@ -120,6 +120,7 @@ def _to_claim(
         importance=proposal.importance,
         coverage_expectation=proposal.coverage_expectation,
         entities=tuple(proposal.entities),
+        search_phrases=tuple(proposal.search_phrases),
         location=proposal.location,
         language=language,
         anchor=ClaimAnchor(

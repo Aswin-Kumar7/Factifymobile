@@ -74,6 +74,10 @@ class Claim(BaseModel):
     language: str | None = None
     coverage_expectation: CoverageExpectation | None = None
     entities: tuple[str, ...] = ()
+
+    # Queries that would find sources addressing this claim, from extraction. The
+    # claim's own sentence retrieves its topic; these ask the question behind it.
+    search_phrases: tuple[str, ...] = ()
     location: str | None = None
 
     # Set by the corroboration and source-risk tracks. They are inputs to the rules,

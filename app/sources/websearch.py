@@ -25,6 +25,7 @@ precisely the discipline a search-and-summarise tool skips.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -50,6 +51,9 @@ from app.sources.reasoning import REASONER_VERSION, PassageReasoner, split_passa
 
 logger = logging.getLogger("facify.sources.websearch")
 
+# The claim itself plus at most two of its search phrases.
+_MAX_QUERIES = 3
+
 NAME = "web_search"
 VERSION = "2026.09.3"
 PROVIDER = "web_search"
@@ -57,7 +61,7 @@ PROVIDER = "web_search"
 # How many credible sources to read. Each is a metered model call, and corroboration
 # needs two independent origins — three reads leaves one spare for a page the reasoner
 # finds irrelevant, without paying for five.
-_MAX_RESULTS = 3
+_MAX_RESULTS = 5
 
 # Below this, what came back is a consent wall, a paywall stub or a block page rather
 # than an article, and the vendor's extraction is worth trying. Above it, our own fetch
@@ -176,7 +180,7 @@ class WebSearchResolver:
                 )
                 raise ProviderUnavailable(PROVIDER, outcome.reason)
 
-        rows = await self._search(claim.text)
+        rows = await self._queries(claim)
 
         shortlist: list[SourceCandidate] = []
         dropped = 0
@@ -395,6 +399,81 @@ class WebSearchResolver:
         )
 
     # ---------------------------------------------------------------- providers
+
+    async def _queries(self, claim: Claim) -> list[dict[str, Any]]:
+        """Search the claim, and the questions behind it, and merge what comes back.
+
+        Searching the claim sentence alone retrieves its *topic*. For "Doctors
+        confirm that drinking cow urine daily cures cancer" the index returned a
+        WSJ video titled "Indian doctors use cow urine as medicine" and an NBC
+        report — coverage of the practice, not one word on whether it works. The
+        published medical answers exist; nothing asked for them. Meanwhile a reader
+        saw the claim marked CONTRADICTED on a page about the Cancer Act 1939,
+        because the reader was given whatever the topical search returned.
+
+        Extraction has always produced `search_phrases` for exactly this and nothing
+        ever read them — the field was written into the schema, filled by the model
+        with no instruction saying what for, and dropped on the way to `Claim`.
+
+        Capped at two extra queries. Each is a metered call, the governor charges
+        one acquisition for the resolver rather than per query, and the marginal
+        result falls off quickly.
+        """
+        def _comparable(value: str) -> str:
+            return " ".join(value.split()).strip(" .!?।").casefold()
+
+        claim_text = _comparable(claim.text)
+
+        queries = [claim.text]
+        for raw in claim.search_phrases:
+            phrase = " ".join(raw.split())
+            # A phrase that merely restates the claim buys nothing and costs a call.
+            # Compared without trailing punctuation, since the claim is a sentence
+            # and a phrase is not: "the sky is green" and "The sky is green." are
+            # the same query.
+            if len(phrase) < 8 or _comparable(phrase) == claim_text:
+                continue
+            queries.append(phrase)
+            if len(queries) >= _MAX_QUERIES:
+                break
+
+        gathered = await asyncio.gather(
+            *(self._search(query) for query in queries), return_exceptions=True
+        )
+
+        # Interleaved, not concatenated: one row from each query in turn.
+        #
+        # Concatenating looks equivalent and is not. Only `_MAX_RESULTS` pages are
+        # ever read, so putting the claim query's whole page of results first means
+        # the supplementary queries contribute nothing at all — measured, the fan-out
+        # lifted 8 candidates to 16 and the three pages actually read did not change.
+        # Round-robin gives each query a place at the front, which is the entire
+        # point of asking more than one.
+        #
+        # Provider scores are comparable only within one response, so there is no
+        # meaningful cross-query ranking to sort by instead. A URL two queries both
+        # return keeps its earliest position, which is a mild vote for agreement.
+        merged: dict[str, dict[str, Any]] = {}
+        results = [r for r in gathered if not isinstance(r, BaseException)]
+        for rank in range(max((len(r) for r in results), default=0)):
+            for result in results:
+                if rank >= len(result):
+                    continue
+                row = result[rank]
+                url = row.get("url")
+                if isinstance(url, str) and url not in merged:
+                    merged[url] = row
+
+        event(
+            logger,
+            "web search fanned out",
+            module="sources.websearch",
+            outcome="ok",
+            provider=PROVIDER,
+            queries=len(queries),
+            rows=len(merged),
+        )
+        return list(merged.values())
 
     async def _search(self, query: str) -> list[dict[str, Any]]:
         """Normalised results from whichever provider is configured.
