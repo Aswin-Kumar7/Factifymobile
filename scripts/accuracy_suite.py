@@ -231,8 +231,19 @@ class Result:
     error: str = ""
 
 
+def _undecided(result: Result) -> str:
+    """Why there is no verdict — which is two different failures, not one.
+
+    "miss" covered both and hid the difference. A claim that was read, searched and
+    cited and then declined is a bar set too high; a submission that produced no
+    claims at all never reached the bar, and usually means the input could not be
+    read. They need opposite responses, so they are named apart.
+    """
+    return "not checked" if not result.claims else "abstained"
+
+
 def _grade(result: Result) -> str:
-    """correct | miss | FALSE POSITIVE | FALSE NEGATIVE | error."""
+    """correct | abstained | not checked | FALSE POSITIVE | FALSE NEGATIVE | error."""
     if result.error:
         return "error"
 
@@ -240,16 +251,16 @@ def _grade(result: Result) -> str:
     if result.case.truth == "TRUE":
         if action == "SAFE_TO_SHARE":
             # A clearance nobody can check is not a clearance.
-            return "correct" if result.citations else "miss"
+            return "correct" if result.citations else _undecided(result)
         if action in ("DO_NOT_SHARE", "SHARE_WITH_CORRECTION"):
             return "FALSE POSITIVE"
-        return "miss"
+        return _undecided(result)
 
     if action in ("DO_NOT_SHARE", "SHARE_WITH_CORRECTION"):
-        return "correct" if result.citations else "miss"
+        return "correct" if result.citations else _undecided(result)
     if action == "SAFE_TO_SHARE":
         return "FALSE NEGATIVE"
-    return "miss"
+    return _undecided(result)
 
 
 async def _run(client: httpx.AsyncClient, case: Case) -> Result:
@@ -307,22 +318,26 @@ async def main() -> int:
             results.append(await _run(client, case))
 
     print()
-    print(f"{'ref':<4} {'truth':<6} {'verdict':<22} {'grade':<15} {'s':>5} {'cites':>6}  sources")
-    print("-" * 104)
+    print(
+        f"{'ref':<4} {'truth':<6} {'verdict':<22} {'grade':<13} "
+        f"{'s':>5} {'claims':>7} {'cites':>6}  sources"
+    )
+    print("-" * 110)
     for result in results:
         grade = _grade(result)
         sources = ", ".join(result.publishers[:3]) or ("— " + result.error if result.error else "—")
         print(
             f"{result.case.ref:<4} {result.case.truth:<6} "
-            f"{(result.action or 'ERROR'):<22} {grade:<15} "
-            f"{result.seconds:5.1f} {result.citations:6}  {sources[:44]}"
+            f"{(result.action or 'ERROR'):<22} {grade:<13} "
+            f"{result.seconds:5.1f} {result.claims:7} {result.citations:6}  {sources[:40]}"
         )
 
     grades = [_grade(r) for r in results]
     correct = grades.count("correct")
     print()
     print(f"correct          {correct}/{len(results)}")
-    print(f"missed (review)  {grades.count('miss')}")
+    print(f"abstained        {grades.count('abstained')}   (read it, declined to decide)")
+    print(f"not checked      {grades.count('not checked')}   (no claims — input unreadable)")
     print(f"FALSE POSITIVES  {grades.count('FALSE POSITIVE')}   (a true claim blocked)")
     print(f"FALSE NEGATIVES  {grades.count('FALSE NEGATIVE')}   (a false claim cleared)")
     if grades.count("error"):
