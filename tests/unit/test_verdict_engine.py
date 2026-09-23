@@ -577,3 +577,67 @@ class TestSilenceIsReportedWhenItMeansSomething:
 
         assert loud.status is quiet.status
         assert loud.rule_id == quiet.rule_id
+
+
+class TestAnOfficialSourceCarriesAClaimAlone:
+    """Rule 4 asks for two independent origins. Sometimes only one can exist.
+
+    "IIT Madras inaugurated a robotics laboratory" abstained under
+    `rule.insufficient_origins` while holding citations from PIB and from IIT Madras
+    itself — which between them are the entire primary record. The independence rule
+    is about witnesses: two agreeing is evidence, one repeated is not. There is
+    exactly one witness to a ministry's own announcement, and asking for a second
+    asks for something that cannot exist.
+    """
+
+    @staticmethod
+    def _supporting(url: str):  # type: ignore[no-untyped-def]
+        return evidence(direction=Direction.SUPPORTS, tier=Tier.D, citation_url=url)
+
+    def test_one_government_citation_is_enough(self) -> None:
+        decision = decide(
+            claim(independent_origin_count=1, document_count=1),
+            [self._supporting("https://pib.gov.in/PressReleasePage.aspx?PRID=1")],
+        )
+
+        assert decision.status is ClaimStatus.SUPPORTED
+        assert decision.rule_id == "rule.official_primary_source"
+
+    def test_an_intergovernmental_body_counts_too(self) -> None:
+        decision = decide(
+            claim(independent_origin_count=1, document_count=1),
+            [self._supporting("https://www.who.int/news/item/01-01-2026-statement")],
+        )
+
+        assert decision.status is ClaimStatus.SUPPORTED
+
+    def test_one_newspaper_is_still_not_enough(self) -> None:
+        """The exemption is for primary sources, not a general lowering of the bar."""
+        decision = decide(
+            claim(independent_origin_count=1, document_count=1),
+            [self._supporting("https://www.thehindu.com/news/national/article.ece")],
+        )
+
+        assert decision.status is ClaimStatus.UNVERIFIED
+        assert decision.rule_id == "rule.insufficient_origins"
+
+    def test_a_contradiction_still_outranks_it(self) -> None:
+        """Official does not mean true. The contradiction rules run first."""
+        decision = decide(
+            claim(independent_origin_count=1, document_count=1),
+            [
+                self._supporting("https://pib.gov.in/PressReleasePage.aspx?PRID=1"),
+                evidence(
+                    direction=Direction.CONTRADICTS,
+                    tier=Tier.C,
+                    citation_url="https://www.bbc.com/news/1",
+                ),
+                evidence(
+                    direction=Direction.CONTRADICTS,
+                    tier=Tier.C,
+                    citation_url="https://apnews.com/article/2",
+                ),
+            ],
+        )
+
+        assert decision.status is not ClaimStatus.SUPPORTED

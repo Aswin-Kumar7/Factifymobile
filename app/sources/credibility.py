@@ -159,8 +159,28 @@ class SourceCredibility:
             return False
         return any(name in self._fact_checkers for name in _suffixes(domain))
 
+    # Subdomains conventionally given over to individuals. A university is credible
+    # about what the university did; a lecturer's own page on the same domain is one
+    # person writing, and the registrable domain cannot tell them apart.
+    #
+    # Live: "IIT Madras inaugurated a robotics laboratory" was carried by PIB, the
+    # Times of India and the Indian Express, and abstained under
+    # `rule.conflicting_evidence` because `home.iitm.ac.in/samuelgl/inauguration.html`
+    # — a faculty page about a different inauguration — was read as contradicting it.
+    # Not "web.": `web.mit.edu` is MIT's own site, which a test in this repo already
+    # asserted and which this list briefly broke.
+    _PERSONAL_HOSTS = ("home.", "people.", "users.", "sites.", "staff.", "faculty.")
+
     def _is_user_content(self, names: list[str], url: str) -> bool:
         """Whether the URL falls in a section of a credible host that anyone can post to."""
+        host = url.split("://", 1)[-1].split("/", 1)[0].split("?", 1)[0]
+        host = host.split(":", 1)[0].lower().removeprefix("www.")
+        if host.startswith(self._PERSONAL_HOSTS):
+            return True
+        # A tilde path is the oldest convention for the same thing.
+        if "/~" in url:
+            return True
+
         if not self._user_content_paths or "://" not in url:
             return False
         path = urlsplit(url.strip()).path.lower() or "/"

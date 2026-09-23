@@ -41,3 +41,77 @@ def registrable_domain(url: str) -> str | None:
 def publishers_of(urls: list[str]) -> set[str]:
     """The distinct publishers behind a set of URLs."""
     return {domain for url in urls if (domain := registrable_domain(url)) is not None}
+
+
+# Hosts that are the authority on their own subject rather than a report of it.
+#
+# A government gazette, a ministry release, a central bank notice, an intergovernmental
+# body: on what that body did, announced or found, it is the primary record and the
+# only place the fact originates. Asking two of them to agree asks for something that
+# does not exist — the origin rule wants independent *witnesses* to an event, and
+# there is exactly one witness to a ministry's own announcement.
+#
+# By suffix, never by a curated list of names: a list of official domains is a list
+# that goes stale, and the suffixes are administered.
+_OFFICIAL_SUFFIXES = (
+    ".gov",
+    ".mil",
+    ".int",
+    ".gov.in",
+    ".nic.in",
+    ".gov.uk",
+    ".gov.au",
+    ".govt.nz",
+    ".gc.ca",
+    ".go.jp",
+    ".go.kr",
+    ".gov.sg",
+    ".gob.mx",
+    ".gov.br",
+    ".gov.za",
+    ".europa.eu",
+    ".un.org",
+    ".who.int",
+)
+
+# The whole domain is official, not merely a suffix match. `rbi.org.in` is the
+# Reserve Bank; `something.org.in` is not, so these are matched exactly.
+_OFFICIAL_DOMAINS = frozenset(
+    {
+        "rbi.org.in",
+        "sebi.gov.in",
+        "pib.gov.in",
+        "who.int",
+        "un.org",
+        "imf.org",
+        "worldbank.org",
+        "europa.eu",
+        "oecd.org",
+        "unesco.org",
+        "unicef.org",
+    }
+)
+
+
+def is_official(url: str) -> bool:
+    """Whether this URL is a government or intergovernmental primary source.
+
+    Used by the corroboration rule, which otherwise asks for two independent origins
+    before it will call a claim supported. For a fact whose origin *is* the body
+    reporting it, that bar cannot be met honestly: "IIT Madras opened a laboratory"
+    was carried by PIB and by IIT Madras itself and abstained for having one origin,
+    while the two sources between them are the entire primary record.
+
+    This never makes a source *credible* — the allowlist decides that, and it never
+    makes an official statement true. It says only that one such source is enough to
+    stop the count being the reason we abstain.
+    """
+    domain = registrable_domain(url)
+    if domain is None:
+        return False
+    if domain in _OFFICIAL_DOMAINS:
+        return True
+
+    host = url.split("://", 1)[-1].split("/", 1)[0].split("?", 1)[0].split("@")[-1]
+    host = host.split(":", 1)[0].lower().removeprefix("www.")
+    return any(host == suffix.lstrip(".") or host.endswith(suffix) for suffix in _OFFICIAL_SUFFIXES)

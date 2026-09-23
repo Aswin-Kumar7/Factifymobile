@@ -41,7 +41,7 @@ PROVIDER = "llm"
 
 # Bumped whenever the prompt or the schema changes, because either changes what the
 # same document extracts to — and the extraction cache is keyed on it.
-EXTRACTOR_VERSION = "2026.09.2"
+EXTRACTOR_VERSION = "2026.09.3"
 
 MAX_CLAIMS_PER_DOCUMENT = 7
 
@@ -125,6 +125,12 @@ _SYSTEM_INSTRUCTION = (
     "claim is an EVENT or STATISTIC, not an OPINION. "
     "Misfiling a false factual claim as OPINION removes it from checking entirely, "
     "which is the one outcome this extraction must never produce. "
+    "A sentence reporting that someone said, announced, found, ruled or DEBUNKED "
+    "something is an ATTRIBUTION claim, not an EVENT: what can be checked is that "
+    "they said it. Keep the whole sentence, including what they said, so the claim "
+    "stays self-contained - but classify it by the reporting. 'The government has "
+    "debunked claims that a fire broke out at a defence facility' is an ATTRIBUTION "
+    "about the government, not an EVENT about a fire. "
     "search_phrases: two or three short web queries that would find published "
     "sources ADDRESSING this claim, in either direction. The claim's own sentence "
     "is already searched, and on its own it retrieves the topic rather than any "

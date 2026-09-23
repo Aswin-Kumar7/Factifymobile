@@ -291,21 +291,21 @@ async def build(settings: Settings) -> dict[str, Any]:
     # a search API to find pages no local source covers, and reads them with the same
     # reasoner — corroboration-grade evidence, gated by a verbatim quote like every
     # other resolver. Off unless FACIFY_WEBSEARCH__* is set.
+    web_search: WebSearchResolver | None = None
     if settings.websearch.usable and reasoner is not None:
-        resolvers.append(
-            WebSearchResolver(
-                fetcher=source_fetcher,
-                reasoner=reasoner,
-                provider=settings.websearch_provider,
-                endpoint=settings.websearch.endpoint,
-                api_key=settings.websearch.api_key.get_secret_value()
-                if settings.websearch.api_key
-                else "",
-                # Only credible publishers are read and cited from the open web.
-                credibility=SourceCredibility.load(),
-                governor=governor,
-            )
+        web_search = WebSearchResolver(
+            fetcher=source_fetcher,
+            reasoner=reasoner,
+            provider=settings.websearch_provider,
+            endpoint=settings.websearch.endpoint,
+            api_key=settings.websearch.api_key.get_secret_value()
+            if settings.websearch.api_key
+            else "",
+            # Only credible publishers are read and cited from the open web.
+            credibility=SourceCredibility.load(),
+            governor=governor,
         )
+        resolvers.append(web_search)
 
     review_queue = PoolReviewQueue(database)
 
@@ -333,6 +333,10 @@ async def build(settings: Settings) -> dict[str, Any]:
         # that reads retrieved sources. Shared with the corpus resolver rather than a
         # second client, so one connection pool serves both.
         "url_reader": source_fetcher,
+        # The same resolver the pipeline uses, so a submitted link can fall through
+        # to the vendor's extract when the publisher will not serve us — the second
+        # rung of the ladder a retrieved source already climbs.
+        "web_search_resolver": web_search,
         "case_reader": CaseReader(database),
         "review_queue": review_queue,
         "orchestrator": ServedOrchestrator(

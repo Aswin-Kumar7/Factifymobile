@@ -134,17 +134,32 @@ async def _read_linked_article(request: Request, url: str) -> str | None:
     if reader is None or not url:
         return None
 
+    body: str | None = None
+    title: str | None = None
+
     result = await reader.fetch(url, provider="url_intake")
-    if not isinstance(result, FetchResult):
-        return None
+    if isinstance(result, FetchResult):
+        content_type = (result.content_type or "").lower()
+        if content_type and "html" not in content_type and "xml" not in content_type:
+            return None
 
-    content_type = (result.content_type or "").lower()
-    if content_type and "html" not in content_type and "xml" not in content_type:
-        return None
+        article = extract_article(result.text, url=url)
+        if article.is_usable:
+            body, title = article.body, article.title
 
-    article = extract_article(result.text, url=url)
-    if not article.is_usable:
-        return None
+    if body is None:
+        # Second rung, the same ladder a retrieved source climbs.
+        #
+        # One fetch was the whole of it before, so a link the publisher would not
+        # serve us became "not enough evidence to decide" — a sentence about the
+        # evidence, for a page nobody had read. Measured on an Olympics.com live
+        # report of a result carried worldwide: the fetch raised, zero bytes came
+        # back, zero claims were extracted, and the answer named the evidence rather
+        # than the blocked door. The search path already pays a vendor to read pages
+        # that refuse us; a link the user typed deserves the same attempt.
+        body = await _vendor_read(request, url)
+        if not body:
+            return None
 
     # Title and body together: the headline carries the primary claim, the body the
     # rest, so even a one-paragraph story yields something to check. The body is
@@ -152,9 +167,25 @@ async def _read_linked_article(request: Request, url: str) -> str | None:
     # sit near the top, while a long page (a Wikipedia article runs to tens of
     # thousands of characters) would push one extraction call past the model's
     # per-minute token budget and come back 429.
-    body = (article.body or "")[:_MAX_ARTICLE_CHARS]
-    parts = [part for part in (article.title, body) if part and part.strip()]
+    body = (body or "")[:_MAX_ARTICLE_CHARS]
+    parts = [part for part in (title, body) if part and part.strip()]
     return "\n\n".join(parts) if parts else None
+
+
+async def _vendor_read(request: Request, url: str) -> str | None:
+    """Ask the configured search provider for the text of a page we could not fetch.
+
+    The licensed route, and the only one on this ladder: presenting ourselves as a
+    browser to get past a publisher's block is not something this service does.
+    """
+    resolver = getattr(request.app.state, "web_search_resolver", None)
+    extract_one = getattr(resolver, "_vendor_extract", None)
+    if extract_one is None:
+        return None
+    try:
+        return await extract_one(url) or None
+    except Exception:
+        return None
 
 
 async def cached_full_response(
@@ -317,6 +348,23 @@ async def verify(payload: VerifyRequest, request: Request) -> VerifyResponse:
         return await cached_full_response(request, hit) or to_response(hit)
 
     extracted = await extract_claims_for(request, intake)
+
+    # A link nobody could open is not a verdict about the link.
+    #
+    # The gap was reported as a skipped check and the response still read "not
+    # enough evidence to decide" — a sentence about evidence, for a page that was
+    # never fetched. Measured on an Olympics.com report of a result carried
+    # worldwide: zero bytes, zero claims, and an answer that blamed the record.
+    # "We could not read this page" and "we read it and found nothing" are
+    # different answers and the caller has to be able to tell them apart.
+    if not extracted.claims and intake.input_type is InputType.URL and extracted.reason:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"{extracted.reason}. Nothing was checked. Try pasting the text of "
+                "the page instead of the link."
+            ),
+        )
 
     result = await orchestrator.verify(  # type: ignore[attr-defined]
         intake, case_id=case_id, claims=list(extracted.claims)

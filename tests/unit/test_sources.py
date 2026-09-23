@@ -31,6 +31,7 @@ from app.sources.corroboration import (
     silence_is_meaningful,
     within_developing_window,
 )
+from app.sources.credibility import SourceCredibility
 from app.sources.factcheck import (
     FactCheckRecord,
     FactCheckResolver,
@@ -1418,3 +1419,90 @@ class TestAQuoteClaimIsCorroboratedByReportedSpeech:
     def test_an_unknown_claim_type_is_still_demoted(self) -> None:
         """Absent a type, keep the cautious behaviour rather than assume."""
         assert self._judge(None).judgements[0].relation is Relation.CONTEXTUALIZES
+
+
+class TestADebunkIsNotTheThingItDebunks:
+    """We told a reader not to share a government fact-check.
+
+    Submitting newsonair.gov.in's report that the MEA had debunked a fabricated
+    fire at an India-Israel defence facility produced DO_NOT_SHARE. The extracted
+    claim — "the government has debunked claims that a massive fire broke out" — is
+    true, and four sources were cited as contradicting it. They were not
+    contradicting it: they were establishing that no fire broke out, which is what
+    the government said and agrees with the claim.
+
+    The reader matched the statement *inside* the claim instead of the claim. For a
+    product people use to check forwarded fact-checks, blocking the fact-check is
+    close to the worst answer available.
+    """
+
+    @staticmethod
+    def _judge(basis: str) -> ReasoningOutcome:
+        body = (
+            "The Fact Check Unit of the Ministry of External Affairs said no such "
+            "fire took place at any joint defence facility in Delhi."
+        )
+        passages = [Passage(index=0, text=body, char_start=0, char_end=len(body))]
+        response = _ReasoningResponse.model_validate(
+            {
+                "judgements": [
+                    {
+                        "passage_index": 0,
+                        "relation": "CONTRADICTS",
+                        "contradiction_basis": basis,
+                        "quote": body,
+                        "reason": "r",
+                        "relevance": 0.9,
+                    }
+                ]
+            }
+        )
+        reasoner = PassageReasoner.__new__(PassageReasoner)
+        reasoner._model_id = "test"
+        return reasoner._verify(response, passages, claim_type="ATTRIBUTION")
+
+    def test_refuting_what_the_claim_reports_is_not_contradicting_the_claim(self) -> None:
+        assert self._judge("REFUTES_REPORTED_CONTENT").judgements == ()
+
+    def test_even_a_confident_denial_only_contextualises(self) -> None:
+        """Deliberate, and lopsided on purpose.
+
+        A passage can only honestly contradict "A said B" by establishing that A did
+        not say it, which is rare. Mistaking a refutation of B for a refutation of the
+        claim is what actually happens, and it produced DO_NOT_SHARE on a government
+        fact-check. Missing the rare genuine denial is the cheaper mistake, so a
+        contradiction here is kept and shown but no longer decides.
+        """
+        assert self._judge("DENIES").judgements[0].relation is Relation.CONTEXTUALIZES
+
+
+class TestAPersonalPageIsNotTheInstitution:
+    """A university is credible about what the university did. A lecturer is not it.
+
+    "IIT Madras inaugurated a robotics laboratory" was carried by PIB, the Times of
+    India and the Indian Express, and abstained under `rule.conflicting_evidence`
+    because one citation contradicted it: `home.iitm.ac.in/samuelgl/inauguration.html`,
+    a faculty page about a different inauguration. The registrable domain is
+    `iitm.ac.in` either way, so nothing downstream could tell the institution from
+    one person on its domain.
+    """
+
+    @staticmethod
+    def _credibility() -> SourceCredibility:
+        return SourceCredibility.load()
+
+    def test_a_personal_subdomain_is_not_citable(self) -> None:
+        subject = self._credibility()
+
+        assert not subject.is_credible("https://home.iitm.ac.in/samuelgl/inauguration.html")
+        assert not subject.is_credible("https://people.mit.edu/someone/page.html")
+
+    def test_a_tilde_path_is_the_same_convention(self) -> None:
+        assert not self._credibility().is_credible("https://www.iitm.ac.in/~samuelgl/page.html")
+
+    def test_the_institution_itself_still_is(self) -> None:
+        """The narrowing must not cost us the university's own newsroom."""
+        subject = self._credibility()
+
+        assert subject.is_credible("https://www.iitm.ac.in/news/robotics-lab")
+        assert subject.is_credible("https://www.mit.edu/news/story")
