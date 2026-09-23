@@ -267,6 +267,22 @@ class Orchestrator:
             language=intake.language.language.value,
             model_id=self._model_id,
             reader_version=REASONER_VERSION,
+            retrieval_version=self._retrieval_version(),
+        )
+
+    def _retrieval_version(self) -> str:
+        """Every configured resolver's name and version, in a stable order.
+
+        Sorted because resolver order is a composition detail and must not change
+        the key; taken from the resolvers themselves because `SourceResolver`
+        already declares both fields, so this keeps step with a new resolver
+        without anything here being edited.
+        """
+        return ",".join(
+            sorted(
+                f"{getattr(r, 'name', type(r).__name__)}:{getattr(r, 'version', '-')}"
+                for r in self._resolvers
+            )
         )
 
     async def cached(self, intake: NormalisedIntake, *, case_id: UUID) -> VerificationResult | None:

@@ -59,6 +59,20 @@ class CacheKeyParts:
     # was meant to fix, and without this it would keep being served.
     reader_version: str = ""
 
+    # The resolvers that gathered the sources, for the third time the same reason.
+    #
+    # `reader_version` covers what a source is taken to *say*; this covers which
+    # sources are put in front of it at all, which decides a verdict just as
+    # completely. Retrieval changes were invisible to this key: fanning the web
+    # search out across the claim's own questions, and capping what a search snippet
+    # may conclude, both changed the evidence a claim gathers — and every repeat kept
+    # returning the verdict built from the narrower search, in 0.4 seconds, looking
+    # for all the world like the change had done nothing.
+    #
+    # Composed from every configured resolver's own name and version, so a new
+    # resolver or a bumped one is covered without anything here being edited.
+    retrieval_version: str = ""
+
     def derive(self) -> str:
         """A stable, opaque key.
 
@@ -76,6 +90,7 @@ class CacheKeyParts:
                 self.language or "-",
                 self.model_id or "-",
                 self.reader_version or "-",
+                self.retrieval_version or "-",
             )
         )
         return hashlib.sha256(material.encode("utf-8")).hexdigest()

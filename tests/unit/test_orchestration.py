@@ -26,6 +26,7 @@ from app.api.schemas import (
     VerifyRequest,
     VerifyResponse,
 )
+from app.cache.keys import CacheKeyParts
 from app.domain.enums import Action, ClaimStatus, ClaimType, Direction, Importance, Severity
 from app.intake.normalizer import normalise_text
 from app.orchestration.pipeline import (
@@ -1269,3 +1270,40 @@ class TestStrengthCountsTheEvidenceThatCarriesTheVerdict:
         # The claim the engine decided on carries no corroboration count: nothing
         # supported it, and two refutations do not add up to support.
         assert result.claims[0].claim.independent_origin_count == 0
+
+
+class TestRetrievalChangesRetireTheCache:
+    """A change to what sources are gathered must not be served from the old answer.
+
+    Fanning the web search across the claim's own questions, and capping what a
+    search snippet may conclude, both changed the evidence a claim gathers. Neither
+    was in the cache key, so every repeat returned the verdict built from the
+    narrower search in four tenths of a second — indistinguishable, from the
+    outside, from a change that did nothing.
+    """
+
+    @staticmethod
+    def _parts(**overrides: Any) -> CacheKeyParts:
+        base = {
+            "content_hash": "sha256:abc",
+            "rule_version": "2026.09.9",
+            "extractor_version": "2026.09.2",
+            "reader_version": "2026.09.8",
+            "retrieval_version": "web_search:2026.09.4",
+        }
+        return CacheKeyParts(**{**base, **overrides})
+
+    def test_a_bumped_resolver_misses_the_old_entry(self) -> None:
+        assert self._parts().derive() != self._parts(
+            retrieval_version="web_search:2026.09.5"
+        ).derive()
+
+    def test_a_new_resolver_misses_it_too(self) -> None:
+        """Adding a source of evidence changes what a claim can be answered on."""
+        assert self._parts().derive() != self._parts(
+            retrieval_version="corpus:2026.08.1,web_search:2026.09.4"
+        ).derive()
+
+    def test_the_same_setup_still_hits(self) -> None:
+        """The point is to retire stale answers, not to stop caching."""
+        assert self._parts().derive() == self._parts().derive()
