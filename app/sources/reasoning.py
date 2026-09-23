@@ -54,7 +54,7 @@ from app.sources.corpus_text import is_navigation
 logger = logging.getLogger("facify.sources.reasoning")
 
 PROVIDER = "llm"
-REASONER_VERSION = "2026.09.7"
+REASONER_VERSION = "2026.09.8"
 
 # How many passages go to the model in one call. One call per source, not one per
 # passage: the model needs to see the alternatives to judge which actually bears on
@@ -436,9 +436,23 @@ _RESPONSE_SCHEMA: dict[str, Any] = {
                     # 2004 Indian Ocean tsunami was returned as CONTRADICTS for a
                     # claim about Mumbai last week: true, in the sense that the claim
                     # is absent from it, and worthless as evidence.
+                    #
+                    # The last two were added after "Drinking cow urine cures cancer"
+                    # came back CONTRADICTED on a Full Fact page about the Cancer Act
+                    # 1939 and a PMC methods sentence describing a cell-line assay.
+                    # Neither is a different event, place, time or person, so the
+                    # event-shaped vocabulary above had nowhere to put them and the
+                    # model reached for DENIES. Most health misinformation is not an
+                    # event claim, which makes these the common case, not the corner.
                     "contradiction_basis": {
                         "type": "string",
-                        "enum": ["DENIES", "INCOMPATIBLE", "DIFFERENT_SUBJECT"],
+                        "enum": [
+                            "DENIES",
+                            "INCOMPATIBLE",
+                            "DIFFERENT_SUBJECT",
+                            "DIFFERENT_QUESTION",
+                            "NO_OUTCOME_STATED",
+                        ],
                     },
                     "relation": {
                         "type": "string",
@@ -538,6 +552,18 @@ For each judgement:
     tsunami is a different subject from a tsunami reported in Mumbai last week; a
     report of one earthquake is a different subject from another earthquake. Use
     this freely: most passages retrieved for a claim are about something else.
+  * DIFFERENT_QUESTION - the passage is on the claim's topic but answers a
+    different question, so believing it settles nothing about the claim. For
+    "drinking cow urine cures cancer", a passage about whether the Cancer Act 1939
+    forbids doctors from discussing cures is a different question: both concern
+    doctors and cancer cures, and neither tells you whether cow urine cures
+    anything. Use this whenever getting from the passage to the claim needs a step
+    of reasoning the passage does not itself take.
+  * NO_OUTCOME_STATED - the passage is about the claim's own subject but reports no
+    result that settles it: a method, an aim, a study description, work in progress,
+    a call for research. "The sterile filtrate of cow urine was evaluated for
+    antiproliferative effects in breast cancer cells" says what was tested, never
+    what was found, and is not evidence in either direction.
 
 - quote: text copied EXACTLY from that passage, character for character, long
   enough to stand alone as evidence (at least one full sentence). Do not paraphrase,
@@ -554,7 +580,10 @@ Rules:
 
 1. Judge only what the passages say. Do not use anything you know independently.
    If the passages do not settle the claim, the answer is CONTEXTUALIZES or
-   NOT_RELEVANT, never SUPPORTS.
+   NOT_RELEVANT - never SUPPORTS, and never CONTRADICTS either. The bar is the
+   same in both directions. A passage that merely makes the claim look unlikely,
+   or that you can argue your way from, has not settled it: say so in
+   contradiction_basis rather than calling it a denial.
 2. A passage reporting that someone *said* something supports only that they said
    it, not that it is true. Read attribution carefully.
 3. Restating a claim is not asserting it. Fact-checks, myth-busters, health
@@ -803,11 +832,30 @@ class PassageReasoner:
             # a breaking event, because nothing in the corpus mentions it yet either.
             # Wrongly telling someone a real earthquake did not happen is the worst
             # failure this system has.
-            if relation is Relation.CONTRADICTS and judgement.contradiction_basis == (
-                "DIFFERENT_SUBJECT"
+            if relation is Relation.CONTRADICTS and judgement.contradiction_basis in (
+                "DIFFERENT_SUBJECT",
+                "DIFFERENT_QUESTION",
             ):
                 off_topic += 1
                 continue
+
+            # About the claim, but settling nothing: kept as context, never as a
+            # refutation. The mirror of the SUPPORTS demotion above, and demoted
+            # for the same reason — the passage is genuinely on the subject, so
+            # dropping it would hide evidence a reader should see.
+            #
+            # "Drinking cow urine cures cancer" was answered CONTRADICTED partly on
+            # a PMC sentence reading "the sterile filtrate of cow urine DMSO
+            # fraction was evaluated for antiproliferative and proapoptotic effects
+            # in MCF-7 and ZR-75-1 breast cancer cells". That describes an
+            # experiment. The model's own reason said it indicated "some anticancer
+            # activity" — if anything the wrong way for a contradiction — and it was
+            # still counted as one of the two sources behind a DO_NOT_SHARE.
+            if relation is Relation.CONTRADICTS and judgement.contradiction_basis == (
+                "NO_OUTCOME_STATED"
+            ):
+                relation = Relation.CONTEXTUALIZES
+                demoted += 1
 
             located = verify_quote(judgement.quote, passage.text)
             if located is None:

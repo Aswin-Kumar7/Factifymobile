@@ -437,10 +437,13 @@
     "tribune.com.pk"
   ],
   "news_americas": [
+    "abcnews.go.com",
     "axios.com",
     "biobiochile.cl",
     "bostonglobe.com",
+    "cbsnews.com",
     "clarin.com",
+    "cnn.com",
     "elcomercio.pe",
     "elespectador.com",
     "eltiempo.com",
@@ -458,6 +461,7 @@
     "latimes.com",
     "ledevoir.com",
     "macleans.ca",
+    "nbcnews.com",
     "newyorker.com",
     "noticias.uol.com.br",
     "nytimes.com",

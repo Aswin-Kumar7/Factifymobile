@@ -788,6 +788,31 @@ class TestContradictionMustBeAboutThisClaim:
         """Dropped rather than demoted: a different disaster is not context either."""
         assert self._judge("DIFFERENT_SUBJECT").judgements == ()
 
+    def test_a_passage_answering_another_question_is_not_evidence_at_all(self) -> None:
+        """Same topic, different question: dropped, like a different event.
+
+        "Drinking cow urine cures cancer according to doctors" came back CONTRADICTED
+        on a Full Fact page about whether the Cancer Act 1939 forbids doctors from
+        discussing cures. Both are about doctors and cancer cures; neither says
+        anything about cow urine. The reader's own reason gave it away — it had the
+        passage "indirectly contradicting" the claim, which is to say not
+        contradicting it.
+        """
+        assert self._judge("DIFFERENT_QUESTION").judgements == ()
+
+    def test_a_study_with_no_result_is_context_not_contradiction(self) -> None:
+        """On the subject, settling nothing: demoted rather than dropped.
+
+        The other citation behind that same verdict was a PMC methods sentence —
+        cow urine filtrate "was evaluated for antiproliferative and proapoptotic
+        effects" in two breast-cancer cell lines. That says what was tested, never
+        what was found. It is genuinely about the claim, so a reader should see it;
+        it is not a refutation, so it must not be counted as one.
+        """
+        outcome = self._judge("NO_OUTCOME_STATED")
+
+        assert outcome.judgements[0].relation is Relation.CONTEXTUALIZES
+
     def test_an_explicit_denial_still_contradicts(self) -> None:
         assert self._judge("DENIES").judgements[0].relation is Relation.CONTRADICTS
 

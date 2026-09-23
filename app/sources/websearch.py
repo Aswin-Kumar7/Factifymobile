@@ -180,6 +180,7 @@ class WebSearchResolver:
 
         shortlist: list[SourceCandidate] = []
         dropped = 0
+        dropped_hosts: list[str] = []
         for row in rows:
             url = row.get("url")
             if not url or not (row.get("content") or "").strip():
@@ -191,6 +192,7 @@ class WebSearchResolver:
             # not a claim about the claim, and it never reaches the reasoner.
             if not self._credibility.is_credible(url):
                 dropped += 1
+                dropped_hosts.append(urlsplit(url).hostname or "")
                 continue
             self._pages[url] = row
             shortlist.append(
@@ -212,6 +214,10 @@ class WebSearchResolver:
             provider=PROVIDER,
             candidates=len(shortlist),
             dropped_not_credible=dropped,
+            # Named, not just counted. A count cannot tell a conspiracy blog the gate
+            # was built to stop from a medical authority the allowlist is missing,
+            # and those need opposite responses.
+            dropped_hosts=sorted(set(dropped_hosts)),
         )
         return shortlist[: self._max_results]
 
@@ -307,6 +313,11 @@ class WebSearchResolver:
             route=route,
             chars=chars,
             host=urlsplit(url).hostname or "",
+            # The whole URL when nothing was read, the host otherwise. A PIB page
+            # came back unreadable while pib.gov.in served 70 KB of HTML to a direct
+            # request moments later — so the host alone said the publisher was fine
+            # and left no way to find the page that was not.
+            url=url if not chars else None,
         )
 
     async def _vendor_extract(self, url: str) -> str:
