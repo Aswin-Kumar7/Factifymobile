@@ -30,6 +30,7 @@ import hashlib
 import json
 import logging
 from datetime import UTC, datetime
+from time import monotonic
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -53,6 +54,10 @@ logger = logging.getLogger("factify.sources.websearch")
 
 # The claim itself plus at most two of its search phrases.
 _MAX_QUERIES = 3
+
+# How long a fetched page stays reusable. Long enough for one case's claims to share
+# it, short enough that it is never a stale answer from an earlier check.
+_READ_TTL_SECONDS = 90.0
 
 NAME = "web_search"
 VERSION = "2026.09.4"
@@ -120,6 +125,8 @@ class WebSearchResolver:
         # url -> the provider's result row, kept from the search call so snapshot and
         # relate need no second fetch — the search API already returned the content.
         self._pages: dict[str, dict[str, Any]] = {}
+        # url -> (when it was read, what the ladder returned). See `_read`.
+        self._reads: dict[str, tuple[float, tuple[str, str, str]]] = {}
 
     @property
     def reads_sources(self) -> bool:
@@ -278,7 +285,45 @@ class WebSearchResolver:
         )
 
     async def _read(self, url: str) -> tuple[str, str, str]:
-        """Rungs one and two of the ladder. Returns (text, route, final_url)."""
+        """Rungs one and two of the ladder, with a short memory. Returns (text, route,
+        final_url).
+
+        One article's claims retrieve overlapping sources, because they are claims
+        about one story. Measured on an Economic Times commentary: seven claims, the
+        three eligible ones searched, and fifteen page reads between them — with
+        bbc.com fetched three times and Reuters, AFP and Brookings twice each. Every
+        one of those was a fresh network round trip for a page already in hand.
+
+        The judgement still runs per claim, and has to: what a passage says about one
+        claim says nothing about another. Only the fetch and the extraction are
+        shared, which is the part that was pure repetition.
+
+        Deliberately short-lived and small. This resolver lives for the process, so an
+        unbounded dictionary here would leak for the life of the service and serve a
+        page from an hour ago as though it had just been read. Ninety seconds covers
+        one case's claims and nothing else.
+        """
+        now = monotonic()
+        cached = self._reads.get(url)
+        if cached is not None and now - cached[0] < _READ_TTL_SECONDS:
+            body, route, _ = cached[1]
+            self._read_event(route, url, len(body), reused=True)
+            return cached[1]
+
+        result = await self._read_uncached(url)
+
+        # Expired entries are dropped on the way past rather than on a timer; the
+        # dictionary is small and only grows while a case is in flight.
+        self._reads = {
+            key: value
+            for key, value in self._reads.items()
+            if now - value[0] < _READ_TTL_SECONDS
+        }
+        self._reads[url] = (now, result)
+        return result
+
+    async def _read_uncached(self, url: str) -> tuple[str, str, str]:
+        """The ladder itself."""
         try:
             fetched = await self._fetcher.fetch(url, provider=PROVIDER)
         except Exception:  # a page we cannot read is ordinary, not exceptional
@@ -300,7 +345,7 @@ class WebSearchResolver:
         self._read_event("web.unreadable", url, 0)
         return "", "", url
 
-    def _read_event(self, route: str, url: str, chars: int) -> None:
+    def _read_event(self, route: str, url: str, chars: int, *, reused: bool = False) -> None:
         """Which rung read this page, and how much it yielded.
 
         Logged because a ladder whose rungs are invisible cannot be tuned or trusted:
@@ -317,11 +362,11 @@ class WebSearchResolver:
             route=route,
             chars=chars,
             host=urlsplit(url).hostname or "",
-            # The whole URL when nothing was read, the host otherwise. A PIB page
-            # came back unreadable while pib.gov.in served 70 KB of HTML to a direct
-            # request moments later — so the host alone said the publisher was fine
-            # and left no way to find the page that was not.
-            url=url if not chars else None,
+            # Whether this page was already in hand from another claim of the same
+            # case. Counting these is the only way to tell a genuine second source
+            # from the same page fetched twice.
+            reused=reused,
+            url=url,
         )
 
     async def _vendor_extract(self, url: str) -> str:

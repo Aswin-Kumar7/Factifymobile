@@ -1506,3 +1506,84 @@ class TestAPersonalPageIsNotTheInstitution:
 
         assert subject.is_credible("https://www.iitm.ac.in/news/robotics-lab")
         assert subject.is_credible("https://www.mit.edu/news/story")
+
+
+class TestOneCasesClaimsShareTheirReading:
+    """Claims from one article retrieve one story's sources, over and over.
+
+    Measured on an Economic Times commentary: seven claims extracted, the three
+    eligible ones searched, fifteen page reads between them — bbc.com fetched three
+    times, Reuters, AFP and Brookings twice each. Every repeat was a fresh network
+    round trip for a page already in hand, inside a request with a 45 second budget
+    that took 34.
+    """
+
+    @staticmethod
+    def _resolver() -> WebSearchResolver:
+        return WebSearchResolver(
+            fetcher=None,  # type: ignore[arg-type]
+            reasoner=None,
+            provider="tavily",
+            endpoint="https://example.invalid/search",
+            api_key="k",
+        )
+
+    def test_a_page_is_read_once_for_a_whole_case(self) -> None:
+        subject = self._resolver()
+        reads: list[str] = []
+
+        async def _read_uncached(url: str) -> tuple[str, str, str]:
+            reads.append(url)
+            return ("body text", "web.fetched", url)
+
+        subject._read_uncached = _read_uncached  # type: ignore[method-assign]
+
+        async def _drive() -> None:
+            for _ in range(3):
+                await subject._read("https://www.bbc.com/news/story")
+
+        asyncio.run(_drive())
+
+        assert reads == ["https://www.bbc.com/news/story"]
+
+    def test_different_pages_are_still_read(self) -> None:
+        """The cache is keyed by URL, not a blanket suppression."""
+        subject = self._resolver()
+        reads: list[str] = []
+
+        async def _read_uncached(url: str) -> tuple[str, str, str]:
+            reads.append(url)
+            return ("body", "web.fetched", url)
+
+        subject._read_uncached = _read_uncached  # type: ignore[method-assign]
+
+        async def _drive() -> None:
+            await subject._read("https://www.bbc.com/news/one")
+            await subject._read("https://www.reuters.com/two")
+
+        asyncio.run(_drive())
+
+        assert len(reads) == 2
+
+    def test_a_stale_entry_is_read_again(self) -> None:
+        """Ninety seconds covers one case. It must not answer for a later one."""
+        subject = self._resolver()
+        reads: list[str] = []
+
+        async def _read_uncached(url: str) -> tuple[str, str, str]:
+            reads.append(url)
+            return ("body", "web.fetched", url)
+
+        subject._read_uncached = _read_uncached  # type: ignore[method-assign]
+        url = "https://www.bbc.com/news/story"
+
+        async def _drive() -> None:
+            await subject._read(url)
+            # Age the entry past the window rather than sleeping through it.
+            when, value = subject._reads[url]
+            subject._reads[url] = (when - 600.0, value)
+            await subject._read(url)
+
+        asyncio.run(_drive())
+
+        assert len(reads) == 2
