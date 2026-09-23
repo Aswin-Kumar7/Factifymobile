@@ -1242,3 +1242,76 @@ class TestSearchingTheQuestionBehindTheClaim:
             "https://example.test/beta/0",
             "https://example.test/gamma/0",
         ]
+
+
+class TestASnippetCannotDecideAClaim:
+    """`snapshot()` promised it; nothing enforced it.
+
+    science.org served a Cloudflare "Enable JavaScript and cookies to continue"
+    page, the ladder fell through to the search snippet, and 123 characters of
+    vendor summary produced a decisive SUPPORTS for "drinking cow urine daily will
+    cure a person of cancer" — from an article headlined "Indian scientists decry
+    'infuriating' scheme to study benefits of cow dung, urine, and milk".
+
+    A vendor summary is elided text and elision strips attribution: the article
+    reports what proponents claim, the snippet states it flat. The reader's rules
+    about who is speaking cannot be applied to text that no longer says.
+    """
+
+    @staticmethod
+    def _snapshot(route: str) -> SourceSnapshot:
+        body = (
+            "Proponents describe curative properties of cow urine, dung and milk, "
+            "including potential cancer treatments, and one says cow urine cured her "
+            "breast cancer after doctors had given up on conventional therapy."
+        )
+        return SourceSnapshot(
+            id="web:test",
+            url="https://www.science.org/content/article/indian-scientists-decry",
+            final_url="https://www.science.org/content/article/indian-scientists-decry",
+            content_hash="sha256:test",
+            fetched_at=datetime.now(UTC),
+            text=body,
+            extraction_route=route,
+        )
+
+    def _relate(self, route: str, relation: Relation) -> SourceRelation:
+        snapshot = self._snapshot(route)
+        quote = snapshot.text[:120]
+
+        class _Reasoner:
+            async def judge(self, *_args: object, **_kwargs: object) -> object:
+                return SimpleNamespace(
+                    succeeded=True,
+                    reason=None,
+                    passages_read=1,
+                    best=lambda: SimpleNamespace(
+                        relation=relation, quote=quote, reason="r", relevance=0.9
+                    ),
+                )
+
+        resolver = WebSearchResolver(
+            fetcher=None,  # type: ignore[arg-type]
+            reasoner=_Reasoner(),
+            provider="tavily",
+            endpoint="https://example.invalid/search",
+            api_key="k",
+        )
+        return asyncio.run(resolver.relate(claim(), snapshot))
+
+    def test_a_snippet_cannot_support(self) -> None:
+        assert self._relate("web.snippet", Relation.SUPPORTS).relation is Relation.CONTEXTUALIZES
+
+    def test_a_snippet_cannot_contradict_either(self) -> None:
+        """Both directions. A snippet that seems to refute has lost attribution too."""
+        assert self._relate("web.snippet", Relation.CONTRADICTS).relation is Relation.CONTEXTUALIZES
+
+    def test_the_demotion_says_so_in_the_metric(self) -> None:
+        relation = self._relate("web.snippet", Relation.SUPPORTS)
+
+        assert "search snippet" in relation.metric
+
+    def test_a_page_we_actually_read_still_decides(self) -> None:
+        """The cap is about the rung, not a blanket loss of nerve."""
+        assert self._relate("web.fetched", Relation.SUPPORTS).relation is Relation.SUPPORTS
+        assert self._relate("web.fetched", Relation.CONTRADICTS).relation is Relation.CONTRADICTS

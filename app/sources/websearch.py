@@ -34,7 +34,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from app.domain.claim import Claim
-from app.domain.enums import ClaimType, EvidenceKind, Method, Tier
+from app.domain.enums import ClaimType, EvidenceKind, Method, Relation, Tier
 from app.extraction.web import extract
 from app.governor.governor import ProviderUnavailable, Skip
 from app.observability.logging import event
@@ -55,7 +55,7 @@ logger = logging.getLogger("facify.sources.websearch")
 _MAX_QUERIES = 3
 
 NAME = "web_search"
-VERSION = "2026.09.3"
+VERSION = "2026.09.4"
 PROVIDER = "web_search"
 
 # How many credible sources to read. Each is a metered model call, and corroboration
@@ -387,13 +387,40 @@ class WebSearchResolver:
                 NAME, VERSION, "the quoted passage could not be located in the returned text"
             )
 
+        relation = best.relation
+        note = ""
+
+        # A snippet cannot decide anything, and this is where that becomes true.
+        #
+        # `snapshot()` promises in as many words that "a snippet is never presented
+        # as though it were an article" — but it only *recorded* the rung, and
+        # nothing ever read it back. Live: science.org served us a Cloudflare
+        # "Enable JavaScript and cookies to continue" page, the ladder fell to the
+        # search snippet, and 123 characters of vendor summary produced a decisive
+        # SUPPORTS for "drinking cow urine daily will cure a person of cancer" —
+        # off an article headlined "Indian scientists decry 'infuriating' scheme to
+        # study benefits of cow dung, urine, and milk".
+        #
+        # The snippet is why. A vendor summary is elided text, and elision is
+        # exactly what strips attribution: the article reports what proponents
+        # claim, the snippet states it flat. Rules 2 and 3 turn on who is speaking,
+        # and a snippet has thrown that away before the reader ever sees it. So the
+        # rung caps the relation rather than the reader trying to recover what is
+        # no longer in the text.
+        if snapshot.extraction_route == "web.snippet" and relation in (
+            Relation.SUPPORTS,
+            Relation.CONTRADICTS,
+        ):
+            relation = Relation.CONTEXTUALIZES
+            note = " (from a search snippet; not read as the article)"
+
         return SourceRelation(
-            relation=best.relation,
+            relation=relation,
             validator=f"{NAME}+reasoner",
             validator_version=f"{VERSION}/{REASONER_VERSION}",
             excerpt=best.quote,
             anchor=anchor,
-            metric=f"passage_entailment: {best.reason}"[:200],
+            metric=f"passage_entailment: {best.reason}{note}"[:200],
             value=best.relevance,
             threshold=0.0,
         )
