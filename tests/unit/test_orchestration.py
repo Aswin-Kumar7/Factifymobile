@@ -32,7 +32,7 @@ from app.orchestration.pipeline import (
     Orchestrator,
     SkippedCheck,
     VerificationResult,
-    _distinct_supporting_citations,
+    _distinct_citations,
     abstained,
     cacheable,
 )
@@ -1071,7 +1071,7 @@ class TestSyndicationIsNotIndependence:
             "effect from the first of next month, and that banks had been informed of "
             "the change in a circular issued earlier this year."
         )
-        citations = _distinct_supporting_citations(
+        citations = _distinct_citations(
             [
                 evidence(
                     direction=Direction.SUPPORTS,
@@ -1089,7 +1089,7 @@ class TestSyndicationIsNotIndependence:
         assert len(citations) == 1
 
     def test_different_reporting_from_two_outlets_is_counted_twice(self) -> None:
-        citations = _distinct_supporting_citations(
+        citations = _distinct_citations(
             [
                 evidence(
                     direction=Direction.SUPPORTS,
@@ -1108,7 +1108,7 @@ class TestSyndicationIsNotIndependence:
 
     def test_a_short_quote_never_merges_two_sources(self) -> None:
         """Below the length where identical text means anything, keep both."""
-        citations = _distinct_supporting_citations(
+        citations = _distinct_citations(
             [
                 evidence(
                     direction=Direction.SUPPORTS,
@@ -1128,7 +1128,7 @@ class TestSyndicationIsNotIndependence:
     def test_contradicting_evidence_is_not_counted_at_all(self) -> None:
         """Only supporting citations corroborate; contradiction has its own rule."""
         assert (
-            _distinct_supporting_citations(
+            _distinct_citations(
                 [evidence(direction=Direction.CONTRADICTS, citation_url="https://www.bbc.com/a")]
             )
             == set()
@@ -1170,3 +1170,102 @@ class TestAGapIsReportedNotAbsorbed:
         starved = self._result(SkippedCheck(check="factcheck", reason="capacity limited"))
 
         assert starved.skipped[0].describe() == "factcheck was not checked: capacity limited"
+
+
+class TestStrengthCountsTheEvidenceThatCarriesTheVerdict:
+    """A contradicted claim's strength must describe its contradictors.
+
+    `_count_origins` counts supporting citations only, and rightly: rule 4 asks
+    whether enough independent outlets *carry* a claim, and a source that refutes it
+    is not corroboration for it. Strength was handed that same supporting-only count,
+    so every contradicted claim reported "0 distinct origin(s) across 0 document(s)"
+    — on the same evidence card that said "3 independent sources contradict this
+    claim: dw.com, jansatta.com, ndtv.com". One set of citations, two statements
+    about it, visibly disagreeing on the screen built to explain the verdict.
+
+    It cost the score as well as the explanation: a quarter of the weight sat on a
+    component measuring the wrong direction, so a well-sourced debunk scored 0.36.
+    """
+
+    @staticmethod
+    def _resolver(name: str) -> Any:
+        from app.domain.enums import EvidenceKind, Method, Relation, Tier
+
+        return _StubResolver(
+            name=name,
+            tier=Tier.C,
+            kind=EvidenceKind.FACT_CHECK,
+            method=Method.CLAIM_REVIEW,
+            relation=Relation.CONTRADICTS,
+        )
+
+    @pytest.mark.anyio
+    async def test_a_contradicted_claim_counts_the_sources_that_contradict_it(self) -> None:
+        asked: list[list[str]] = []
+
+        class _Corroboration:
+            async def signal(self, _claim: Any, *, citation_urls: list[str]) -> Any:
+                asked.append(sorted(citation_urls))
+                return CorroborationSignal(
+                    document_count=len(citation_urls),
+                    independent_origin_count=len(citation_urls),
+                    corpus_size=2064,
+                )
+
+        orchestrator = Orchestrator(
+            cache=NullCache(),  # type: ignore[arg-type]
+            governor=RecordingGovernor(),  # type: ignore[arg-type]
+            resolvers=[self._resolver("alpha"), self._resolver("beta")],
+            corroboration=_Corroboration(),  # type: ignore[arg-type]
+            extractor_version="test",
+        )
+
+        result = await orchestrator.verify(
+            normalise_text("A claim two outlets have debunked."),
+            case_id=uuid4(),
+            claims=[_claim()],
+        )
+
+        outcome = result.claims[0]
+        assert outcome.decision.status is ClaimStatus.CONTRADICTED
+
+        origins = next(c for c in outcome.strength.components if c.name == "independent_origins")
+        assert origins.value > 0, "the contradictors were not counted"
+        assert origins.detail == "2 distinct origin(s) across 2 document(s)"
+
+        # The count was taken over the contradicting citations, which is the whole
+        # point: asking about the supporting ones would have returned an empty set
+        # and the component would read zero again.
+        assert asked == [
+            ["https://alpha.example/cl_1", "https://beta.example/cl_1"]
+        ], "corroboration was asked about the wrong citations"
+
+    @pytest.mark.anyio
+    async def test_the_decision_still_sees_only_supporting_origins(self) -> None:
+        """Rule 4 must not start accepting contradictors as corroboration."""
+
+        class _Corroboration:
+            async def signal(self, _claim: Any, *, citation_urls: list[str]) -> Any:
+                return CorroborationSignal(
+                    document_count=len(citation_urls),
+                    independent_origin_count=len(citation_urls),
+                    corpus_size=2064,
+                )
+
+        orchestrator = Orchestrator(
+            cache=NullCache(),  # type: ignore[arg-type]
+            governor=RecordingGovernor(),  # type: ignore[arg-type]
+            resolvers=[self._resolver("alpha"), self._resolver("beta")],
+            corroboration=_Corroboration(),  # type: ignore[arg-type]
+            extractor_version="test",
+        )
+
+        result = await orchestrator.verify(
+            normalise_text("A claim two outlets have debunked."),
+            case_id=uuid4(),
+            claims=[_claim()],
+        )
+
+        # The claim the engine decided on carries no corroboration count: nothing
+        # supported it, and two refutations do not add up to support.
+        assert result.claims[0].claim.independent_origin_count == 0

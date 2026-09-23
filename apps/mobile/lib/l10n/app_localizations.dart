@@ -740,6 +740,30 @@ abstract class AppLocalizations {
   /// **'Verify this result'**
   String get verifyResult;
 
+  /// No description provided for @receiptChecking.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking the receipt'**
+  String get receiptChecking;
+
+  /// No description provided for @receiptVerified.
+  ///
+  /// In en, this message translates to:
+  /// **'Receipt verified. The evidence behind this result is unchanged since it was signed.'**
+  String get receiptVerified;
+
+  /// Shown when the digest does not match. The server also sends a reason, which is developer English and is not shown.
+  ///
+  /// In en, this message translates to:
+  /// **'Receipt did not verify. The stored evidence no longer matches what was signed.'**
+  String get receiptFailed;
+
+  /// No description provided for @receiptMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'No receipt was issued for this result.'**
+  String get receiptMissing;
+
   /// No description provided for @sourceRiskTitle.
   ///
   /// In en, this message translates to:

@@ -451,6 +451,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get verifyResult => 'Verify this result';
 
   @override
+  String get receiptChecking => 'Checking the receipt';
+
+  @override
+  String get receiptVerified =>
+      'Receipt verified. The evidence behind this result is unchanged since it was signed.';
+
+  @override
+  String get receiptFailed =>
+      'Receipt did not verify. The stored evidence no longer matches what was signed.';
+
+  @override
+  String get receiptMissing => 'No receipt was issued for this result.';
+
+  @override
   String sourceRiskTitle(String risk) {
     String _temp0 = intl.Intl.selectLogic(risk, {
       'HIGH': 'Publisher has a high risk profile',

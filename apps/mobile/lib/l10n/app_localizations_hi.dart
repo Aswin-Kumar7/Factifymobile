@@ -447,6 +447,20 @@ class AppLocalizationsHi extends AppLocalizations {
   String get verifyResult => 'इस नतीजे की पुष्टि करें';
 
   @override
+  String get receiptChecking => 'रसीद जाँची जा रही है';
+
+  @override
+  String get receiptVerified =>
+      'रसीद सत्यापित। हस्ताक्षर के बाद से इस नतीजे के साक्ष्य में कोई बदलाव नहीं हुआ है।';
+
+  @override
+  String get receiptFailed =>
+      'रसीद सत्यापित नहीं हुई। संग्रहीत साक्ष्य अब हस्ताक्षरित साक्ष्य से मेल नहीं खाता।';
+
+  @override
+  String get receiptMissing => 'इस नतीजे के लिए कोई रसीद जारी नहीं हुई।';
+
+  @override
   String sourceRiskTitle(String risk) {
     String _temp0 = intl.Intl.selectLogic(risk, {
       'HIGH': 'प्रकाशक का जोखिम ऊँचा है',

@@ -25,6 +25,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../api/client.dart';
 import '../l10n/app_localizations.dart';
 import '../l10n/language_preference.dart';
 import '../l10n/phrases.dart';
@@ -42,10 +43,15 @@ class EvidenceScreen extends StatefulWidget {
     required this.verdict,
     required this.language,
     this.submission,
+    this.client,
   });
 
   final Verdict verdict;
   final LanguagePreference language;
+
+  /// Used only to check the receipt. Optional so widget tests can render the
+  /// screen without a server; the button is the one thing that needs it.
+  final FacifyClient? client;
 
   /// What was checked, when the screen was opened from a check in this session.
   /// Lets a claim's anchor be shown inside the reader's own words, and a media
@@ -143,7 +149,7 @@ class _EvidenceScreenState extends State<EvidenceScreen> {
             // Last, and visually quietest, by design.
             AdvisoryPanel(advisories: verdict.advisories),
             const SizedBox(height: 24),
-            _CaseFooter(verdict: verdict),
+            _CaseFooter(verdict: verdict, client: widget.client),
           ],
         ),
       ),
@@ -729,29 +735,114 @@ class _LimitsBlock extends StatelessWidget {
   }
 }
 
-class _CaseFooter extends StatelessWidget {
-  const _CaseFooter({required this.verdict});
+/// The case identifier, how long the check took, and the receipt behind it.
+///
+/// "Verify this result" checks the receipt **in the app** rather than opening it
+/// elsewhere. The first version handed `receipt_url` straight to `launchUrl`, and
+/// the server sends that as a path (`/v1/receipts/rcpt:...`), not an absolute URL:
+/// Android found no activity for a bare path, threw `ACTIVITY_NOT_FOUND`, and
+/// because nothing caught it the button did nothing at all on a real device. The
+/// host tests missed it because they call [FacifyClient.getReceipt], which resolves
+/// the path against the base URL — so the tested path and the shipped path were
+/// different code.
+///
+/// Checking here is also the better answer. A receipt is an integrity claim about
+/// the evidence, and what a reader needs is whether it held, not a page of JSON.
+class _CaseFooter extends StatefulWidget {
+  const _CaseFooter({required this.verdict, this.client});
 
   final Verdict verdict;
+
+  /// Supplied by the screen that opened this one. Null in widget tests, which
+  /// render the footer without ever pressing the button.
+  final FacifyClient? client;
+
+  @override
+  State<_CaseFooter> createState() => _CaseFooterState();
+}
+
+class _CaseFooterState extends State<_CaseFooter> {
+  /// Null until the button is pressed; then a sentence to show underneath it.
+  String? _outcome;
+  bool _verified = false;
+  bool _checking = false;
+
+  /// Created only if the screen did not pass one, and disposed only if created
+  /// here — closing a client the app still uses would break every later request.
+  FacifyClient? _owned;
+
+  @override
+  void dispose() {
+    _owned?.close();
+    super.dispose();
+  }
+
+  Future<void> _check() async {
+    final l10n = AppLocalizations.of(context);
+    final client = widget.client ?? (_owned ??= FacifyClient());
+
+    setState(() {
+      _checking = true;
+      _outcome = null;
+    });
+
+    String message;
+    var verified = false;
+    try {
+      final receipt = await client.getReceipt(widget.verdict.receiptUrl!);
+      if (receipt == null) {
+        message = l10n.receiptMissing;
+      } else {
+        verified = receipt.verified;
+        message = verified ? l10n.receiptVerified : l10n.receiptFailed;
+      }
+    } on ApiFailure catch (failure) {
+      message = l10n.describeFailure(failure);
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _checking = false;
+      _verified = verified;
+      _outcome = message;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
     final muted = theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+    final outcome = _outcome;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(l10n.caseLabel(verdict.caseId), style: muted),
-        Text(l10n.checkedIn(verdict.elapsedMs), style: muted),
-        if (verdict.receiptUrl != null)
+        Text(l10n.caseLabel(widget.verdict.caseId), style: muted),
+        Text(l10n.checkedIn(widget.verdict.elapsedMs), style: muted),
+        if (widget.verdict.receiptUrl != null) ...[
           TextButton.icon(
-            onPressed: () =>
-                launchUrl(Uri.parse(verdict.receiptUrl!), mode: LaunchMode.externalApplication),
-            icon: const Icon(Icons.verified_outlined, size: 16),
-            label: Text(l10n.verifyResult),
+            onPressed: _checking ? null : _check,
+            icon: _checking
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.verified_outlined, size: 16),
+            label: Text(_checking ? l10n.receiptChecking : l10n.verifyResult),
           ),
+          if (outcome != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 12, bottom: 8),
+              child: Text(
+                outcome,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: _verified ? theme.colorScheme.primary : theme.colorScheme.error,
+                ),
+              ),
+            ),
+        ],
       ],
     );
   }

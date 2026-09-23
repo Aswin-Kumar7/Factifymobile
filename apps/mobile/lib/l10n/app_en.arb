@@ -207,6 +207,13 @@
     "placeholders": { "ms": { "type": "int" } }
   },
   "verifyResult": "Verify this result",
+  "receiptChecking": "Checking the receipt",
+  "receiptVerified": "Receipt verified. The evidence behind this result is unchanged since it was signed.",
+  "receiptFailed": "Receipt did not verify. The stored evidence no longer matches what was signed.",
+  "@receiptFailed": {
+    "description": "Shown when the digest does not match. The server also sends a reason, which is developer English and is not shown."
+  },
+  "receiptMissing": "No receipt was issued for this result.",
   "sourceRiskTitle": "{risk, select, HIGH{Publisher has a high risk profile} MEDIUM{Publisher has a mixed record} LOW{Publisher has an established record} other{Publisher risk not assessed}}",
   "@sourceRiskTitle": {
     "placeholders": { "risk": { "type": "String" } }

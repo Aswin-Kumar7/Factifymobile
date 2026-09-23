@@ -556,10 +556,45 @@ class Orchestrator:
         skipped.extend(scratch)
 
         decision = decide(counted, evidence)
+
+        # Strength counts the evidence that *carries* this verdict, which is not
+        # always the evidence the decision counted.
+        #
+        # `counted` holds supporting origins only, and deliberately: rule 4 asks
+        # whether enough independent outlets carry a claim, and a citation that
+        # contradicts it is not corroboration for it. But strength answers a
+        # different question — how independent is the evidence this verdict rests
+        # on — and feeding it the supporting count made a contradicted claim report
+        # "0 distinct origin(s) across 0 document(s)" on the same card that said,
+        # truthfully, "3 independent sources contradict this claim: dw.com,
+        # jansatta.com, ndtv.com". Two statements about one set of citations,
+        # visibly disagreeing, on the screen built to explain the verdict.
+        #
+        # It also cost the score a quarter of its weight on exactly the cases the
+        # product exists for: a debunked claim scored 0.36 because the component
+        # measuring corroboration was measuring the wrong direction.
+        #
+        # Costs no extra work in the common case. A contradicted claim usually has
+        # no supporting citations, so the count above short-circuits without
+        # querying, and this runs in its place rather than in addition to it.
+        carrying = None
+        if decision.status is ClaimStatus.CONTRADICTED:
+            # A throwaway list: a corroboration failure in the supporting direction
+            # is already reported above, and reporting the same check twice for one
+            # claim describes one outage as two gaps.
+            carrying = await self._origins(
+                claim, evidence=evidence, direction=Direction.CONTRADICTS, skipped=[]
+            )
+
         strength = evidence_strength(
             evidence,
-            independent_origin_count=counted.independent_origin_count,
-            document_count=counted.document_count,
+            independent_origin_count=(
+                counted.independent_origin_count if carrying is None
+                else carrying.independent_origin_count
+            ),
+            document_count=(
+                counted.document_count if carrying is None else carrying.document_count
+            ),
             source_risk=counted.source_risk,
         )
 
@@ -630,20 +665,37 @@ class Orchestrator:
         A failure degrades to "no corroboration counted" rather than aborting: the
         counts stay zero, which can only make the verdict more cautious.
         """
-        if self._corroboration is None:
-            return claim
+        signal = await self._origins(
+            claim, evidence=evidence, direction=Direction.SUPPORTS, skipped=skipped
+        )
+        return claim if signal is None else signal.applied_to(claim)
 
-        urls = sorted(_distinct_supporting_citations(evidence))
+    async def _origins(
+        self,
+        claim: Claim,
+        *,
+        evidence: list[Evidence],
+        direction: Direction,
+        skipped: list[SkippedCheck],
+    ) -> CorroborationSignal | None:
+        """Independent origins among the citations pointing one way, or None.
+
+        None means "not counted", never "none found". The two must stay
+        distinguishable: a caller that cannot tell them apart overwrites a real
+        count with a zero it never measured.
+        """
+        if self._corroboration is None:
+            return None
+
+        urls = sorted(_distinct_citations(evidence, direction))
         if not urls:
-            return claim
+            return None
 
         try:
-            signal = await self._corroboration.signal(claim, citation_urls=urls)
+            return await self._corroboration.signal(claim, citation_urls=urls)
         except Exception as error:
             skipped.append(SkippedCheck(check="corroboration", reason=type(error).__name__))
-            return claim
-
-        return signal.applied_to(claim)
+            return None
 
     async def _run_resolver(
         self, resolver: SourceResolver, claim: Claim
@@ -713,8 +765,10 @@ class Orchestrator:
         return outcome.reason.value if isinstance(outcome, Skip) else None
 
 
-def _distinct_supporting_citations(evidence: list[Evidence]) -> set[str]:
-    """Supporting citation URLs, with republished copies of one story collapsed.
+def _distinct_citations(
+    evidence: list[Evidence], direction: Direction = Direction.SUPPORTS
+) -> set[str]:
+    """Citation URLs pointing one way, with republished copies of one story collapsed.
 
     Origins are what rule 4 counts, and two outlets carrying the same wire story are
     one origin however many mastheads run it. For corpus documents the stored minhash
@@ -728,7 +782,7 @@ def _distinct_supporting_citations(evidence: list[Evidence]) -> set[str]:
     """
     citations: dict[str, str] = {}
     for item in evidence:
-        if item.direction is not Direction.SUPPORTS or not item.citation_url:
+        if item.direction is not direction or not item.citation_url:
             continue
         excerpt = " ".join((item.source_excerpt or "").lower().split())
         # Short or absent excerpts are not evidence of syndication, only of a short
