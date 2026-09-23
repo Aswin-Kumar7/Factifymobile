@@ -1,6 +1,6 @@
 """A mixed true/false accuracy run against a live Facify.
 
-    uv run python scripts/accuracy_suite.py
+    uv run python scripts/accuracy_suite.py [one|two]
 
 Each case is submitted exactly as a person would submit it — the raw sentence, or
 the bare link, and nothing else. No hints, no expected answer, no topic, no
@@ -47,7 +47,12 @@ class Case:
     thin: bool = False  # true claim whose coverage may be genuinely thin
 
 
-CASES: tuple[Case, ...] = (
+# ---------------------------------------------------------------- suite one
+#
+# Assembled 2026-09-23. The service has since been fixed against these, so they
+# measure regression rather than accuracy: once a case has been debugged it can
+# only tell you the fix still holds.
+SUITE_ONE: tuple[Case, ...] = (
     Case(
         ref="T1",
         kind="text",
@@ -126,6 +131,94 @@ CASES: tuple[Case, ...] = (
 )
 
 
+# ---------------------------------------------------------------- suite two
+#
+# Assembled 2026-09-23 as well, and deliberately **not** looked at while anything
+# was being fixed. Different subjects from suite one — a satellite launch, two
+# government-scheme scams, a geopolitical report, a health myth, an encyclopedia
+# page and an official release — so that nothing here shares a debugged path.
+#
+# This is the one that measures accuracy. Suite one no longer can.
+SUITE_TWO: tuple[Case, ...] = (
+    Case(
+        ref="S1",
+        kind="text",
+        payload=(
+            "ISRO launched the EOS-05 earth observation satellite on a GSLV Mk II "
+            "from Satish Dhawan Space Centre on 4 September 2026."
+        ),
+        truth="TRUE",
+        note=(
+            "Heaviest satellite a GSLV has carried. Dated 4 September because that is "
+            "2:55 am IST, the date ISRO, The Hindu and Wikipedia all use; the first "
+            "draft of this case said 3 September, taking the UTC date from a search "
+            "summary, and the service contradicted it correctly off those three "
+            "sources. The case was wrong, not the verdict"
+        ),
+    ),
+    Case(
+        ref="S2",
+        kind="text",
+        payload=(
+            "Good news! The Government of India is giving free laptops to all students "
+            "under the National Student Laptop Scheme 2026. Apply online before the "
+            "last date."
+        ),
+        truth="FALSE",
+        note="PIB Fact Check: no such scheme was announced and no applications invited",
+    ),
+    Case(
+        ref="S3",
+        kind="text",
+        payload=(
+            "Saudi Arabia said Houthi rebels tried to attack Riyadh with a ballistic "
+            "missile."
+        ),
+        truth="TRUE",
+        note="First time the Saudi capital was targeted since the escalation; NPR, wires",
+    ),
+    Case(
+        ref="S4",
+        kind="text",
+        payload="Dry ginger cures the Omicron variant of the coronavirus.",
+        truth="FALSE",
+        note="Alt News: scientifically baseless",
+    ),
+    Case(
+        ref="S5",
+        kind="url",
+        payload="https://en.wikipedia.org/wiki/EOS-05",
+        truth="TRUE",
+        note="Encyclopedia page on the same launch — a clean read, unlike a live blog",
+    ),
+    Case(
+        ref="S6",
+        kind="text",
+        payload=(
+            "Applications are open for the National Sports Scholarship 2026-27 "
+            "announced by the Government of India."
+        ),
+        truth="FALSE",
+        note="PIB Fact Check: the flyer circulating on WhatsApp is a scam",
+    ),
+    Case(
+        ref="S7",
+        kind="url",
+        payload=(
+            "https://www.pib.gov.in/PressNoteDetails.aspx"
+            "?NoteId=158973&ModuleId=3&reg=3&lang=1"
+        ),
+        truth="TRUE",
+        note=(
+            "An official release. pib.gov.in returns 403 to our own fetcher, so this "
+            "also exercises the vendor rung of the link ladder"
+        ),
+    ),
+)
+
+SUITES: dict[str, tuple[Case, ...]] = {"one": SUITE_ONE, "two": SUITE_TWO}
+
+
 @dataclass
 class Result:
     case: Case
@@ -190,6 +283,14 @@ async def _run(client: httpx.AsyncClient, case: Case) -> Result:
 
 
 async def main() -> int:
+    name = sys.argv[1] if len(sys.argv) > 1 else "two"
+    if name not in SUITES:
+        print(f"unknown suite {name!r}; choose from {', '.join(SUITES)}")
+        return 2
+    cases = SUITES[name]
+    print(f"suite {name}: {len(cases)} cases")
+    print()
+
     async with httpx.AsyncClient() as client:
         try:
             ready = await client.get(f"{BASE}/readyz", timeout=20)
@@ -201,7 +302,7 @@ async def main() -> int:
             return 2
 
         results: list[Result] = []
-        for case in CASES:
+        for case in cases:
             print(f"  running {case.ref} ({case.kind}) ...", flush=True)
             results.append(await _run(client, case))
 
