@@ -516,7 +516,11 @@ class CorpusResolver:
             return None
 
         outcome = await self._reasoner.judge(
-            claim.text, passages, title=snapshot.title, language=claim.language
+            claim.text,
+            passages,
+            title=snapshot.title,
+            language=claim.language,
+            claim_type=claim.claim_type.value,
         )
         if not outcome.succeeded:
             event(

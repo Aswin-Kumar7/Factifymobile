@@ -54,7 +54,7 @@ from app.sources.corpus_text import is_navigation
 logger = logging.getLogger("facify.sources.reasoning")
 
 PROVIDER = "llm"
-REASONER_VERSION = "2026.09.8"
+REASONER_VERSION = "2026.09.10"
 
 # How many passages go to the model in one call. One call per source, not one per
 # passage: the model needs to see the alternatives to judge which actually bears on
@@ -346,13 +346,36 @@ def _truncate_at_sentence(text: str, limit: int) -> str:
     return head.strip()
 
 
-def normalise(text: str) -> str:
-    """Whitespace-flattened, lowercased, for locating a quote.
+# Typographic variants of characters that mean the same thing. A curly quote and a
+# straight quote are one character set differently, not different text.
+_TYPOGRAPHY = str.maketrans(
+    {
+        "‘": "'", "’": "'", "‚": "'", "‛": "'", "′": "'",
+        "“": '"', "”": '"', "„": '"', "‟": '"', "″": '"',
+        "–": "-", "—": "-", "―": "-", "−": "-",
+        "­": "",
+    }
+)
 
-    Quotation marks are not normalised away: a model that changed the quotation marks
-    changed the text, and the whole point of this check is that it did not.
+
+def normalise(text: str) -> str:
+    """Whitespace-flattened, lowercased, typography-folded, for locating a quote.
+
+    Quotation marks were deliberately left alone here, on the reasoning that a model
+    which changed them changed the text. The reasoning does not survive contact with
+    news pages: one PBS article carried six U+0027 apostrophes and three U+2019 ones
+    in the same body, so there is no single convention for a model to reproduce even
+    when it copies faithfully. Measured on a one-day-old story read across Reuters,
+    the BBC, the NYT, AP, NPR and PBS, **eight of nine judgements were discarded** on
+    this check and one survived — after the retrieval and the reading had been paid
+    for and had worked.
+
+    Folding these does not weaken the gate. A paraphrase still fails, a changed word
+    still fails, a changed number still fails, invented text still fails. What stops
+    failing is `"obligation"` against `“obligation”`, which is the same
+    quotation typeset twice.
     """
-    return " ".join(text.lower().split())
+    return " ".join(text.lower().translate(_TYPOGRAPHY).split())
 
 
 def verify_quote(quote: str, passage: str) -> tuple[int, int] | None:
@@ -636,6 +659,7 @@ class PassageReasoner:
         *,
         title: str | None = None,
         language: Any | None = None,
+        claim_type: str | None = None,
     ) -> ReasoningOutcome:
         """Judge up to `MAX_PASSAGES` passages, returning only verified quotes.
 
@@ -700,7 +724,7 @@ class PassageReasoner:
         except (json.JSONDecodeError, ValidationError, KeyError, TypeError, IndexError) as exc:
             return ReasoningOutcome(reason=f"schema validation failed: {type(exc).__name__}")
 
-        return self._verify(validated, selected)
+        return self._verify(validated, selected, claim_type=claim_type)
 
     async def same_claim(self, claim_text: str, reviewed_text: str) -> bool | None:
         """Whether a verdict on `reviewed_text` would be a verdict on `claim_text`.
@@ -774,8 +798,17 @@ class PassageReasoner:
             passages=passages,
         )
 
-    def _verify(self, response: _ReasoningResponse, passages: list[Passage]) -> ReasoningOutcome:
+    def _verify(
+        self,
+        response: _ReasoningResponse,
+        passages: list[Passage],
+        *,
+        claim_type: str | None = None,
+    ) -> ReasoningOutcome:
         """Keep only judgements whose quote is genuinely in the passage."""
+        # A claim *about what someone said* is corroborated by reported speech —
+        # that is the only form its evidence can take. See the demotion below.
+        reported_speech = claim_type in ("QUOTE", "ATTRIBUTION")
         by_index = {p.index: p for p in passages}
         kept: list[PassageJudgement] = []
         rejected = 0
@@ -815,7 +848,11 @@ class PassageReasoner:
             # claims is context, never corroboration. Demoted rather than dropped,
             # since the passage is genuinely about the claim and the conflict penalty
             # should still see it.
-            if relation is Relation.SUPPORTS and judgement.asserted_by != "THE_ARTICLE":
+            if (
+                relation is Relation.SUPPORTS
+                and judgement.asserted_by != "THE_ARTICLE"
+                and not reported_speech
+            ):
                 relation = Relation.CONTEXTUALIZES
                 demoted += 1
 

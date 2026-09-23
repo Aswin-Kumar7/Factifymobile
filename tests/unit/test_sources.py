@@ -43,6 +43,7 @@ from app.sources.reasoning import (
     ReasoningOutcome,
     _ReasoningResponse,
     select_passages,
+    verify_quote,
 )
 from app.sources.risk import (
     SourceRiskProfiler,
@@ -633,8 +634,10 @@ class TestTheReaderIsToldWhatItIsReading:
                 *,
                 title: str | None = None,
                 language: object | None = None,
+                claim_type: str | None = None,
             ) -> ReasoningOutcome:
                 seen["title"] = title
+                seen["claim_type"] = claim_type
                 return ReasoningOutcome(judgements=(), passages_read=len(passages))
 
         resolver = WebSearchResolver(
@@ -1315,3 +1318,103 @@ class TestASnippetCannotDecideAClaim:
         """The cap is about the rung, not a blanket loss of nerve."""
         assert self._relate("web.fetched", Relation.SUPPORTS).relation is Relation.SUPPORTS
         assert self._relate("web.fetched", Relation.CONTRADICTS).relation is Relation.CONTRADICTS
+
+
+class TestATypesetQuoteIsStillTheQuote:
+    """Eight of nine judgements were discarded on typography, not on honesty.
+
+    Measured on a one-day-old story read across Reuters, the BBC, the NYT, AP, NPR
+    and PBS: retrieval found the sources, the reader judged them, and the quote gate
+    threw almost all of it away. One PBS article carried six U+0027 apostrophes and
+    three U+2019 ones in the same body, so there is no convention for a model to
+    reproduce even when it is copying faithfully.
+    """
+
+    def test_a_curly_quote_matches_a_straight_one(self) -> None:
+        page = 'Trump said he has an “obligation” to keep fake news out of the complex.'
+        model = 'Trump said he has an "obligation" to keep fake news out of the complex.'
+
+        assert verify_quote(model, page) is not None
+
+    def test_a_curly_apostrophe_matches_a_straight_one(self) -> None:
+        page = "The network’s coverage was described as relentlessly negative by the president."
+        model = "The network's coverage was described as relentlessly negative by the president."
+
+        assert verify_quote(model, page) is not None
+
+    def test_an_em_dash_matches_a_hyphen(self) -> None:
+        page = "Three outlets — CNN, MS NOW and Politico — were barred from the complex."
+        model = "Three outlets - CNN, MS NOW and Politico - were barred from the complex."
+
+        assert verify_quote(model, page) is not None
+
+    def test_a_paraphrase_still_fails(self) -> None:
+        """The gate is unchanged for everything it was built to catch."""
+        page = 'Trump said he has an “obligation” to keep fake news out of the complex.'
+
+        assert verify_quote("Trump claimed a duty to bar fake news from the complex.", page) is None
+
+    def test_a_changed_word_still_fails(self) -> None:
+        page = "The president barred three news organisations from the White House complex."
+        model = "The president barred four news organisations from the White House complex."
+
+        assert verify_quote(model, page) is None
+
+    def test_invented_text_still_fails(self) -> None:
+        page = "The president barred three news organisations from the White House complex."
+
+        assert verify_quote("The president apologised to the barred organisations.", page) is None
+
+
+class TestAQuoteClaimIsCorroboratedByReportedSpeech:
+    """For "X said Y", an article reporting that X said Y is the corroboration.
+
+    The attribution guard demotes a SUPPORTS whose passage merely reports what
+    someone else claims — right for a factual claim, exactly backwards for a claim
+    *about the saying*. Live, on a one-day-old Economic Times story: "Trump said he
+    believes he has an obligation to prevent news organizations he considers fake
+    news from entering the presidential complex" was answered UNVERIFIED while the
+    BBC and NBC both carried it, because the reader saw Trump asserting the belief
+    and the guard filed his own words as context rather than as evidence that he
+    said them.
+    """
+
+    @staticmethod
+    def _judge(claim_type: str | None) -> ReasoningOutcome:
+        body = (
+            "Trump said he believes he has an obligation to prevent news "
+            "organizations he considers fake news from entering the complex."
+        )
+        passages = [Passage(index=0, text=body, char_start=0, char_end=len(body))]
+        response = _ReasoningResponse.model_validate(
+            {
+                "judgements": [
+                    {
+                        "passage_index": 0,
+                        "relation": "SUPPORTS",
+                        # The model reads the inner belief as Trump's, which it is.
+                        "asserted_by": "SOMEONE_ELSE",
+                        "quote": body,
+                        "reason": "r",
+                        "relevance": 0.9,
+                    }
+                ]
+            }
+        )
+        reasoner = PassageReasoner.__new__(PassageReasoner)
+        reasoner._model_id = "test"
+        return reasoner._verify(response, passages, claim_type=claim_type)
+
+    def test_a_quote_claim_keeps_the_support(self) -> None:
+        assert self._judge("QUOTE").judgements[0].relation is Relation.SUPPORTS
+
+    def test_an_attribution_claim_keeps_it_too(self) -> None:
+        assert self._judge("ATTRIBUTION").judgements[0].relation is Relation.SUPPORTS
+
+    def test_an_event_claim_is_still_demoted(self) -> None:
+        """The guard is unchanged where it was right: someone's claim is not a fact."""
+        assert self._judge("EVENT").judgements[0].relation is Relation.CONTEXTUALIZES
+
+    def test_an_unknown_claim_type_is_still_demoted(self) -> None:
+        """Absent a type, keep the cautious behaviour rather than assume."""
+        assert self._judge(None).judgements[0].relation is Relation.CONTEXTUALIZES
