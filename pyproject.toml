@@ -1,5 +1,5 @@
 [project]
-name = "facify"
+name = "factify"
 version = "0.1.0"
 description = "Evidence-based content verification. Verdicts from citable evidence, never from model confidence."
 requires-python = ">=3.12"
@@ -53,10 +53,10 @@ addopts = "-q --strict-markers --strict-config -m 'not live and not model'"
 asyncio_mode = "auto"
 markers = [
     "unit: pure core; no database, network or model access",
-    "db: requires a live Postgres with pgvector (FACIFY_DATABASE_URL)",
+    "db: requires a live Postgres with pgvector (FACTIFY_DATABASE_URL)",
     "replay: runs against stored source snapshots",
     "live: performs real outbound calls; never runs in CI",
-    "model: requires downloaded model weights (FACIFY_MODEL_TESTS=1)",
+    "model: requires downloaded model weights (FACTIFY_MODEL_TESTS=1)",
 ]
 
 [tool.ruff]

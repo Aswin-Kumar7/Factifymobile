@@ -30,7 +30,7 @@ from app.media.provenance import ProvenanceReport
 from app.observability.logging import event
 from app.sources.base import SourceCandidate, SourceRelation, SourceSnapshot, insufficient
 
-logger = logging.getLogger("facify.sources.media")
+logger = logging.getLogger("factify.sources.media")
 
 PROVENANCE_NAME = "provenance"
 MEDIA_MATCH_NAME = "media_match"

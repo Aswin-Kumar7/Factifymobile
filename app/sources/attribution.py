@@ -37,7 +37,7 @@ from app.sources.base import (
     locate_excerpt,
 )
 
-logger = logging.getLogger("facify.attribution")
+logger = logging.getLogger("factify.attribution")
 
 ATTRIBUTION_NAME = "attribution"
 QUOTE_NAME = "quote"

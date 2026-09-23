@@ -21,7 +21,7 @@ from app.audit.manifest import content_hash as hash_bytes
 from app.observability.logging import event
 from app.security.fetcher import FetchResult, SecureFetcher
 
-logger = logging.getLogger("facify.audit.collect")
+logger = logging.getLogger("factify.audit.collect")
 
 # How many genuine items to gather. Above the floor on purpose: sources disappear
 # between collection and the run, and a manifest that sits exactly on the floor

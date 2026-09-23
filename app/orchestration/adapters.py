@@ -34,7 +34,7 @@ from app.db.pool import Database
 from app.governor.governor import Governor
 from app.security.ratelimit import SlidingWindowLimiter
 
-logger = logging.getLogger("facify.orchestration.adapters")
+logger = logging.getLogger("factify.orchestration.adapters")
 
 
 class PoolGovernor:

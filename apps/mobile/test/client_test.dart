@@ -7,7 +7,7 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:facify_mobile/api/client.dart';
+import 'package:factify_mobile/api/client.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -29,14 +29,14 @@ Map<String, dynamic> _verdictJson() => {
 
 void main() {
   test('a file upload reports progress through to the whole body, and sends every field', () async {
-    final folder = await Directory.systemTemp.createTemp('facify_upload_test');
+    final folder = await Directory.systemTemp.createTemp('factify_upload_test');
     addTearDown(() => folder.delete(recursive: true));
     final file = File('${folder.path}/picture.png')
       ..writeAsBytesSync(List<int>.generate(200000, (i) => i % 256));
 
     late http.Request received;
-    final client = FacifyClient(
-      baseUrl: 'http://facify.test',
+    final client = FactifyClient(
+      baseUrl: 'http://factify.test',
       httpClient: MockClient((request) async {
         received = request;
         return http.Response(jsonEncode(_verdictJson()), 200);
@@ -64,12 +64,12 @@ void main() {
   });
 
   test('an upload the server rejects surfaces as a failure the screen can phrase', () async {
-    final folder = await Directory.systemTemp.createTemp('facify_upload_test');
+    final folder = await Directory.systemTemp.createTemp('factify_upload_test');
     addTearDown(() => folder.delete(recursive: true));
     final file = File('${folder.path}/big.png')..writeAsBytesSync(List<int>.filled(1024, 7));
 
-    final client = FacifyClient(
-      baseUrl: 'http://facify.test',
+    final client = FactifyClient(
+      baseUrl: 'http://factify.test',
       httpClient: MockClient(
         (_) async => http.Response('{"detail": "the upload exceeds 1 bytes"}', 413),
       ),

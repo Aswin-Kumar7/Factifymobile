@@ -39,7 +39,7 @@ from dataclasses import dataclass
 from app.extraction.language import Language
 from app.observability.logging import event
 
-logger = logging.getLogger("facify.embeddings.text")
+logger = logging.getLogger("factify.embeddings.text")
 
 # Fixed at the migration. `claim.embedding` and `corpus_item.embedding` are vector(384).
 DIMENSIONS = 384

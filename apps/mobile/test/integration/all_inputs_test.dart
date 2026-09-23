@@ -1,4 +1,4 @@
-/// Every input the app can send, against a running Facify API.
+/// Every input the app can send, against a running Factify API.
 ///
 /// The widget tests prove the UI honours hand-written payloads; `live_api_test.dart`
 /// proves one text submission round-trips. Neither covers the paths a real user takes
@@ -19,11 +19,11 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:facify_mobile/api/client.dart';
-import 'package:facify_mobile/models/verdict.dart';
+import 'package:factify_mobile/api/client.dart';
+import 'package:factify_mobile/models/verdict.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-const String _base = String.fromEnvironment('FACIFY_API', defaultValue: 'http://127.0.0.1:8000');
+const String _base = String.fromEnvironment('FACTIFY_API', defaultValue: 'http://127.0.0.1:8000');
 
 /// Timings, printed together at the end so the run reads as one table.
 final List<(String, String, int, String)> _timings = [];
@@ -103,7 +103,7 @@ Uint8List _mp4() {
 
 /// The client uploads a [File], as it does on a phone, so these bytes need a path.
 File _scratch(String name, Uint8List bytes) {
-  final file = File('${Directory.systemTemp.path}/facify_$name')..writeAsBytesSync(bytes);
+  final file = File('${Directory.systemTemp.path}/factify_$name')..writeAsBytesSync(bytes);
   addTearDown(() {
     if (file.existsSync()) file.deleteSync();
   });
@@ -111,14 +111,14 @@ File _scratch(String name, Uint8List bytes) {
 }
 
 void main() {
-  final client = FacifyClient(baseUrl: _base);
+  final client = FactifyClient(baseUrl: _base);
   var reachable = false;
 
   setUpAll(() async {
     reachable = await client.healthy();
     if (!reachable) {
       // ignore: avoid_print
-      print('SKIPPING: no Facify API at $_base. Start it, or pass --dart-define=FACIFY_API=...');
+      print('SKIPPING: no Factify API at $_base. Start it, or pass --dart-define=FACTIFY_API=...');
     }
   });
 

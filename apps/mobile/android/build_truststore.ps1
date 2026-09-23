@@ -19,7 +19,7 @@ $ErrorActionPreference = 'Stop'
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $out = Join-Path $here 'windows-roots.jks'
-$scratch = Join-Path $env:TEMP ("facify_roots_" + [guid]::NewGuid().ToString('N'))
+$scratch = Join-Path $env:TEMP ("factify_roots_" + [guid]::NewGuid().ToString('N'))
 
 $javaHome = $env:JAVA_HOME
 if (-not $javaHome) { $javaHome = 'C:\Program Files\Android\Android Studio\jbr' }

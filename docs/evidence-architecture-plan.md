@@ -299,8 +299,8 @@ Found while auditing, and all five are real:
    `status_code == 304` — but `SecureFetcher.fetch()` takes no request headers, so
    `If-None-Match` and `If-Modified-Since` are never sent and that branch is
    unreachable. The politeness win we already designed has never run.
-3. **The user agent points at a placeholder** — `FacifyBot/1.0
-   (+https://facify.example/bot)`. A UA URL that 404s is worse for publisher relations
+3. **The user agent points at a placeholder** — `FactifyBot/1.0
+   (+https://factify.example/bot)`. A UA URL that 404s is worse for publisher relations
    than no URL at all.
 4. **No per-host politeness**: no minimum interval, no `Retry-After` handling, no
    backoff, despite `fetcher.py:4` naming *"the politeness layer"*.

@@ -19,7 +19,7 @@ from app.api import health, verify
 from app.config import Settings, get_settings
 from app.observability import RequestContextMiddleware, configure
 
-logger = logging.getLogger("facify.main")
+logger = logging.getLogger("factify.main")
 
 if sys.platform == "win32":
     # psycopg's async mode refuses to run on Windows' default ProactorEventLoop, and
@@ -32,7 +32,7 @@ if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 DESCRIPTION = """
-Facify verifies content against citable evidence.
+Factify verifies content against citable evidence.
 
 Every decisive verdict carries at least one citation with a fetched excerpt and an
 anchor into the source. A claim with no citable evidence returns `UNVERIFIED` — that
@@ -79,7 +79,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(
         lifespan=lifespan,
-        title="Facify",
+        title="Factify",
         version=__version__,
         summary="Evidence-based content verification",
         description=DESCRIPTION,

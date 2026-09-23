@@ -1,4 +1,4 @@
-# Facify — Agent Action Plan
+# Factify — Agent Action Plan
 
 **Derived from:** [codexplan.md](codexplan.md) — that document is the specification; this one is the
 build order. Where they disagree, `codexplan.md` wins and this file is wrong.
@@ -632,7 +632,7 @@ and the verdict is unchanged if the model is unavailable.
 - Templates per status, per action and per evidence kind, in English and Hindi.
 - Slots filled from the verdict, the evidence and the citations — publisher, date, count of
   independent origins.
-- A "what Facify cannot establish" block, composed from what was checked and came back empty.
+- A "what Factify cannot establish" block, composed from what was checked and came back empty.
 
 **Must not**
 - Call a model on the response path.
@@ -1251,7 +1251,7 @@ pipeline.
 - The result card: status, one-line explanation, the reasons, and three actions — see evidence, share
   correction, report for review.
 - The evidence screen: extracted claim with its anchor, timeline, source cards with publisher, date
-  and URL, media match preview, the recurrence line, the "what Facify cannot establish" block, and a
+  and URL, media match preview, the recurrence line, the "what Factify cannot establish" block, and a
   language toggle.
 - The advisory panel, greyed, under its permanent exclusion header.
 - A shareable correction card that returns to the group the content came from.

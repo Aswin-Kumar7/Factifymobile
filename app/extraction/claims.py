@@ -24,7 +24,7 @@ from app.domain.claim import Claim, ClaimAnchor
 from app.extraction.llm import EXTRACTOR_VERSION, ExtractionOutcome, ProposedClaim
 from app.observability.logging import event
 
-logger = logging.getLogger("facify.claims")
+logger = logging.getLogger("factify.claims")
 
 
 class Extractor(Protocol):

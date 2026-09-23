@@ -75,7 +75,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get emptyBody =>
-      'Share a forward straight into Facify, paste it above, or check a picture. Every verdict comes with the sources behind it — and when there are none, it says so.';
+      'Share a forward straight into Factify, paste it above, or check a picture. Every verdict comes with the sources behind it — and when there are none, it says so.';
 
   @override
   String get working => 'Looking for sources that address this';
@@ -121,14 +121,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get errorNoServerAddress =>
-      'This build has no server address. Rebuild it with --dart-define=FACIFY_API=https://your-server.';
+      'This build has no server address. Rebuild it with --dart-define=FACTIFY_API=https://your-server.';
 
   @override
   String get errorShareUnreadable => 'Could not read the shared item.';
 
   @override
   String get errorShareFileUnopenable =>
-      'That file could not be opened. Share it again, or use the Gallery button in Facify.';
+      'That file could not be opened. Share it again, or use the Gallery button in Factify.';
 
   @override
   String errorVideoSlow(String caseId) {
@@ -137,7 +137,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get errorCameraDenied =>
-      'Facify needs camera access to check a photo you take.';
+      'Factify needs camera access to check a photo you take.';
 
   @override
   String get errorFileUnopenable => 'That file could not be opened.';
@@ -155,7 +155,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Correction copied - paste it back into the chat';
 
   @override
-  String get correctionHeader => 'Checked with Facify:';
+  String get correctionHeader => 'Checked with Factify:';
 
   @override
   String get correctionSourceFallback => 'Source';
@@ -190,22 +190,22 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get failureTimeout =>
-      'Facify is taking longer than usual. Try again in a moment.';
+      'Factify is taking longer than usual. Try again in a moment.';
 
   @override
   String get failureUnreachable =>
-      'Could not reach Facify. Check your connection and try again.';
+      'Could not reach Factify. Check your connection and try again.';
 
   @override
   String get failureInterrupted =>
-      'The connection to Facify was interrupted. Try again.';
+      'The connection to Factify was interrupted. Try again.';
 
   @override
   String get failureUnreadableFile =>
       'That file could not be read from this phone.';
 
   @override
-  String get failureBadReply => 'Facify sent a reply this app could not read.';
+  String get failureBadReply => 'Factify sent a reply this app could not read.';
 
   @override
   String get failureInvalidInput => 'That input could not be read.';
@@ -215,13 +215,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get failureDailyLimit =>
-      'Facify is at its daily limit. Please try again tomorrow.';
+      'Factify is at its daily limit. Please try again tomorrow.';
 
   @override
   String get failureUnavailable => 'Verification is not available right now.';
 
   @override
-  String get failureGeneric => 'Facify could not complete that check.';
+  String get failureGeneric => 'Factify could not complete that check.';
 
   @override
   String get headlineSafeToShare => 'Nothing contradicts this';
@@ -402,7 +402,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get noEvidenceBody =>
-      'This does not mean the content is false. It means nothing we could cite either supports or contradicts it, so Facify did not decide.';
+      'This does not mean the content is false. It means nothing we could cite either supports or contradicts it, so Factify did not decide.';
 
   @override
   String get historyCardTitle => 'History';
@@ -419,7 +419,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get notCheckedTitle => 'What could not be checked';
 
   @override
-  String get limitsTitle => 'What Facify cannot establish';
+  String get limitsTitle => 'What Factify cannot establish';
 
   @override
   String get limitAi =>
@@ -562,7 +562,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get timelineTitle => 'Timeline';
 
   @override
-  String get timelineFirstChecked => 'First checked by Facify';
+  String get timelineFirstChecked => 'First checked by Factify';
 
   @override
   String get timelineRetrieved => 'Evidence gathered for this result';

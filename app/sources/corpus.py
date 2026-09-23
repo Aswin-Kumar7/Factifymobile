@@ -53,7 +53,7 @@ from app.sources.base import (
 from app.sources.corpus_text import is_navigation
 from app.sources.reasoning import REASONER_VERSION, PassageReasoner, split_passages
 
-logger = logging.getLogger("facify.sources.corpus")
+logger = logging.getLogger("factify.sources.corpus")
 
 NAME = "corpus"
 VERSION = "2026.08.1"

@@ -22,7 +22,7 @@ from datetime import datetime
 from app.knowledge.minhash import Signature, sign
 from app.observability.logging import event
 
-logger = logging.getLogger("facify.clustering")
+logger = logging.getLogger("factify.clustering")
 
 # Estimated Jaccard above which two documents are treated as one origin.
 #

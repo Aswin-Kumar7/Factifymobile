@@ -1,4 +1,4 @@
-package com.facify.facify_mobile
+package com.factify.factify_mobile
 
 import android.content.Intent
 import android.net.Uri
@@ -115,7 +115,7 @@ class MainActivity : FlutterActivity() {
         val path = copyIntoCache(uri)
             ?: return mapOf(
                 "kind" to "error",
-                "value" to "That file could not be opened. Share it again, or use the Gallery button in Facify.",
+                "value" to "That file could not be opened. Share it again, or use the Gallery button in Factify.",
                 "mimeType" to type,
             )
         return mapOf("kind" to "file", "value" to path, "mimeType" to type)
@@ -148,6 +148,6 @@ class MainActivity : FlutterActivity() {
     }
 
     private companion object {
-        const val CHANNEL = "facify/share"
+        const val CHANNEL = "factify/share"
     }
 }

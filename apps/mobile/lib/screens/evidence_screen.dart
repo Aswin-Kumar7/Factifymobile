@@ -51,7 +51,7 @@ class EvidenceScreen extends StatefulWidget {
 
   /// Used only to check the receipt. Optional so widget tests can render the
   /// screen without a server; the button is the one thing that needs it.
-  final FacifyClient? client;
+  final FactifyClient? client;
 
   /// What was checked, when the screen was opened from a check in this session.
   /// Lets a claim's anchor be shown inside the reader's own words, and a media
@@ -688,7 +688,7 @@ class _SkippedCard extends StatelessWidget {
   }
 }
 
-/// The "what Facify cannot establish" block.
+/// The "what Factify cannot establish" block.
 ///
 /// Fixed text, always shown. Stating the limits up front is what lets someone
 /// calibrate how much to rely on a result, and a tool that hides them gets
@@ -742,7 +742,7 @@ class _LimitsBlock extends StatelessWidget {
 /// the server sends that as a path (`/v1/receipts/rcpt:...`), not an absolute URL:
 /// Android found no activity for a bare path, threw `ACTIVITY_NOT_FOUND`, and
 /// because nothing caught it the button did nothing at all on a real device. The
-/// host tests missed it because they call [FacifyClient.getReceipt], which resolves
+/// host tests missed it because they call [FactifyClient.getReceipt], which resolves
 /// the path against the base URL — so the tested path and the shipped path were
 /// different code.
 ///
@@ -755,7 +755,7 @@ class _CaseFooter extends StatefulWidget {
 
   /// Supplied by the screen that opened this one. Null in widget tests, which
   /// render the footer without ever pressing the button.
-  final FacifyClient? client;
+  final FactifyClient? client;
 
   @override
   State<_CaseFooter> createState() => _CaseFooterState();
@@ -769,7 +769,7 @@ class _CaseFooterState extends State<_CaseFooter> {
 
   /// Created only if the screen did not pass one, and disposed only if created
   /// here — closing a client the app still uses would break every later request.
-  FacifyClient? _owned;
+  FactifyClient? _owned;
 
   @override
   void dispose() {
@@ -779,7 +779,7 @@ class _CaseFooterState extends State<_CaseFooter> {
 
   Future<void> _check() async {
     final l10n = AppLocalizations.of(context);
-    final client = widget.client ?? (_owned ??= FacifyClient());
+    final client = widget.client ?? (_owned ??= FactifyClient());
 
     setState(() {
       _checking = true;

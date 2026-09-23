@@ -26,7 +26,7 @@ from datetime import UTC, datetime
 from app.cache.keys import CacheKeyParts
 from app.observability.logging import event
 
-logger = logging.getLogger("facify.audit.prewarm")
+logger = logging.getLogger("factify.audit.prewarm")
 
 
 @dataclass(frozen=True, slots=True)

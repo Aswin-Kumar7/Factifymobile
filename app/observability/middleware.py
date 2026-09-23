@@ -25,7 +25,7 @@ from app.observability.logging import event
 REQUEST_ID_HEADER = "X-Request-ID"
 _MAX_INBOUND_ID_CHARS = 64
 
-logger = logging.getLogger("facify.request")
+logger = logging.getLogger("factify.request")
 
 
 def _sanitise(raw: str | None) -> str:

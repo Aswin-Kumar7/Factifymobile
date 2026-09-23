@@ -10,13 +10,13 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:facify_mobile/l10n/app_localizations.dart';
-import 'package:facify_mobile/l10n/language_preference.dart';
-import 'package:facify_mobile/models/submission.dart';
-import 'package:facify_mobile/models/verdict.dart';
-import 'package:facify_mobile/screens/evidence_screen.dart';
-import 'package:facify_mobile/widgets/evidence_timeline.dart';
-import 'package:facify_mobile/widgets/teaching_line.dart';
+import 'package:factify_mobile/l10n/app_localizations.dart';
+import 'package:factify_mobile/l10n/language_preference.dart';
+import 'package:factify_mobile/models/submission.dart';
+import 'package:factify_mobile/models/verdict.dart';
+import 'package:factify_mobile/screens/evidence_screen.dart';
+import 'package:factify_mobile/widgets/evidence_timeline.dart';
+import 'package:factify_mobile/widgets/teaching_line.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -191,7 +191,7 @@ void main() {
       expect(entries.map((e) => e.title), [
         'news.example',
         'Factchecker',
-        'First checked by Facify',
+        'First checked by Factify',
         'Evidence gathered for this result',
       ]);
     });

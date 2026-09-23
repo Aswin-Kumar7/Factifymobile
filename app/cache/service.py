@@ -27,7 +27,7 @@ from app.db.repositories import CacheRepository, Conn
 from app.observability.logging import event
 from app.observability.metrics import metrics
 
-logger = logging.getLogger("facify.cache")
+logger = logging.getLogger("factify.cache")
 
 # A decisive verdict rests on citations that were true when collected and stay true.
 DECISIVE_TTL = timedelta(days=30)

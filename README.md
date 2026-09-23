@@ -1,4 +1,4 @@
-# Facify
+# Factify
 
 **Proof, not opinion.** Evidence-based content verification for India's information ecosystem.
 
@@ -35,7 +35,7 @@ And the dominant Indian format is not a deepfake at all: it is real footage unde
 2019 photograph presented as today, a genuine article with names swapped, a forged circular as a
 PDF. A perfect deepfake detector scores zero on all of it.
 
-Facify ships a **scored explanation** rather than an explained score: strength is computed in Python
+Factify ships a **scored explanation** rather than an explained score: strength is computed in Python
 from tier composition, independent-origin count, source credibility and temporal confidence, with
 every term linked to the citation that produced it, and the forensic panel displayed **greyed and
 labelled "not used in this verdict."**

@@ -20,14 +20,14 @@ from psycopg import AsyncConnection, sql
 MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
 _FILENAME = re.compile(r"^(\d{4})_([a-z0-9_]+)\.sql$")
 
-# Facify owns a dedicated schema; see the header of 0001_initial.sql for why. The
+# Factify owns a dedicated schema; see the header of 0001_initial.sql for why. The
 # ledger lives there too, so a migrated database carries its own history rather than
 # leaving it in a schema the platform manages.
 #
 # The schema name is composed with psycopg's identifier quoting rather than string
 # interpolation. It is a constant today, but a query built by concatenation is a
 # habit that outlives the constant that made it safe.
-SCHEMA = "facify"
+SCHEMA = "factify"
 _SCHEMA_ID = sql.Identifier(SCHEMA)
 
 _CREATE_SCHEMA = sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(_SCHEMA_ID)

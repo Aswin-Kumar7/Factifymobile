@@ -1,18 +1,18 @@
-/// The Dart client against a running Facify API.
+/// The Dart client against a running Factify API.
 ///
 /// The widget tests use hand-written payloads, which prove the UI honours the
 /// contract but would keep passing if the server drifted away from it. This one
 /// talks to the real service, so a field rename on either side fails here.
 ///
-///   dart test test/integration/live_api_test.dart --define=FACIFY_API=http://127.0.0.1:8000
+///   dart test test/integration/live_api_test.dart --define=FACTIFY_API=http://127.0.0.1:8000
 @Tags(['integration'])
 library;
 
-import 'package:facify_mobile/api/client.dart';
+import 'package:factify_mobile/api/client.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  final client = FacifyClient(baseUrl: 'http://127.0.0.1:8000');
+  final client = FactifyClient(baseUrl: 'http://127.0.0.1:8000');
 
   test('the service is reachable', () async {
     expect(await client.healthy(), isTrue);

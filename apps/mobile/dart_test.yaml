@@ -1,14 +1,26 @@
 # Test configuration.
 #
-# The integration suites talk to a real Facify API. Run alongside each other they
-# contend for one server whose slowest path is a model call, and a request that would
-# answer in twelve seconds alone crosses the client's 45 second timeout — a failure
-# about scheduling, reported as a failure about the contract.
+# **The integration suites run one at a time.** `test/integration/` holds two files
+# that both talk to one real Factify API, and `flutter test` runs files in parallel:
+# a URL check that fetches and reads a page takes tens of seconds on its own, and
+# behind another verification it crosses the client's timeout. The failure looks
+# like "a shared link is fetched, read and answered" breaking, and the link is fine
+# — it passes every time the file is run by itself.
 #
-# The extra allowance is for that contention, not for a slow server: a verification
-# that fetches and reads several pages legitimately takes tens of seconds, and the
-# app's own client gives up at 45. The widget and unit tests keep the default.
+# The `timeout: 3x` below does not fix that and was never going to. It extends the
+# *test framework's* deadline, and the thing that actually gives up is the app's own
+# HTTP client at 45 seconds, which is a product decision about how long a person
+# will wait, not a test setting. A test cannot raise it, so the contention has to go
+# instead.
+#
+# The cost is that the fast widget tests no longer run in parallel either. That is
+# seconds against a flaky suite, and a suite nobody trusts is worth less than a slow
+# one.
+concurrency: 1
 
+# Still useful for the genuinely slow path: a verification that fetches and reads
+# several sources legitimately runs to tens of seconds, which is past the default
+# per-test deadline even with nothing competing.
 tags:
   integration:
     timeout: 3x

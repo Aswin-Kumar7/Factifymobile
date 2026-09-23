@@ -40,7 +40,7 @@ from math import sqrt
 
 from app.observability.logging import event
 
-logger = logging.getLogger("facify.embeddings.image")
+logger = logging.getLogger("factify.embeddings.image")
 
 # Fixed at the migration. `content_object.embedding` and
 # `media_fingerprint.embedding` are vector(512).

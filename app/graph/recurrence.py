@@ -27,7 +27,7 @@ from uuid import UUID
 from app.db.repositories import FingerprintRepository
 from app.observability.logging import event
 
-logger = logging.getLogger("facify.graph.recurrence")
+logger = logging.getLogger("factify.graph.recurrence")
 
 # Below this, "recurring" overstates it. Two sightings is a coincidence worth
 # recording and not a pattern worth announcing.

@@ -35,7 +35,7 @@ if sys.platform == "win32":
 def _test_database_url() -> str | None:
     """The test connection string, from the environment or from `.env`.
 
-    Deliberately **not** named with the ``FACIFY_`` prefix. That prefix is the
+    Deliberately **not** named with the ``FACTIFY_`` prefix. That prefix is the
     application's config namespace and `Settings` declares it ``extra="forbid"``, so
     a typo in a real setting fails loudly instead of being ignored — a test-harness
     variable living there would force that guard to be weakened.
@@ -98,7 +98,7 @@ async def conn(database: Database) -> AsyncIterator[object]:
 # nothing should silently pull hundreds of megabytes during an ordinary test run.
 # `truststore` bridges the OS certificate store, which this network's TLS
 # interception requires and a plain CI runner does not.
-if os.environ.get("FACIFY_MODEL_TESTS") == "1":  # pragma: no cover - opt-in path
+if os.environ.get("FACTIFY_MODEL_TESTS") == "1":  # pragma: no cover - opt-in path
     try:
         import truststore
 

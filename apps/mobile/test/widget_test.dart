@@ -9,17 +9,17 @@ library;
 
 import 'dart:convert';
 
-import 'package:facify_mobile/api/client.dart';
-import 'package:facify_mobile/l10n/app_localizations.dart';
-import 'package:facify_mobile/l10n/language_preference.dart';
-import 'package:facify_mobile/main.dart';
-import 'package:facify_mobile/models/verdict.dart';
-import 'package:facify_mobile/screens/evidence_screen.dart';
-import 'package:facify_mobile/widgets/advisory_panel.dart';
-import 'package:facify_mobile/widgets/correction_card.dart';
-import 'package:facify_mobile/widgets/correction_sheet.dart';
-import 'package:facify_mobile/widgets/language_menu.dart';
-import 'package:facify_mobile/widgets/verdict_card.dart';
+import 'package:factify_mobile/api/client.dart';
+import 'package:factify_mobile/l10n/app_localizations.dart';
+import 'package:factify_mobile/l10n/language_preference.dart';
+import 'package:factify_mobile/main.dart';
+import 'package:factify_mobile/models/verdict.dart';
+import 'package:factify_mobile/screens/evidence_screen.dart';
+import 'package:factify_mobile/widgets/advisory_panel.dart';
+import 'package:factify_mobile/widgets/correction_card.dart';
+import 'package:factify_mobile/widgets/correction_sheet.dart';
+import 'package:factify_mobile/widgets/language_menu.dart';
+import 'package:factify_mobile/widgets/verdict_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -416,7 +416,7 @@ void main() {
       final l10n = lookupAppLocalizations(_english);
 
       final text = correctionText(contradicted(), l10n);
-      expect(text, startsWith('Checked with Facify:'));
+      expect(text, startsWith('Checked with Factify:'));
       expect(text, contains('https://factchecker.example/1'));
 
       final undecided = Verdict.fromJson(
@@ -457,7 +457,7 @@ void main() {
       expect(shared, isNotNull, reason: 'the share sheet was never opened');
       final png = await tester.runAsync(() => shared!.files!.single.readAsBytes());
       expect(png!.sublist(0, 4), const [0x89, 0x50, 0x4E, 0x47], reason: 'not a PNG');
-      expect(shared!.fileNameOverrides, const ['facify-correction.png']);
+      expect(shared!.fileNameOverrides, const ['factify-correction.png']);
       expect(shared!.text, contains('https://factchecker.example/1'));
       await tester.pump();
     });
@@ -484,8 +484,8 @@ void main() {
     ) async {
       _phoneSized(tester);
       final sent = <Map<String, dynamic>>[];
-      final client = FacifyClient(
-        baseUrl: 'http://facify.test',
+      final client = FactifyClient(
+        baseUrl: 'http://factify.test',
         httpClient: MockClient((request) async {
           if (request.url.path == '/readyz') {
             return http.Response('{"ready": true, "missing": []}', 200);
@@ -495,7 +495,7 @@ void main() {
         }),
       );
 
-      await tester.pumpWidget(FacifyApp(language: LanguagePreference.inMemory(), client: client));
+      await tester.pumpWidget(FactifyApp(language: LanguagePreference.inMemory(), client: client));
       await tester.pumpAndSettle();
       expect(find.textContaining('never from a model score'), findsOneWidget);
 
@@ -519,17 +519,17 @@ void main() {
     ) async {
       _phoneSized(tester);
       addTearDown(tester.platformDispatcher.clearLocalesTestValue);
-      final client = FacifyClient(
-        baseUrl: 'http://facify.test',
+      final client = FactifyClient(
+        baseUrl: 'http://factify.test',
         httpClient: MockClient((_) async => http.Response('{"ready": true, "missing": []}', 200)),
       );
 
       tester.platformDispatcher.localesTestValue = const [Locale('hi', 'IN')];
-      await tester.pumpWidget(FacifyApp(language: LanguagePreference.inMemory(), client: client));
+      await tester.pumpWidget(FactifyApp(language: LanguagePreference.inMemory(), client: client));
       await tester.pumpAndSettle();
       expect(find.textContaining('मॉडल स्कोर से कभी नहीं'), findsOneWidget);
 
-      // A phone in a language Facify has no strings for gets English.
+      // A phone in a language Factify has no strings for gets English.
       tester.platformDispatcher.localesTestValue = const [Locale('ta', 'IN')];
       await tester.pumpAndSettle();
       expect(find.textContaining('never from a model score'), findsOneWidget);

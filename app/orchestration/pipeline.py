@@ -44,7 +44,7 @@ from app.sources.reasoning import REASONER_VERSION
 from app.verdict.engine import RULE_VERSION, CaseDecision, Decision, decide, roll_up
 from app.verdict.strength import Strength, evidence_strength
 
-logger = logging.getLogger("facify.orchestration")
+logger = logging.getLogger("factify.orchestration")
 
 # The synchronous budget for text, URL, image and PDF (codexplan §11). Video returns
 # accepted-with-progress instead of blocking a request for half a minute.

@@ -1,4 +1,4 @@
-"""A mixed true/false accuracy run against a live Facify.
+"""A mixed true/false accuracy run against a live Factify.
 
     uv run python scripts/accuracy_suite.py [one|two]
 
@@ -306,10 +306,10 @@ async def main() -> int:
         try:
             ready = await client.get(f"{BASE}/readyz", timeout=20)
         except Exception as error:
-            print(f"no Facify at {BASE}: {error}")
+            print(f"no Factify at {BASE}: {error}")
             return 2
         if ready.status_code != 200 or not ready.json().get("ready"):
-            print(f"Facify at {BASE} is not ready: {ready.text}")
+            print(f"Factify at {BASE} is not ready: {ready.text}")
             return 2
 
         results: list[Result] = []

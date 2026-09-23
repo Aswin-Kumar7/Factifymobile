@@ -1,4 +1,4 @@
-/// Wire models for the Facify contract (M41), contract_version 1.0.
+/// Wire models for the Factify contract (M41), contract_version 1.0.
 ///
 /// Mirrors app/api/schemas.py field for field. Two properties of the server
 /// contract are load-bearing and are preserved deliberately:

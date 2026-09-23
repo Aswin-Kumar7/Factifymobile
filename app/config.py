@@ -62,7 +62,7 @@ class ProviderSettings(BaseModel):
     # generateContent, x-goog-api-key) or "openai" (chat/completions, bearer token —
     # Groq, OpenRouter, Azure). The model is a swappable dependency by design, so the
     # provider is an environment change, not a code change. See app/extraction/
-    # model_wire.py. Vision (FACIFY_VISION__*) has its own block and stays whatever it
+    # model_wire.py. Vision (FACTIFY_VISION__*) has its own block and stays whatever it
     # is set to, because the OpenAI-compatible free tiers expose no vision model.
     api_format: str = Field(default="gemini", pattern="^(gemini|openai)$")
 
@@ -152,13 +152,13 @@ class LimitSettings(BaseModel):
 class Settings(BaseSettings):
     """Application settings, loaded once at startup.
 
-    Environment variables use the ``FACIFY_`` prefix and ``__`` for nesting, so a
-    provider credential is supplied as ``FACIFY_VISION__API_KEY``. Credentials are
+    Environment variables use the ``FACTIFY_`` prefix and ``__`` for nesting, so a
+    provider credential is supplied as ``FACTIFY_VISION__API_KEY``. Credentials are
     read from the server environment only.
     """
 
     model_config = SettingsConfigDict(
-        env_prefix="FACIFY_",
+        env_prefix="FACTIFY_",
         env_nested_delimiter="__",
         env_file=".env",
         env_file_encoding="utf-8",
@@ -226,7 +226,7 @@ class Settings(BaseSettings):
         if stranded:
             raise ValueError(
                 f"enabled with a credential but no endpoint: {', '.join(sorted(stranded))}. "
-                "Set FACIFY_<PROVIDER>__ENDPOINT or disable the provider"
+                "Set FACTIFY_<PROVIDER>__ENDPOINT or disable the provider"
             )
 
         return self

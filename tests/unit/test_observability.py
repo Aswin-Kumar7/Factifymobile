@@ -60,7 +60,7 @@ class TestRequestContext:
 
 class TestFixedFieldSet:
     def test_event_carries_the_skeleton(self, captured: Any) -> None:
-        logger = logging.getLogger("facify.test")
+        logger = logging.getLogger("factify.test")
 
         # Rendered inside the block: the formatter reads the context at format time,
         # which is when the real handler emits.
@@ -86,7 +86,7 @@ class TestFixedFieldSet:
 
     def test_skip_reason_is_recorded(self, captured: Any) -> None:
         """A skipped provider must say so and say why — the response quotes this."""
-        logger = logging.getLogger("facify.test")
+        logger = logging.getLogger("factify.test")
 
         with request_context("req-1"):
             event(
@@ -107,7 +107,7 @@ class TestRedaction:
     """Redaction is applied at the formatter: it cannot be forgotten at a call site."""
 
     def test_credentials_never_reach_a_log(self, captured: Any) -> None:
-        logger = logging.getLogger("facify.test")
+        logger = logging.getLogger("factify.test")
 
         event(
             logger,
@@ -123,7 +123,7 @@ class TestRedaction:
         assert "another-secret" not in rendered
 
     def test_exif_location_never_reaches_a_log(self, captured: Any) -> None:
-        logger = logging.getLogger("facify.test")
+        logger = logging.getLogger("factify.test")
 
         event(logger, "exif read", module="intake", outcome="ok", latitude=28.61, longitude=77.20)
 
@@ -132,7 +132,7 @@ class TestRedaction:
         assert "77.2" not in rendered
 
     def test_article_bodies_are_reported_by_size_not_content(self, captured: Any) -> None:
-        logger = logging.getLogger("facify.test")
+        logger = logging.getLogger("factify.test")
 
         event(
             logger,
@@ -147,7 +147,7 @@ class TestRedaction:
         assert "content omitted" in detail["article_body"]
 
     def test_unexpectedly_large_values_are_truncated(self, captured: Any) -> None:
-        logger = logging.getLogger("facify.test")
+        logger = logging.getLogger("factify.test")
 
         event(logger, "big", module="test", outcome="ok", note="x" * 5000)
 

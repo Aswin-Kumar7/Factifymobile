@@ -27,7 +27,7 @@ from urllib.parse import urlsplit
 from app.domain.enums import SourceRisk
 from app.observability.logging import event
 
-logger = logging.getLogger("facify.risk")
+logger = logging.getLogger("factify.risk")
 
 NAME = "source_risk"
 VERSION = "2026.08.1"

@@ -1,4 +1,4 @@
-/// Facify for Android (M44).
+/// Factify for Android (M44).
 ///
 /// The judged surface. Built against the frozen contract in app/api/schemas.py,
 /// and it holds no provider credential of any kind — every key lives server-side,
@@ -17,23 +17,23 @@ Future<void> main() async {
   // Read before the first frame, so a reader who chose Hindi never sees a frame
   // of English first.
   final language = await LanguagePreference.load();
-  runApp(FacifyApp(language: language));
+  runApp(FactifyApp(language: language));
 }
 
-class FacifyApp extends StatefulWidget {
-  const FacifyApp({super.key, required this.language, this.client});
+class FactifyApp extends StatefulWidget {
+  const FactifyApp({super.key, required this.language, this.client});
 
   final LanguagePreference language;
 
   /// Supplied by tests. The app otherwise builds, and closes, its own.
-  final FacifyClient? client;
+  final FactifyClient? client;
 
   @override
-  State<FacifyApp> createState() => _FacifyAppState();
+  State<FactifyApp> createState() => _FactifyAppState();
 }
 
-class _FacifyAppState extends State<FacifyApp> {
-  late final FacifyClient _client = widget.client ?? FacifyClient();
+class _FactifyAppState extends State<FactifyApp> {
+  late final FactifyClient _client = widget.client ?? FactifyClient();
 
   @override
   void dispose() {
@@ -46,7 +46,7 @@ class _FacifyAppState extends State<FacifyApp> {
     return ValueListenableBuilder<Locale?>(
       valueListenable: widget.language,
       builder: (context, chosen, _) => MaterialApp(
-        title: 'Facify',
+        title: 'Factify',
         debugShowCheckedModeBanner: false,
         theme: _theme(Brightness.light),
         darkTheme: _theme(Brightness.dark),
@@ -71,7 +71,7 @@ class _FacifyAppState extends State<FacifyApp> {
   }
 }
 
-/// The phone's language when Facify has strings for it, English otherwise.
+/// The phone's language when Factify has strings for it, English otherwise.
 ///
 /// Written out rather than left to the default, which falls back to whichever
 /// supported locale happens to be listed first.

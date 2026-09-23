@@ -31,7 +31,7 @@ from app.embeddings.image import ImageEmbedder, UnavailableImageEmbedder
 from app.media.hashing import CANDIDATE_DISTANCE, MediaFingerprint, PerceptualHash
 from app.observability.logging import event
 
-logger = logging.getLogger("facify.media.matching")
+logger = logging.getLogger("factify.media.matching")
 
 
 @dataclass(frozen=True, slots=True)

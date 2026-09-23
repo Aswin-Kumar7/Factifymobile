@@ -1,7 +1,7 @@
-# Facify — 15-Day Hackathon and Startup Plan
+# Factify — 15-Day Hackathon and Startup Plan
 
 **Competition:** ZeAI National Hackathon, ZAIML-005 — Fake News & Deepfake Detection Platform  
-**Product:** Facify  
+**Product:** Factify  
 **Horizon:** 15 days to a judged MVP; incubator-ready architecture beyond the demo  
 **Planning principle:** Build one complete evidence-backed product experience, then expose the same engine as a startup platform.
 
@@ -27,7 +27,7 @@ source snapshots—not trusted evidence unless the live evidence validators acce
 > data, and replaying a stored real snapshot is not fabrication. Without these two carve-outs the
 > plan has no answer for a provider outage during judging, and no way to keep CI deterministic.
 
-> Facify does not ask, “Does this file look fake?”  
+> Factify does not ask, “Does this file look fake?”  
 > It asks, “What exactly is being claimed, what evidence exists, what conflicts with it, and what should a person do next?”
 
 ## Executive decision
@@ -43,9 +43,9 @@ An Android share-to-verify application and a small web evidence console that acc
 - a short video;
 - pasted text.
 
-Text and links are first-class inputs, not a secondary feature. A submitted link is treated as a document to inspect: Facify safely fetches the public page, extracts its article body, title, author, dates, quoted material, images, captions, and structured metadata, and verifies the individual claims rather than trusting the page's own label.
+Text and links are first-class inputs, not a secondary feature. A submitted link is treated as a document to inspect: Factify safely fetches the public page, extracts its article body, title, author, dates, quoted material, images, captions, and structured metadata, and verifies the individual claims rather than trusting the page's own label.
 
-Facify returns, in English or Hindi:
+Factify returns, in English or Hindi:
 
 1. the claim or claims extracted from the input, including the exact paragraph, title, frame, or timestamp where each claim appeared;
 2. a status for each claim: `SUPPORTED`, `CONTRADICTED`, `MISLEADING_CONTEXT`, or `UNVERIFIED`;
@@ -73,7 +73,7 @@ Every **validated** verification improves the next one. This is the startup comp
 
 ### ZAIML-005 requirement coverage
 
-| Required deliverable | Facify mechanism | Judge-proof output |
+| Required deliverable | Factify mechanism | Judge-proof output |
 |---|---|---|
 | Detect manipulated / AI-generated media | Dated-source matching, media fingerprints, C2PA when present, optional forensic advisory | Provenance status, dated citation, and an explicit `UNKNOWN` when evidence is absent |
 | Analyze news credibility and source reliability | Claim-level source retrieval, ClaimReview, source-risk signals | Anchored claim cards and evidence links; source risk never decides a claim alone |
@@ -85,7 +85,7 @@ Every **validated** verification improves the next one. This is the startup comp
 
 The brief is commonly interpreted as “upload media, receive a fake probability.” That framing is unsafe in production. Generic detectors can fail on unseen generators, social-platform transformations, compression, language shift, and adversarial edits. A detector also cannot tell whether a real 2019 image is being falsely presented as a 2026 event.
 
-Facify addresses the higher-volume problem: **false context around real media, fabricated claims, recycled content, fake attributions, and unverifiable breaking news.** Deepfake models are retained as optional forensic signals, never as the sole source of truth.
+Factify addresses the higher-volume problem: **false context around real media, fabricated claims, recycled content, fake attributions, and unverifiable breaking news.** Deepfake models are retained as optional forensic signals, never as the sole source of truth.
 
 ### Product promise
 
@@ -93,7 +93,7 @@ Facify addresses the higher-volume problem: **false context around real media, f
 
 ### Why this can stand out among 10,000 teams
 
-Most demos will show a model score. Facify shows a defensible decision trail:
+Most demos will show a model score. Factify shows a defensible decision trail:
 
 ```text
 Input → claim extraction → evidence retrieval → source/media analysis
@@ -102,7 +102,7 @@ Input → claim extraction → evidence retrieval → source/media analysis
 
 The memorable moment is not “our model says 93% fake.” It is:
 
-> “This is a real image, but it was published five years earlier. Here is the original dated source, here is the current false caption, and here is why Facify refuses to call a novel claim true.”
+> “This is a real image, but it was published five years earlier. Here is the original dated source, here is the current false caption, and here is why Factify refuses to call a novel claim true.”
 
 ## 2. Trust model: do not collapse different questions
 
@@ -344,7 +344,7 @@ For blocked social pages, do not promise a scraping ladder. Use public metadata 
 
 ## 5A. Text and link verification — the Claim–Evidence Graph
 
-Facify does not ask an LLM whether an entire article “feels true.” It converts a page into atomic, traceable claims and checks each claim against evidence.
+Factify does not ask an LLM whether an entire article “feels true.” It converts a page into atomic, traceable claims and checks each claim against evidence.
 
 ### Link verification lifecycle
 
@@ -459,7 +459,7 @@ Article title: “China volcano erupts today”
 Article image: video frame of an eruption
 Article body: “Officials confirmed the event …”
 
-Facify extracts:
+Factify extracts:
   Claim A: a volcanic eruption occurred
   Claim B: it occurred in China
   Claim C: it occurred today
@@ -689,8 +689,8 @@ Do not label “no manifest” as fake. Do not label “manifest present” as f
 > The core demo inputs — a WhatsApp forward, a screenshot — are precisely the cases where a manifest
 > cannot survive, so a P0 investment would return "no manifest" on essentially every real input
 > while occupying the most crowded day of the build. It remains an optional live provider: when a
-> real submitted asset contains valid Content Credentials, Facify validates and displays them; when
-> it does not, Facify reports `UNKNOWN` and continues with source/context analysis. No prepared asset
+> real submitted asset contains valid Content Credentials, Factify validates and displays them; when
+> it does not, Factify reports `UNKNOWN` and continues with source/context analysis. No prepared asset
 > is required for the product to claim this limitation honestly.
 
 #### B. Recycled/misattributed media — P0
@@ -1109,7 +1109,7 @@ GET  /healthz
   "media_provenance": "UNKNOWN",
   "source_risk": "MEDIUM",
   "advisory": [],
-  "receipt_url": "https://facify.example/receipts/receipt_123"
+  "receipt_url": "https://factify.example/receipts/receipt_123"
 }
 ```
 
@@ -1137,7 +1137,7 @@ The evidence screen then shows:
 - timeline;
 - source cards with publisher, date, and URL;
 - media match preview;
-- “what Facify cannot establish”;
+- “what Factify cannot establish”;
 - English/Hindi toggle;
 - safe shareable correction card.
 
@@ -1169,7 +1169,7 @@ The evidence screen then shows:
 
 ### The “trust moment”
 
-Demonstrate a detector result that is inconclusive, then show that Facify still catches the false context through a dated source. This explains why the company is not competing in the weakest part of the market.
+Demonstrate a detector result that is inconclusive, then show that Factify still catches the false context through a dated source. This explains why the company is not competing in the weakest part of the market.
 
 ## 14. Live evaluation and red-team audit
 
@@ -1234,7 +1234,7 @@ Do not report benchmark accuracy from a public deepfake dataset as if it measure
 
 **The benchmark literature cited in §22 is evidence for distrusting detectors, never a performance
 claim.** NIST OMFC and DeepfakeBench appear in this plan to justify why Tier E is advisory — they
-must never be quoted in the deck as a number Facify achieves or inherits.
+must never be quoted in the deck as a number Factify achieves or inherits.
 
 > **Why this needed saying:** §14 forbids reporting public-dataset accuracy, and §22 then cites two
 > deepfake benchmarks as sources. That is a coherent position — the benchmarks show detectors
@@ -1497,7 +1497,7 @@ dates alone**, with CDX disabled.
 - Hindi/English result card;
 - shareable correction card.
 
-**Gate:** a judge can share content from WhatsApp/browser/gallery into Facify.
+**Gate:** a judge can share content from WhatsApp/browser/gallery into Factify.
 
 ### Day 12 — Evidence console and receipt
 
@@ -1604,7 +1604,7 @@ items in the manifest** — the false-positive figure is not reportable below th
 
 ### Competitive landscape and the wedge
 
-| Player | What they do | Where they stop | Facify's wedge |
+| Player | What they do | Where they stop | Factify's wedge |
 |---|---|---|---|
 | **Reality Defender** | Enterprise multi-model synthetic-media ensemble (spatial, temporal, frequency, audio antispoof) | Synthetic detection only — blind to real media under a false caption | Context + provenance + forensics, not forensics alone |
 | **TrueMedia.org** | Open-sourced detector ensemble (MIT), human-in-the-loop | Ceased operating as a service; hosting an ensemble was the stated cost problem | Cache-first, CPU-only, governed quota — the economics that shut them down are the constraint we designed to |
@@ -1679,11 +1679,11 @@ No. The model extracts candidate claims and phrases results. The verdict engine 
 
 ### “Can you detect every deepfake?”
 
-No—and claiming that would be irresponsible. Facify detects provenance, recycled media, false context, and cited claim contradictions reliably where evidence exists. Generic deepfake models are advisory because their performance can shift under new generators and platform transformations.
+No—and claiming that would be irresponsible. Factify detects provenance, recycled media, false context, and cited claim contradictions reliably where evidence exists. Generic deepfake models are advisory because their performance can shift under new generators and platform transformations.
 
 ### “What happens when there is no evidence?”
 
-Facify returns `UNVERIFIED`, explains what it checked, offers a user-triggered re-check, and can route the case to human review. Refusing to hallucinate certainty is a product feature.
+Factify returns `UNVERIFIED`, explains what it checked, offers a user-triggered re-check, and can route the case to human review. Refusing to hallucinate certainty is a product feature.
 
 ### “Why will this become a company?”
 
@@ -1767,7 +1767,7 @@ The following primary sources were checked while revising this plan. Re-check qu
 
 ## Final definition of done
 
-Facify is ready for judging when a person can share a real but miscaptioned image, a misleading or forged PDF with a verifiable cited contradiction, a public article link containing several mixed claims, a known fact-checked claim, a genuine article, and a novel claim—and the product produces fast, understandable, cited, multilingual, claim-level results with the correct willingness to abstain. At least one live feed item must enter the corpus through `ingest_tick` and later contribute to a user verification.
+Factify is ready for judging when a person can share a real but miscaptioned image, a misleading or forged PDF with a verifiable cited contradiction, a public article link containing several mixed claims, a known fact-checked claim, a genuine article, and a novel claim—and the product produces fast, understandable, cited, multilingual, claim-level results with the correct willingness to abstain. At least one live feed item must enter the corpus through `ingest_tick` and later contribute to a user verification.
 
 The winning claim is not:
 

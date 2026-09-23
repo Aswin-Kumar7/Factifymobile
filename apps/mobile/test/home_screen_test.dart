@@ -7,9 +7,9 @@ library;
 
 import 'dart:convert';
 
-import 'package:facify_mobile/api/client.dart';
-import 'package:facify_mobile/l10n/language_preference.dart';
-import 'package:facify_mobile/main.dart';
+import 'package:factify_mobile/api/client.dart';
+import 'package:factify_mobile/l10n/language_preference.dart';
+import 'package:factify_mobile/main.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -60,8 +60,8 @@ Future<List<Map<String, dynamic>>> _pumpApp(WidgetTester tester, _FakeClipboard 
   addTearDown(() => messenger.setMockMethodCallHandler(SystemChannels.platform, null));
 
   final sent = <Map<String, dynamic>>[];
-  final client = FacifyClient(
-    baseUrl: 'http://facify.test',
+  final client = FactifyClient(
+    baseUrl: 'http://factify.test',
     httpClient: MockClient((request) async {
       if (request.url.path == '/readyz') {
         return http.Response('{"ready": true, "missing": []}', 200);
@@ -71,7 +71,7 @@ Future<List<Map<String, dynamic>>> _pumpApp(WidgetTester tester, _FakeClipboard 
     }),
   );
 
-  await tester.pumpWidget(FacifyApp(language: LanguagePreference.inMemory(), client: client));
+  await tester.pumpWidget(FactifyApp(language: LanguagePreference.inMemory(), client: client));
   await tester.pumpAndSettle();
   return sent;
 }

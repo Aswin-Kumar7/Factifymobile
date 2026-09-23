@@ -1,6 +1,6 @@
 """The M33 gate against real weights, and M35 against real ffmpeg.
 
-    FACIFY_MODEL_TESTS=1 uv run pytest -m model
+    FACTIFY_MODEL_TESTS=1 uv run pytest -m model
 
 The unit-level version of this gate proves the matcher's logic with a stub embedder.
 It would pass with any threshold at all. This one runs the real CLIP encoder, so it is
@@ -31,8 +31,8 @@ from app.media.video import KeyframeExtractor, ffmpeg_available
 from tests.model import photographs
 
 requires_weights = pytest.mark.skipif(
-    os.environ.get("FACIFY_MODEL_TESTS") != "1",
-    reason="set FACIFY_MODEL_TESTS=1 to download model weights and run these",
+    os.environ.get("FACTIFY_MODEL_TESTS") != "1",
+    reason="set FACTIFY_MODEL_TESTS=1 to download model weights and run these",
 )
 
 pytestmark = [pytest.mark.model, requires_weights]

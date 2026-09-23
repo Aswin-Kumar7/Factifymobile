@@ -31,7 +31,7 @@ from app.observability.logging import event
 from app.security.fetcher import FetchResult, SecureFetcher
 from app.sources.temporal import DatedInstance
 
-logger = logging.getLogger("facify.media.discovery")
+logger = logging.getLogger("factify.media.discovery")
 
 PROVIDER = "vision"
 

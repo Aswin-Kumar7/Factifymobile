@@ -93,8 +93,8 @@ _SOURCE_RISK: dict[SourceRisk, dict[str, str]] = {
 }
 
 _CANNOT_ESTABLISH: dict[str, str] = {
-    "en": "What Facify cannot establish",
-    "hi": "Facify क्या स्थापित नहीं कर सकता",
+    "en": "What Factify cannot establish",
+    "hi": "Factify क्या स्थापित नहीं कर सकता",
 }
 
 _NOT_CHECKED: dict[str, str] = {

@@ -58,7 +58,7 @@ jobs:
           enable-cache: true
       - run: uv sync --frozen
       # Live tests are excluded by default (pyproject addopts). Database tests skip
-      # unless FACIFY_DATABASE_URL is present, which it is not in CI.
+      # unless FACTIFY_DATABASE_URL is present, which it is not in CI.
       - name: pytest
         run: uv run pytest --cov --cov-report=term-missing
 
@@ -99,18 +99,18 @@ jobs:
           context: .
           push: false
           load: true
-          tags: facify:ci
+          tags: factify:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Boot the image and probe liveness
         run: |
-          docker run -d --name facify-ci -p 8080:8080 facify:ci
+          docker run -d --name factify-ci -p 8080:8080 factify:ci
           for i in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:8080/healthz; then exit 0; fi
             sleep 1
           done
           echo "health probe never succeeded"
-          docker logs facify-ci
+          docker logs factify-ci
           exit 1
 
   commits:

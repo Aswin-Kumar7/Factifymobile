@@ -35,7 +35,7 @@ from app.observability.logging import event
 from app.security.fetcher import FetchResult, SecureFetcher
 from app.security.injection import FencedContent, fence
 
-logger = logging.getLogger("facify.llm")
+logger = logging.getLogger("factify.llm")
 
 PROVIDER = "llm"
 

@@ -120,7 +120,7 @@ class _CardBody extends StatelessWidget {
                 const SizedBox(width: 8),
                 // The product name, the same in every language.
                 Text(
-                  'Facify',
+                  'Factify',
                   style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(width: 12),

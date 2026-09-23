@@ -29,7 +29,7 @@ from app.domain.enums import Action, ClaimStatus
 from app.observability.logging import event
 from app.orchestration.pipeline import VerificationResult
 
-logger = logging.getLogger("facify.review")
+logger = logging.getLogger("factify.review")
 
 
 class ReviewReason(StrEnum):

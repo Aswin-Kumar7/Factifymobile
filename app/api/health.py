@@ -17,13 +17,13 @@ router = APIRouter(tags=["ops"])
 
 class HealthResponse(BaseModel):
     status: Literal["ok"]
-    service: Literal["facify"]
+    service: Literal["factify"]
     version: str
 
 
 @router.get("/healthz", response_model=HealthResponse, summary="Liveness probe")
 async def healthz() -> HealthResponse:
-    return HealthResponse(status="ok", service="facify", version=__version__)
+    return HealthResponse(status="ok", service="factify", version=__version__)
 
 
 class ReadyResponse(BaseModel):

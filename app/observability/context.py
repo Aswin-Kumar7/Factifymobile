@@ -25,7 +25,7 @@ class RequestContext:
     extra: dict[str, str] = field(default_factory=dict)
 
 
-_context: ContextVar[RequestContext | None] = ContextVar("facify_request_context", default=None)
+_context: ContextVar[RequestContext | None] = ContextVar("factify_request_context", default=None)
 
 
 def new_request_id() -> str:

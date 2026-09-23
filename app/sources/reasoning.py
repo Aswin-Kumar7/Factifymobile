@@ -51,7 +51,7 @@ from app.security.fetcher import FetchResult
 from app.security.injection import fence
 from app.sources.corpus_text import is_navigation
 
-logger = logging.getLogger("facify.sources.reasoning")
+logger = logging.getLogger("factify.sources.reasoning")
 
 PROVIDER = "llm"
 REASONER_VERSION = "2026.09.12"

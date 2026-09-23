@@ -73,7 +73,7 @@ class _CorrectionSheetState extends State<CorrectionSheet> {
           files: [XFile.fromData(png, mimeType: 'image/png')],
           // XFile.fromData ignores its name everywhere but the web, so the file
           // would otherwise reach the chat under a random identifier.
-          fileNameOverrides: const ['facify-correction.png'],
+          fileNameOverrides: const ['factify-correction.png'],
           text: text,
         ),
       );

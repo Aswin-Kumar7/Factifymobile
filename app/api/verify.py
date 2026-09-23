@@ -53,7 +53,7 @@ from app.orchestration.pipeline import SkippedCheck, VerificationResult
 from app.orchestration.review import HumanLabel
 from app.security.fetcher import FetchResult
 
-logger = logging.getLogger("facify.api.verify")
+logger = logging.getLogger("factify.api.verify")
 
 router = APIRouter(prefix="/v1", tags=["verification"])
 internal = APIRouter(prefix="/internal", tags=["internal"], include_in_schema=False)
@@ -644,7 +644,7 @@ def _review_queue(request: Request) -> Any:
 @internal.post("/ingest-tick", status_code=status.HTTP_202_ACCEPTED)
 async def ingest_tick(
     request: Request,
-    x_facify_trigger: Annotated[str | None, Header()] = None,
+    x_factify_trigger: Annotated[str | None, Header()] = None,
 ) -> dict[str, str]:
     """The scheduler's entry point (M24).
 
@@ -653,7 +653,7 @@ async def ingest_tick(
     driven by anyone who finds the path.
     """
     settings = request.app.state.settings
-    if not authenticate_trigger(x_facify_trigger, settings.ingest_trigger_secret):
+    if not authenticate_trigger(x_factify_trigger, settings.ingest_trigger_secret):
         # 404 rather than 401: this endpoint is not public, and confirming it exists
         # to an unauthenticated caller is information they have no use for.
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not found")

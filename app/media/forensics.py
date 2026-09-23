@@ -43,7 +43,7 @@ from app.domain.enums import SyntheticSignal
 from app.domain.evidence import Advisory
 from app.observability.logging import event
 
-logger = logging.getLogger("facify.media.forensics")
+logger = logging.getLogger("factify.media.forensics")
 
 PANEL_HEADER = (
     "Forensic signals — shown for transparency. These are not used in the verdict "

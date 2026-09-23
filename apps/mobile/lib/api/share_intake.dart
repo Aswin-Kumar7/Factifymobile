@@ -54,7 +54,7 @@ class ShareIntake {
     });
   }
 
-  static const MethodChannel _channel = MethodChannel('facify/share');
+  static const MethodChannel _channel = MethodChannel('factify/share');
   final StreamController<SharedContent> _controller = StreamController<SharedContent>.broadcast();
 
   Stream<SharedContent> get stream => _controller.stream;

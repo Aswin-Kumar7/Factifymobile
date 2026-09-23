@@ -1,13 +1,13 @@
-# Facify for Android
+# Factify for Android
 
-The judged surface of Facify (M44). Share a forward, a link or a picture into the app
+The judged surface of Factify (M44). Share a forward, a link or a picture into the app
 and get a verdict that rests only on cited sources — with the evidence, what could
-not be checked, and what Facify cannot establish. The app holds no provider
+not be checked, and what Factify cannot establish. The app holds no provider
 credential: every key lives in the API.
 
 ## Run it
 
-The app talks only to the Facify API. Built without a flag it points at
+The app talks only to the Factify API. Built without a flag it points at
 `http://10.0.2.2:8000`, the host machine as seen from the Android emulator, so a local
 API started from the repository root with `uv run python scripts/serve_local.py` is
 reachable from the emulator as-is.
@@ -20,7 +20,7 @@ A build for a real phone needs the deployed API's address. A release build made
 without one says so on screen rather than simply looking offline.
 
 ```bash
-flutter build apk --release --dart-define=FACIFY_API=https://your-api.example
+flutter build apk --release --dart-define=FACTIFY_API=https://your-api.example
 ```
 
 ## Test it

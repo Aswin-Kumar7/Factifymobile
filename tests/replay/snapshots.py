@@ -8,7 +8,7 @@ mid-run is a flake, not a finding, and a suite that fails for that reason gets
 ignored within a week. Live retrieval is exercised by the ingestion worker and the
 audit run, which are supposed to notice when the web changes.
 
-    FACIFY_RECORD_SNAPSHOTS=1 uv run pytest -m replay    # capture
+    FACTIFY_RECORD_SNAPSHOTS=1 uv run pytest -m replay    # capture
     uv run pytest -m replay                              # replay, the default
 """
 
@@ -26,7 +26,7 @@ SNAPSHOT_DIR = Path(__file__).resolve().parent / "snapshots"
 
 def recording() -> bool:
     """Whether to capture rather than replay. Never true in CI."""
-    return os.environ.get("FACIFY_RECORD_SNAPSHOTS") == "1"
+    return os.environ.get("FACTIFY_RECORD_SNAPSHOTS") == "1"
 
 
 def key_for(url: str) -> str:
@@ -44,7 +44,7 @@ class SnapshotMissing(Exception):
 
     def __init__(self, url: str) -> None:
         super().__init__(
-            f"no snapshot for {url}. Re-record with FACIFY_RECORD_SNAPSHOTS=1, or fix "
+            f"no snapshot for {url}. Re-record with FACTIFY_RECORD_SNAPSHOTS=1, or fix "
             "the test to use one that exists. CI must not fetch."
         )
 

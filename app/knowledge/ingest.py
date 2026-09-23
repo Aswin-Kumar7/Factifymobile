@@ -41,7 +41,7 @@ from app.knowledge.registry import FeedDefinition, FeedRegistry, window_start
 from app.observability.logging import event
 from app.security.fetcher import FetchFailure, FetchResult, SecureFetcher
 
-logger = logging.getLogger("facify.ingest")
+logger = logging.getLogger("factify.ingest")
 
 # Enough of an item to cluster on and to quote in a citation; far short of the
 # article. Wire reprints diverge in their tails, so the opening is also the part that

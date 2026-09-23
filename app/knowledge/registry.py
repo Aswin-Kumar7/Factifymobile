@@ -31,7 +31,7 @@ from pydantic import SecretStr
 from app.db.repositories import FeedRepository
 from app.observability.logging import event
 
-logger = logging.getLogger("facify.registry")
+logger = logging.getLogger("factify.registry")
 
 REGISTRY_PATH = Path(__file__).resolve().parents[2] / "data" / "feeds.json"
 

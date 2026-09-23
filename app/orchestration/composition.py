@@ -51,7 +51,7 @@ from app.sources.factcheck import FactCheckRecord, FactCheckResolver, parse_rati
 from app.sources.reasoning import PassageReasoner
 from app.sources.websearch import WebSearchResolver
 
-logger = logging.getLogger("facify.composition")
+logger = logging.getLogger("factify.composition")
 
 # Two fetchers with different patience, because they wait on different things. A
 # model call legitimately takes tens of seconds; a news page that has not answered in
@@ -290,7 +290,7 @@ async def build(settings: Settings) -> dict[str, Any]:
     # The open-web path, when a search provider is configured. Reaches the web through
     # a search API to find pages no local source covers, and reads them with the same
     # reasoner — corroboration-grade evidence, gated by a verbatim quote like every
-    # other resolver. Off unless FACIFY_WEBSEARCH__* is set.
+    # other resolver. Off unless FACTIFY_WEBSEARCH__* is set.
     web_search: WebSearchResolver | None = None
     if settings.websearch.usable and reasoner is not None:
         web_search = WebSearchResolver(

@@ -209,7 +209,7 @@ abstract class AppLocalizations {
   /// No description provided for @emptyBody.
   ///
   /// In en, this message translates to:
-  /// **'Share a forward straight into Facify, paste it above, or check a picture. Every verdict comes with the sources behind it — and when there are none, it says so.'**
+  /// **'Share a forward straight into Factify, paste it above, or check a picture. Every verdict comes with the sources behind it — and when there are none, it says so.'**
   String get emptyBody;
 
   /// No description provided for @working.
@@ -275,7 +275,7 @@ abstract class AppLocalizations {
   /// No description provided for @errorNoServerAddress.
   ///
   /// In en, this message translates to:
-  /// **'This build has no server address. Rebuild it with --dart-define=FACIFY_API=https://your-server.'**
+  /// **'This build has no server address. Rebuild it with --dart-define=FACTIFY_API=https://your-server.'**
   String get errorNoServerAddress;
 
   /// No description provided for @errorShareUnreadable.
@@ -287,7 +287,7 @@ abstract class AppLocalizations {
   /// No description provided for @errorShareFileUnopenable.
   ///
   /// In en, this message translates to:
-  /// **'That file could not be opened. Share it again, or use the Gallery button in Facify.'**
+  /// **'That file could not be opened. Share it again, or use the Gallery button in Factify.'**
   String get errorShareFileUnopenable;
 
   /// No description provided for @errorVideoSlow.
@@ -299,7 +299,7 @@ abstract class AppLocalizations {
   /// No description provided for @errorCameraDenied.
   ///
   /// In en, this message translates to:
-  /// **'Facify needs camera access to check a photo you take.'**
+  /// **'Factify needs camera access to check a photo you take.'**
   String get errorCameraDenied;
 
   /// No description provided for @errorFileUnopenable.
@@ -329,7 +329,7 @@ abstract class AppLocalizations {
   /// No description provided for @correctionHeader.
   ///
   /// In en, this message translates to:
-  /// **'Checked with Facify:'**
+  /// **'Checked with Factify:'**
   String get correctionHeader;
 
   /// No description provided for @correctionSourceFallback.
@@ -389,19 +389,19 @@ abstract class AppLocalizations {
   /// No description provided for @failureTimeout.
   ///
   /// In en, this message translates to:
-  /// **'Facify is taking longer than usual. Try again in a moment.'**
+  /// **'Factify is taking longer than usual. Try again in a moment.'**
   String get failureTimeout;
 
   /// No description provided for @failureUnreachable.
   ///
   /// In en, this message translates to:
-  /// **'Could not reach Facify. Check your connection and try again.'**
+  /// **'Could not reach Factify. Check your connection and try again.'**
   String get failureUnreachable;
 
   /// No description provided for @failureInterrupted.
   ///
   /// In en, this message translates to:
-  /// **'The connection to Facify was interrupted. Try again.'**
+  /// **'The connection to Factify was interrupted. Try again.'**
   String get failureInterrupted;
 
   /// No description provided for @failureUnreadableFile.
@@ -413,7 +413,7 @@ abstract class AppLocalizations {
   /// No description provided for @failureBadReply.
   ///
   /// In en, this message translates to:
-  /// **'Facify sent a reply this app could not read.'**
+  /// **'Factify sent a reply this app could not read.'**
   String get failureBadReply;
 
   /// No description provided for @failureInvalidInput.
@@ -431,7 +431,7 @@ abstract class AppLocalizations {
   /// No description provided for @failureDailyLimit.
   ///
   /// In en, this message translates to:
-  /// **'Facify is at its daily limit. Please try again tomorrow.'**
+  /// **'Factify is at its daily limit. Please try again tomorrow.'**
   String get failureDailyLimit;
 
   /// No description provided for @failureUnavailable.
@@ -443,7 +443,7 @@ abstract class AppLocalizations {
   /// No description provided for @failureGeneric.
   ///
   /// In en, this message translates to:
-  /// **'Facify could not complete that check.'**
+  /// **'Factify could not complete that check.'**
   String get failureGeneric;
 
   /// Design law: a statement about evidence, never a claim that the content is true.
@@ -665,7 +665,7 @@ abstract class AppLocalizations {
   /// No description provided for @noEvidenceBody.
   ///
   /// In en, this message translates to:
-  /// **'This does not mean the content is false. It means nothing we could cite either supports or contradicts it, so Facify did not decide.'**
+  /// **'This does not mean the content is false. It means nothing we could cite either supports or contradicts it, so Factify did not decide.'**
   String get noEvidenceBody;
 
   /// No description provided for @historyCardTitle.
@@ -695,7 +695,7 @@ abstract class AppLocalizations {
   /// No description provided for @limitsTitle.
   ///
   /// In en, this message translates to:
-  /// **'What Facify cannot establish'**
+  /// **'What Factify cannot establish'**
   String get limitsTitle;
 
   /// No description provided for @limitAi.
@@ -887,7 +887,7 @@ abstract class AppLocalizations {
   /// No description provided for @timelineFirstChecked.
   ///
   /// In en, this message translates to:
-  /// **'First checked by Facify'**
+  /// **'First checked by Factify'**
   String get timelineFirstChecked;
 
   /// No description provided for @timelineRetrieved.

@@ -1,4 +1,4 @@
-/// HTTP client for the Facify contract.
+/// HTTP client for the Factify contract.
 ///
 /// **This file holds no credential and never will.** The app talks only to our
 /// own API, which holds the provider keys server-side. An app that carried a
@@ -16,16 +16,16 @@ import '../models/verdict.dart';
 
 /// Where the API lives. Supplied at build time, never hard-coded to a secret:
 ///
-///   flutter run --dart-define=FACIFY_API=https://facify-xxxx.a.run.app
+///   flutter run --dart-define=FACTIFY_API=https://factify-xxxx.a.run.app
 const String apiBaseUrl = String.fromEnvironment(
-  'FACIFY_API',
+  'FACTIFY_API',
   // 10.0.2.2 is the host machine as seen from the Android emulator.
   defaultValue: 'http://10.0.2.2:8000',
 );
 
-/// Whether this build was compiled without `FACIFY_API`, and so still points at
+/// Whether this build was compiled without `FACTIFY_API`, and so still points at
 /// the emulator's host address — which no real phone can reach.
-const bool apiUsesEmulatorDefault = !bool.hasEnvironment('FACIFY_API');
+const bool apiUsesEmulatorDefault = !bool.hasEnvironment('FACTIFY_API');
 
 /// Why a request failed, named rather than worded.
 ///
@@ -87,8 +87,8 @@ class ApiFailure implements Exception {
       '${detail == null ? '' : ': $detail'})';
 }
 
-class FacifyClient {
-  FacifyClient({http.Client? httpClient, this.baseUrl = apiBaseUrl})
+class FactifyClient {
+  FactifyClient({http.Client? httpClient, this.baseUrl = apiBaseUrl})
     : _http = httpClient ?? http.Client();
 
   final http.Client _http;

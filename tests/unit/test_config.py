@@ -109,10 +109,10 @@ class TestEnvironmentLoading:
     def test_provider_credential_is_read_from_the_environment(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("FACIFY_VISION__ENABLED", "true")
-        monkeypatch.setenv("FACIFY_VISION__API_KEY", "from-env")
-        monkeypatch.setenv("FACIFY_VISION__DAILY_CAP", "33")
-        monkeypatch.setenv("FACIFY_VISION__ENDPOINT", VISION_ENDPOINT)
+        monkeypatch.setenv("FACTIFY_VISION__ENABLED", "true")
+        monkeypatch.setenv("FACTIFY_VISION__API_KEY", "from-env")
+        monkeypatch.setenv("FACTIFY_VISION__DAILY_CAP", "33")
+        monkeypatch.setenv("FACTIFY_VISION__ENDPOINT", VISION_ENDPOINT)
 
         settings = Settings(_env_file=None)
 
@@ -126,9 +126,9 @@ class TestEnvironmentLoading:
     ) -> None:
         """A provider with nowhere to send the request passes the governor, spends a
         unit, and fails — which downstream reads as "the source had nothing"."""
-        monkeypatch.setenv("FACIFY_VISION__ENABLED", "true")
-        monkeypatch.setenv("FACIFY_VISION__API_KEY", "from-env")
-        monkeypatch.setenv("FACIFY_VISION__DAILY_CAP", "33")
+        monkeypatch.setenv("FACTIFY_VISION__ENABLED", "true")
+        monkeypatch.setenv("FACTIFY_VISION__API_KEY", "from-env")
+        monkeypatch.setenv("FACTIFY_VISION__DAILY_CAP", "33")
 
         with pytest.raises(ValidationError, match="no endpoint"):
             Settings(_env_file=None)
@@ -136,11 +136,11 @@ class TestEnvironmentLoading:
     def test_vertex_ai_is_refused_by_name(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """It authenticates with an OAuth bearer token, not the x-goog-api-key header
         every provider here sends, so it would 401 on every call."""
-        monkeypatch.setenv("FACIFY_LLM__ENABLED", "true")
-        monkeypatch.setenv("FACIFY_LLM__API_KEY", "k")
-        monkeypatch.setenv("FACIFY_LLM__DAILY_CAP", "50")
+        monkeypatch.setenv("FACTIFY_LLM__ENABLED", "true")
+        monkeypatch.setenv("FACTIFY_LLM__API_KEY", "k")
+        monkeypatch.setenv("FACTIFY_LLM__DAILY_CAP", "50")
         monkeypatch.setenv(
-            "FACIFY_LLM__ENDPOINT",
+            "FACTIFY_LLM__ENDPOINT",
             "https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/"
             "us-central1/publishers/google/models/{model}:generateContent",
         )
@@ -150,7 +150,7 @@ class TestEnvironmentLoading:
 
     def test_a_disabled_provider_needs_no_endpoint(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """The default configuration must boot with nothing set at all."""
-        monkeypatch.setenv("FACIFY_VISION__ENABLED", "false")
+        monkeypatch.setenv("FACTIFY_VISION__ENABLED", "false")
 
         settings = Settings(_env_file=None)
 
@@ -161,7 +161,7 @@ class TestEnvironmentLoading:
     ) -> None:
         """The Day 13 fallback drill: turn each provider off without touching code."""
         for name in ("LLM", "FACTCHECK", "VISION", "ARCHIVE"):
-            monkeypatch.setenv(f"FACIFY_{name}__ENABLED", "false")
+            monkeypatch.setenv(f"FACTIFY_{name}__ENABLED", "false")
 
         settings = Settings(_env_file=None)
 

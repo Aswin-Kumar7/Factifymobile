@@ -19,9 +19,18 @@ from psycopg_pool import AsyncConnectionPool
 
 Row = dict[str, Any]
 
-# Every connection resolves unqualified names against Facify's own schema first, so
+# Every connection resolves unqualified names against Factify's own schema first, so
 # repositories never carry a schema prefix and can never accidentally read or write a
 # platform-managed table in `public`.
+# The database schema is still named `facify`, and deliberately.
+#
+# The product was renamed to Factify everywhere a person can see it. Renaming the
+# schema is a different kind of change — an ALTER against a live database holding
+# the corpus, the ledger and every issued receipt — so it is not bundled into a
+# rename of display text. `migrations/0003_rename_schema.sql` does it in one
+# statement whenever that is wanted; until it runs, this name must match what is
+# actually there. It briefly did not, and every query failed with
+# `relation "corpus_item" does not exist`.
 SEARCH_PATH = "facify,extensions,public"
 
 

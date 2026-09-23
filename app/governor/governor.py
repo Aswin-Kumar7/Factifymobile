@@ -34,7 +34,7 @@ from app.observability.logging import event
 from app.observability.metrics import metrics
 from app.security.ratelimit import RateLimit, SlidingWindowLimiter
 
-logger = logging.getLogger("facify.governor")
+logger = logging.getLogger("factify.governor")
 
 
 class SkipReason(StrEnum):

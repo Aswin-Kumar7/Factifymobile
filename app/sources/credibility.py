@@ -38,7 +38,7 @@ from collections.abc import Iterator, Mapping
 from pathlib import Path
 from urllib.parse import urlsplit
 
-logger = logging.getLogger("facify.sources.credibility")
+logger = logging.getLogger("factify.sources.credibility")
 
 # TLD suffixes whose operators are governments, universities or international bodies —
 # credible by their nature rather than by enumeration. Held in code, not data, so they

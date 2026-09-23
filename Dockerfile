@@ -1,4 +1,4 @@
-# Facify service image.
+# Factify service image.
 #
 # One container serves the API (codexplan.md §4 — one deployable service, internal
 # modules, not seven microservices). Runtime sizing is M49's concern: the default
@@ -39,22 +39,22 @@ FROM python:3.12-slim-bookworm AS runtime
 RUN apt-get update     && apt-get install --no-install-recommends -y ffmpeg     && rm -rf /var/lib/apt/lists/*
 
 # Non-root: the process never needs to write outside its own tmp.
-RUN groupadd --system --gid 1001 facify \
-    && useradd --system --uid 1001 --gid facify --create-home facify
+RUN groupadd --system --gid 1001 factify \
+    && useradd --system --uid 1001 --gid factify --create-home factify
 
 WORKDIR /srv
 
-COPY --from=builder --chown=facify:facify /build/.venv /srv/.venv
-COPY --from=builder --chown=facify:facify /build/app /srv/app
-COPY --from=builder --chown=facify:facify /build/migrations /srv/migrations
+COPY --from=builder --chown=factify:factify /build/.venv /srv/.venv
+COPY --from=builder --chown=factify:factify /build/app /srv/app
+COPY --from=builder --chown=factify:factify /build/migrations /srv/migrations
 
 ENV PATH="/srv/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-COPY --from=builder --chown=facify:facify /build/data /srv/data
+COPY --from=builder --chown=factify:factify /build/data /srv/data
 
-USER facify
+USER factify
 
 # Local model weights, baked in at build time rather than downloaded on first use.
 #

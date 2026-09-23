@@ -73,7 +73,7 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get emptyBody =>
-      'कोई फ़ॉरवर्ड सीधे Facify में साझा करें, ऊपर चिपकाएँ, या कोई तस्वीर जाँचें। हर निर्णय के साथ उसके स्रोत दिखते हैं — और जब कोई स्रोत नहीं होता, तो यह साफ़ बताया जाता है।';
+      'कोई फ़ॉरवर्ड सीधे Factify में साझा करें, ऊपर चिपकाएँ, या कोई तस्वीर जाँचें। हर निर्णय के साथ उसके स्रोत दिखते हैं — और जब कोई स्रोत नहीं होता, तो यह साफ़ बताया जाता है।';
 
   @override
   String get working => 'इस बारे में स्रोत खोजे जा रहे हैं';
@@ -119,14 +119,14 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get errorNoServerAddress =>
-      'इस बिल्ड में सर्वर का पता नहीं है। इसे --dart-define=FACIFY_API=https://your-server के साथ दोबारा बनाएँ।';
+      'इस बिल्ड में सर्वर का पता नहीं है। इसे --dart-define=FACTIFY_API=https://your-server के साथ दोबारा बनाएँ।';
 
   @override
   String get errorShareUnreadable => 'साझा की गई चीज़ पढ़ी नहीं जा सकी।';
 
   @override
   String get errorShareFileUnopenable =>
-      'वह फ़ाइल खोली नहीं जा सकी। उसे फिर से साझा करें, या Facify में गैलरी बटन इस्तेमाल करें।';
+      'वह फ़ाइल खोली नहीं जा सकी। उसे फिर से साझा करें, या Factify में गैलरी बटन इस्तेमाल करें।';
 
   @override
   String errorVideoSlow(String caseId) {
@@ -135,7 +135,7 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get errorCameraDenied =>
-      'आपकी खींची तस्वीर जाँचने के लिए Facify को कैमरे की अनुमति चाहिए।';
+      'आपकी खींची तस्वीर जाँचने के लिए Factify को कैमरे की अनुमति चाहिए।';
 
   @override
   String get errorFileUnopenable => 'वह फ़ाइल खोली नहीं जा सकी।';
@@ -152,7 +152,7 @@ class AppLocalizationsHi extends AppLocalizations {
   String get correctionCopied => 'सुधार कॉपी हो गया — इसे चैट में वापस चिपकाएँ';
 
   @override
-  String get correctionHeader => 'Facify से जाँचा गया:';
+  String get correctionHeader => 'Factify से जाँचा गया:';
 
   @override
   String get correctionSourceFallback => 'स्रोत';
@@ -187,21 +187,22 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get failureTimeout =>
-      'Facify को सामान्य से ज़्यादा समय लग रहा है। थोड़ी देर में फिर कोशिश करें।';
+      'Factify को सामान्य से ज़्यादा समय लग रहा है। थोड़ी देर में फिर कोशिश करें।';
 
   @override
   String get failureUnreachable =>
-      'Facify तक पहुँचा नहीं जा सका। अपना कनेक्शन जाँचें और फिर कोशिश करें।';
+      'Factify तक पहुँचा नहीं जा सका। अपना कनेक्शन जाँचें और फिर कोशिश करें।';
 
   @override
-  String get failureInterrupted => 'Facify से कनेक्शन टूट गया। फिर कोशिश करें।';
+  String get failureInterrupted =>
+      'Factify से कनेक्शन टूट गया। फिर कोशिश करें।';
 
   @override
   String get failureUnreadableFile => 'वह फ़ाइल इस फ़ोन से पढ़ी नहीं जा सकी।';
 
   @override
   String get failureBadReply =>
-      'Facify से ऐसा जवाब आया जिसे यह ऐप पढ़ नहीं सका।';
+      'Factify से ऐसा जवाब आया जिसे यह ऐप पढ़ नहीं सका।';
 
   @override
   String get failureInvalidInput => 'वह इनपुट पढ़ा नहीं जा सका।';
@@ -211,13 +212,13 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get failureDailyLimit =>
-      'Facify आज की सीमा तक पहुँच गया है। कृपया कल फिर कोशिश करें।';
+      'Factify आज की सीमा तक पहुँच गया है। कृपया कल फिर कोशिश करें।';
 
   @override
   String get failureUnavailable => 'जाँच अभी उपलब्ध नहीं है।';
 
   @override
-  String get failureGeneric => 'Facify वह जाँच पूरी नहीं कर सका।';
+  String get failureGeneric => 'Factify वह जाँच पूरी नहीं कर सका।';
 
   @override
   String get headlineSafeToShare => 'इसका कोई खंडन नहीं मिला';
@@ -398,7 +399,7 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get noEvidenceBody =>
-      'इसका मतलब यह नहीं कि सामग्री झूठी है। इसका मतलब है कि ऐसा कोई स्रोत नहीं मिला जिसका हवाला देकर इसका समर्थन या खंडन किया जा सके, इसलिए Facify ने निर्णय नहीं दिया।';
+      'इसका मतलब यह नहीं कि सामग्री झूठी है। इसका मतलब है कि ऐसा कोई स्रोत नहीं मिला जिसका हवाला देकर इसका समर्थन या खंडन किया जा सके, इसलिए Factify ने निर्णय नहीं दिया।';
 
   @override
   String get historyCardTitle => 'इतिहास';
@@ -415,7 +416,7 @@ class AppLocalizationsHi extends AppLocalizations {
   String get notCheckedTitle => 'क्या जाँचा नहीं जा सका';
 
   @override
-  String get limitsTitle => 'Facify क्या स्थापित नहीं कर सकता';
+  String get limitsTitle => 'Factify क्या स्थापित नहीं कर सकता';
 
   @override
   String get limitAi =>
@@ -558,7 +559,7 @@ class AppLocalizationsHi extends AppLocalizations {
   String get timelineTitle => 'समय-रेखा';
 
   @override
-  String get timelineFirstChecked => 'Facify ने पहली बार जाँचा';
+  String get timelineFirstChecked => 'Factify ने पहली बार जाँचा';
 
   @override
   String get timelineRetrieved => 'इस नतीजे के लिए साक्ष्य जुटाए गए';

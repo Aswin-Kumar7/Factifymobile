@@ -30,7 +30,7 @@ from typing import Any
 from app.domain.enums import SyntheticSignal
 from app.observability.logging import event
 
-logger = logging.getLogger("facify.media.provenance")
+logger = logging.getLogger("factify.media.provenance")
 
 NAME = "c2pa"
 

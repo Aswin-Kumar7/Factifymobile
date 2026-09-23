@@ -25,12 +25,12 @@ from app.observability.logging import event
 from app.observability.metrics import metrics
 from app.security.ssrf import BlockedDestination, resolve_and_validate
 
-logger = logging.getLogger("facify.fetch")
+logger = logging.getLogger("factify.fetch")
 
 # An honest user agent. Bulk ingestion identifies itself and respects robots; a
 # single user-triggered fetch is the same request any link-preview bot makes and is
 # not crawling, but we still say who we are.
-USER_AGENT = "FacifyBot/1.0 (+https://facify.example/bot)"
+USER_AGENT = "FactifyBot/1.0 (+https://factify.example/bot)"
 
 # Content types worth parsing. Anything else is fetched no further than its headers —
 # we are not going to stream a video through the article extractor.

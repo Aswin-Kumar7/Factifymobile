@@ -11,7 +11,7 @@ What it does **not** change is how a verdict is reached. The search API only *fi
 candidate pages. The same passage reasoner that reads the corpus reads these, and a
 citation still requires a verbatim quote located in the returned text: the model reads
 and quotes, it does not decide. A page the reasoner cannot quote produces no evidence,
-exactly as everywhere else. This is the one line that separates Facify from a
+exactly as everywhere else. This is the one line that separates Factify from a
 search-and-summarise tool — those let a confident model write the answer from the same
 pages; here the answer is the citations, and the model is only a reader.
 
@@ -49,7 +49,7 @@ from app.sources.base import (
 from app.sources.credibility import SourceCredibility
 from app.sources.reasoning import REASONER_VERSION, PassageReasoner, split_passages
 
-logger = logging.getLogger("facify.sources.websearch")
+logger = logging.getLogger("factify.sources.websearch")
 
 # The claim itself plus at most two of its search phrases.
 _MAX_QUERIES = 3
@@ -161,7 +161,7 @@ class WebSearchResolver:
 
         # Through the governor, like every other metered provider. This resolver was
         # written without one and spent a paid search quota that the configured caps
-        # only appeared to protect: `FACIFY_WEBSEARCH__DAILY_CAP` was read into the
+        # only appeared to protect: `FACTIFY_WEBSEARCH__DAILY_CAP` was read into the
         # governor's provider table and never consulted, so nothing enforced it.
         #
         # Raised rather than returned empty, because the pipeline distinguishes "no

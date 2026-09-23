@@ -36,7 +36,7 @@ from app.observability.logging import event
 from app.orchestration.pipeline import ClaimOutcome, VerificationResult
 from app.orchestration.receipt import ReceiptSigner, evidence_from_rows
 
-logger = logging.getLogger("facify.ledger")
+logger = logging.getLogger("factify.ledger")
 
 
 class Ledger:

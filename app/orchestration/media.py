@@ -37,7 +37,7 @@ from app.observability.logging import event
 from app.sources.base import SourceResolver
 from app.sources.media import MediaMatchResolver, ProvenanceResolver
 
-logger = logging.getLogger("facify.orchestration.media")
+logger = logging.getLogger("factify.orchestration.media")
 
 # Nearest fingerprints pulled from the HNSW index per query. Wide enough that the
 # true match cannot be crowded out by near-misses; the matcher's own distance

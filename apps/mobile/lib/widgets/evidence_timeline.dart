@@ -1,7 +1,7 @@
 /// The timeline (M44, PLAN 1.7.4): the dates behind a verdict, in order.
 ///
 /// Built only from dates the response carries — when each cited source was
-/// published or seen, when Facify first checked this content, and when this
+/// published or seen, when Factify first checked this content, and when this
 /// result's evidence was gathered. A source without a date is left off rather than
 /// placed by guesswork, and with nothing dated beyond this check the card is not
 /// drawn at all: a timeline of one point is decoration.
@@ -23,7 +23,7 @@ class TimelineEntry {
   final DateTime at;
   final String title;
 
-  /// How a cited source bears on the claim; null for Facify's own checks.
+  /// How a cited source bears on the claim; null for Factify's own checks.
   final String? direction;
 }
 
@@ -104,7 +104,7 @@ class _TimelineRow extends StatelessWidget {
             width: 20,
             child: Column(
               children: [
-                // Facify's own checks are filled; cited sources are hollow.
+                // Factify's own checks are filled; cited sources are hollow.
                 Container(
                   margin: const EdgeInsets.only(top: 3),
                   width: 10,

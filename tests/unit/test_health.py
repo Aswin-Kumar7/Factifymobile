@@ -16,7 +16,7 @@ def test_healthz_reports_ok() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "status": "ok",
-        "service": "facify",
+        "service": "factify",
         "version": __version__,
     }
 
@@ -27,4 +27,4 @@ def test_app_boots_with_no_database_and_no_network() -> None:
     If this ever needs a fixture, a dependency has leaked into construction.
     """
     app = create_app()
-    assert app.title == "Facify"
+    assert app.title == "Factify"

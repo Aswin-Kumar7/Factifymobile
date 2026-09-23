@@ -31,7 +31,7 @@ from uuid import UUID
 from app.domain.evidence import Evidence
 from app.observability.logging import event
 
-logger = logging.getLogger("facify.receipt")
+logger = logging.getLogger("factify.receipt")
 
 RECEIPT_VERSION = "2026.08.1"
 

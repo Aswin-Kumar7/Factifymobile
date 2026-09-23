@@ -51,7 +51,7 @@ REDACTED = "[redacted]"
 
 # Custom fields travel under this single key to stay clear of the reserved
 # LogRecord attribute names, then are lifted to the top level by the formatter.
-_PAYLOAD_KEY = "facify"
+_PAYLOAD_KEY = "factify"
 
 
 def _scrub(value: Any, key: str | None = None) -> Any:

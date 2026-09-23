@@ -1,6 +1,6 @@
 """M22 and M23 gates, against real model weights.
 
-    FACIFY_MODEL_TESTS=1 uv run pytest -m model
+    FACTIFY_MODEL_TESTS=1 uv run pytest -m model
 
 Skipped by default: the weights are a few hundred megabytes and CI has no business
 downloading them on every commit. They are exercised here, on the machine that
@@ -21,8 +21,8 @@ from app.embeddings.text import TextEmbedder
 from app.extraction.language import Language
 
 requires_weights = pytest.mark.skipif(
-    os.environ.get("FACIFY_MODEL_TESTS") != "1",
-    reason="set FACIFY_MODEL_TESTS=1 to download model weights and run these",
+    os.environ.get("FACTIFY_MODEL_TESTS") != "1",
+    reason="set FACTIFY_MODEL_TESTS=1 to download model weights and run these",
 )
 
 pytestmark = [pytest.mark.model, requires_weights]

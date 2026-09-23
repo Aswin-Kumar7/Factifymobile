@@ -31,7 +31,7 @@ from app.db.repositories import FingerprintRepository, ObservationRepository
 from app.domain.enums import ClaimStatus
 from app.observability.logging import event
 
-logger = logging.getLogger("facify.graph.promotion")
+logger = logging.getLogger("factify.graph.promotion")
 
 
 class TrustState(StrEnum):

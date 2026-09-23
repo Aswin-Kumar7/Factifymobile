@@ -27,7 +27,7 @@ from pathlib import Path
 
 from app.observability.logging import event
 
-logger = logging.getLogger("facify.media.video")
+logger = logging.getLogger("factify.media.video")
 
 DEFAULT_MAX_SECONDS = 90
 DEFAULT_MAX_KEYFRAMES = 12
@@ -189,7 +189,7 @@ class KeyframeExtractor:
 
         limitations: list[str] = []
 
-        with tempfile.TemporaryDirectory(prefix="facify-video-") as workspace:
+        with tempfile.TemporaryDirectory(prefix="factify-video-") as workspace:
             root = Path(workspace)
             source = root / "input"
             # Off the event loop: an upload can be tens of megabytes, and writing it

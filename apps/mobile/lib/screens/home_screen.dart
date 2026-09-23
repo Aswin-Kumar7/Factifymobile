@@ -49,7 +49,7 @@ typedef _Phrase = String Function(AppLocalizations l10n);
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.client, required this.language});
 
-  final FacifyClient client;
+  final FactifyClient client;
   final LanguagePreference language;
 
   @override
@@ -113,7 +113,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Coming back to Facify is the moment someone has usually just copied the
+    // Coming back to Factify is the moment someone has usually just copied the
     // thing they want checked.
     if (state == AppLifecycleState.resumed) unawaited(_offerClipboard());
   }
@@ -145,7 +145,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (!mounted) return;
     setState(() {
       _serviceReady = ready;
-      // A release build compiled without FACIFY_API still points at the
+      // A release build compiled without FACTIFY_API still points at the
       // emulator's host address, which no real phone can reach. That build is
       // misconfigured rather than offline, and whoever installed it needs to
       // know which.
@@ -477,7 +477,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             // The product name, the same in every interface language. It gives
             // way first on a narrow phone or at a large font size, so the language
             // and status pills beside it keep their room.
-            const Flexible(child: Text('Facify', overflow: TextOverflow.ellipsis)),
+            const Flexible(child: Text('Factify', overflow: TextOverflow.ellipsis)),
           ],
         ),
         actions: [

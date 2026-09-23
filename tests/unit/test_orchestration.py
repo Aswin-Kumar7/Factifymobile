@@ -596,7 +596,7 @@ class TestTheHttpSurface:
 
     def test_a_wrong_secret_is_also_404(self) -> None:
         response = self._client().post(
-            "/internal/ingest-tick", headers={"x-facify-trigger": "guessed"}
+            "/internal/ingest-tick", headers={"x-factify-trigger": "guessed"}
         )
         assert response.status_code == 404
 

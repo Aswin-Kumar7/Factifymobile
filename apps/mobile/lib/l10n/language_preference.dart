@@ -1,6 +1,6 @@
 /// The interface language (M44, PLAN 1.7.6): the phone's, unless the reader chose one.
 ///
-/// A null value means "follow the phone" — the device language when Facify has
+/// A null value means "follow the phone" — the device language when Factify has
 /// strings for it, English when it does not. A choice is remembered across
 /// launches, because a Hindi reader on an English-language phone, a common setup,
 /// would otherwise have to switch it back every time.
@@ -26,7 +26,7 @@ class LanguagePreference extends ValueNotifier<Locale?> {
 
   final SharedPreferencesAsync? _store;
 
-  /// The saved choice, if there is one Facify still has strings for.
+  /// The saved choice, if there is one Factify still has strings for.
   ///
   /// Never throws. A store that cannot be read costs the reader their saved
   /// choice for one launch; it must not cost them the launch.

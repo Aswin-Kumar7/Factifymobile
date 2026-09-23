@@ -30,7 +30,7 @@ from app.governor.governor import Governor, ProviderUnavailable
 from app.observability.logging import event
 from app.security.fetcher import FetchResult, SecureFetcher
 
-logger = logging.getLogger("facify.ocr")
+logger = logging.getLogger("factify.ocr")
 
 PROVIDER = "llm"
 

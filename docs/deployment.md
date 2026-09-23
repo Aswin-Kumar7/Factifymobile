@@ -91,10 +91,10 @@ Required at runtime:
 
 | Secret | Consequence if absent |
 |---|---|
-| `FACIFY_DATABASE_URL` | Service refuses to boot outside `local` |
-| `FACIFY_LLM__API_KEY` | Claim extraction abstains, and says so |
-| `FACIFY_INGEST_TRIGGER_SECRET` | Every ingestion trigger is denied |
-| `FACIFY_RECEIPT_SIGNING_KEY` | Receipts are not issued |
+| `FACTIFY_DATABASE_URL` | Service refuses to boot outside `local` |
+| `FACTIFY_LLM__API_KEY` | Claim extraction abstains, and says so |
+| `FACTIFY_INGEST_TRIGGER_SECRET` | Every ingestion trigger is denied |
+| `FACTIFY_RECEIPT_SIGNING_KEY` | Receipts are not issued |
 
 **No credential is ever shipped to a client.** The Android app holds none; it talks
 only to this service. A key in an APK is a key extracted from that APK.
@@ -106,7 +106,7 @@ only to this service. A key in an APK is a key extracted from that APK.
 Pin and do not move:
 
 - `uv.lock` — the dependency set, already committed
-- `FACIFY_MODELS__EXTRACTION` — pinned to a specific model id, not a moving alias
+- `FACTIFY_MODELS__EXTRACTION` — pinned to a specific model id, not a moving alias
   like `gemini-flash-latest`. A silently repointed alias changes extraction
   behaviour; the model id is part of the verdict cache key so a change invalidates
   cached results rather than serving stale ones, but a pin makes it a deliberate

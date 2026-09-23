@@ -1,4 +1,4 @@
-"""Facify — evidence-based content verification.
+"""Factify — evidence-based content verification.
 
 Verdicts are computed from citable evidence (Tiers A–D). Model scores are advisory
 (Tier E): they may raise suspicion, never establish authenticity, never decide alone.

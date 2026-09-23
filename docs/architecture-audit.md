@@ -42,7 +42,7 @@ came from the live server on this machine (DB round trip: 25ms median, measured)
 | `POST /v1/verify/file` (image) | working; SQL shortlist |
 | `POST /v1/verify/file` (video) | 202 + honest terminal case; **no real worker** |
 | `GET /v1/cases/{id}`, `/evidence` | working (ledger-backed) |
-| `GET /v1/receipts/{id}` | **503 always** — `receipt_reader` never assigned; needs `FACIFY_RECEIPT_SIGNING_KEY` and a reader |
+| `GET /v1/receipts/{id}` | **503 always** — `receipt_reader` never assigned; needs `FACTIFY_RECEIPT_SIGNING_KEY` and a reader |
 | `GET/POST /v1/review*` | **503 always** — `ReviewQueue` is connection-scoped, never composed |
 | `/healthz`, `/readyz` | working |
 
@@ -58,7 +58,7 @@ came from the live server on this machine (DB round trip: 25ms median, measured)
    by URL would cut most of it and be honest (the snapshot records `fetched_at`).
 3. **Review queue wiring** — pool adapter like the others; the endpoints and the
    mobile "Report" button already exist.
-4. **Receipts** — needs `FACIFY_RECEIPT_SIGNING_KEY` minted, a `receipt_reader`,
+4. **Receipts** — needs `FACTIFY_RECEIPT_SIGNING_KEY` minted, a `receipt_reader`,
    and the ledger's evidence digest passed through.
 5. **Video worker** — frame extraction exists (`app/media/video.py`); a background
    task per accepted case could run frames through the media path and write the

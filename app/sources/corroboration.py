@@ -31,7 +31,7 @@ from app.knowledge.clustering import CorroborationCount, OriginClusterer
 from app.observability.logging import event
 from app.sources.base import SourceCandidate, SourceRelation, SourceSnapshot, insufficient
 
-logger = logging.getLogger("facify.corroboration")
+logger = logging.getLogger("factify.corroboration")
 
 NAME = "corroboration"
 VERSION = "2026.08.1"

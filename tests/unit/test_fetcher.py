@@ -221,12 +221,12 @@ class TestRequestHygiene:
             client=httpx.AsyncClient(
                 transport=httpx.MockTransport(handler),
                 follow_redirects=False,
-                headers={"User-Agent": "FacifyBot/1.0 (+https://facify.example/bot)"},
+                headers={"User-Agent": "FactifyBot/1.0 (+https://factify.example/bot)"},
             )
         )
         await fetcher.fetch("https://example.org/a")
 
-        assert "FacifyBot" in seen["user-agent"]
+        assert "FactifyBot" in seen["user-agent"]
 
 
 class TestSingleClientDiscipline:

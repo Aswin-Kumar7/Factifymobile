@@ -29,7 +29,7 @@ from app.domain.enums import EvidenceKind, Method, Relation, Tier
 from app.observability.logging import event
 from app.sources.base import SourceCandidate, SourceRelation, SourceSnapshot, insufficient
 
-logger = logging.getLogger("facify.temporal")
+logger = logging.getLogger("factify.temporal")
 
 NAME = "temporal"
 VERSION = "2026.08.1"

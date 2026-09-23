@@ -30,7 +30,7 @@ production is Linux, where this is a no-op.
 
 ## Schema isolation (M03)
 
-All 25 tables live in a dedicated **`facify`** schema, verified as **0 tables in
+All 25 tables live in a dedicated **`factify`** schema, verified as **0 tables in
 `public`**.
 
 This is a security decision, not tidiness. The platform auto-generates a REST API
@@ -41,10 +41,10 @@ keeps all three mechanisms off our tables **by construction**, rather than by
 remembering to toggle a dashboard setting — and it survives someone re-enabling
 those settings later.
 
-Connections set `search_path=facify,extensions,public`, so repositories carry no
+Connections set `search_path=factify,extensions,public`, so repositories carry no
 schema prefix and cannot accidentally read or write a platform-managed table.
 
-**Re-check after any platform change:** `public` must still contain zero Facify
+**Re-check after any platform change:** `public` must still contain zero Factify
 tables.
 
 ---
@@ -185,7 +185,7 @@ for it by a wide margin. See the calibration below.
 ### Running the model tests
 
 ```
-FACIFY_MODEL_TESTS=1 uv run pytest -m model
+FACTIFY_MODEL_TESTS=1 uv run pytest -m model
 ```
 
 Excluded from the default run and from CI: nothing should silently pull hundreds of
@@ -521,7 +521,7 @@ Registry is now 50 feeds: 8 fact-checkers, 40 news (22 wire-carrying), 2 officia
 Without a key it returns **HTTP 403 `PERMISSION_DENIED`** — *"Method doesn't allow
 unregistered callers"*. So the service is up and the endpoint is correct; it is
 gated on a key, not broken. The key is free and the wiring in `FactCheckResolver`
-is already in place behind `FACIFY_FACTCHECK__ENABLED` plus a cap.
+is already in place behind `FACTIFY_FACTCHECK__ENABLED` plus a cap.
 
 ### ClaimReview markup is absent from Indian fact-checkers
 

@@ -14,7 +14,7 @@ This module holds both shapes so those two callers hold none:
     answer under `choices[0].message.content`. This is what Groq, OpenRouter and
     (with the header noted below) Azure speak.
 
-The format is **configuration, never code** (`FACIFY_LLM__API_FORMAT`), so moving off
+The format is **configuration, never code** (`FACTIFY_LLM__API_FORMAT`), so moving off
 Gemini to escape its rate limits is an environment change, not a rewrite. The design
 law is unaffected either way: the model proposes claims and reads passages, and every
 proposal is still schema-validated and every quote still verified against the source
@@ -25,7 +25,7 @@ Not handled here, on purpose:
 
   * **Vision (OCR).** `app/extraction/ocr.py` stays Gemini — the OpenAI-compatible
     surfaces reached this way (Groq's free tier) expose no vision model, so vision is
-    a separate provider block (`FACIFY_VISION__*`) that can differ from the text one.
+    a separate provider block (`FACTIFY_VISION__*`) that can differ from the text one.
   * **Azure's auth header.** Azure OpenAI authenticates with an `api-key` header and
     puts the deployment in the URL rather than the body. Bearer covers Groq and
     OpenRouter; Azure needs the small variant noted at `_openai_headers`.

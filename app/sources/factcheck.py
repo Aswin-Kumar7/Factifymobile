@@ -45,7 +45,7 @@ from app.sources.base import (
 )
 from app.sources.reasoning import PassageReasoner
 
-logger = logging.getLogger("facify.factcheck")
+logger = logging.getLogger("factify.factcheck")
 
 NAME = "factcheck"
 VERSION = "2026.09.2"
