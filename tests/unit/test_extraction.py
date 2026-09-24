@@ -328,3 +328,55 @@ def test_one_malformed_claim_does_not_discard_the_rest() -> None:
 
     assert len(kept["claims"]) == 2
     assert all(item["claim_type"] == "EVENT" for item in kept["claims"])
+
+
+class TestVendorMarkdownIsReadAsText:
+    """The search vendor's extract is markdown; quotes are checked against plain text.
+
+    On The Hindu's report of the story a person had pasted, both of the model's quotes
+    were discarded as "not in the passage": the sentence was there, with a link in it.
+    """
+
+    PAGE = (
+        "[Videos](https://example.org/videos/)   [Podcast](https://example.org/podcast/)\n"
+        "![The Logo](https://example.org/logo.png)\n"
+        "\n"
+        "# Union warns of a nationwide strike\n"
+        "\n"
+        "The union on Thursday demanded the resignation of "
+        "[the Labour Minister (LM) A. Kumar](https://example.org/a.ece) for "
+        "\u201cundermining\u201d workers, and **warned** of a strike.\n"
+        "\n"
+        "****[Live updates](https://example.org/live)\n"
+        "See [the explainer](https://en.wikipedia.org/wiki/Strike_(action)) for more."
+    )
+
+    def test_a_linked_phrase_keeps_its_words_and_loses_its_target(self) -> None:
+        text = web_module.plain_text(self.PAGE)
+
+        assert (
+            "demanded the resignation of the Labour Minister (LM) A. Kumar for "
+            "\u201cundermining\u201d workers, and warned of a strike."
+        ) in text
+        assert "See the explainer for more." in text
+        assert "https://" not in text
+
+    def test_navigation_images_and_markers_are_not_text(self) -> None:
+        text = web_module.plain_text(self.PAGE)
+
+        assert "Videos" not in text
+        assert "Live updates" not in text
+        assert "Logo" not in text
+        assert "#" not in text
+        assert "*" not in text
+        assert text.startswith("Union warns of a nationwide strike")
+
+    def test_a_quote_from_the_page_now_verifies(self) -> None:
+        from app.sources.reasoning import verify_quote
+
+        quote = (
+            "demanded the resignation of the Labour Minister (LM) A. Kumar for "
+            "\u201cundermining\u201d workers"
+        )
+        assert verify_quote(quote, self.PAGE) is None
+        assert verify_quote(quote, web_module.plain_text(self.PAGE)) is not None

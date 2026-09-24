@@ -163,6 +163,10 @@ class Evidence(BaseModel):
     match_quality: MatchQuality
 
     publisher: str | None = None
+    # The headline of the page the excerpt came from, when the fetch found one.
+    # Carried so the source check reads a quoted sentence the way a person
+    # does - under its headline - rather than stripped of it.
+    title: str | None = None
     input_anchor: InputAnchor | None = None
     provider: str | None = None
     provider_version: str | None = None

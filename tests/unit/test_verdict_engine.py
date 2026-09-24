@@ -649,9 +649,7 @@ class TestAMinorDetailDoesNotSinkTheCase:
         return decide(claim(), [])
 
     def test_a_background_claim_nobody_checked_does_not_block(self) -> None:
-        minor = claim(
-            claim_id="cl_2", importance=Importance.BACKGROUND, severity=Severity.LOW
-        )
+        minor = claim(claim_id="cl_2", importance=Importance.BACKGROUND, severity=Severity.LOW)
 
         outcome = roll_up(
             [
@@ -787,9 +785,7 @@ class TestConfidenceIsArithmeticOnTheSources:
     def test_a_published_fact_check_is_at_least_88(self) -> None:
         decision = decide(
             claim(),
-            self._side(
-                Direction.CONTRADICTS, "https://altnews.in/1", kind=EvidenceKind.FACT_CHECK
-            ),
+            self._side(Direction.CONTRADICTS, "https://altnews.in/1", kind=EvidenceKind.FACT_CHECK),
         )
 
         assert decision.confidence is not None and decision.confidence >= 88
@@ -810,7 +806,9 @@ class TestTheVerdictAPersonReads:
             claim(),
             [
                 evidence(
-                    direction=Direction.CONTRADICTS, tier=Tier.D, citation_url="https://apnews.com/1"
+                    direction=Direction.CONTRADICTS,
+                    tier=Tier.D,
+                    citation_url="https://apnews.com/1",
                 ).model_copy(update={"credibility": Credibility.HIGH})
             ],
         )

@@ -44,7 +44,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.domain.enums import Relation
-from app.domain.typography import fold
+from app.domain.typography import fold, plain_punctuation, unquoted
 from app.embeddings.image import cosine
 from app.extraction.model_wire import WireFormat, build_call, response_text, usage_of
 from app.governor.governor import ProviderUnavailable
@@ -56,7 +56,7 @@ from app.sources.corpus_text import is_navigation
 logger = logging.getLogger("factify.sources.reasoning")
 
 PROVIDER = "llm"
-REASONER_VERSION = "2026.09.14"
+REASONER_VERSION = "2026.09.24.6"
 
 # How many passages go to the model in one call. One call per source, not one per
 # passage: the model needs to see the alternatives to judge which actually bears on
@@ -389,7 +389,13 @@ def verify_quote(quote: str, passage: str) -> tuple[int, int] | None:
 
     position = haystack.find(needle)
     if position == -1:
-        return None
+        # Once more without quotation marks; see `unquoted`.
+        haystack, needle = unquoted(haystack), unquoted(needle)
+        if len(needle) < 24:
+            return None
+        position = haystack.find(needle)
+        if position == -1:
+            return None
     return position, position + len(needle)
 
 
@@ -521,20 +527,26 @@ _CHECK_SOURCES_SCHEMA: dict[str, Any] = {
 
 _CHECK_SOURCES_INSTRUCTION = """\
 You check whether each of several sources genuinely speaks to one specific claim.
-Each source is given as the passage quoted from it. Judge only that passage.
+Each source is given as the passage quoted from it, under the headline of the article
+it came from when that is known. Judge the passage, read as its article presents it:
+a publisher's headline states what the article reports, so a passage and its headline
+together can establish a claim that the passage alone words more loosely. A headline
+never makes a passage about a different subject into one about this claim.
 
 For each source:
 - reason: one short sentence naming what in the passage decides it.
 - addresses_claim: true only if the passage is about THIS claim - the same subject and
-  the same assertion. Sharing a topic is not enough. A page about scholarships in
+  the same assertion. Sharing a topic is not enough. A page about pensions in
   general does not address a claim about one named scheme. A page about a different
   event, place, date or person does not address this one. A page about a law on what
   doctors may say does not address whether a remedy cures a disease. A named scheme,
   programme, law, organisation or person must be the same one: a different programme
   with a similar name or the same abbreviation is a different subject. Scams borrow
   the names of real programmes on purpose, so this is where they are caught - the
-  National Scholarship Portal (NSP) is not a "National Sports Scholarship". When unsure,
-  false.
+  Atal Pension Yojana is not an "Atal Free Pension Scheme". An earlier or later event
+  of the same kind is a different event too: last year's cut in fuel prices does not
+  address a claim about a new one, however alike they sound. Old news recirculated as
+  new is one of the commonest fakes. When unsure, false.
 - verdict:
   * TRUE if the passage, in its own voice, establishes that the claim is correct. If
     the claim is itself about what someone said, announced or ruled, a passage
@@ -546,7 +558,9 @@ For each source:
     likely, describes a study without its result, or answers a different question.
 
 Then explanation: one or two plain sentences for a member of the public saying what
-the relevant sources show about the claim, naming the most authoritative one. Use only
+the relevant sources show about the claim, naming the most authoritative one. Refer
+to every source by its publisher's name, never by its number: the reader never sees
+the numbers, and "sources 0, 1 and 2" means nothing to them. Use only
 what the passages say. If no source addresses the claim, say that no reliable source
 was found that addresses it. Write it in the same language as the claim.
 
@@ -646,21 +660,21 @@ For each judgement:
     this freely: most passages retrieved for a claim are about something else.
   * DIFFERENT_QUESTION - the passage is on the claim's topic but answers a
     different question, so believing it settles nothing about the claim. For
-    "drinking cow urine cures cancer", a passage about whether the Cancer Act 1939
-    forbids doctors from discussing cures is a different question: both concern
-    doctors and cancer cures, and neither tells you whether cow urine cures
+    "turmeric milk cures diabetes", a passage about whether advertising law lets
+    companies claim that a product cures diabetes is a different question: both
+    concern diabetes cures, and neither tells you whether turmeric milk cures
     anything. Use this whenever getting from the passage to the claim needs a step
     of reasoning the passage does not itself take.
   * NO_OUTCOME_STATED - the passage is about the claim's own subject but reports no
     result that settles it: a method, an aim, a study description, work in progress,
-    a call for research. "The sterile filtrate of cow urine was evaluated for
-    antiproliferative effects in breast cancer cells" says what was tested, never
-    what was found, and is not evidence in either direction.
+    a call for research. "Turmeric extract was evaluated for its effect on blood
+    sugar in diabetic rats" says what was tested, never what was found, and is not
+    evidence in either direction.
   * REFUTES_REPORTED_CONTENT - the claim reports that someone said, found, announced
     or DEBUNKED something, and the passage refutes the thing they were talking about
-    rather than the fact that they said it. For "the government has debunked claims
-    that a fire broke out at a defence facility", a passage establishing that no fire
-    broke out is not a contradiction — it is what the government said, and it agrees
+    rather than the fact that they said it. For "the railway ministry has denied
+    reports that a bridge collapsed in Bihar", a passage establishing that no bridge
+    collapsed is not a contradiction — it is what the ministry said, and it agrees
     with the claim. Disproving the inner statement of a debunk, a denial or a
     quotation almost never disproves the claim reporting it.
 
@@ -968,6 +982,10 @@ class PassageReasoner:
         rejected = 0
         demoted = 0
         off_topic = 0
+        # The first few quotes that failed the verbatim check, for the log: a count
+        # cannot tell a paraphrase from a text-format mismatch, and they need
+        # opposite fixes.
+        unverified: list[str] = []
 
         for judgement in response.judgements:
             passage = by_index.get(judgement.passage_index)
@@ -1074,6 +1092,8 @@ class PassageReasoner:
             located = verify_quote(judgement.quote, passage.text)
             if located is None:
                 rejected += 1
+                if len(unverified) < 3:
+                    unverified.append(judgement.quote[:160])
                 continue
 
             offset, end = located
@@ -1123,6 +1143,7 @@ class PassageReasoner:
                 model_id=self._model_id,
                 rejected=rejected,
                 kept=len(kept),
+                examples=unverified,
                 level=logging.WARNING,
             )
 
@@ -1134,11 +1155,11 @@ class PassageReasoner:
         )
 
     def _render(self, claim_text: str, passages: list[Passage], title: str | None = None) -> str:
-        lines = [f"CLAIM: {claim_text}", ""]
+        lines = [f"CLAIM: {plain_punctuation(claim_text)}", ""]
         if title and title.strip():
-            lines += [f"ARTICLE TITLE: {title.strip()}", ""]
+            lines += [f"ARTICLE TITLE: {plain_punctuation(title.strip())}", ""]
         lines.append("PASSAGES:")
         for passage in passages:
-            lines.append(f"[{passage.index}] {passage.text}")
+            lines.append(f"[{passage.index}] {plain_punctuation(passage.text)}")
             lines.append("")
         return "\n".join(lines)

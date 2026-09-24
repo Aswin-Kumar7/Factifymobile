@@ -1237,9 +1237,9 @@ class TestStrengthCountsTheEvidenceThatCarriesTheVerdict:
         # The count was taken over the contradicting citations, which is the whole
         # point: asking about the supporting ones would have returned an empty set
         # and the component would read zero again.
-        assert asked == [
-            ["https://alpha.example/cl_1", "https://beta.example/cl_1"]
-        ], "corroboration was asked about the wrong citations"
+        assert asked == [["https://alpha.example/cl_1", "https://beta.example/cl_1"]], (
+            "corroboration was asked about the wrong citations"
+        )
 
     @pytest.mark.anyio
     async def test_the_decision_still_sees_only_supporting_origins(self) -> None:
@@ -1294,16 +1294,69 @@ class TestRetrievalChangesRetireTheCache:
         return CacheKeyParts(**{**base, **overrides})
 
     def test_a_bumped_resolver_misses_the_old_entry(self) -> None:
-        assert self._parts().derive() != self._parts(
-            retrieval_version="web_search:2026.09.5"
-        ).derive()
+        assert (
+            self._parts().derive() != self._parts(retrieval_version="web_search:2026.09.5").derive()
+        )
 
     def test_a_new_resolver_misses_it_too(self) -> None:
         """Adding a source of evidence changes what a claim can be answered on."""
-        assert self._parts().derive() != self._parts(
-            retrieval_version="corpus:2026.08.1,web_search:2026.09.4"
-        ).derive()
+        assert (
+            self._parts().derive()
+            != self._parts(retrieval_version="corpus:2026.08.1,web_search:2026.09.4").derive()
+        )
 
     def test_the_same_setup_still_hits(self) -> None:
         """The point is to retire stale answers, not to stop caching."""
         assert self._parts().derive() == self._parts().derive()
+
+
+class TestOneSlowPageDoesNotLoseTheRest:
+    """The deadline cuts off the pages still being read, not the ones already read.
+
+    It used to wrap the whole resolver. "India won the ICC Men's T20 World Cup in
+    2024" was read from three outlets, all answered, and came back with no sources
+    because a fourth page's fetch hung and the timeout cancelled everything.
+    """
+
+    class _ThreePages:
+        name = "web_search"
+
+        async def candidates(self, _: Any) -> list[str]:
+            return ["fast-1", "fast-2", "hangs"]
+
+    @pytest.mark.anyio
+    async def test_what_was_read_is_kept_and_the_straggler_is_reported(self) -> None:
+        import time
+
+        orchestrator = Orchestrator(
+            cache=NullCache(),  # type: ignore[arg-type]
+            governor=RecordingGovernor(),  # type: ignore[arg-type]
+            resolvers=[],
+            extractor_version="test",
+        )
+        cancelled: list[str] = []
+
+        async def _resolve(_resolver: Any, _claim: Any, candidate: str) -> Any:
+            if candidate == "hangs":
+                try:
+                    await asyncio.sleep(30)
+                except asyncio.CancelledError:
+                    cancelled.append(candidate)
+                    raise
+            return evidence(citation_url=f"https://example.org/{candidate}")
+
+        orchestrator._resolve_candidate = _resolve  # type: ignore[method-assign]
+
+        found, skip = await orchestrator._run_resolver(
+            self._ThreePages(),  # type: ignore[arg-type]
+            claim(),
+            read_by=time.perf_counter() + 0.2,
+        )
+
+        assert sorted(e.citation_url for e in found) == [
+            "https://example.org/fast-1",
+            "https://example.org/fast-2",
+        ]
+        assert skip == "1 of 3 sources not read before the deadline"
+        # Abandoned, not left running past the request that asked for it.
+        assert cancelled == ["hangs"]

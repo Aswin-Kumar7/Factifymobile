@@ -40,6 +40,7 @@ from urllib.parse import urlsplit
 from app.domain.claim import Claim
 from app.domain.enums import Direction, EvidenceKind
 from app.domain.evidence import Evidence
+from app.domain.typography import fold
 from app.observability.logging import event
 
 logger = logging.getLogger("factify.sources.verification")
@@ -87,24 +88,54 @@ class Verified:
     checked: bool = True
 
 
+# Query parameters that say how someone arrived at a page, not which page it is.
+_TRACKING_PREFIXES = ("utm_", "mc_")
+_TRACKING_NAMES = frozenset({"fbclid", "gclid", "ref", "ref_src", "src", "amp", "share", "cmp"})
+
+
 def page_key(url: str) -> str:
     """One key per page, however the URL was written.
 
-    Scheme, `www.`, trailing slash, query string and fragment are the differences that
-    reached the ledger as separate citations of one article.
+    Scheme, `www.`, trailing slash, tracking parameters and fragment are the
+    differences that reached the ledger as separate citations of one article.
+
+    The rest of the query string is kept. It used to be dropped whole, and for some
+    publishers it is the page: every PIB release is `PressReleasePage.aspx?PRID=...`,
+    so two different releases would have been merged into one citation.
     """
     parts = urlsplit(url.strip())
     host = (parts.hostname or "").lower().removeprefix("www.")
     path = parts.path.rstrip("/") or "/"
-    return f"{host}{path}"
+    query = "&".join(
+        sorted(
+            pair
+            for pair in parts.query.split("&")
+            if pair and not _is_tracking(pair.split("=", 1)[0].lower())
+        )
+    )
+    return f"{host}{path}?{query}" if query else f"{host}{path}"
+
+
+def _is_tracking(name: str) -> bool:
+    return name in _TRACKING_NAMES or name.startswith(_TRACKING_PREFIXES)
 
 
 def dedupe(evidence: list[Evidence]) -> tuple[list[Evidence], int]:
-    """Keep the strongest copy of each page, in first-seen order."""
+    """Keep the strongest copy of each page, in first-seen order.
+
+    Two pages of one publisher quoting the same words count as one page too. The Hindu
+    printed a story and embedded the same paragraph in its live blog; both were cited,
+    and the result showed The Hindu twice with an identical quote — one source, dressed
+    as two.
+    """
     best: dict[str, Evidence] = {}
     order: list[str] = []
+    same_words: dict[tuple[str, str], str] = {}
     for item in evidence:
         key = page_key(item.citation_url)
+        words = (_host(item.citation_url).removeprefix("www."), fold(item.source_excerpt))
+        if key not in best:
+            key = same_words.setdefault(words, key)
         held = best.get(key)
         if held is None:
             best[key] = item
@@ -138,6 +169,13 @@ class SourceVerification:
         text = [item for item in unique if item.kind not in _NOT_TEXT]
         sided = [item for item in text if item.direction in _AGREES]
         context_only = len(text) - len(sided)
+        # What happened to each source, by host, for the log. Counts alone could not
+        # answer "why was The Hindu not cited?" without re-running the check.
+        outcomes = [
+            {"host": _host(item.citation_url), "outcome": "context", "reason": item.finding[:200]}
+            for item in text
+            if item.direction not in _AGREES
+        ]
 
         if not sided:
             return self._finish(
@@ -148,6 +186,7 @@ class SourceVerification:
                 context_only=context_only,
                 rejected=0,
                 checked=True,
+                outcomes=outcomes,
             )
 
         # Bounded by what is left of the request. Past it, the sources are kept
@@ -158,7 +197,7 @@ class SourceVerification:
                 self._checker.check_sources(
                     claim.text,
                     [
-                        (item.publisher or _host(item.citation_url), item.source_excerpt)
+                        (item.publisher or _host(item.citation_url), _under_headline(item))
                         for item in sided
                     ],
                 ),
@@ -180,12 +219,26 @@ class SourceVerification:
         kept: list[Evidence] = []
         for index, item in enumerate(sided):
             reading = answer.readings.get(index)
+            host = _host(item.citation_url)
             if reading is None:
                 # The call did not say anything about this source. Silence is not a
                 # vote of confidence; the page has not been confirmed relevant.
+                outcomes.append({"host": host, "outcome": "unmentioned"})
                 continue
             if reading.addresses_claim and reading.verdict == _AGREES[item.direction]:
                 kept.append(item)
+                outcomes.append({"host": host, "outcome": f"kept ({item.direction.value})"})
+            else:
+                outcomes.append(
+                    {
+                        "host": host,
+                        "outcome": (
+                            f"rejected: read {item.direction.value}, check said "
+                            f"{reading.verdict}, about the claim={reading.addresses_claim}"
+                        ),
+                        "reason": reading.reason[:200],
+                    }
+                )
 
         return self._finish(
             claim,
@@ -195,6 +248,7 @@ class SourceVerification:
             context_only=context_only,
             rejected=len(sided) - len(kept),
             checked=True,
+            outcomes=outcomes,
         )
 
     def _finish(
@@ -207,6 +261,7 @@ class SourceVerification:
         context_only: int,
         rejected: int,
         checked: bool,
+        outcomes: list[dict[str, str]] | None = None,
     ) -> Verified:
         # Weighed only when the check actually ran. Credibility is what lets a single
         # highly credible refutation decide a claim (rule 3c), and that rule is only
@@ -214,9 +269,7 @@ class SourceVerification:
         # An unchecked source keeps no weight, so it cannot decide anything alone.
         weighed = (
             [
-                item.model_copy(
-                    update={"credibility": self._ranker.credibility(item.citation_url)}
-                )
+                item.model_copy(update={"credibility": self._ranker.credibility(item.citation_url)})
                 for item in evidence
             ]
             if checked
@@ -233,6 +286,7 @@ class SourceVerification:
             context_only=context_only,
             rejected=rejected,
             checked=checked,
+            sources=outcomes or [],
         )
         return Verified(
             evidence=weighed,
@@ -242,6 +296,20 @@ class SourceVerification:
             rejected=rejected,
             checked=checked,
         )
+
+
+def _under_headline(item: Evidence) -> str:
+    """The quoted passage, with the headline it was published under when known.
+
+    A quote alone is a sentence out of context. The Hindu's report of a party's
+    ultimatum quoted "warned of a nationwide agitation ... if he does not step down",
+    and the check rejected it for not naming the protest the claim named — which the
+    article's own headline did, in the words of the claim. The first reader already
+    sees the headline; the check now does too.
+    """
+    if item.title and item.title.strip():
+        return f"HEADLINE: {item.title.strip()}\nPASSAGE: {item.source_excerpt}"
+    return item.source_excerpt
 
 
 def _host(url: str) -> str:

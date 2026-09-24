@@ -97,9 +97,30 @@ _MEDIUM_CATEGORY_PREFIXES = (
     "south_asia_news",
     "investigative_and_explainers",
     "reference",
+    "sports_news",
     "climate_and_environment",
     "disinformation_research",
     "government_and_academic_domains",
+)
+
+# Which categories are read first when a search returns more credible pages than there
+# are read slots. The publishers most people mean by "the news" — wires, the national
+# press, public broadcasters, the major international papers — plus the bodies whose
+# word settles a claim outright: official and intergovernmental sources, the health and
+# science literature, and fact-checkers, who are how a fake gets refuted. Regional
+# papers, reference works and everything else are still read when there is room; this
+# orders the queue, it does not shorten the list.
+_PROMINENT_CATEGORY_PREFIXES = (
+    "fact_checkers",
+    "wire_services",
+    "public_broadcasters",
+    "india_national_news",
+    "india_official_and_legal",
+    "news_",
+    "sports_news",
+    "international_organisations",
+    "health_and_medicine",
+    "science_and_research",
 )
 
 # The one non-list key the loader reads: host -> path prefixes that are open to anyone.
@@ -116,10 +137,12 @@ class SourceCredibility:
         fact_checkers: frozenset[str] = frozenset(),
         high: frozenset[str] = frozenset(),
         medium: frozenset[str] = frozenset(),
+        prominent: frozenset[str] = frozenset(),
     ) -> None:
         self._trusted = trusted
         self._high = high
         self._medium = medium
+        self._prominent = prominent
         self._user_content_paths = dict(user_content_paths or {})
         # Publishers whose business is adjudicating claims. A page of theirs is a
         # published fact-check wherever it was found, which is a stronger class of
@@ -145,6 +168,7 @@ class SourceCredibility:
         fact_checkers: set[str] = set()
         high: set[str] = set()
         medium: set[str] = set()
+        prominent: set[str] = set()
         for key, value in raw.items():
             if key.startswith("_") or not isinstance(value, list):
                 continue
@@ -154,6 +178,8 @@ class SourceCredibility:
                 high.update(hosts)
             elif key.startswith(_MEDIUM_CATEGORY_PREFIXES):
                 medium.update(hosts)
+            if key.startswith(_PROMINENT_CATEGORY_PREFIXES):
+                prominent.update(hosts)
             # Every `fact_checkers_*` category, including the formerly accredited
             # ones: a lapsed IFCN renewal does not turn a published adjudication into
             # something else.
@@ -175,6 +201,7 @@ class SourceCredibility:
             frozenset(fact_checkers),
             frozenset(high),
             frozenset(medium),
+            frozenset(prominent),
         )
 
     def is_credible(self, url_or_domain: str | None) -> bool:
@@ -214,6 +241,20 @@ class SourceCredibility:
         if any(name in _TRUSTED_SUFFIXES for name in names):
             return Credibility.MEDIUM
         return Credibility.LOW
+
+    def is_prominent(self, url_or_domain: str | None) -> bool:
+        """Whether this publisher is read first when read slots are scarce.
+
+        Government and intergovernmental domains count by suffix, as they do for
+        credibility. A university or an unlisted institution does not: it is citable,
+        not a first read.
+        """
+        domain = self._domain_of(url_or_domain)
+        if not domain:
+            return False
+        if any(name in self._prominent for name in _suffixes(domain)):
+            return True
+        return bool(url_or_domain) and is_official(url_or_domain or "")
 
     def is_fact_checker(self, url_or_domain: str | None) -> bool:
         """Whether this source publishes fact-checks, rather than reporting generally.

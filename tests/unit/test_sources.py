@@ -1035,6 +1035,23 @@ class TestThePageIsActuallyRead:
         assert fetcher.vendor_calls == 1
 
     @pytest.mark.anyio
+    async def test_the_vendors_markdown_is_read_as_text(self) -> None:
+        """Quotes are checked verbatim, and a link inside a sentence broke every one."""
+        linked = self.ARTICLE.replace(
+            "World Health Organization", "[World Health Organization](https://who.int/)"
+        )
+        fetcher = self._Fetcher(None, vendor="# Myth busters\n\n" + linked)
+
+        snapshot = await self._resolver(fetcher).snapshot(
+            SourceCandidate(url="https://www.who.int/a", proposed_by="web_search:tavily")
+        )
+
+        assert snapshot is not None
+        assert "](" not in snapshot.text
+        assert "#" not in snapshot.text
+        assert "The World Health Organization has addressed this claim" in snapshot.text
+
+    @pytest.mark.anyio
     async def test_a_block_page_is_not_mistaken_for_an_article(self) -> None:
         """403 bodies are short and parse to almost nothing — that must escalate."""
         fetcher = self._Fetcher(
@@ -1215,6 +1232,19 @@ class TestSearchingTheQuestionBehindTheClaim:
         assert len(asked) == 3
         assert [row["url"] for row in rows] == ["https://example.test/kept"]
 
+    def test_every_query_failing_is_a_skipped_check_not_an_empty_one(self) -> None:
+        """A Tavily plan limit (432 on every query) read as "no source addresses this"."""
+        subject = self._resolver()
+
+        async def _search(_query: str) -> list[dict]:
+            raise RuntimeError("provider returned 432")
+
+        subject._search = _search  # type: ignore[method-assign]
+
+        with pytest.raises(ProviderUnavailable) as raised:
+            asyncio.run(subject._queries(claim(text="A claim.")))
+        assert raised.value.reason is SkipReason.PROVIDER_ERROR
+
     def test_the_same_url_from_two_queries_is_one_candidate(self) -> None:
         subject = self._resolver()
 
@@ -1333,6 +1363,41 @@ class TestASnippetCannotDecideAClaim:
         assert self._relate("web.fetched", Relation.CONTRADICTS).relation is Relation.CONTRADICTS
 
 
+class TestTheCitationIsFoundWhereTheGateFoundIt:
+    """A quote the gate accepts must also be locatable for its citation.
+
+    Two functions located quotes with different rules. The gate folded typography;
+    `locate_excerpt` did not, so a quote accepted with straight marks against a page set
+    in curly ones was dropped at the second step, silently. Both of The Hindu's reports
+    of a story a person pasted were read, judged SUPPORTS and lost this way.
+    """
+
+    PAGE = (
+        "The party demanded the resignation of the minister for “undermining” "
+        "voter rights. “If he does not resign within 48 hours, we will protest in "
+        "Delhi,” Mr. Rao said — adding that the rally would go ahead."
+    )
+
+    @pytest.mark.parametrize(
+        "quote",
+        [
+            'demanded the resignation of the minister for "undermining" voter rights',
+            "If he does not resign within 48 hours, we will protest in Delhi, Mr. Rao said",
+            "Mr. Rao said - adding that the rally would go ahead",
+        ],
+    )
+    def test_whatever_the_gate_accepts_is_located(self, quote: str) -> None:
+        assert verify_quote(quote, self.PAGE) is not None
+        _, anchor = locate_excerpt(self.PAGE, quote)
+        assert anchor, quote
+
+    def test_a_changed_word_is_still_not_located(self) -> None:
+        _, anchor = locate_excerpt(
+            self.PAGE, "If he does not resign within 24 hours, we will protest in Delhi"
+        )
+        assert not anchor
+
+
 class TestATypesetQuoteIsStillTheQuote:
     """Eight of nine judgements were discarded on typography, not on honesty.
 
@@ -1344,7 +1409,7 @@ class TestATypesetQuoteIsStillTheQuote:
     """
 
     def test_a_curly_quote_matches_a_straight_one(self) -> None:
-        page = 'Trump said he has an “obligation” to keep fake news out of the complex.'
+        page = "Trump said he has an “obligation” to keep fake news out of the complex."
         model = 'Trump said he has an "obligation" to keep fake news out of the complex.'
 
         assert verify_quote(model, page) is not None
@@ -1361,9 +1426,31 @@ class TestATypesetQuoteIsStillTheQuote:
 
         assert verify_quote(model, page) is not None
 
+    def test_a_remark_copied_without_its_quotation_marks_still_matches(self) -> None:
+        """Reporting splices a quoted remark into its attribution; models drop the marks."""
+        page = "“If he does not resign within 48 hours, we will protest in Delhi,” Mr. Rao said."
+        model = "If he does not resign within 48 hours, we will protest in Delhi, Mr. Rao said."
+
+        assert verify_quote(model, page) is not None
+
+    def test_ignoring_quotation_marks_still_needs_every_word(self) -> None:
+        page = "“If he does not resign within 48 hours, we will protest in Delhi,” Mr. Rao said."
+        model = "If he does not resign within 24 hours, we will protest in Delhi, Mr. Rao said."
+
+        assert verify_quote(model, page) is None
+
+    def test_the_model_is_shown_plain_quotes_and_dashes(self) -> None:
+        """Asked to copy curly marks, the model wrote control characters in their place."""
+        from app.domain.typography import plain_punctuation
+
+        text = "for “undermining” rights — and ‘the Delhi rally’"
+
+        assert plain_punctuation(text) == "for \"undermining\" rights - and 'the Delhi rally'"
+        assert len(plain_punctuation(text)) == len(text)
+
     def test_a_paraphrase_still_fails(self) -> None:
         """The gate is unchanged for everything it was built to catch."""
-        page = 'Trump said he has an “obligation” to keep fake news out of the complex.'
+        page = "Trump said he has an “obligation” to keep fake news out of the complex."
 
         assert verify_quote("Trump claimed a duty to bar fake news from the complex.", page) is None
 

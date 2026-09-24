@@ -144,6 +144,17 @@ class TestCoverage:
         ):
             assert cred.is_credible(url), url
 
+    def test_sports_newsrooms_are_citable(self) -> None:
+        """ "India won the 2024 T20 World Cup" abstained: every cricket source was dropped."""
+        cred = _credibility()
+        for url in (
+            "https://www.espncricinfo.com/series/icc-men-s-t20-world-cup-2024",
+            "https://www.cricbuzz.com/cricket-news/1",
+            "https://www.espn.com/cricket/story/_/id/1",
+        ):
+            assert cred.is_credible(url), url
+            assert cred.credibility(url).value == "MEDIUM", url
+
     def test_times_of_india_reporting_is_citable_but_its_open_sections_are_not(self) -> None:
         cred = _credibility()
         assert cred.is_credible("https://timesofindia.indiatimes.com/india/x/articleshow/1.cms")
@@ -278,3 +289,98 @@ class TestFactCheckerClassification:
             EvidenceKind.CORROBORATION,
             Method.PASSAGE_ENTAILMENT,
         )
+
+
+class TestWhichSourcesAreReadFirst:
+    """Wires, the national press and the bodies that settle claims take the read slots.
+
+    On a story PTI, The Hindu and the Times of India all carried, two of six slots went
+    to Wikipedia and a regional paper while four candidates were never opened.
+    """
+
+    def test_wires_national_press_broadcasters_and_fact_checkers_are_prominent(self) -> None:
+        cred = _credibility()
+        for url in (
+            "https://www.ptinews.com/story/1",
+            "https://www.thehindu.com/news/national/x",
+            "https://indianexpress.com/article/india/x",
+            "https://www.bbc.com/news/x",
+            "https://www.reuters.com/world/x",
+            "https://www.boomlive.in/fact-check/x",
+            "https://pib.gov.in/PressReleasePage.aspx?PRID=1",
+            "https://www.who.int/news/x",
+        ):
+            assert cred.is_prominent(url), url
+
+    def test_regional_and_reference_sources_are_read_after_them(self) -> None:
+        cred = _credibility()
+        for url in (
+            "https://morungexpress.com/x",
+            "https://en.wikipedia.org/wiki/X",
+            "https://www.dawn.com/news/1",
+            "https://www.iitm.ac.in/news/x",
+        ):
+            assert cred.is_credible(url), url
+            assert not cred.is_prominent(url), url
+
+    def test_the_resolver_reads_prominent_sources_first_in_search_order(self) -> None:
+        import asyncio
+
+        from app.sources.websearch import WebSearchResolver
+        from tests.unit.factories import claim
+
+        resolver = WebSearchResolver(
+            fetcher=object(),  # type: ignore[arg-type]
+            reasoner=None,
+            provider="tavily",
+            endpoint="https://example.invalid/search",
+            api_key="",
+            credibility=_credibility(),
+            max_results=3,
+        )
+        found = [
+            "https://en.wikipedia.org/wiki/X",
+            "https://morungexpress.com/x",
+            "https://www.thehindu.com/news/national/x",
+            "https://www.ptinews.com/story/1",
+            "https://timesofindia.indiatimes.com/india/x",
+        ]
+
+        async def _queries(_: object) -> list[dict[str, object]]:
+            return [{"url": url, "content": "x"} for url in found]
+
+        resolver._queries = _queries  # type: ignore[method-assign]
+        shortlist = asyncio.run(resolver.candidates(claim()))
+
+        assert [c.url for c in shortlist] == [
+            "https://www.thehindu.com/news/national/x",
+            "https://www.ptinews.com/story/1",
+            "https://timesofindia.indiatimes.com/india/x",
+        ]
+
+    def test_the_same_page_found_twice_is_read_once(self) -> None:
+        """www.politifact.com and politifact.com were both read, one model call wasted."""
+        import asyncio
+
+        from app.sources.websearch import WebSearchResolver
+        from tests.unit.factories import claim
+
+        resolver = WebSearchResolver(
+            fetcher=object(),  # type: ignore[arg-type]
+            reasoner=None,
+            provider="tavily",
+            endpoint="https://example.invalid/search",
+            api_key="",
+            credibility=_credibility(),
+        )
+
+        async def _queries(_: object) -> list[dict[str, object]]:
+            return [
+                {"url": "https://www.politifact.com/factchecks/2026/x/", "content": "x"},
+                {"url": "https://politifact.com/factchecks/2026/x", "content": "x"},
+            ]
+
+        resolver._queries = _queries  # type: ignore[method-assign]
+        shortlist = asyncio.run(resolver.candidates(claim()))
+
+        assert [c.url for c in shortlist] == ["https://www.politifact.com/factchecks/2026/x/"]

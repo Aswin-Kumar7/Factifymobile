@@ -39,9 +39,7 @@ class _Ranker:
 
 
 def _run(checker: _Checker, items: list[Any]) -> Any:
-    return asyncio.run(
-        SourceVerification(checker=checker, ranker=_Ranker()).check(claim(), items)
-    )
+    return asyncio.run(SourceVerification(checker=checker, ranker=_Ranker()).check(claim(), items))
 
 
 class TestOneCitationPerPage:
@@ -52,12 +50,35 @@ class TestOneCitationPerPage:
             "http://fullfact.org/online/coronavirus-5G?utm_source=x#top"
         )
 
+    def test_a_query_that_names_the_page_keeps_pages_apart(self) -> None:
+        """Every PIB release is PressReleasePage.aspx?PRID=..., one page per id."""
+        first = page_key("https://pib.gov.in/PressReleasePage.aspx?PRID=2101")
+        second = page_key("https://pib.gov.in/PressReleasePage.aspx?PRID=2102")
+
+        assert first != second
+        assert first == page_key(
+            "https://www.pib.gov.in/PressReleasePage.aspx?PRID=2101&utm_medium=x"
+        )
+
     def test_repeats_collapse_to_one(self) -> None:
         url = "https://fullfact.org/online/coronavirus-5G/"
         unique, removed = dedupe([evidence(citation_url=url) for _ in range(3)])
 
         assert len(unique) == 1
         assert removed == 2
+
+    def test_one_publisher_quoting_the_same_words_twice_is_one_source(self) -> None:
+        """A story and the live blog that embeds it are one source, not two."""
+        story = evidence(citation_url="https://www.thehindu.com/news/national/story.ece")
+        blog = story.model_copy(
+            update={"citation_url": "https://www.thehindu.com/news/national/live-updates.ece"}
+        )
+        other = story.model_copy(update={"citation_url": "https://theprint.in/politics/x/"})
+
+        unique, removed = dedupe([story, blog, other])
+
+        assert [e.citation_url for e in unique] == [story.citation_url, other.citation_url]
+        assert removed == 1
 
     def test_a_published_fact_check_is_the_copy_kept(self) -> None:
         url = "https://fullfact.org/online/coronavirus-5G/"
@@ -202,3 +223,27 @@ class TestAnUncheckedSourceCarriesNoWeight:
 
         assert result.checked is False
         assert result.evidence[0].credibility is None
+
+
+class TestTheCheckReadsTheHeadline:
+    """A quoted sentence is judged under the headline it was published with."""
+
+    def test_the_headline_is_shown_with_the_passage(self) -> None:
+        checker = _Checker({0: (True, "TRUE")})
+        item = evidence(
+            direction=Direction.SUPPORTS, citation_url="https://www.thehindu.com/a.ece"
+        ).model_copy(update={"title": "Union warns of a Delhi rally if the minister stays"})
+
+        _run(checker, [item])
+
+        shown = checker.shown[0][0][1]
+        assert shown.startswith("HEADLINE: Union warns of a Delhi rally if the minister stays")
+        assert item.source_excerpt in shown
+
+    def test_without_a_headline_the_passage_is_shown_alone(self) -> None:
+        checker = _Checker({0: (True, "TRUE")})
+        item = evidence(direction=Direction.SUPPORTS, citation_url="https://a.com/1")
+
+        _run(checker, [item])
+
+        assert checker.shown[0][0][1] == item.source_excerpt

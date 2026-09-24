@@ -36,8 +36,8 @@ from urllib.parse import urlsplit
 
 from app.domain.claim import Claim
 from app.domain.enums import ClaimType, EvidenceKind, Method, Relation, Tier
-from app.extraction.web import extract
-from app.governor.governor import ProviderUnavailable, Skip
+from app.extraction.web import extract, plain_text
+from app.governor.governor import ProviderUnavailable, Skip, SkipReason
 from app.observability.logging import event
 from app.security.fetcher import FetchResult, SecureFetcher
 from app.sources.base import (
@@ -49,6 +49,7 @@ from app.sources.base import (
 )
 from app.sources.credibility import SourceCredibility
 from app.sources.reasoning import REASONER_VERSION, PassageReasoner, split_passages
+from app.sources.verification import page_key
 
 logger = logging.getLogger("factify.sources.websearch")
 
@@ -63,7 +64,7 @@ _MAX_QUERIES = 4
 _READ_TTL_SECONDS = 90.0
 
 NAME = "web_search"
-VERSION = "2026.09.5"
+VERSION = "2026.09.8"
 PROVIDER = "web_search"
 
 # How many credible sources to read. Each is a metered model call, and corroboration
@@ -83,6 +84,10 @@ _MIN_ARTICLE_CHARS = 600
 # credibility gate drops most open-web results — a query where four of five hits are
 # blogs would otherwise leave a single credible source, too few to corroborate.
 _SEARCH_COUNT = 10
+
+
+class _SearchFailed(Exception):
+    """One search call that did not return results: the provider refused or failed."""
 
 
 class WebSearchResolver:
@@ -198,10 +203,18 @@ class WebSearchResolver:
         shortlist: list[SourceCandidate] = []
         dropped = 0
         dropped_hosts: list[str] = []
+        seen: set[str] = set()
         for row in rows:
             url = row.get("url")
             if not url or not (row.get("content") or "").strip():
                 continue
+            # One read per page. Two queries returned www.politifact.com and
+            # politifact.com for the same article, and both were read — a model call
+            # spent on a page already in hand, merged away afterwards anyway.
+            key = page_key(url)
+            if key in seen:
+                continue
+            seen.add(key)
             # The credibility gate. An open-web page is read and cited only if its
             # publisher is one we would cite — otherwise a conspiracy blog's "SUPPORTS"
             # counts equally against a fact-checker's "CONTRADICTS", and the verdict
@@ -236,6 +249,15 @@ class WebSearchResolver:
             # and those need opposite responses.
             dropped_hosts=sorted(set(dropped_hosts)),
         )
+        # Which pages get the read slots. Search rank alone gave them to whatever the
+        # provider ranked first: on "CJP threatens 'Jantar Mantar 2.0' if CEC Gyanesh
+        # Kumar does not resign" — a story PTI, The Hindu and the Times of India all
+        # carried that day — two of six slots went to Wikipedia and a Nagaland
+        # regional paper while four candidates were never opened. The wires, the
+        # national press, broadcasters, official bodies and fact-checkers are read
+        # first; search order is kept within each group, and the rest still fill any
+        # slot left over.
+        shortlist.sort(key=lambda c: 0 if self._credibility.is_prominent(c.url) else 1)
         return shortlist[: self._max_results]
 
     async def snapshot(self, candidate: SourceCandidate) -> SourceSnapshot | None:
@@ -327,9 +349,7 @@ class WebSearchResolver:
         # Expired entries are dropped on the way past rather than on a timer; the
         # dictionary is small and only grows while a case is in flight.
         self._reads = {
-            key: value
-            for key, value in self._reads.items()
-            if now - value[0] < _READ_TTL_SECONDS
+            key: value for key, value in self._reads.items() if now - value[0] < _READ_TTL_SECONDS
         }
         self._reads[url] = (now, result)
         return result
@@ -404,7 +424,9 @@ class WebSearchResolver:
         except json.JSONDecodeError:
             return ""
         for row in payload.get("results", []):
-            body = (row.get("raw_content") or "").strip()
+            # Markdown, not text: without this every quote from a page read this way
+            # failed the verbatim check. See `plain_text`.
+            body = plain_text(row.get("raw_content") or "")
             if body:
                 return body
         return ""
@@ -444,6 +466,19 @@ class WebSearchResolver:
 
         _, anchor = locate_excerpt(snapshot.text, best.quote)
         if not anchor:
+            # Logged, because it should not happen: the gate already found this quote.
+            # When it did happen, it was two locating rules disagreeing, and it went
+            # unnoticed for as long as it was silent.
+            event(
+                logger,
+                "judged quote not located for citation",
+                module="sources.websearch",
+                outcome="degraded",
+                provider=PROVIDER,
+                url=snapshot.url,
+                quote=best.quote[:160],
+                level=logging.WARNING,
+            )
             return insufficient(
                 NAME, VERSION, "the quoted passage could not be located in the returned text"
             )
@@ -507,6 +542,7 @@ class WebSearchResolver:
         one acquisition for the resolver rather than per query, and the marginal
         result falls off quickly.
         """
+
         def _comparable(value: str) -> str:
             return " ".join(value.split()).strip(" .!?।").casefold()
 
@@ -549,6 +585,25 @@ class WebSearchResolver:
         # return keeps its earliest position, which is a mild vote for agreement.
         merged: dict[str, dict[str, Any]] = {}
         results = [r for r in gathered if not isinstance(r, BaseException)]
+
+        # Every query failed: the search did not run, and that is not the same answer
+        # as a search that found nothing. Returning no rows here reported a Tavily
+        # plan limit (HTTP 432 on every query) as "no reliable source addresses this
+        # claim", and the run looked complete, so that non-answer was cached for six
+        # hours. Raised, the pipeline records the check as skipped instead: the reader
+        # is told it could not be checked, and nothing is cached.
+        if not results:
+            event(
+                logger,
+                "web search failed",
+                module="sources.websearch",
+                outcome="error",
+                provider=PROVIDER,
+                queries=len(queries),
+                failure_reason=type(gathered[0]).__name__ if gathered else "no queries",
+                level=logging.WARNING,
+            )
+            raise ProviderUnavailable(PROVIDER, SkipReason.PROVIDER_ERROR)
         for rank in range(max((len(r) for r in results), default=0)):
             for result in results:
                 if rank >= len(result):
@@ -573,16 +628,13 @@ class WebSearchResolver:
         """Normalised results from whichever provider is configured.
 
         Each row is ``{url, title, content, published_at, publisher, score}``. A
-        transport or parse failure yields no rows — a search that could not run is an
-        absence of evidence, never an error that fails the whole verification.
+        transport, provider or parse failure raises: one failed query is absorbed by
+        `_queries`, which still has the others, and only all of them failing makes
+        the search a skipped check rather than an empty one.
         """
-        try:
-            if self._provider == "exa":
-                return await self._search_exa(query)
-            return await self._search_tavily(query)
-        except Exception:
-            logger.debug("web search failed; returning no candidates", exc_info=True)
-            return []
+        if self._provider == "exa":
+            return await self._search_exa(query)
+        return await self._search_tavily(query)
 
     async def _search_tavily(self, query: str) -> list[dict[str, Any]]:
         result = await self._fetcher.post_json(
@@ -597,7 +649,7 @@ class WebSearchResolver:
             headers={"authorization": f"Bearer {self._api_key}"},
         )
         if not isinstance(result, FetchResult):
-            return []
+            raise _SearchFailed(result.reason)
         data = json.loads(result.text)
         return [
             {
@@ -623,7 +675,7 @@ class WebSearchResolver:
             headers={"x-api-key": self._api_key},
         )
         if not isinstance(result, FetchResult):
-            return []
+            raise _SearchFailed(result.reason)
         data = json.loads(result.text)
         return [
             {

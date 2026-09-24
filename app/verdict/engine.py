@@ -203,9 +203,7 @@ def _confidence(decision: Decision, evidence: list[Evidence]) -> int | None:
     opposing_direction = (
         Direction.CONTRADICTS if winning is Direction.SUPPORTS else Direction.SUPPORTS
     )
-    opposing = [
-        e for e in evidence if e.direction is opposing_direction and e.is_decisive_capable
-    ]
+    opposing = [e for e in evidence if e.direction is opposing_direction and e.is_decisive_capable]
 
     ours = _side_weight(cited)
     theirs = _side_weight(opposing)

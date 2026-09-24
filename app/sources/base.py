@@ -35,6 +35,7 @@ from urllib.parse import urlsplit
 from app.domain.claim import Claim
 from app.domain.enums import Direction, EvidenceKind, Method, Relation, Tier
 from app.domain.evidence import Evidence, MatchBasis, SourceAnchor
+from app.domain.typography import fold, unquoted
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,6 +226,7 @@ def build_evidence(
             threshold=relation.threshold,
         ),
         publisher=snapshot.publisher,
+        title=snapshot.title,
         provider=relation.validator,
         provider_version=relation.validator_version,
         observed_at=snapshot.fetched_at,
@@ -237,16 +239,26 @@ def locate_excerpt(text: str, needle: str, *, window: int = 220) -> tuple[str, d
     Returns an empty excerpt when the phrase is absent, which callers turn into
     `INSUFFICIENT`. A resolver must never invent the excerpt it cites — that is the
     one thing this function exists to make impossible to do by accident.
+
+    Matched with the same tolerance as the quote gate in `reasoning.verify_quote`:
+    typography folded, and quotation marks ignored on a second try. It used to match
+    only case and whitespace, so a quote the gate had accepted — curly marks on the
+    page, straight in the model's copy — was dropped here without a word. Live: both
+    of The Hindu's reports of the story a person pasted were read, judged SUPPORTS,
+    passed the gate, and vanished at this line.
     """
-    haystack = " ".join(text.lower().split())
-    target = " ".join(needle.lower().split())
+    haystack = fold(text)
+    target = fold(needle)
 
     if not target or not haystack:
         return "", {}
 
     position = haystack.find(target)
     if position == -1:
-        return "", {}
+        haystack, target = unquoted(haystack), unquoted(target)
+        position = haystack.find(target) if target else -1
+        if position == -1:
+            return "", {}
 
     start = max(0, position - window // 2)
     end = min(len(haystack), position + len(target) + window // 2)

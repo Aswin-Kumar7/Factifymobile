@@ -294,3 +294,50 @@ def extract(html: str, *, url: str | None = None) -> ExtractedArticle:
         extraction_route=route,
         limitations=tuple(limitations),
     )
+
+
+# Markdown as the search vendor's extract returns it. An image first, so a linked
+# image — `[![alt](img)](href)` — leaves an empty link behind rather than its alt text.
+_MD_IMAGE = re.compile(r"!\[[^\]]*\]\((?:[^()\s]|\([^()\s]*\))*(?:\s+\"[^\"]*\")?\)")
+# A link's text is kept and its target dropped. The target may itself contain one
+# level of parentheses, as Wikipedia URLs do.
+_MD_LINK = re.compile(r"\[([^\]]*)\]\((?:[^()\s]|\([^()\s]*\))*(?:\s+\"[^\"]*\")?\)")
+_MD_HEADING = re.compile(r"^\s{0,3}#{1,6}\s+", re.MULTILINE)
+_MD_EMPHASIS = re.compile(r"\*\*+|__+")
+_MD_ESCAPE = re.compile(r"\\([\\`*_{}\[\]()#+\-.!|>~])")
+_RUNS_OF_SPACE = re.compile(r"[ \t ]{2,}")
+
+
+def plain_text(markdown: str) -> str:
+    """The words of a page the search vendor returned as markdown, as a reader sees them.
+
+    The vendor's extract is the fallback reader for the publishers that refuse our own
+    fetch — Reuters, AP, NDTV, PIB, the sources most worth citing — and it returns
+    markdown. The reasoner quotes a sentence as it reads, and the quote check then
+    looks for that sentence in the text we hold. Against markdown it is not there:
+
+        demanded the resignation of [Chief Election Commissioner (CEC) Gyanesh
+        Kumar](https://www.thehindu.com/news/...) for "undermining" voter rights
+
+    Measured on one The Hindu article: 181 links, 34 images and 8 bold markers, and
+    both of the model's quotes from it discarded as "not in the passage" — the exact
+    story a person had pasted, reported in their own words, thrown away.
+
+    A line that was nothing but links — a site's navigation menu — is dropped rather
+    than kept as a row of section names; it is text a model would otherwise be paid to
+    read.
+    """
+    lines: list[str] = []
+    for line in markdown.splitlines():
+        without_images = _MD_IMAGE.sub("", line)
+        had_link = _MD_LINK.search(without_images) is not None
+        text = _MD_LINK.sub(r"\1", without_images)
+        if had_link and not _MD_LINK.sub("", without_images).strip(" \t|*-•·,"):
+            continue
+        text = _MD_HEADING.sub("", text)
+        text = _MD_EMPHASIS.sub("", text)
+        text = _MD_ESCAPE.sub(r"\1", text)
+        text = _RUNS_OF_SPACE.sub(" ", text).strip()
+        if text or (lines and lines[-1]):
+            lines.append(text)
+    return "\n".join(lines).strip()

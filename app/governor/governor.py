@@ -49,6 +49,9 @@ class SkipReason(StrEnum):
     RATE_LIMITED = "rate limited"
     DISABLED = "disabled"
     GOVERNOR_UNAVAILABLE = "governor unavailable"
+    # The provider was called and every call failed: an outage, a revoked key, an
+    # exhausted plan. Not "no results", which is an answer; this is the absence of one.
+    PROVIDER_ERROR = "provider error"
 
 
 class ProviderUnavailable(Exception):

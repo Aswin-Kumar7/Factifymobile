@@ -75,6 +75,17 @@ TARGET_SECONDS = 8.0
 # promise is not quietly rewritten, it is measured against honestly.
 REASONING_TARGET_SECONDS = 40.0
 
+# Kept back from the reading deadline for the source check that follows it. Reading
+# used to run to the deadline itself, leaving the check no time at all — so it timed
+# out at once and every source reached the verdict unchecked. The check is one model
+# call over short excerpts; measured at three to four seconds.
+_VERIFY_RESERVE_SECONDS = 6.0
+
+# How much longer than its reading deadline a resolver is given before it is cut off
+# whole. Pages are cut off individually at the deadline (see `_run_resolver`); this is
+# the backstop for a search provider that never answers at all.
+_RESOLVER_GRACE_SECONDS = 3.0
+
 # How many resolvers may run at once. Independent producers are concurrent because
 # they do not depend on each other; the ceiling exists so a burst of claims cannot
 # open forty sockets against six publishers.
@@ -661,7 +672,8 @@ class Orchestrator:
         strength = evidence_strength(
             evidence,
             independent_origin_count=(
-                counted.independent_origin_count if carrying is None
+                counted.independent_origin_count
+                if carrying is None
                 else carrying.independent_origin_count
             ),
             document_count=(
@@ -723,11 +735,19 @@ class Orchestrator:
         if not resolvers:
             return evidence
 
-        remaining = max(2.0, deadline - time.perf_counter()) if deadline is not None else None
+        # Reading stops early enough for the source check to run after it.
+        read_by = deadline
+        if deadline is not None and self._verification is not None:
+            read_by = deadline - _VERIFY_RESERVE_SECONDS
+
+        remaining = max(2.0, read_by - time.perf_counter()) if read_by is not None else None
+        backstop = None if remaining is None else remaining + _RESOLVER_GRACE_SECONDS
 
         gathered = await asyncio.gather(
             *(
-                asyncio.wait_for(self._run_resolver(resolver, claim), timeout=remaining)
+                asyncio.wait_for(
+                    self._run_resolver(resolver, claim, read_by=read_by), timeout=backstop
+                )
                 for resolver in resolvers
             ),
             return_exceptions=True,
@@ -802,13 +822,20 @@ class Orchestrator:
             return None
 
     async def _run_resolver(
-        self, resolver: SourceResolver, claim: Claim
+        self, resolver: SourceResolver, claim: Claim, *, read_by: float | None = None
     ) -> tuple[list[Evidence], str | None]:
         """Drive one resolver through candidates → snapshot → relate.
 
         Returns what it found and, separately, why it found nothing when the reason
         was a skip rather than an absence. Those are different answers and the
         response distinguishes them.
+
+        Pages still being read at `read_by` are abandoned one by one; what was already
+        read is kept. The deadline used to wrap the whole resolver, so one page that
+        hung took every finished page down with it. Live: "India won the ICC Men's T20
+        World Cup in 2024" was read from The Canadian Press, Wikipedia and Sportstar —
+        three model calls, all answered — and came back Unconfirmed with no sources,
+        because a sixth page's fetch timed out and the cancellation discarded all six.
         """
         async with self._semaphore:
             try:
@@ -829,20 +856,42 @@ class Orchestrator:
         # second budget, and measured 14.4 s on the corpus resolver before this
         # changed. The semaphore still bounds real concurrency, so this widens the
         # window rather than the load.
-        gathered = await asyncio.gather(
-            *(self._resolve_candidate(resolver, claim, candidate) for candidate in candidates),
-            return_exceptions=True,
-        )
+        tasks = [
+            asyncio.create_task(self._resolve_candidate(resolver, claim, candidate))
+            for candidate in candidates
+        ]
+        remaining = None if read_by is None else max(0.5, read_by - time.perf_counter())
+        try:
+            done, pending = await asyncio.wait(tasks, timeout=remaining)
+        except asyncio.CancelledError:
+            for task in tasks:
+                task.cancel()
+            raise
+        for task in pending:
+            task.cancel()
+        if pending:
+            # Let the cancellations land before returning, so no read outlives the
+            # request that asked for it.
+            await asyncio.gather(*pending, return_exceptions=True)
 
         evidence: list[Evidence] = []
-        for outcome in gathered:
+        for task in done:
             # One unreachable page is an ordinary event and must not discard the
             # evidence its siblings produced.
-            if isinstance(outcome, BaseException) or outcome is None:
+            if task.cancelled() or task.exception() is not None:
                 continue
-            evidence.append(outcome)
+            outcome = task.result()
+            if outcome is not None:
+                evidence.append(outcome)
 
-        return evidence, None
+        # Said, not hidden: a run that stopped reading early is incomplete, which also
+        # keeps it out of the cache.
+        skip = (
+            f"{len(pending)} of {len(tasks)} sources not read before the deadline"
+            if pending
+            else None
+        )
+        return evidence, skip
 
     async def _resolve_candidate(
         self, resolver: SourceResolver, claim: Claim, candidate: SourceCandidate
