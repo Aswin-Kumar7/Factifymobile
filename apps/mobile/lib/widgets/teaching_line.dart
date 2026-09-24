@@ -19,7 +19,6 @@ enum Technique {
   misattributedQuote,
   twistedNumber,
   wrongIdentity,
-  distortedEvent,
 }
 
 /// The technique [claim] fits, or null when there is none to name.
@@ -39,7 +38,9 @@ Technique? techniqueFor(Claim claim) {
     'QUOTE' || 'ATTRIBUTION' => Technique.misattributedQuote,
     'STATISTIC' => Technique.twistedNumber,
     'IDENTITY' => Technique.wrongIdentity,
-    'EVENT' => Technique.distortedEvent,
+    // EVENT is the catch-all type for a plain factual claim — a health myth, a
+    // scam, a rumour — so it names no technique. "Distorted event" used to be
+    // shown for all of them, which taught the wrong lesson more often than not.
     _ => null,
   };
 }
@@ -54,7 +55,6 @@ Technique? techniqueFor(Claim claim) {
   ),
   Technique.twistedNumber => (l10n.techniqueTwistedNumberTitle, l10n.techniqueTwistedNumberBody),
   Technique.wrongIdentity => (l10n.techniqueWrongIdentityTitle, l10n.techniqueWrongIdentityBody),
-  Technique.distortedEvent => (l10n.techniqueDistortedEventTitle, l10n.techniqueDistortedEventBody),
 };
 
 class TeachingLine extends StatelessWidget {

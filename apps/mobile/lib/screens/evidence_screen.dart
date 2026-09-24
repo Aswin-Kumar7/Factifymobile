@@ -1,29 +1,24 @@
-/// The evidence screen (M44).
+/// The sources screen: what was checked, what each claim came to, and the sources.
 ///
-/// Everything the verdict rests on, plus an explicit statement of what it does
-/// not cover. The limits block is not a disclaimer bolted on at the end — it is
-/// the difference between a tool people can calibrate their trust against and
-/// one they either over-trust or abandon at the first miss.
+/// Replaces an evidence screen that showed everything the pipeline knew — tiers,
+/// independent-origin counts, strength components, match thresholds — most of which
+/// a person checking a forward does not need and could not act on. What stays up
+/// front is what lets them trust the verdict or check it themselves: each claim with
+/// its verdict, a plain reason, where their own message says it, and the sources
+/// behind it with the sentence each was cited for. The rest — the timeline, whether
+/// this was seen before, what was not checked, what Factify cannot establish — is one
+/// tap away under "How we checked", not in the way.
 ///
-/// M44 puts the language toggle on this screen. Someone reading the evidence is
-/// the person most likely to want it in the other language, and sending them
-/// back to the home screen to switch would lose their place.
-///
-/// PLAN 1.7.4 and 1.7.7 add the rest of what is here: where the claim sits in the
-/// submission, the technique it fits, the timeline behind the verdict, the
-/// submitted picture beside a media match, and strength rows that lead to the
-/// citations they came from. Each renders only from data the response carries.
-/// Several of those fields are not sent yet (B6–B10 in docs/hackathon-workflow.md),
-/// and a missing field shows nothing rather than a guess.
+/// There are no GlobalKeys here any more. They existed so a strength row could scroll
+/// to its citation, and they were keyed by evidence id — so when the same page was
+/// cited twice for one claim the screen crashed with "Duplicate keys found". The
+/// server now cites each page once per claim, and nothing here needs a key at all.
 library;
 
-import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../api/client.dart';
 import '../l10n/app_localizations.dart';
@@ -31,13 +26,16 @@ import '../l10n/language_preference.dart';
 import '../l10n/phrases.dart';
 import '../models/submission.dart';
 import '../models/verdict.dart';
+import '../theme/colors.dart';
+import '../widgets/action_style.dart';
 import '../widgets/advisory_panel.dart';
-import '../widgets/english_only_note.dart';
 import '../widgets/evidence_timeline.dart';
 import '../widgets/language_menu.dart';
+import '../widgets/source_tile.dart';
 import '../widgets/teaching_line.dart';
+import '../widgets/verdict_card.dart' show ConfidenceRing;
 
-class EvidenceScreen extends StatefulWidget {
+class EvidenceScreen extends StatelessWidget {
   const EvidenceScreen({
     super.key,
     required this.verdict,
@@ -49,107 +47,56 @@ class EvidenceScreen extends StatefulWidget {
   final Verdict verdict;
   final LanguagePreference language;
 
-  /// Used only to check the receipt. Optional so widget tests can render the
-  /// screen without a server; the button is the one thing that needs it.
-  final FactifyClient? client;
-
   /// What was checked, when the screen was opened from a check in this session.
-  /// Lets a claim's anchor be shown inside the reader's own words, and a media
-  /// match beside the picture they submitted.
+  /// Lets a claim be marked inside the reader's own words, and a picture be shown
+  /// beside the earlier copy it matched.
   final Submission? submission;
 
-  @override
-  State<EvidenceScreen> createState() => _EvidenceScreenState();
-}
-
-class _EvidenceScreenState extends State<EvidenceScreen> {
-  /// One key per evidence card, so a strength row can bring its citation into view.
-  final Map<String, GlobalKey> _cardKeys = {};
-  String? _highlighted;
-  Timer? _highlightTimer;
-
-  GlobalKey _keyFor(Evidence evidence) => _cardKeys.putIfAbsent(evidence.id, GlobalKey.new);
-
-  /// Scrolls to the first card citing one of [urls], and marks it for a moment.
-  void _showCitations(List<String> urls) {
-    final target = widget.verdict.allEvidence.where((e) => urls.contains(e.citationUrl)).firstOrNull;
-    final cardContext = target == null ? null : _cardKeys[target.id]?.currentContext;
-    if (target == null || cardContext == null) return;
-
-    unawaited(
-      Scrollable.ensureVisible(
-        cardContext,
-        duration: const Duration(milliseconds: 350),
-        alignment: 0.1,
-      ),
-    );
-    setState(() => _highlighted = target.id);
-    _highlightTimer?.cancel();
-    _highlightTimer = Timer(const Duration(seconds: 2), () {
-      if (mounted) setState(() => _highlighted = null);
-    });
-  }
-
-  @override
-  void dispose() {
-    _highlightTimer?.cancel();
-    super.dispose();
-  }
+  /// Used only to check the receipt. Optional so widget tests can render the
+  /// screen without a server.
+  final FactifyClient? client;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final verdict = widget.verdict;
+    final theme = Theme.of(context);
+    final style = ActionStyle.of(verdict.action, Brightness.light, l10n);
 
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.evidenceTitle),
-        actions: [
-          LanguageMenu(preference: widget.language),
-          const SizedBox(width: 12),
-        ],
+        actions: [LanguageMenu(preference: language), const SizedBox(width: 12)],
       ),
-      // A column rather than a lazy list: every card must exist for a strength row
-      // to scroll to it, and this screen is a handful of cards, not a feed.
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
           children: [
-            const EnglishOnlyNote(padding: EdgeInsets.only(bottom: 10)),
-            for (final claim in verdict.claims)
-              _ClaimSection(
-                claim: claim,
-                submission: widget.submission,
-                highlighted: _highlighted,
-                keyFor: _keyFor,
-                onShowCitations: _showCitations,
-              ),
-            if (verdict.allEvidence.isEmpty) const _NoEvidenceBlock(),
-            EvidenceTimeline(verdict: verdict, padding: const EdgeInsets.only(top: 8)),
-            if (verdict.recurrence != null && verdict.recurrence!.timesSeen > 0) ...[
-              const SizedBox(height: 8),
-              _RecurrenceCard(recurrence: verdict.recurrence!),
+            _Header(verdict: verdict, style: style),
+            const SizedBox(height: 20),
+            Text(
+              l10n.whatWeCheckedTitle,
+              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 10),
+            if (verdict.claims.isEmpty)
+              _Plain(text: l10n.unconfirmedBody)
+            else
+              for (final (index, claim) in verdict.claims.indexed) ...[
+                if (index > 0) const SizedBox(height: 12),
+                _ClaimCard(claim: claim, submission: submission),
+              ],
+            if (verdict.completenessNote != null) ...[
+              const SizedBox(height: 12),
+              _Plain(text: l10n.incompleteNote),
             ],
-            if (verdict.mediaProvenance != null) ...[
-              const SizedBox(height: 8),
-              _ProvenanceCard(provenance: verdict.mediaProvenance!),
+            const SizedBox(height: 16),
+            _HowWeChecked(verdict: verdict),
+            if (verdict.advisories.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              AdvisoryPanel(advisories: verdict.advisories),
             ],
-            if (verdict.sourceRisk != 'UNKNOWN') ...[
-              const SizedBox(height: 8),
-              _SourceRiskCard(risk: verdict.sourceRisk),
-            ],
-            if (verdict.skipped.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              _SkippedCard(skipped: verdict.skipped),
-            ],
-            const SizedBox(height: 8),
-            _LimitsBlock(verdict: verdict),
-            const SizedBox(height: 8),
-            // Last, and visually quietest, by design.
-            AdvisoryPanel(advisories: verdict.advisories),
-            const SizedBox(height: 24),
-            _CaseFooter(verdict: verdict, client: widget.client),
+            const SizedBox(height: 20),
+            _CaseFooter(verdict: verdict, client: client),
           ],
         ),
       ),
@@ -157,65 +104,139 @@ class _EvidenceScreenState extends State<EvidenceScreen> {
   }
 }
 
-class _ClaimSection extends StatelessWidget {
-  const _ClaimSection({
-    required this.claim,
-    required this.submission,
-    required this.highlighted,
-    required this.keyFor,
-    required this.onShowCitations,
-  });
+class _Header extends StatelessWidget {
+  const _Header({required this.verdict, required this.style});
+
+  final Verdict verdict;
+  final ActionStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final confidence = verdict.confidence;
+    final decided = verdict.factVerdict.isDecided;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: style.container,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: [
+          Icon(style.icon, color: style.tone, size: 40),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  style.headline,
+                  style: theme.textTheme.headlineSmall?.copyWith(color: style.onContainer),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  // The explanation is in the claim cards below; saying it here
+                  // too put the same paragraph on screen twice.
+                  style.subhead,
+                  style: theme.textTheme.bodySmall?.copyWith(color: style.onContainer),
+                ),
+              ],
+            ),
+          ),
+          if (decided && confidence != null) ...[
+            const SizedBox(width: 10),
+            ConfidenceRing(value: confidence, tone: style.tone, size: 52),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// One claim: what it says, what the sources made of it, and the sources.
+class _ClaimCard extends StatelessWidget {
+  const _ClaimCard({required this.claim, required this.submission});
 
   final Claim claim;
   final Submission? submission;
-  final String? highlighted;
-  final GlobalKey Function(Evidence evidence) keyFor;
-  final void Function(List<String> urls) onShowCitations;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
+    final colour = ActionStyle.forStatus(claim.status);
+    final label = switch (claim.status) {
+      ClaimStatus.supported => l10n.headlineSafeToShare,
+      ClaimStatus.contradicted => l10n.headlineDoNotShare,
+      ClaimStatus.misleadingContext => l10n.headlineShareWithContext,
+      ClaimStatus.unverified => l10n.headlineSendToReview,
+    };
+    final confidence = claim.confidence;
+    final explanation = claim.explanation;
     final anchor = claim.inputAnchor;
     final technique = techniqueFor(claim);
+    final picture = submission?.thumbnail;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              claim.text,
+              style: theme.textTheme.bodyLarge?.copyWith(
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            ),
+            if (anchor != null) _InputAnchorBlock(anchor: anchor, submission: submission),
+            const SizedBox(height: 10),
+            Row(
               children: [
-                Text(l10n.theClaim, style: theme.textTheme.labelMedium),
-                const SizedBox(height: 4),
-                Text(claim.text, style: theme.textTheme.bodyLarge),
-                if (anchor != null) ...[
-                  const SizedBox(height: 8),
-                  _InputAnchorBlock(anchor: anchor, submission: submission),
-                ],
-                const SizedBox(height: 8),
-                Text(claim.reason, style: theme.textTheme.bodySmall),
-                const SizedBox(height: 10),
-                _StrengthBar(strength: claim.strength, onShowCitations: onShowCitations),
-                if (technique != null) ...[
-                  const SizedBox(height: 12),
-                  TeachingLine(technique: technique),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: colour.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    label,
+                    style: TextStyle(color: colour, fontWeight: FontWeight.w800, fontSize: 13),
+                  ),
+                ),
+                if (claim.isDecisive && confidence != null) ...[
+                  const SizedBox(width: 8),
+                  Text(
+                    l10n.confidence(confidence),
+                    style: theme.textTheme.labelMedium?.copyWith(color: FactifyColors.inkMuted),
+                  ),
                 ],
               ],
             ),
-          ),
+            const SizedBox(height: 10),
+            Text(
+              claim.isDecisive && explanation != null ? explanation : l10n.unconfirmedBody,
+              style: theme.textTheme.bodySmall,
+            ),
+            if (technique != null) ...[
+              const SizedBox(height: 12),
+              TeachingLine(technique: technique),
+            ],
+            if (claim.evidence.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              for (final (index, item) in claim.evidence.indexed) ...[
+                if (index > 0) const SizedBox(height: 8),
+                if (item.isMediaMatch && picture != null) ...[
+                  _MediaMatchPreview(picture: picture),
+                  const SizedBox(height: 8),
+                ],
+                SourceTile(evidence: item),
+              ],
+            ],
+          ],
         ),
-        for (final evidence in claim.evidence)
-          _EvidenceCard(
-            key: keyFor(evidence),
-            evidence: evidence,
-            highlighted: evidence.id == highlighted,
-            thumbnail: evidence.isMediaMatch ? submission?.thumbnail : null,
-          ),
-        const SizedBox(height: 8),
-      ],
+      ),
     );
   }
 }
@@ -234,7 +255,6 @@ class _InputAnchorBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
     final l10n = AppLocalizations.of(context);
     final text = submission?.text;
     final start = anchor.charStart;
@@ -251,9 +271,9 @@ class _InputAnchorBlock extends StatelessWidget {
             TextSpan(text: text.substring(from, start)),
             TextSpan(
               text: text.substring(start, end),
-              style: TextStyle(
-                backgroundColor: scheme.tertiaryContainer,
-                color: scheme.onTertiaryContainer,
+              style: const TextStyle(
+                backgroundColor: FactifyColors.emeraldSoft,
+                color: FactifyColors.emeraldDeep,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -270,9 +290,10 @@ class _InputAnchorBlock extends StatelessWidget {
     }
 
     return Container(
+      margin: const EdgeInsets.only(top: 8),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
+        color: FactifyColors.ground,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
@@ -280,223 +301,11 @@ class _InputAnchorBlock extends StatelessWidget {
         children: [
           Text(
             l10n.inputAnchorLabel,
-            style: theme.textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
+            style: theme.textTheme.labelSmall?.copyWith(color: FactifyColors.inkMuted),
           ),
           const SizedBox(height: 4),
           detail,
         ],
-      ),
-    );
-  }
-}
-
-/// The explainable score and its components.
-///
-/// Every component states why it contributed, because a number without a reason
-/// is exactly the model-confidence figure this product refuses to show.
-class _StrengthBar extends StatelessWidget {
-  const _StrengthBar({required this.strength, required this.onShowCitations});
-
-  final Strength strength;
-  final void Function(List<String> urls) onShowCitations;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final l10n = AppLocalizations.of(context);
-    final muted = theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                l10n.evidenceStrength(l10n.strengthBand(strength.band.toLowerCase())),
-                style: theme.textTheme.labelMedium,
-              ),
-            ),
-            Text(strength.score.toStringAsFixed(2), style: theme.textTheme.labelMedium),
-          ],
-        ),
-        const SizedBox(height: 4),
-        LinearProgressIndicator(value: strength.score.clamp(0, 1)),
-        const SizedBox(height: 6),
-        for (final component in strength.components)
-          _ComponentRow(component: component, onShowCitations: onShowCitations),
-        if (strength.advisoryExcluded.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              l10n.excludedFromScore(strength.advisoryExcluded.join(', ')),
-              style: muted,
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-/// One component of the score, leading to its citations when it has any.
-///
-/// Every component tappable through to its citations is the plan (1.7.7). The
-/// server records which citations produced each component but does not send them
-/// yet (B9), so until it does a row is plain text rather than a link to nothing.
-class _ComponentRow extends StatelessWidget {
-  const _ComponentRow({required this.component, required this.onShowCitations});
-
-  final StrengthComponent component;
-  final void Function(List<String> urls) onShowCitations;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final l10n = AppLocalizations.of(context);
-    final muted = theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
-    // The component is named for a reader; its explanation is the server's, and
-    // stays English until B5.
-    final label = Text(
-      '${l10n.strengthComponent(component.name)}: ${component.explanation}',
-      style: muted,
-    );
-
-    if (component.citations.isEmpty) {
-      return Padding(padding: const EdgeInsets.only(bottom: 2), child: label);
-    }
-
-    return InkWell(
-      onTap: () => onShowCitations(component.citations),
-      borderRadius: BorderRadius.circular(6),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 3),
-        child: Row(
-          children: [
-            Expanded(child: label),
-            const SizedBox(width: 6),
-            Icon(Icons.link, size: 14, color: theme.colorScheme.primary),
-            const SizedBox(width: 2),
-            Text(
-              l10n.strengthComponentCitations(component.citations.length),
-              style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.primary),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// One source card: publisher, date, excerpt, anchor and link.
-class _EvidenceCard extends StatelessWidget {
-  const _EvidenceCard({
-    super.key,
-    required this.evidence,
-    this.highlighted = false,
-    this.thumbnail,
-  });
-
-  final Evidence evidence;
-
-  /// Marked briefly after a strength row led here, so the eye lands on it.
-  final bool highlighted;
-
-  /// The submitted picture, shown beside a media match. There is no picture of
-  /// the earlier publication to put next to it: the contract carries its page,
-  /// not the image (B10).
-  final Uint8List? thumbnail;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final l10n = AppLocalizations.of(context);
-    final muted = theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
-    final date = evidence.observedAt == null
-        ? null
-        : DateFormat('d MMM yyyy', l10n.localeName).format(evidence.observedAt!.toLocal());
-    final anchor = l10n.describeAnchor(evidence.sourceAnchor);
-    final picture = thumbnail;
-
-    return Card(
-      margin: const EdgeInsets.only(top: 6),
-      shape: highlighted
-          ? RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-              side: BorderSide(color: theme.colorScheme.primary, width: 2),
-            )
-          : null,
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (picture != null) ...[
-              _MediaMatchPreview(picture: picture),
-              const SizedBox(height: 10),
-            ],
-            Row(
-              children: [
-                _DirectionChip(direction: evidence.direction),
-                const SizedBox(width: 6),
-                Expanded(
-                  // What the tier means, in words rather than a letter nobody
-                  // can decode.
-                  child: Text(l10n.tierLabel(evidence.tier), style: muted),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            if (evidence.publisher != null)
-              Text(evidence.publisher!, style: theme.textTheme.titleSmall),
-            if (date != null) Text(date, style: muted),
-            const SizedBox(height: 8),
-            // The quoted passage, which is what makes this a citation rather
-            // than a link. An evidence row without it is a search result.
-            // Styled as a blockquote — the accent bar says "this text is the
-            // source speaking, not us". The bar sits on the reading-start edge,
-            // so it stays on the correct side in a right-to-left layout.
-            Container(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-                borderRadius: const BorderRadiusDirectional.only(
-                  topEnd: Radius.circular(10),
-                  bottomEnd: Radius.circular(10),
-                ),
-                border: BorderDirectional(
-                  start: BorderSide(color: theme.colorScheme.primary, width: 3),
-                ),
-              ),
-              child: Text(
-                '“${evidence.sourceExcerpt}”',
-                style: theme.textTheme.bodySmall?.copyWith(height: 1.45),
-              ),
-            ),
-            if (anchor != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(anchor, style: muted),
-              ),
-            const SizedBox(height: 6),
-            // How the match was judged, so a reader can recompute it instead of
-            // taking our word for the quality label.
-            Text(
-              l10n.matchBasis(
-                evidence.matchBasis.metric,
-                evidence.matchBasis.value.toStringAsFixed(3),
-                evidence.matchBasis.threshold.toStringAsFixed(3),
-              ),
-              style: muted,
-            ),
-            const SizedBox(height: 6),
-            TextButton.icon(
-              onPressed: () =>
-                  launchUrl(Uri.parse(evidence.citationUrl), mode: LaunchMode.externalApplication),
-              icon: const Icon(Icons.open_in_new, size: 16),
-              label: Text(l10n.openSource),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -511,30 +320,32 @@ class _MediaMatchPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final muted = theme.colorScheme.onSurfaceVariant;
     final l10n = AppLocalizations.of(context);
 
     return Row(
       children: [
         ClipRRect(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(10),
           child: Image.memory(
             picture,
-            width: 72,
-            height: 72,
+            width: 64,
+            height: 64,
             fit: BoxFit.cover,
             // A preview that fails to decode must not take the evidence with it.
-            errorBuilder: (_, _, _) => const SizedBox(width: 72, height: 72),
+            errorBuilder: (_, _, _) => const SizedBox(width: 64, height: 64),
           ),
         ),
         const SizedBox(width: 10),
-        Icon(Icons.compare_arrows, color: muted),
+        const Icon(Icons.compare_arrows_rounded, color: FactifyColors.inkMuted),
         const SizedBox(width: 10),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(l10n.mediaMatchYours, style: theme.textTheme.labelSmall?.copyWith(color: muted)),
+              Text(
+                l10n.mediaMatchYours,
+                style: theme.textTheme.labelSmall?.copyWith(color: FactifyColors.inkMuted),
+              ),
               const SizedBox(height: 2),
               Text(l10n.mediaMatchEarlier, style: theme.textTheme.titleSmall),
             ],
@@ -545,156 +356,9 @@ class _MediaMatchPreview extends StatelessWidget {
   }
 }
 
-class _DirectionChip extends StatelessWidget {
-  const _DirectionChip({required this.direction});
-
-  final String direction;
-
-  @override
-  Widget build(BuildContext context) {
-    final label = AppLocalizations.of(context).directionLabel(direction);
-    final colour = switch (direction) {
-      'supports' => const Color(0xFF2E7D32),
-      'contradicts' => const Color(0xFFC62828),
-      'risk_signal' => const Color(0xFFEF6C00),
-      _ => const Color(0xFF01579B),
-    };
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(color: colour, borderRadius: BorderRadius.circular(10)),
-      child: Text(
-        label,
-        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
-      ),
-    );
-  }
-}
-
-/// Shown when there is no evidence at all.
-///
-/// Phrased as an absence of findings rather than a finding of absence, because
-/// those are different and only one of them is true.
-class _NoEvidenceBlock extends StatelessWidget {
-  const _NoEvidenceBlock();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final l10n = AppLocalizations.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(l10n.noEvidenceTitle, style: theme.textTheme.titleSmall),
-            const SizedBox(height: 6),
-            Text(l10n.noEvidenceBody, style: theme.textTheme.bodySmall),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _RecurrenceCard extends StatelessWidget {
-  const _RecurrenceCard({required this.recurrence});
-
-  final Recurrence recurrence;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final l10n = AppLocalizations.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(l10n.historyCardTitle, style: theme.textTheme.titleSmall),
-            const SizedBox(height: 6),
-            Text(recurrence.summary, style: theme.textTheme.bodySmall),
-            if (recurrence.hasContradictoryCaptions) ...[
-              const SizedBox(height: 8),
-              Text(
-                l10n.recurrenceCaptions(recurrence.distinctCaptions),
-                style: theme.textTheme.bodySmall,
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ProvenanceCard extends StatelessWidget {
-  const _ProvenanceCard({required this.provenance});
-
-  final MediaProvenance provenance;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              AppLocalizations.of(context).contentCredentials,
-              style: theme.textTheme.titleSmall,
-            ),
-            const SizedBox(height: 6),
-            Text(provenance.summary, style: theme.textTheme.bodySmall),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SkippedCard extends StatelessWidget {
-  const _SkippedCard({required this.skipped});
-
-  final List<SkippedCheck> skipped;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              AppLocalizations.of(context).notCheckedTitle,
-              style: theme.textTheme.titleSmall,
-            ),
-            const SizedBox(height: 6),
-            for (final item in skipped)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text('${item.check}: ${item.reason}', style: theme.textTheme.bodySmall),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The "what Factify cannot establish" block.
-///
-/// Fixed text, always shown. Stating the limits up front is what lets someone
-/// calibrate how much to rely on a result, and a tool that hides them gets
-/// abandoned wholesale the first time it misses something.
-class _LimitsBlock extends StatelessWidget {
-  const _LimitsBlock({required this.verdict});
+/// Everything a curious reader may want and a hurried one does not, folded away.
+class _HowWeChecked extends StatelessWidget {
+  const _HowWeChecked({required this.verdict});
 
   final Verdict verdict;
 
@@ -702,37 +366,85 @@ class _LimitsBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
+    final heading = theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700);
+    final body = theme.textTheme.bodySmall;
+    final recurrence = verdict.recurrence;
+    final provenance = verdict.mediaProvenance;
 
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      child: Theme(
+        data: theme.copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          shape: const RoundedRectangleBorder(),
+          collapsedShape: const RoundedRectangleBorder(),
+          leading: const Icon(Icons.info_outline_rounded, color: FactifyColors.emeraldDark),
+          title: Text(
+            l10n.howWeCheckedTitle,
+            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          expandedCrossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(l10n.limitsTitle, style: theme.textTheme.titleSmall),
-            const SizedBox(height: 8),
-            ...[
+            Text(l10n.howWeCheckedBody, style: body),
+            if (recurrence != null) ...[
+              const SizedBox(height: 14),
+              Text(l10n.historyCardTitle, style: heading),
+              const SizedBox(height: 4),
+              Text(recurrence.summary, style: body),
+              if (recurrence.hasContradictoryCaptions)
+                Text(l10n.recurrenceCaptions(recurrence.distinctCaptions), style: body),
+            ],
+            if (provenance != null) ...[
+              const SizedBox(height: 14),
+              Text(l10n.contentCredentials, style: heading),
+              const SizedBox(height: 4),
+              Text(provenance.summary, style: body),
+            ],
+            if (verdict.skipped.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              Text(l10n.notCheckedTitle, style: heading),
+              const SizedBox(height: 4),
+              for (final item in verdict.skipped)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text('${item.check}: ${item.reason}', style: body),
+                ),
+            ],
+            EvidenceTimeline(verdict: verdict, padding: const EdgeInsets.only(top: 14)),
+            const SizedBox(height: 14),
+            Text(l10n.limitsTitle, style: heading),
+            const SizedBox(height: 6),
+            for (final line in [
               l10n.limitAi,
               l10n.limitUnreported,
               l10n.limitPrivate,
               l10n.limitIntent,
-            ].map(
-              (line) => Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('- '),
-                    Expanded(child: Text(line, style: theme.textTheme.bodySmall)),
-                  ],
-                ),
+            ])
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text('•  $line', style: body),
               ),
-            ),
           ],
         ),
       ),
     );
   }
+}
+
+class _Plain extends StatelessWidget {
+  const _Plain({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: FactifyColors.ground,
+      borderRadius: BorderRadius.circular(14),
+    ),
+    child: Text(text, style: Theme.of(context).textTheme.bodySmall),
+  );
 }
 
 /// The case identifier, how long the check took, and the receipt behind it.
@@ -844,49 +556,6 @@ class _CaseFooterState extends State<_CaseFooter> {
             ),
         ],
       ],
-    );
-  }
-}
-
-/// What is known about the publisher, kept apart from what is known about the claim.
-///
-/// Rule 6 in the verdict engine caps a source-risk-only case at abstention, and the
-/// wording here matches that: a risky publisher is a reason to look harder, never a
-/// finding that the content is false. Presenting it as a verdict would let the
-/// messenger decide the message.
-class _SourceRiskCard extends StatelessWidget {
-  const _SourceRiskCard({required this.risk});
-
-  final String risk;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final l10n = AppLocalizations.of(context);
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.storefront_outlined, size: 18, color: theme.colorScheme.onSurfaceVariant),
-                const SizedBox(width: 8),
-                Expanded(child: Text(l10n.sourceRiskTitle(risk), style: theme.textTheme.titleSmall)),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Text(
-              l10n.sourceRiskDetail(risk),
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

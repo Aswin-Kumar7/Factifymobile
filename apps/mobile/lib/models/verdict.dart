@@ -1,4 +1,4 @@
-/// Wire models for the Factify contract (M41), contract_version 1.0.
+/// Wire models for the Factify contract (M41), contract_version 1.1.
 ///
 /// Mirrors app/api/schemas.py field for field. Two properties of the server
 /// contract are load-bearing and are preserved deliberately:
@@ -33,6 +33,36 @@ enum VerdictAction {
   /// `sendToReview` is the designed answer for cases the system correctly
   /// refuses to decide, so the interface must not style it as a failure.
   bool get isConclusion => this != VerdictAction.sendToReview;
+}
+
+/// What a person is told, in the words they would use.
+///
+/// Sent by the server from contract 1.1 and always derived there from [VerdictAction],
+/// so the two can never disagree. Parsed from the action when an older response has
+/// no verdict field.
+enum FactVerdict {
+  trueClaim,
+  falseClaim,
+  misleading,
+  unconfirmed;
+
+  static FactVerdict parse(String? raw, VerdictAction action) => switch (raw) {
+    'TRUE' => FactVerdict.trueClaim,
+    'FALSE' => FactVerdict.falseClaim,
+    'MISLEADING' => FactVerdict.misleading,
+    'UNCONFIRMED' => FactVerdict.unconfirmed,
+    _ => fromAction(action),
+  };
+
+  static FactVerdict fromAction(VerdictAction action) => switch (action) {
+    VerdictAction.safeToShare => FactVerdict.trueClaim,
+    VerdictAction.doNotShare => FactVerdict.falseClaim,
+    VerdictAction.shareWithContext || VerdictAction.shareWithCorrection => FactVerdict.misleading,
+    VerdictAction.waitAndRecheck || VerdictAction.sendToReview => FactVerdict.unconfirmed,
+  };
+
+  /// Whether the sources settled it one way or the other.
+  bool get isDecided => this != FactVerdict.unconfirmed;
 }
 
 enum ClaimStatus {
@@ -129,6 +159,7 @@ class Evidence {
     this.publisher,
     this.observedAt,
     this.inputAnchor,
+    this.credibility,
   });
 
   final String id;
@@ -145,6 +176,10 @@ class Evidence {
   final String? publisher;
   final DateTime? observedAt;
   final InputAnchor? inputAnchor;
+
+  /// HIGH, MEDIUM or LOW, from the server's curated publisher list. Absent on a
+  /// source that predates the relevance check.
+  final String? credibility;
 
   factory Evidence.fromJson(Map<String, dynamic> json) => Evidence(
     id: json['id'] as String,
@@ -167,7 +202,15 @@ class Evidence {
     inputAnchor: json['input_anchor'] == null
         ? null
         : InputAnchor.fromJson((json['input_anchor'] as Map).cast<String, dynamic>()),
+    credibility: json['credibility'] as String?,
   );
+
+  /// The publisher's name, or the site it was published on.
+  String get sourceName {
+    final name = publisher;
+    if (name != null && name.trim().isNotEmpty) return name;
+    return Uri.tryParse(citationUrl)?.host.replaceFirst('www.', '') ?? citationUrl;
+  }
 
   bool get contradicts => direction == 'contradicts';
   bool get supports => direction == 'supports';
@@ -274,6 +317,8 @@ class Claim {
     required this.reason,
     required this.strength,
     required this.evidence,
+    this.confidence,
+    this.explanation,
   });
 
   final String id;
@@ -285,6 +330,13 @@ class Claim {
   final String reason;
   final Strength strength;
   final List<Evidence> evidence;
+
+  /// 50-97 when this claim was decided, null when it was not.
+  final int? confidence;
+
+  /// One or two plain sentences on what the sources show. Only sent for a
+  /// decided claim, so it can never disagree with the badge beside it.
+  final String? explanation;
 
   factory Claim.fromJson(Map<String, dynamic> json) => Claim(
     id: json['id'] as String,
@@ -298,6 +350,8 @@ class Claim {
     evidence: ((json['evidence'] as List?) ?? const [])
         .map((e) => Evidence.fromJson((e as Map).cast<String, dynamic>()))
         .toList(),
+    confidence: (json['confidence'] as num?)?.toInt(),
+    explanation: json['explanation'] as String?,
   );
 
   bool get isDecisive => status.isDecisive;
@@ -379,6 +433,9 @@ class Verdict {
     required this.caseId,
     required this.action,
     required this.actionReason,
+    this.verdict,
+    this.confidence,
+    this.summary,
     required this.claims,
     required this.advisories,
     required this.skipped,
@@ -395,6 +452,15 @@ class Verdict {
   final String caseId;
   final VerdictAction action;
   final String actionReason;
+
+  final FactVerdict? verdict;
+
+  /// 50-97 for a decided verdict, null for [FactVerdict.unconfirmed].
+  final int? confidence;
+
+  /// One plain sentence for the whole result, from the claim that decided it.
+  final String? summary;
+
   final List<Claim> claims;
 
   /// A sibling of [claims], never nested inside one.
@@ -413,10 +479,18 @@ class Verdict {
   final MediaProvenance? mediaProvenance;
   final String sourceRisk;
 
-  factory Verdict.fromJson(Map<String, dynamic> json) => Verdict(
+  factory Verdict.fromJson(Map<String, dynamic> json) {
+    final action = VerdictAction.parse(json['action'] as String);
+    return Verdict._fromJson(json, action);
+  }
+
+  factory Verdict._fromJson(Map<String, dynamic> json, VerdictAction action) => Verdict(
     caseId: json['case_id'] as String,
-    action: VerdictAction.parse(json['action'] as String),
+    action: action,
     actionReason: json['action_reason'] as String? ?? '',
+    verdict: FactVerdict.parse(json['verdict'] as String?, action),
+    confidence: (json['confidence'] as num?)?.toInt(),
+    summary: json['summary'] as String?,
     claims: ((json['claims'] as List?) ?? const [])
         .map((e) => Claim.fromJson((e as Map).cast<String, dynamic>()))
         .toList(),
@@ -441,6 +515,9 @@ class Verdict {
   );
 
   List<Evidence> get allEvidence => [for (final c in claims) ...c.evidence];
+
+  /// The verdict, derived from the action when the response predates the field.
+  FactVerdict get factVerdict => verdict ?? FactVerdict.fromAction(action);
 
   bool get isComplete => skipped.isEmpty;
 

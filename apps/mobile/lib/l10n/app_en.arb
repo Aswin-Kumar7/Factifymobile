@@ -1,19 +1,14 @@
 {
   "@@locale": "en",
-
   "tabCheck": "Check",
   "tabActivity": "Activity",
-
   "statusOnline": "Online",
   "statusOffline": "Offline",
   "statusChecking": "Checking",
-
   "languageMenuTooltip": "Language",
   "languagePhone": "Phone language",
-
-  "heroTitle": "Verdicts from cited sources,\nnever from a model score",
-  "heroSubtitle": "Paste a forward, drop a link, or check a picture.",
-
+  "heroTitle": "Is it true?",
+  "heroSubtitle": "Paste a message or a link, or check a picture. We check it against reliable sources.",
   "inputLabel": "Paste a message or a link",
   "inputHint": "Or share straight from WhatsApp, a browser, or the gallery",
   "clear": "Clear",
@@ -21,21 +16,22 @@
   "sourceGallery": "Gallery",
   "sourceCamera": "Camera",
   "sourceFile": "File",
-
   "checkingSubmission": "{kind, select, text{Checking this message} link{Checking this link} image{Checking this image} other{Checking this document}}",
   "@checkingSubmission": {
     "description": "Label above the preview of what was submitted. kind is text, link, image or document.",
-    "placeholders": { "kind": { "type": "String" } }
+    "placeholders": {
+      "kind": {
+        "type": "String"
+      }
+    }
   },
-
   "emptyTitle": "Nothing checked yet",
   "emptyBody": "Share a forward straight into Factify, paste it above, or check a picture. Every verdict comes with the sources behind it — and when there are none, it says so.",
   "working": "Looking for sources that address this",
   "videoAcceptedTitle": "Video accepted",
   "videoAcceptedBody": "Longer than a request can stay open. Checking now.",
   "retry": "Retry",
-  "reportedNote": "Reported. A reviewer will see this case.",
-
+  "reportedNote": "Reported. We'll take another look at this result.",
   "activityEmptyTitle": "No checks this session",
   "activityEmptyBody": "Results stay on this device for the session and are gone when the app closes — what you check is nobody's record.",
   "activityFooter": "Session only, by design: what you check is a record of what you were suspicious about, and this app does not keep one.",
@@ -43,28 +39,37 @@
   "historyCitations": "{count, plural, =0{No citable evidence} =1{1 citation} other{{count} citations}}",
   "@historyCitations": {
     "description": "How many sources a past check quoted. A count of citations, never a confidence figure.",
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
-
   "errorNoServerAddress": "This build has no server address. Rebuild it with --dart-define=FACTIFY_API=https://your-server.",
   "errorShareUnreadable": "Could not read the shared item.",
   "errorShareFileUnopenable": "That file could not be opened. Share it again, or use the Gallery button in Factify.",
   "errorVideoSlow": "That video is taking longer than expected. Case {caseId} is still processing.",
   "@errorVideoSlow": {
-    "placeholders": { "caseId": { "type": "String" } }
+    "placeholders": {
+      "caseId": {
+        "type": "String"
+      }
+    }
   },
   "errorCameraDenied": "Factify needs camera access to check a photo you take.",
   "errorFileUnopenable": "That file could not be opened.",
-
-  "reportSent": "Sent for human review",
+  "reportSent": "Thanks. We'll review this result.",
   "@reportSent": {
     "description": "Shown only after the server has accepted the report."
   },
   "reportFailed": "Could not report: {reason}",
   "@reportFailed": {
-    "placeholders": { "reason": { "type": "String" } }
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
   },
-
   "correctionCopied": "Correction copied - paste it back into the chat",
   "correctionHeader": "Checked with Factify:",
   "correctionSourceFallback": "Source",
@@ -79,7 +84,6 @@
   "@correctionCardFooter": {
     "description": "Printed on the shared picture. States the method, and must not claim the content is true or false."
   },
-
   "failureTimeout": "Factify is taking longer than usual. Try again in a moment.",
   "failureUnreachable": "Could not reach Factify. Check your connection and try again.",
   "failureInterrupted": "The connection to Factify was interrupted. Try again.",
@@ -90,35 +94,41 @@
   "failureDailyLimit": "Factify is at its daily limit. Please try again tomorrow.",
   "failureUnavailable": "Verification is not available right now.",
   "failureGeneric": "Factify could not complete that check.",
-
-  "headlineSafeToShare": "Nothing contradicts this",
+  "headlineSafeToShare": "True",
   "@headlineSafeToShare": {
-    "description": "Design law: a statement about evidence, never a claim that the content is true."
+    "description": "The verdict, in the words a person would use. Shown only with cited sources."
   },
-  "subheadSafeToShare": "Independent sources agree",
-  "headlineShareWithContext": "True, but missing context",
-  "subheadShareWithContext": "Share the context with it",
-  "headlineShareWithCorrection": "A detail here is wrong",
-  "subheadShareWithCorrection": "Share only with a correction",
-  "headlineDoNotShare": "Contradicted by sources",
-  "subheadDoNotShare": "Published sources say otherwise",
-  "headlineWaitAndRecheck": "Still developing",
-  "subheadWaitAndRecheck": "Early reports are often revised",
-  "headlineSendToReview": "Not enough evidence to decide",
+  "subheadSafeToShare": "Reliable sources confirm this",
+  "headlineShareWithContext": "Misleading",
+  "subheadShareWithContext": "True in part, but missing important context",
+  "headlineShareWithCorrection": "Misleading",
+  "subheadShareWithCorrection": "Part of this is wrong",
+  "headlineDoNotShare": "False",
+  "subheadDoNotShare": "Reliable sources show this is false",
+  "headlineWaitAndRecheck": "Unconfirmed",
+  "subheadWaitAndRecheck": "Too recent to confirm yet",
+  "headlineSendToReview": "Unconfirmed",
   "@headlineSendToReview": {
     "description": "Abstention. Neutral wording: not deciding is the designed answer, not a failure."
   },
-  "subheadSendToReview": "Queued for human review",
-
+  "subheadSendToReview": "We couldn't confirm or rule this out yet",
   "citationCount": "{count, plural, =0{No citations} =1{1 citation} other{{count} citations}}",
   "@citationCount": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "evidenceRetrievedAt": "Evidence retrieved {time}",
   "@evidenceRetrievedAt": {
     "description": "When the evidence behind a verdict was gathered. Always shown.",
     "placeholders": {
-      "time": { "type": "DateTime", "format": "d MMM, HH:mm", "isCustomDateFormat": "true" }
+      "time": {
+        "type": "DateTime",
+        "format": "d MMM, HH:mm",
+        "isCustomDateFormat": "true"
+      }
     }
   },
   "checkedEarlier": "Checked earlier",
@@ -127,60 +137,108 @@
   "@englishOnlyNote": {
     "description": "Shown only when the interface is not in English: verdict reasons still arrive from the server in English."
   },
-  "whyNoVerdict": "Why no verdict?",
-  "seeEvidence": "See evidence ({count})",
+  "whyNoVerdict": "Why unconfirmed?",
+  "seeEvidence": "{count, plural, =1{See the source} other{See all {count} sources}}",
   "@seeEvidence": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "shareCorrection": "Share correction",
-  "report": "Report",
+  "report": "Report wrong result",
   "reporting": "Reporting…",
-
-  "evidenceTitle": "Evidence",
+  "evidenceTitle": "Sources",
   "theClaim": "The claim",
   "evidenceStrength": "Evidence strength: {band}",
   "@evidenceStrength": {
-    "placeholders": { "band": { "type": "String" } }
+    "placeholders": {
+      "band": {
+        "type": "String"
+      }
+    }
   },
   "strengthBand": "{band, select, none{none} weak{weak} moderate{moderate} strong{strong} conclusive{conclusive} other{{band}}}",
   "@strengthBand": {
-    "placeholders": { "band": { "type": "String" } }
+    "placeholders": {
+      "band": {
+        "type": "String"
+      }
+    }
   },
   "strengthComponent": "{name, select, tier_composition{Evidence tiers} independent_origins{Independent origins} temporal_confidence{Dating} source_transparency{Publisher transparency} conflict_penalty{Conflicting evidence} other{{name}}}",
   "@strengthComponent": {
     "description": "One term of the explainable strength score, named for a reader.",
-    "placeholders": { "name": { "type": "String" } }
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
   },
   "excludedFromScore": "Excluded from this score: {providers}",
   "@excludedFromScore": {
-    "placeholders": { "providers": { "type": "String" } }
+    "placeholders": {
+      "providers": {
+        "type": "String"
+      }
+    }
   },
   "tierLabel": "{tier, select, A{Signed content credential} B{Dated source} C{Published fact-check} other{Corroboration}}",
   "@tierLabel": {
-    "placeholders": { "tier": { "type": "String" } }
+    "placeholders": {
+      "tier": {
+        "type": "String"
+      }
+    }
   },
   "directionLabel": "{direction, select, supports{Supports} contradicts{Contradicts} risk_signal{Risk signal} other{Context}}",
   "@directionLabel": {
-    "placeholders": { "direction": { "type": "String" } }
+    "placeholders": {
+      "direction": {
+        "type": "String"
+      }
+    }
   },
   "anchorPage": "Found at page {page}",
   "@anchorPage": {
-    "placeholders": { "page": { "type": "int" } }
+    "placeholders": {
+      "page": {
+        "type": "int"
+      }
+    }
   },
   "anchorParagraph": "Found at paragraph {paragraph}",
   "@anchorParagraph": {
-    "placeholders": { "paragraph": { "type": "int" } }
+    "placeholders": {
+      "paragraph": {
+        "type": "int"
+      }
+    }
   },
   "anchorCharacters": "Found at characters {start} to {end}",
   "@anchorCharacters": {
-    "placeholders": { "start": { "type": "int" }, "end": { "type": "int" } }
+    "placeholders": {
+      "start": {
+        "type": "int"
+      },
+      "end": {
+        "type": "int"
+      }
+    }
   },
   "matchBasis": "{metric} {value} (threshold {threshold})",
   "@matchBasis": {
     "placeholders": {
-      "metric": { "type": "String" },
-      "value": { "type": "String" },
-      "threshold": { "type": "String" }
+      "metric": {
+        "type": "String"
+      },
+      "value": {
+        "type": "String"
+      },
+      "threshold": {
+        "type": "String"
+      }
     }
   },
   "openSource": "Open source",
@@ -189,7 +247,11 @@
   "historyCardTitle": "History",
   "recurrenceCaptions": "The same media has carried {count} different captions. An authentic photograph does not usually acquire several mutually exclusive stories.",
   "@recurrenceCaptions": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "contentCredentials": "Content credentials",
   "notCheckedTitle": "What could not be checked",
@@ -200,11 +262,19 @@
   "limitIntent": "Intent. We can show what a source said and when, not why someone shared it.",
   "caseLabel": "Case {caseId}",
   "@caseLabel": {
-    "placeholders": { "caseId": { "type": "String" } }
+    "placeholders": {
+      "caseId": {
+        "type": "String"
+      }
+    }
   },
   "checkedIn": "Checked in {ms} ms",
   "@checkedIn": {
-    "placeholders": { "ms": { "type": "int" } }
+    "placeholders": {
+      "ms": {
+        "type": "int"
+      }
+    }
   },
   "verifyResult": "Verify this result",
   "receiptChecking": "Checking the receipt",
@@ -216,25 +286,35 @@
   "receiptMissing": "No receipt was issued for this result.",
   "sourceRiskTitle": "{risk, select, HIGH{Publisher has a high risk profile} MEDIUM{Publisher has a mixed record} LOW{Publisher has an established record} other{Publisher risk not assessed}}",
   "@sourceRiskTitle": {
-    "placeholders": { "risk": { "type": "String" } }
+    "placeholders": {
+      "risk": {
+        "type": "String"
+      }
+    }
   },
   "sourceRiskDetail": "{risk, select, HIGH{Recently registered, or with a record of unreliable material. This describes the publisher, not this claim.} MEDIUM{Some signals worth noting about the source. This describes the publisher, not this claim.} LOW{No adverse signals about the source. This is not evidence that the claim itself is true.} other{Nothing is known either way.}}",
   "@sourceRiskDetail": {
     "description": "A risky publisher is a reason to look harder, never a finding that the content is false.",
-    "placeholders": { "risk": { "type": "String" } }
+    "placeholders": {
+      "risk": {
+        "type": "String"
+      }
+    }
   },
-
   "advisoryHeader": "Forensic signals - shown for transparency. These are not used in the verdict and cannot change it.",
   "@advisoryHeader": {
     "description": "Permanent exclusion header. Must stay visible and must keep saying the signals are not used in the verdict."
   },
   "advisoryCount": "{count, plural, =1{1 signal} other{{count} signals}}",
   "@advisoryCount": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "advisoryFooter": "None of these can establish that content is authentic or fabricated. The verdict above is based only on cited sources.",
   "advisoryRowExcluded": "Forensic signal - not used in this verdict.",
-
   "techniqueLabel": "How posts like this mislead",
   "@techniqueLabel": {
     "description": "Heads the teaching-mode line. Techniques are named only for claims a cited source contradicted or recontextualised, and never claim anything is true."
@@ -249,44 +329,97 @@
   "techniqueTwistedNumberBody": "A figure changed, or taken from a source that says something different. Find the number in its original source.",
   "techniqueWrongIdentityTitle": "Wrong label",
   "techniqueWrongIdentityBody": "A person or place presented as someone or somewhere else. Check names and places against a dated source.",
-  "techniqueDistortedEventTitle": "Distorted event",
-  "techniqueDistortedEventBody": "An event described differently from how published sources report it. Look for reporting from more than one outlet.",
-
   "timelineTitle": "Timeline",
   "timelineFirstChecked": "First checked by Factify",
   "timelineRetrieved": "Evidence gathered for this result",
-
   "inputAnchorLabel": "Where your submission says this",
   "inputAnchorCharacters": "Characters {start}–{end}",
   "@inputAnchorCharacters": {
-    "placeholders": { "start": { "type": "int" }, "end": { "type": "int" } }
+    "placeholders": {
+      "start": {
+        "type": "int"
+      },
+      "end": {
+        "type": "int"
+      }
+    }
   },
   "inputAnchorPage": "Page {page}",
   "@inputAnchorPage": {
-    "placeholders": { "page": { "type": "int" } }
+    "placeholders": {
+      "page": {
+        "type": "int"
+      }
+    }
   },
   "inputAnchorMoment": "At {seconds} s in the video",
   "@inputAnchorMoment": {
-    "placeholders": { "seconds": { "type": "int" } }
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
   },
-
   "mediaMatchYours": "Your picture",
   "mediaMatchEarlier": "Matches a picture published earlier",
-
   "strengthComponentCitations": "{count, plural, =1{1 source} other{{count} sources}}",
   "@strengthComponentCitations": {
     "description": "On a strength row that leads to the citations it was computed from.",
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
-
   "uploading": "Uploading {percent}%",
   "@uploading": {
-    "placeholders": { "percent": { "type": "int" } }
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
   },
   "clipboardOffer": "You have text copied. Check it?",
   "@clipboardOffer": {
     "description": "Shown when the clipboard holds text. The text itself is not read until the person taps."
   },
   "clipboardPasteAndCheck": "Paste and check",
-  "clipboardDismiss": "Not now"
+  "clipboardDismiss": "Not now",
+  "confidence": "{value}% confidence",
+  "@confidence": {
+    "description": "How sure the verdict is, from 50 to 97. Shown only with True, False or Misleading.",
+    "placeholders": {
+      "value": {
+        "type": "int"
+      }
+    }
+  },
+  "unconfirmedBody": "We couldn't find enough reliable sources that address this directly. Treat it with caution until it's confirmed.",
+  "sourcesTitle": "Sources",
+  "sourceConfirms": "Confirms",
+  "sourceRefutes": "Refutes",
+  "credibility": "{level, select, HIGH{Highly credible} MEDIUM{Credible} other{Source}}",
+  "@credibility": {
+    "description": "How credible a publisher is, from the curated source list.",
+    "placeholders": {
+      "level": {
+        "type": "String"
+      }
+    }
+  },
+  "howWeCheckedTitle": "How we checked",
+  "howWeCheckedBody": "We searched trusted news outlets, fact-checkers and official sources, read each one, and kept only the ones that directly address this claim. The verdict comes from what those sources say, weighed by how credible they are.",
+  "whatWeCheckedTitle": "What we checked",
+  "checkedAt": "Checked {time}",
+  "@checkedAt": {
+    "description": "When the sources behind this result were gathered.",
+    "placeholders": {
+      "time": {
+        "type": "DateTime",
+        "format": "d MMM, HH:mm",
+        "isCustomDateFormat": "true"
+      }
+    }
+  },
+  "incompleteNote": "Some sources couldn't be checked in time, so this answer may be incomplete."
 }

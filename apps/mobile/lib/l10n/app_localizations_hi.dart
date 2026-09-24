@@ -30,11 +30,11 @@ class AppLocalizationsHi extends AppLocalizations {
   String get languagePhone => 'फ़ोन की भाषा';
 
   @override
-  String get heroTitle => 'निर्णय उद्धृत स्रोतों से,\nमॉडल स्कोर से कभी नहीं';
+  String get heroTitle => 'क्या यह सच है?';
 
   @override
   String get heroSubtitle =>
-      'फ़ॉरवर्ड चिपकाएँ, लिंक डालें, या कोई तस्वीर जाँचें।';
+      'कोई संदेश या लिंक चिपकाएँ, या तस्वीर जाँचें। हम इसे विश्वसनीय स्रोतों से मिलाते हैं।';
 
   @override
   String get inputLabel => 'संदेश या लिंक चिपकाएँ';
@@ -89,7 +89,7 @@ class AppLocalizationsHi extends AppLocalizations {
   String get retry => 'फिर कोशिश करें';
 
   @override
-  String get reportedNote => 'रिपोर्ट किया गया। एक समीक्षक यह मामला देखेगा।';
+  String get reportedNote => 'रिपोर्ट किया गया। हम इस नतीजे को दोबारा देखेंगे।';
 
   @override
   String get activityEmptyTitle => 'इस सत्र में कोई जाँच नहीं';
@@ -141,7 +141,7 @@ class AppLocalizationsHi extends AppLocalizations {
   String get errorFileUnopenable => 'वह फ़ाइल खोली नहीं जा सकी।';
 
   @override
-  String get reportSent => 'मानवीय समीक्षा के लिए भेजा गया';
+  String get reportSent => 'धन्यवाद। हम इस नतीजे की समीक्षा करेंगे।';
 
   @override
   String reportFailed(String reason) {
@@ -221,40 +221,41 @@ class AppLocalizationsHi extends AppLocalizations {
   String get failureGeneric => 'Factify वह जाँच पूरी नहीं कर सका।';
 
   @override
-  String get headlineSafeToShare => 'इसका कोई खंडन नहीं मिला';
+  String get headlineSafeToShare => 'सच';
 
   @override
-  String get subheadSafeToShare => 'स्वतंत्र स्रोत सहमत हैं';
+  String get subheadSafeToShare => 'विश्वसनीय स्रोत इसकी पुष्टि करते हैं';
 
   @override
-  String get headlineShareWithContext => 'सही, पर संदर्भ अधूरा है';
+  String get headlineShareWithContext => 'भ्रामक';
 
   @override
-  String get subheadShareWithContext => 'इसके साथ संदर्भ भी साझा करें';
+  String get subheadShareWithContext =>
+      'आंशिक रूप से सही, पर ज़रूरी संदर्भ छूटा है';
 
   @override
-  String get headlineShareWithCorrection => 'इसमें एक बात ग़लत है';
+  String get headlineShareWithCorrection => 'भ्रामक';
 
   @override
-  String get subheadShareWithCorrection => 'केवल सुधार के साथ साझा करें';
+  String get subheadShareWithCorrection => 'इसका एक हिस्सा गलत है';
 
   @override
-  String get headlineDoNotShare => 'स्रोतों ने इसका खंडन किया है';
+  String get headlineDoNotShare => 'झूठ';
 
   @override
-  String get subheadDoNotShare => 'प्रकाशित स्रोत कुछ और कहते हैं';
+  String get subheadDoNotShare => 'विश्वसनीय स्रोत बताते हैं कि यह गलत है';
 
   @override
-  String get headlineWaitAndRecheck => 'मामला अभी ताज़ा है';
+  String get headlineWaitAndRecheck => 'अपुष्ट';
 
   @override
-  String get subheadWaitAndRecheck => 'शुरुआती ख़बरें अक्सर बदल जाती हैं';
+  String get subheadWaitAndRecheck => 'पुष्टि के लिए अभी बहुत नया है';
 
   @override
-  String get headlineSendToReview => 'निर्णय के लिए पर्याप्त साक्ष्य नहीं';
+  String get headlineSendToReview => 'अपुष्ट';
 
   @override
-  String get subheadSendToReview => 'मानवीय समीक्षा के लिए भेजा गया';
+  String get subheadSendToReview => 'हम अभी इसकी पुष्टि या खंडन नहीं कर सके';
 
   @override
   String citationCount(int count) {
@@ -291,24 +292,30 @@ class AppLocalizationsHi extends AppLocalizations {
       'नीचे के कुछ विवरण अभी सिर्फ़ अंग्रेज़ी में हैं।';
 
   @override
-  String get whyNoVerdict => 'निर्णय क्यों नहीं?';
+  String get whyNoVerdict => 'अपुष्ट क्यों?';
 
   @override
   String seeEvidence(int count) {
-    return 'साक्ष्य देखें ($count)';
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'सभी $count स्रोत देखें',
+      one: 'स्रोत देखें',
+    );
+    return '$_temp0';
   }
 
   @override
   String get shareCorrection => 'सुधार साझा करें';
 
   @override
-  String get report => 'रिपोर्ट करें';
+  String get report => 'गलत नतीजे की रिपोर्ट करें';
 
   @override
   String get reporting => 'रिपोर्ट हो रहा है…';
 
   @override
-  String get evidenceTitle => 'साक्ष्य';
+  String get evidenceTitle => 'स्रोत';
 
   @override
   String get theClaim => 'दावा';
@@ -549,13 +556,6 @@ class AppLocalizationsHi extends AppLocalizations {
       'किसी व्यक्ति या जगह को कोई और बताया जाता है। नामों और जगहों को किसी तारीख वाले स्रोत से मिलाएँ।';
 
   @override
-  String get techniqueDistortedEventTitle => 'बदली हुई घटना';
-
-  @override
-  String get techniqueDistortedEventBody =>
-      'किसी घटना को प्रकाशित स्रोतों की रिपोर्ट से अलग ढंग से बताया जाता है। एक से ज़्यादा समाचार स्रोतों की रिपोर्ट देखें।';
-
-  @override
   String get timelineTitle => 'समय-रेखा';
 
   @override
@@ -612,4 +612,57 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get clipboardDismiss => 'अभी नहीं';
+
+  @override
+  String confidence(int value) {
+    return '$value% भरोसा';
+  }
+
+  @override
+  String get unconfirmedBody =>
+      'हमें ऐसे पर्याप्त विश्वसनीय स्रोत नहीं मिले जो सीधे इस बारे में बात करते हों। पुष्टि होने तक सावधानी बरतें।';
+
+  @override
+  String get sourcesTitle => 'स्रोत';
+
+  @override
+  String get sourceConfirms => 'पुष्टि करता है';
+
+  @override
+  String get sourceRefutes => 'खंडन करता है';
+
+  @override
+  String credibility(String level) {
+    String _temp0 = intl.Intl.selectLogic(level, {
+      'HIGH': 'अत्यधिक विश्वसनीय',
+      'MEDIUM': 'विश्वसनीय',
+      'other': 'स्रोत',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String get howWeCheckedTitle => 'हमने कैसे जाँचा';
+
+  @override
+  String get howWeCheckedBody =>
+      'हमने विश्वसनीय समाचार संस्थानों, फ़ैक्ट-चेकर्स और आधिकारिक स्रोतों में खोजा, हर एक को पढ़ा, और सिर्फ़ वही रखे जो सीधे इस दावे के बारे में हैं। नतीजा उन्हीं स्रोतों की बात पर आधारित है, उनकी विश्वसनीयता के हिसाब से।';
+
+  @override
+  String get whatWeCheckedTitle => 'हमने क्या जाँचा';
+
+  @override
+  String checkedAt(DateTime time) {
+    final intl.DateFormat timeDateFormat = intl.DateFormat(
+      'd MMM, HH:mm',
+      localeName,
+    );
+    final String timeString = timeDateFormat.format(time);
+
+    return '$timeString को जाँचा गया';
+  }
+
+  @override
+  String get incompleteNote =>
+      'कुछ स्रोत समय पर जाँचे नहीं जा सके, इसलिए यह नतीजा अधूरा हो सकता है।';
 }

@@ -30,12 +30,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get languagePhone => 'Phone language';
 
   @override
-  String get heroTitle =>
-      'Verdicts from cited sources,\nnever from a model score';
+  String get heroTitle => 'Is it true?';
 
   @override
   String get heroSubtitle =>
-      'Paste a forward, drop a link, or check a picture.';
+      'Paste a message or a link, or check a picture. We check it against reliable sources.';
 
   @override
   String get inputLabel => 'Paste a message or a link';
@@ -91,7 +90,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get retry => 'Retry';
 
   @override
-  String get reportedNote => 'Reported. A reviewer will see this case.';
+  String get reportedNote =>
+      'Reported. We\'ll take another look at this result.';
 
   @override
   String get activityEmptyTitle => 'No checks this session';
@@ -143,7 +143,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get errorFileUnopenable => 'That file could not be opened.';
 
   @override
-  String get reportSent => 'Sent for human review';
+  String get reportSent => 'Thanks. We\'ll review this result.';
 
   @override
   String reportFailed(String reason) {
@@ -224,40 +224,41 @@ class AppLocalizationsEn extends AppLocalizations {
   String get failureGeneric => 'Factify could not complete that check.';
 
   @override
-  String get headlineSafeToShare => 'Nothing contradicts this';
+  String get headlineSafeToShare => 'True';
 
   @override
-  String get subheadSafeToShare => 'Independent sources agree';
+  String get subheadSafeToShare => 'Reliable sources confirm this';
 
   @override
-  String get headlineShareWithContext => 'True, but missing context';
+  String get headlineShareWithContext => 'Misleading';
 
   @override
-  String get subheadShareWithContext => 'Share the context with it';
+  String get subheadShareWithContext =>
+      'True in part, but missing important context';
 
   @override
-  String get headlineShareWithCorrection => 'A detail here is wrong';
+  String get headlineShareWithCorrection => 'Misleading';
 
   @override
-  String get subheadShareWithCorrection => 'Share only with a correction';
+  String get subheadShareWithCorrection => 'Part of this is wrong';
 
   @override
-  String get headlineDoNotShare => 'Contradicted by sources';
+  String get headlineDoNotShare => 'False';
 
   @override
-  String get subheadDoNotShare => 'Published sources say otherwise';
+  String get subheadDoNotShare => 'Reliable sources show this is false';
 
   @override
-  String get headlineWaitAndRecheck => 'Still developing';
+  String get headlineWaitAndRecheck => 'Unconfirmed';
 
   @override
-  String get subheadWaitAndRecheck => 'Early reports are often revised';
+  String get subheadWaitAndRecheck => 'Too recent to confirm yet';
 
   @override
-  String get headlineSendToReview => 'Not enough evidence to decide';
+  String get headlineSendToReview => 'Unconfirmed';
 
   @override
-  String get subheadSendToReview => 'Queued for human review';
+  String get subheadSendToReview => 'We couldn\'t confirm or rule this out yet';
 
   @override
   String citationCount(int count) {
@@ -294,24 +295,30 @@ class AppLocalizationsEn extends AppLocalizations {
       'Some details below are shown in English for now.';
 
   @override
-  String get whyNoVerdict => 'Why no verdict?';
+  String get whyNoVerdict => 'Why unconfirmed?';
 
   @override
   String seeEvidence(int count) {
-    return 'See evidence ($count)';
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'See all $count sources',
+      one: 'See the source',
+    );
+    return '$_temp0';
   }
 
   @override
   String get shareCorrection => 'Share correction';
 
   @override
-  String get report => 'Report';
+  String get report => 'Report wrong result';
 
   @override
   String get reporting => 'Reporting…';
 
   @override
-  String get evidenceTitle => 'Evidence';
+  String get evidenceTitle => 'Sources';
 
   @override
   String get theClaim => 'The claim';
@@ -552,13 +559,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'A person or place presented as someone or somewhere else. Check names and places against a dated source.';
 
   @override
-  String get techniqueDistortedEventTitle => 'Distorted event';
-
-  @override
-  String get techniqueDistortedEventBody =>
-      'An event described differently from how published sources report it. Look for reporting from more than one outlet.';
-
-  @override
   String get timelineTitle => 'Timeline';
 
   @override
@@ -615,4 +615,57 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get clipboardDismiss => 'Not now';
+
+  @override
+  String confidence(int value) {
+    return '$value% confidence';
+  }
+
+  @override
+  String get unconfirmedBody =>
+      'We couldn\'t find enough reliable sources that address this directly. Treat it with caution until it\'s confirmed.';
+
+  @override
+  String get sourcesTitle => 'Sources';
+
+  @override
+  String get sourceConfirms => 'Confirms';
+
+  @override
+  String get sourceRefutes => 'Refutes';
+
+  @override
+  String credibility(String level) {
+    String _temp0 = intl.Intl.selectLogic(level, {
+      'HIGH': 'Highly credible',
+      'MEDIUM': 'Credible',
+      'other': 'Source',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String get howWeCheckedTitle => 'How we checked';
+
+  @override
+  String get howWeCheckedBody =>
+      'We searched trusted news outlets, fact-checkers and official sources, read each one, and kept only the ones that directly address this claim. The verdict comes from what those sources say, weighed by how credible they are.';
+
+  @override
+  String get whatWeCheckedTitle => 'What we checked';
+
+  @override
+  String checkedAt(DateTime time) {
+    final intl.DateFormat timeDateFormat = intl.DateFormat(
+      'd MMM, HH:mm',
+      localeName,
+    );
+    final String timeString = timeDateFormat.format(time);
+
+    return 'Checked $timeString';
+  }
+
+  @override
+  String get incompleteNote =>
+      'Some sources couldn\'t be checked in time, so this answer may be incomplete.';
 }

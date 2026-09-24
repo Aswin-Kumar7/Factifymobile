@@ -58,23 +58,21 @@ class EvidenceTimeline extends StatelessWidget {
 
     return Padding(
       padding: padding,
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(l10n.timelineTitle, style: theme.textTheme.titleSmall),
-              const SizedBox(height: 10),
-              for (final (index, entry) in entries.indexed)
-                _TimelineRow(
-                  entry: entry,
-                  date: dates.format(entry.at.toLocal()),
-                  last: index == entries.length - 1,
-                ),
-            ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            l10n.timelineTitle,
+            style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
           ),
-        ),
+          const SizedBox(height: 10),
+          for (final (index, entry) in entries.indexed)
+            _TimelineRow(
+              entry: entry,
+              date: dates.format(entry.at.toLocal()),
+              last: index == entries.length - 1,
+            ),
+        ],
       ),
     );
   }

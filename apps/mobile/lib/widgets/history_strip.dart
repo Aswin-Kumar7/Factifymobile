@@ -12,6 +12,8 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../models/submission.dart';
 import '../models/verdict.dart';
+import '../theme/colors.dart';
+import 'action_style.dart';
 
 class HistoryEntry {
   const HistoryEntry({required this.submission, required this.verdict});
@@ -66,15 +68,19 @@ class _HistoryRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
-    final action = entry.verdict.action;
+    // The same wording and colour as the result card, so a past check reads the
+    // way it did when it was made.
+    final style = ActionStyle.of(entry.verdict.action, Brightness.light, l10n);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
         onTap: onTap,
-        leading: CircleAvatar(
-          backgroundColor: _tint(action, theme.colorScheme),
-          child: Icon(_icon(action), size: 20, color: Colors.white),
+        leading: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(color: style.container, shape: BoxShape.circle),
+          child: Icon(style.icon, size: 22, color: style.tone),
         ),
         title: Text(
           entry.submission.summary,
@@ -83,31 +89,11 @@ class _HistoryRow extends StatelessWidget {
           style: theme.textTheme.bodyMedium,
         ),
         subtitle: Text(
-          // The citation count, not a confidence figure. How many sources were
-          // quoted is checkable; a percentage is not.
-          l10n.historyCitations(entry.verdict.allEvidence.length),
-          style: theme.textTheme.labelSmall,
+          '${style.headline} · ${l10n.historyCitations(entry.verdict.allEvidence.length)}',
+          style: theme.textTheme.labelSmall?.copyWith(color: FactifyColors.inkMuted),
         ),
-        trailing: const Icon(Icons.chevron_right),
+        trailing: const Icon(Icons.chevron_right_rounded, color: FactifyColors.inkMuted),
       ),
     );
   }
-
-  static Color _tint(VerdictAction action, ColorScheme scheme) => switch (action) {
-    VerdictAction.safeToShare => const Color(0xFF1B5E20),
-    VerdictAction.shareWithContext => const Color(0xFF01579B),
-    VerdictAction.shareWithCorrection => const Color(0xFFE65100),
-    VerdictAction.doNotShare => const Color(0xFFB71C1C),
-    VerdictAction.waitAndRecheck => const Color(0xFF4527A0),
-    VerdictAction.sendToReview => scheme.outline,
-  };
-
-  static IconData _icon(VerdictAction action) => switch (action) {
-    VerdictAction.safeToShare => Icons.check,
-    VerdictAction.shareWithContext => Icons.info_outline,
-    VerdictAction.shareWithCorrection => Icons.edit_outlined,
-    VerdictAction.doNotShare => Icons.block,
-    VerdictAction.waitAndRecheck => Icons.schedule,
-    VerdictAction.sendToReview => Icons.help_outline,
-  };
 }

@@ -27,6 +27,7 @@ import '../l10n/language_preference.dart';
 import '../l10n/phrases.dart';
 import '../models/submission.dart';
 import '../models/verdict.dart';
+import '../theme/colors.dart';
 import '../widgets/correction_sheet.dart';
 import '../widgets/history_strip.dart';
 import '../widgets/intake_bar.dart';
@@ -661,7 +662,7 @@ class _StatusDot extends StatelessWidget {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
     final (colour, label) = switch (ready) {
-      true => (const Color(0xFF2E7D32), l10n.statusOnline),
+      true => (FactifyColors.emerald, l10n.statusOnline),
       false => (theme.colorScheme.error, l10n.statusOffline),
       null => (theme.colorScheme.outline, l10n.statusChecking),
     };
@@ -754,12 +755,16 @@ class _EmptyState extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 28),
       child: Column(
         children: [
-          Icon(
-            Icons.verified_outlined,
-            size: 44,
-            color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.45),
+          Container(
+            width: 72,
+            height: 72,
+            decoration: const BoxDecoration(
+              color: FactifyColors.emeraldTint,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.verified_rounded, size: 36, color: FactifyColors.emerald),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           Text(l10n.emptyTitle, style: theme.textTheme.titleSmall),
           const SizedBox(height: 6),
           Padding(

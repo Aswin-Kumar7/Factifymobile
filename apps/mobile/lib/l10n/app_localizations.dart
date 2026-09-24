@@ -143,13 +143,13 @@ abstract class AppLocalizations {
   /// No description provided for @heroTitle.
   ///
   /// In en, this message translates to:
-  /// **'Verdicts from cited sources,\nnever from a model score'**
+  /// **'Is it true?'**
   String get heroTitle;
 
   /// No description provided for @heroSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Paste a forward, drop a link, or check a picture.'**
+  /// **'Paste a message or a link, or check a picture. We check it against reliable sources.'**
   String get heroSubtitle;
 
   /// No description provided for @inputLabel.
@@ -239,7 +239,7 @@ abstract class AppLocalizations {
   /// No description provided for @reportedNote.
   ///
   /// In en, this message translates to:
-  /// **'Reported. A reviewer will see this case.'**
+  /// **'Reported. We\'ll take another look at this result.'**
   String get reportedNote;
 
   /// No description provided for @activityEmptyTitle.
@@ -311,7 +311,7 @@ abstract class AppLocalizations {
   /// Shown only after the server has accepted the report.
   ///
   /// In en, this message translates to:
-  /// **'Sent for human review'**
+  /// **'Thanks. We\'ll review this result.'**
   String get reportSent;
 
   /// No description provided for @reportFailed.
@@ -446,76 +446,76 @@ abstract class AppLocalizations {
   /// **'Factify could not complete that check.'**
   String get failureGeneric;
 
-  /// Design law: a statement about evidence, never a claim that the content is true.
+  /// The verdict, in the words a person would use. Shown only with cited sources.
   ///
   /// In en, this message translates to:
-  /// **'Nothing contradicts this'**
+  /// **'True'**
   String get headlineSafeToShare;
 
   /// No description provided for @subheadSafeToShare.
   ///
   /// In en, this message translates to:
-  /// **'Independent sources agree'**
+  /// **'Reliable sources confirm this'**
   String get subheadSafeToShare;
 
   /// No description provided for @headlineShareWithContext.
   ///
   /// In en, this message translates to:
-  /// **'True, but missing context'**
+  /// **'Misleading'**
   String get headlineShareWithContext;
 
   /// No description provided for @subheadShareWithContext.
   ///
   /// In en, this message translates to:
-  /// **'Share the context with it'**
+  /// **'True in part, but missing important context'**
   String get subheadShareWithContext;
 
   /// No description provided for @headlineShareWithCorrection.
   ///
   /// In en, this message translates to:
-  /// **'A detail here is wrong'**
+  /// **'Misleading'**
   String get headlineShareWithCorrection;
 
   /// No description provided for @subheadShareWithCorrection.
   ///
   /// In en, this message translates to:
-  /// **'Share only with a correction'**
+  /// **'Part of this is wrong'**
   String get subheadShareWithCorrection;
 
   /// No description provided for @headlineDoNotShare.
   ///
   /// In en, this message translates to:
-  /// **'Contradicted by sources'**
+  /// **'False'**
   String get headlineDoNotShare;
 
   /// No description provided for @subheadDoNotShare.
   ///
   /// In en, this message translates to:
-  /// **'Published sources say otherwise'**
+  /// **'Reliable sources show this is false'**
   String get subheadDoNotShare;
 
   /// No description provided for @headlineWaitAndRecheck.
   ///
   /// In en, this message translates to:
-  /// **'Still developing'**
+  /// **'Unconfirmed'**
   String get headlineWaitAndRecheck;
 
   /// No description provided for @subheadWaitAndRecheck.
   ///
   /// In en, this message translates to:
-  /// **'Early reports are often revised'**
+  /// **'Too recent to confirm yet'**
   String get subheadWaitAndRecheck;
 
   /// Abstention. Neutral wording: not deciding is the designed answer, not a failure.
   ///
   /// In en, this message translates to:
-  /// **'Not enough evidence to decide'**
+  /// **'Unconfirmed'**
   String get headlineSendToReview;
 
   /// No description provided for @subheadSendToReview.
   ///
   /// In en, this message translates to:
-  /// **'Queued for human review'**
+  /// **'We couldn\'t confirm or rule this out yet'**
   String get subheadSendToReview;
 
   /// No description provided for @citationCount.
@@ -551,13 +551,13 @@ abstract class AppLocalizations {
   /// No description provided for @whyNoVerdict.
   ///
   /// In en, this message translates to:
-  /// **'Why no verdict?'**
+  /// **'Why unconfirmed?'**
   String get whyNoVerdict;
 
   /// No description provided for @seeEvidence.
   ///
   /// In en, this message translates to:
-  /// **'See evidence ({count})'**
+  /// **'{count, plural, =1{See the source} other{See all {count} sources}}'**
   String seeEvidence(int count);
 
   /// No description provided for @shareCorrection.
@@ -569,7 +569,7 @@ abstract class AppLocalizations {
   /// No description provided for @report.
   ///
   /// In en, this message translates to:
-  /// **'Report'**
+  /// **'Report wrong result'**
   String get report;
 
   /// No description provided for @reporting.
@@ -581,7 +581,7 @@ abstract class AppLocalizations {
   /// No description provided for @evidenceTitle.
   ///
   /// In en, this message translates to:
-  /// **'Evidence'**
+  /// **'Sources'**
   String get evidenceTitle;
 
   /// No description provided for @theClaim.
@@ -866,18 +866,6 @@ abstract class AppLocalizations {
   /// **'A person or place presented as someone or somewhere else. Check names and places against a dated source.'**
   String get techniqueWrongIdentityBody;
 
-  /// No description provided for @techniqueDistortedEventTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Distorted event'**
-  String get techniqueDistortedEventTitle;
-
-  /// No description provided for @techniqueDistortedEventBody.
-  ///
-  /// In en, this message translates to:
-  /// **'An event described differently from how published sources report it. Look for reporting from more than one outlet.'**
-  String get techniqueDistortedEventBody;
-
   /// No description provided for @timelineTitle.
   ///
   /// In en, this message translates to:
@@ -961,6 +949,72 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Not now'**
   String get clipboardDismiss;
+
+  /// How sure the verdict is, from 50 to 97. Shown only with True, False or Misleading.
+  ///
+  /// In en, this message translates to:
+  /// **'{value}% confidence'**
+  String confidence(int value);
+
+  /// No description provided for @unconfirmedBody.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t find enough reliable sources that address this directly. Treat it with caution until it\'s confirmed.'**
+  String get unconfirmedBody;
+
+  /// No description provided for @sourcesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Sources'**
+  String get sourcesTitle;
+
+  /// No description provided for @sourceConfirms.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirms'**
+  String get sourceConfirms;
+
+  /// No description provided for @sourceRefutes.
+  ///
+  /// In en, this message translates to:
+  /// **'Refutes'**
+  String get sourceRefutes;
+
+  /// How credible a publisher is, from the curated source list.
+  ///
+  /// In en, this message translates to:
+  /// **'{level, select, HIGH{Highly credible} MEDIUM{Credible} other{Source}}'**
+  String credibility(String level);
+
+  /// No description provided for @howWeCheckedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'How we checked'**
+  String get howWeCheckedTitle;
+
+  /// No description provided for @howWeCheckedBody.
+  ///
+  /// In en, this message translates to:
+  /// **'We searched trusted news outlets, fact-checkers and official sources, read each one, and kept only the ones that directly address this claim. The verdict comes from what those sources say, weighed by how credible they are.'**
+  String get howWeCheckedBody;
+
+  /// No description provided for @whatWeCheckedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'What we checked'**
+  String get whatWeCheckedTitle;
+
+  /// When the sources behind this result were gathered.
+  ///
+  /// In en, this message translates to:
+  /// **'Checked {time}'**
+  String checkedAt(DateTime time);
+
+  /// No description provided for @incompleteNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Some sources couldn\'t be checked in time, so this answer may be incomplete.'**
+  String get incompleteNote;
 }
 
 class _AppLocalizationsDelegate

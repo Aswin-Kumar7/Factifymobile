@@ -11,6 +11,7 @@ import 'api/client.dart';
 import 'l10n/app_localizations.dart';
 import 'l10n/language_preference.dart';
 import 'screens/home_screen.dart';
+import 'theme/colors.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -48,12 +49,11 @@ class _FactifyAppState extends State<FactifyApp> {
       builder: (context, chosen, _) => MaterialApp(
         title: 'Factify',
         debugShowCheckedModeBanner: false,
-        theme: _theme(Brightness.light),
-        darkTheme: _theme(Brightness.dark),
-        // Follows the system. A verification tool gets opened in a hurry, often
-        // from a chat at night, and forcing a light surface at that moment is the
-        // kind of small friction that loses the check.
-        themeMode: ThemeMode.system,
+        // White by design. The emerald-on-white identity is the product's look, and
+        // a dark variant is a later, deliberate piece of work rather than an
+        // automatic inversion of this one.
+        theme: _theme(),
+        themeMode: ThemeMode.light,
         // English and Hindi. Hinglish is deliberately absent as an interface
         // language: it is a register rather than a locale, and the embedding model
         // cannot represent it (measured, see docs/ops-notes.md), so offering it
@@ -84,86 +84,143 @@ Locale _resolveLocale(List<Locale>? preferred, Iterable<Locale> supported) {
   return const Locale('en');
 }
 
-/// One theme built twice, so light and dark cannot drift apart.
+/// White, with emerald for everything that acts.
 ///
-/// The seed is deliberately restrained. Verdict severity is carried by the action
-/// colours in `VerdictCard` — green through red — and a strongly tinted chrome
-/// competes with exactly the signal that has to read at a glance.
-ThemeData _theme(Brightness brightness) {
+/// Kept deliberately quiet: the one loud thing on a result screen should be the
+/// verdict badge — green, red, amber or grey — and a strongly tinted chrome would
+/// compete with exactly the signal that has to read at a glance. Emerald marks what
+/// can be tapped; slate carries the text; the page is white.
+ThemeData _theme() {
   final scheme = ColorScheme.fromSeed(
-    seedColor: const Color(0xFF00695C),
-    brightness: brightness,
+    seedColor: FactifyColors.emerald,
+    brightness: Brightness.light,
+  ).copyWith(
+    primary: FactifyColors.emerald,
+    onPrimary: Colors.white,
+    primaryContainer: FactifyColors.emeraldSoft,
+    onPrimaryContainer: FactifyColors.emeraldDeep,
+    secondary: FactifyColors.emeraldDark,
+    surface: Colors.white,
+    onSurface: FactifyColors.ink,
+    onSurfaceVariant: FactifyColors.inkMuted,
+    outline: FactifyColors.line,
+    outlineVariant: FactifyColors.line,
+    surfaceContainerLowest: Colors.white,
+    surfaceContainerLow: FactifyColors.ground,
+    surfaceContainer: FactifyColors.ground,
+    surfaceContainerHigh: const Color(0xFFF1F5F9),
+    surfaceContainerHighest: const Color(0xFFF1F5F9),
   );
 
-  return ThemeData(
-    colorScheme: scheme,
-    useMaterial3: true,
-    // The page ground sits one step below the cards, so surfaces read as
-    // surfaces without a single drop shadow anywhere.
-    scaffoldBackgroundColor: scheme.surfaceContainerLow,
-    appBarTheme: AppBarTheme(
-      backgroundColor: scheme.surfaceContainerLow,
+  final base = ThemeData(colorScheme: scheme, useMaterial3: true);
+  final text = base.textTheme.apply(
+    bodyColor: FactifyColors.ink,
+    displayColor: FactifyColors.ink,
+  );
+
+  return base.copyWith(
+    scaffoldBackgroundColor: Colors.white,
+    textTheme: text.copyWith(
+      headlineSmall: text.headlineSmall?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -0.4),
+      titleLarge: text.titleLarge?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.2),
+      titleMedium: text.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+      bodyMedium: text.bodyMedium?.copyWith(height: 1.45, color: FactifyColors.ink),
+      bodySmall: text.bodySmall?.copyWith(height: 1.4, color: FactifyColors.inkSoft),
+    ),
+    appBarTheme: const AppBarTheme(
+      backgroundColor: Colors.white,
+      foregroundColor: FactifyColors.ink,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
-      scrolledUnderElevation: 1,
+      scrolledUnderElevation: 0.5,
       centerTitle: false,
       titleTextStyle: TextStyle(
-        color: scheme.onSurface,
-        fontSize: 22,
-        fontWeight: FontWeight.w600,
+        color: FactifyColors.ink,
+        fontSize: 20,
+        fontWeight: FontWeight.w800,
+        letterSpacing: -0.3,
       ),
     ),
     cardTheme: CardThemeData(
       elevation: 0,
       margin: EdgeInsets.zero,
-      color: scheme.surface,
-      // An outline rather than a shadow: several cards stack on the result
-      // screen, and stacked shadows turn into visual noise that reads as depth
-      // where there is no hierarchy.
+      color: Colors.white,
+      surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: BorderSide(color: scheme.outlineVariant),
+        borderRadius: BorderRadius.circular(18),
+        side: const BorderSide(color: FactifyColors.line),
       ),
     ),
     navigationBarTheme: NavigationBarThemeData(
-      backgroundColor: scheme.surface,
-      indicatorColor: scheme.primary.withValues(alpha: 0.12),
-      height: 68,
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      indicatorColor: FactifyColors.emeraldSoft,
+      height: 66,
       labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+      iconTheme: WidgetStateProperty.resolveWith(
+        (states) => IconThemeData(
+          color: states.contains(WidgetState.selected)
+              ? FactifyColors.emeraldDeep
+              : FactifyColors.inkMuted,
+        ),
+      ),
     ),
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      backgroundColor: FactifyColors.ink,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
     inputDecorationTheme: InputDecorationTheme(
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      filled: true,
+      fillColor: FactifyColors.ground,
+      hintStyle: const TextStyle(color: FactifyColors.inkMuted),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: FactifyColors.line),
+      ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: scheme.outlineVariant),
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: FactifyColors.line),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: scheme.primary, width: 2),
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: FactifyColors.emerald, width: 1.6),
       ),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        backgroundColor: FactifyColors.emerald,
+        foregroundColor: Colors.white,
+        disabledBackgroundColor: FactifyColors.line,
+        minimumSize: const Size.fromHeight(52),
+        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        side: BorderSide(color: scheme.outlineVariant),
+        foregroundColor: FactifyColors.emeraldDeep,
+        minimumSize: const Size.fromHeight(46),
+        textStyle: const TextStyle(fontWeight: FontWeight.w600),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        side: const BorderSide(color: FactifyColors.line),
       ),
     ),
-    listTileTheme: const ListTileThemeData(
-      contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(
+        foregroundColor: FactifyColors.emeraldDark,
+        textStyle: const TextStyle(fontWeight: FontWeight.w600),
+      ),
     ),
-    dividerTheme: DividerThemeData(color: scheme.outlineVariant, thickness: 1),
+    dividerTheme: const DividerThemeData(color: FactifyColors.line, thickness: 1, space: 1),
     chipTheme: ChipThemeData(
-      side: BorderSide(color: scheme.outlineVariant),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      side: const BorderSide(color: FactifyColors.line),
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+    ),
+    progressIndicatorTheme: const ProgressIndicatorThemeData(
+      color: FactifyColors.emerald,
+      linearTrackColor: FactifyColors.emeraldSoft,
     ),
   );
 }

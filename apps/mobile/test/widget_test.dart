@@ -2,9 +2,10 @@
 ///
 /// The server enforces these rules in its types; these tests check that the
 /// interface does not undo them. The failure mode they exist to catch is not a
-/// crash — it is a screen that renders an honest payload dishonestly. A
-/// translation counts: a Hindi headline that says "true" breaks the law exactly
-/// as an English one would.
+/// crash — it is a screen that renders an honest payload dishonestly. The law now:
+/// True, False and Misleading appear only with the sources beneath them, and
+/// "Unconfirmed" never reads as either. A translation counts: a Hindi card that
+/// says "true" for an abstention breaks the law exactly as an English one would.
 library;
 
 import 'dart:convert';
@@ -73,11 +74,11 @@ Map<String, dynamic> _claim({
   'evidence': evidence,
 };
 
-Map<String, dynamic> _evidence() => {
+Map<String, dynamic> _evidence({String direction = 'contradicts'}) => {
   'id': 'ev_1',
   'tier': 'C',
   'kind': 'fact_check',
-  'direction': 'contradicts',
+  'direction': direction,
   'method': 'claim_review',
   'finding': 'Rated false.',
   'citation_url': 'https://factchecker.example/1',
@@ -253,43 +254,55 @@ void main() {
   });
 
   group('the verdict card', () {
-    testWidgets('never claims something is true, only that nothing contradicts it', (tester) async {
-      await _pump(
-        tester,
-        VerdictCard(
-          verdict: Verdict.fromJson(_payload(action: 'SAFE_TO_SHARE')),
-          onSeeEvidence: () {},
-          onShareCorrection: () {},
-          onReportForReview: () {},
-        ),
-      );
+    Verdict confirmed() => Verdict.fromJson(
+      _payload(
+        action: 'SAFE_TO_SHARE',
+        claims: [
+          _claim(status: 'SUPPORTED', evidence: [_evidence(direction: 'supports')]),
+        ],
+      )..addAll({'verdict': 'TRUE', 'confidence': 89, 'summary': 'Two outlets report it.'}),
+    );
 
-      expect(find.textContaining('Nothing contradicts this'), findsOneWidget);
-      expect(find.textContaining('True'), findsNothing);
-      expect(find.textContaining('Verified'), findsNothing);
+    testWidgets('says True with how sure, and the sources it rests on', (tester) async {
+      await _pump(tester, _card(confirmed()));
+
+      expect(find.text('True'), findsOneWidget);
+      expect(find.text('89%'), findsOneWidget);
+      expect(find.text('Two outlets report it.'), findsOneWidget);
+      // The verdict is never asked to be believed on its own.
+      expect(find.text('Factchecker'), findsOneWidget);
+      expect(find.text('Confirms'), findsOneWidget);
     });
 
-    testWidgets('states when the evidence was retrieved', (tester) async {
+    testWidgets('says False, and offers the correction to send back', (tester) async {
       await _pump(
         tester,
-        VerdictCard(
-          verdict: Verdict.fromJson(_payload()),
-          onSeeEvidence: () {},
-          onShareCorrection: () {},
-          onReportForReview: () {},
+        _card(
+          Verdict.fromJson(
+            _payload(claims: [_claim(evidence: [_evidence()])])
+              ..addAll({'verdict': 'FALSE', 'confidence': 78}),
+          ),
         ),
       );
+
+      expect(find.text('False'), findsOneWidget);
+      expect(find.text('Refutes'), findsOneWidget);
+      expect(find.text('Share correction'), findsOneWidget);
+    });
+
+    testWidgets('states when the check was made', (tester) async {
+      await _pump(tester, _card(Verdict.fromJson(_payload())));
 
       // Without this the card is a claim about the present made from evidence
       // about the past.
-      expect(find.textContaining('Evidence retrieved'), findsOneWidget);
+      expect(find.textContaining(RegExp(r'^Checked \d')), findsOneWidget);
     });
 
     testWidgets('surfaces an incomplete run rather than hiding it', (tester) async {
       await _pump(
         tester,
-        VerdictCard(
-          verdict: Verdict.fromJson(
+        _card(
+          Verdict.fromJson(
             _payload(
               skipped: [
                 {'check': 'factcheck', 'reason': 'not configured'},
@@ -297,67 +310,85 @@ void main() {
               completenessNote: 'Not everything could be checked. factcheck was not checked.',
             ),
           ),
-          onSeeEvidence: () {},
-          onShareCorrection: () {},
-          onReportForReview: () {},
         ),
       );
 
-      expect(find.textContaining('Not everything could be checked'), findsOneWidget);
+      expect(find.textContaining('may be incomplete'), findsOneWidget);
     });
 
-    testWidgets('an abstaining case reads as undecided, not as danger', (tester) async {
+    testWidgets('an abstaining case reads as unconfirmed — not true, not false', (tester) async {
+      await _pump(tester, _card(Verdict.fromJson(_payload(action: 'SEND_TO_REVIEW'))));
+
+      expect(find.text('Unconfirmed'), findsOneWidget);
+      expect(find.text('True'), findsNothing);
+      expect(find.text('False'), findsNothing);
+      // No confidence figure when nothing was decided.
+      expect(find.textContaining('%'), findsNothing);
+      // No correction to share when nothing was established.
+      expect(find.text('Share correction'), findsNothing);
+    });
+
+    testWidgets('a wrong result can be reported from the card', (tester) async {
+      var reported = 0;
       await _pump(
         tester,
         VerdictCard(
-          verdict: Verdict.fromJson(_payload(action: 'SEND_TO_REVIEW')),
+          verdict: confirmed(),
           onSeeEvidence: () {},
           onShareCorrection: () {},
-          onReportForReview: () {},
+          onReportForReview: () => reported++,
         ),
       );
 
-      expect(find.textContaining('Not enough evidence to decide'), findsOneWidget);
-      // No correction to share when nothing was established.
-      expect(find.text('Share correction'), findsNothing);
+      await tester.tap(find.text('Report wrong result'));
+      expect(reported, 1);
     });
   });
 
   group('the design law, in Hindi', () {
-    testWidgets('an abstention still reads as undecided, not as danger', (tester) async {
+    testWidgets('an abstention reads as unconfirmed, and never as true or false', (tester) async {
       await _pump(
         tester,
         _card(Verdict.fromJson(_payload(action: 'SEND_TO_REVIEW'))),
         locale: _hindi,
       );
 
-      expect(find.text('निर्णय के लिए पर्याप्त साक्ष्य नहीं'), findsOneWidget);
-      expect(find.textContaining('Not enough evidence'), findsNothing);
+      expect(find.text('अपुष्ट'), findsOneWidget);
+      expect(find.textContaining('Unconfirmed'), findsNothing);
       expect(find.text('सुधार साझा करें'), findsNothing);
-    });
-
-    testWidgets('"nothing contradicts this" is not translated into "true"', (tester) async {
-      await _pump(
-        tester,
-        _card(Verdict.fromJson(_payload(action: 'SAFE_TO_SHARE'))),
-        locale: _hindi,
-      );
-
-      expect(find.text('इसका कोई खंडन नहीं मिला'), findsOneWidget);
-      // सच and सही say "true"; सत्य is "truth", and also begins सत्यापित, "verified".
-      for (final word in const ['सच', 'सही', 'सत्य']) {
+      // सच and सही say "true", झूठ says "false"; सत्य is "truth", and also begins
+      // सत्यापित, "verified".
+      for (final word in const ['सच', 'सही', 'सत्य', 'झूठ']) {
         expect(find.textContaining(word), findsNothing, reason: 'the card says "$word"');
       }
     });
 
-    testWidgets('states when the evidence was retrieved, and what is still English', (
-      tester,
-    ) async {
+    testWidgets('a confirmed claim is called true, in Hindi, with its sources', (tester) async {
+      await _pump(
+        tester,
+        _card(
+          Verdict.fromJson(
+            _payload(
+              action: 'SAFE_TO_SHARE',
+              claims: [
+                _claim(status: 'SUPPORTED', evidence: [_evidence(direction: 'supports')]),
+              ],
+            )..addAll({'verdict': 'TRUE', 'confidence': 89}),
+          ),
+        ),
+        locale: _hindi,
+      );
+
+      expect(find.text('सच'), findsOneWidget);
+      expect(find.text('Factchecker'), findsOneWidget);
+    });
+
+    testWidgets('states when the check was made, and what is still English', (tester) async {
       await _pump(tester, _card(Verdict.fromJson(_payload())), locale: _hindi);
 
-      expect(find.textContaining('साक्ष्य जुटाए गए'), findsOneWidget);
-      // Reasons still arrive from the server in English (B5), and the card says
-      // so rather than switching language halfway down without a word.
+      expect(find.textContaining('को जाँचा गया'), findsOneWidget);
+      // Summaries still arrive in the claim's language (B5), and the card says so
+      // rather than switching language halfway down without a word.
       expect(find.text('नीचे के कुछ विवरण अभी सिर्फ़ अंग्रेज़ी में हैं।'), findsOneWidget);
     });
 
@@ -393,7 +424,7 @@ void main() {
     testWidgets('names the decided claim, who said so and when, and no advisory', (tester) async {
       await _pump(tester, correctionCard(contradicted()));
 
-      expect(find.text('Contradicted by sources'), findsOneWidget);
+      expect(find.text('False'), findsOneWidget);
       expect(find.textContaining('The scheme was cancelled on Friday.'), findsOneWidget);
       expect(find.textContaining('Factchecker · factchecker.example'), findsOneWidget);
       expect(find.textContaining('Evidence retrieved'), findsOneWidget);
@@ -403,10 +434,10 @@ void main() {
       expect(find.textContaining('local_forensics'), findsNothing);
     });
 
-    testWidgets('keeps the design law in Hindi', (tester) async {
+    testWidgets('a false claim is never called true, in Hindi', (tester) async {
       await _pump(tester, correctionCard(contradicted()), locale: _hindi);
 
-      expect(find.text('स्रोतों ने इसका खंडन किया है'), findsOneWidget);
+      expect(find.text('झूठ'), findsOneWidget);
       for (final word in const ['सच', 'सही', 'सत्य']) {
         expect(find.textContaining(word), findsNothing, reason: 'the card says "$word"');
       }
@@ -497,13 +528,13 @@ void main() {
 
       await tester.pumpWidget(FactifyApp(language: LanguagePreference.inMemory(), client: client));
       await tester.pumpAndSettle();
-      expect(find.textContaining('never from a model score'), findsOneWidget);
+      expect(find.text('Is it true?'), findsOneWidget);
 
       await tester.tap(find.byType(LanguageMenu));
       await tester.pumpAndSettle();
       await tester.tap(find.text('हिन्दी'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('मॉडल स्कोर से कभी नहीं'), findsOneWidget);
+      expect(find.text('क्या यह सच है?'), findsOneWidget);
 
       await tester.enterText(find.byType(TextField), 'The scheme was cancelled on Friday.');
       await tester.pump();
@@ -511,7 +542,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(sent.single['language'], 'hi');
-      expect(find.text('निर्णय के लिए पर्याप्त साक्ष्य नहीं'), findsOneWidget);
+      expect(find.text('अपुष्ट'), findsOneWidget);
     });
 
     testWidgets('with nothing chosen, the phone language decides, falling back to English', (
@@ -527,12 +558,12 @@ void main() {
       tester.platformDispatcher.localesTestValue = const [Locale('hi', 'IN')];
       await tester.pumpWidget(FactifyApp(language: LanguagePreference.inMemory(), client: client));
       await tester.pumpAndSettle();
-      expect(find.textContaining('मॉडल स्कोर से कभी नहीं'), findsOneWidget);
+      expect(find.text('क्या यह सच है?'), findsOneWidget);
 
       // A phone in a language Factify has no strings for gets English.
       tester.platformDispatcher.localesTestValue = const [Locale('ta', 'IN')];
       await tester.pumpAndSettle();
-      expect(find.textContaining('never from a model score'), findsOneWidget);
+      expect(find.text('Is it true?'), findsOneWidget);
     });
 
     testWidgets('the result, the evidence and the correction lay out at phone width, in both '

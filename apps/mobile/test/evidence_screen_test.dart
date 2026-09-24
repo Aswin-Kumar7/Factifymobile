@@ -1,5 +1,6 @@
-/// The evidence screen's teaching line, timeline, claim anchor, media match preview
-/// and citation links (M44, PLAN 1.7.4 and 1.7.7).
+/// The sources screen: each claim with its verdict, confidence and sources; the
+/// teaching line, claim anchor and media match preview; and the timeline folded
+/// under "How we checked" (M44, PLAN 1.7.4).
 ///
 /// Each renders only from data the response carries. These tests hold both halves
 /// of that rule: the element appears when its data is present, and nothing appears
@@ -121,6 +122,12 @@ Future<void> _open(
   await tester.pumpAndSettle();
 }
 
+Future<void> _expandHowWeChecked(WidgetTester tester) async {
+  await tester.scrollUntilVisible(find.text('How we checked'), 200);
+  await tester.tap(find.text('How we checked'));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   group('the teaching line', () {
     test('names a technique only for a claim a source contradicted or recontextualised', () {
@@ -134,7 +141,8 @@ void main() {
       expect(of('ATTRIBUTION', 'CONTRADICTED'), Technique.misattributedQuote);
       expect(of('STATISTIC', 'CONTRADICTED'), Technique.twistedNumber);
       expect(of('IDENTITY', 'CONTRADICTED'), Technique.wrongIdentity);
-      expect(of('EVENT', 'CONTRADICTED'), Technique.distortedEvent);
+      // EVENT is the catch-all type: a health myth is not a "distorted event".
+      expect(of('EVENT', 'CONTRADICTED'), isNull);
       // Nothing to teach where nothing was found wrong, or nothing was decided.
       expect(of('QUOTE', 'SUPPORTED'), isNull);
       expect(techniqueFor(Claim.fromJson(_claim(status: 'UNVERIFIED'))), isNull);
@@ -196,8 +204,12 @@ void main() {
       ]);
     });
 
-    testWidgets('is drawn from the dates the evidence carries', (tester) async {
+    testWidgets('is drawn from the dates the evidence carries, under How we checked', (tester) async {
       await _open(tester, _verdict(claims: [_claim(evidence: [_evidence()])]));
+
+      // Folded away until asked for: a hurried reader does not need it.
+      expect(find.text('Timeline'), findsNothing);
+      await _expandHowWeChecked(tester);
 
       expect(find.text('Timeline'), findsOneWidget);
       expect(find.text('Evidence gathered for this result'), findsOneWidget);
@@ -205,6 +217,7 @@ void main() {
 
     testWidgets('is not drawn when nothing is dated beyond this check', (tester) async {
       await _open(tester, _verdict(action: 'SEND_TO_REVIEW', claims: [_claim(status: 'UNVERIFIED')]));
+      await _expandHowWeChecked(tester);
 
       expect(find.text('Timeline'), findsNothing);
     });
@@ -251,36 +264,36 @@ void main() {
     });
   });
 
-  group('strength rows (PLAN 1.7.7)', () {
-    testWidgets('lead to the citation they were computed from', (tester) async {
-      await _open(
-        tester,
-        _verdict(
-          claims: [
-            _claim(evidence: [_evidence()], citations: const ['https://factchecker.example/1']),
-          ],
-        ),
-      );
+  group('each claim', () {
+    testWidgets('shows its verdict, how sure, the reason and the quoted source', (tester) async {
+      final claim = _claim(evidence: [_evidence()])
+        ..['confidence'] = 89
+        ..['explanation'] = 'Factchecker rated the quote false on 2 June.';
+      await _open(tester, _verdict(claims: [claim]));
 
-      final excerpt = find.textContaining('rated False on 2 June 2026');
-      Card cardOf() =>
-          tester.widget<Card>(find.ancestor(of: excerpt, matching: find.byType(Card)).first);
-      expect(cardOf().shape, isNull);
-
-      await tester.tap(find.text('1 source'));
-      await tester.pumpAndSettle();
-      expect((cardOf().shape! as RoundedRectangleBorder).side.width, 2);
-
-      // The mark is brief: gone once its moment has passed.
-      await tester.pump(const Duration(seconds: 3));
-      expect(cardOf().shape, isNull);
+      expect(find.text('89% confidence'), findsOneWidget);
+      expect(find.text('Factchecker rated the quote false on 2 June.'), findsOneWidget);
+      expect(find.textContaining('rated False on 2 June 2026'), findsOneWidget);
+      expect(find.text('Refutes'), findsOneWidget);
     });
 
-    testWidgets('are plain text when the server sent no citations', (tester) async {
-      await _open(tester, _verdict(claims: [_claim(evidence: [_evidence()])]));
+    testWidgets('an unsettled claim shows no confidence figure', (tester) async {
+      final claim = _claim(status: 'UNVERIFIED')..['confidence'] = 60;
+      await _open(tester, _verdict(action: 'SEND_TO_REVIEW', claims: [claim]));
 
-      expect(find.text('1 source'), findsNothing);
-      expect(find.textContaining('Evidence tiers'), findsOneWidget);
+      expect(find.textContaining('% confidence'), findsNothing);
+    });
+
+    testWidgets('the same page cited twice does not crash the screen', (tester) async {
+      // "Duplicate keys found": the old screen keyed each citation by evidence id,
+      // and one page cited twice for a claim took the whole screen down.
+      await _open(
+        tester,
+        _verdict(claims: [_claim(evidence: [_evidence(), _evidence()])]),
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(find.textContaining('rated False on 2 June 2026'), findsNWidgets(2));
     });
   });
 
