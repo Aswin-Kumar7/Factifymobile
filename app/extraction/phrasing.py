@@ -64,9 +64,10 @@ _ACTION: dict[Action, dict[str, str]] = {
         "en": "Too recent to check. Wait for coverage.",
         "hi": "जाँच के लिए बहुत नया। कवरेज की प्रतीक्षा करें।",
     },
+    # Nothing is sent to a human automatically any more; see ServedOrchestrator.
     Action.SEND_TO_REVIEW: {
-        "en": "Sent for human review.",
-        "hi": "मानवीय समीक्षा के लिए भेजा गया।",
+        "en": "Unconfirmed: the sources we found do not settle this yet.",
+        "hi": "अपुष्ट: हमें मिले स्रोत अभी इसकी पुष्टि या खंडन नहीं करते।",
     },
 }
 

@@ -31,10 +31,13 @@ from app.db.repositories import (
     SourceRepository,
     VerdictRepository,
 )
+from app.domain.enums import Action, ClaimStatus, Importance
 from app.domain.evidence import Evidence
 from app.observability.logging import event
 from app.orchestration.pipeline import ClaimOutcome, VerificationResult
 from app.orchestration.receipt import ReceiptSigner, evidence_from_rows
+from app.orchestration.summary import case_summary
+from app.verdict.engine import case_confidence, verdict_for
 
 logger = logging.getLogger("factify.ledger")
 
@@ -186,7 +189,16 @@ class Ledger:
             reason=outcome.decision.reason,
             rule_id=outcome.decision.rule_id,
             rule_version=outcome.decision.rule_version,
-            strength=asdict(outcome.strength),
+            # Confidence and the plain explanation ride in the strength record so a
+            # repeat check reads back exactly what was first shown. Both are derived
+            # (the confidence from the cited sources, the explanation from the source
+            # check), so storing them beside the score they explain adds no new kind
+            # of fact to the row — and needs no change to a live schema.
+            strength={
+                **asdict(outcome.strength),
+                "confidence": outcome.decision.confidence,
+                "explanation": outcome.explanation,
+            },
         )
 
     async def _persist_evidence(self, item: Evidence, *, claim_id: UUID) -> None:
@@ -239,8 +251,11 @@ class CaseReader:
     interpretable.
     """
 
-    def __init__(self, database: Any) -> None:
+    def __init__(self, database: Any, *, ranker: Any | None = None) -> None:
         self._database = database
+        # Credibility is a property of the publisher, so it is looked up from the
+        # citation rather than stored: the stored URL is enough to say it again.
+        self._ranker = ranker
 
     async def get(self, case_id: UUID) -> Any:
         from app.api.schemas import (
@@ -345,14 +360,30 @@ class CaseReader:
                                     if e["input_anchor"]
                                     else None
                                 ),
+                                credibility=(
+                                    self._ranker.credibility(str(e["citation_url"])).value
+                                    if self._ranker is not None
+                                    else None
+                                ),
                             )
                             for e in evidence_rows
                         ),
+                        confidence=strength.get("confidence"),
+                        explanation=strength.get("explanation"),
                     )
                 )
 
+        verdict = verdict_for(Action(action))
         return VerifyResponse(
             case_id=str(case_id),
+            verdict=verdict,
+            confidence=case_confidence(
+                verdict, [(ClaimStatus(c.status), c.confidence) for c in claims]
+            ),
+            summary=case_summary(
+                verdict,
+                [(ClaimStatus(c.status), Importance(c.importance), c.explanation) for c in claims],
+            ),
             action=action,
             action_reason="Retrieved from the ledger as recorded.",
             rule_version=rule_version,

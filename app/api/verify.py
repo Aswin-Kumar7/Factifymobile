@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import UTC, datetime
 from typing import Annotated, Any
 from uuid import UUID, uuid4
@@ -51,6 +52,7 @@ from app.knowledge.registry import authenticate_trigger
 from app.observability.logging import event
 from app.orchestration.pipeline import SkippedCheck, VerificationResult
 from app.orchestration.review import HumanLabel
+from app.orchestration.summary import case_summary
 from app.security.fetcher import FetchResult
 
 logger = logging.getLogger("factify.api.verify")
@@ -229,6 +231,7 @@ async def cached_full_response(
         update={
             "from_cache": True,
             "action": result.action,
+            "verdict": result.case_decision.verdict,
             "action_reason": result.case_decision.reason,
             "elapsed_ms": result.elapsed_ms,
         }
@@ -271,12 +274,20 @@ def to_response(result: VerificationResult, *, receipt_url: str | None = None) -
                 version=outcome.strength.version,
             ),
             evidence=tuple(evidence_to_response(item) for item in outcome.evidence),
+            confidence=outcome.decision.confidence,
+            explanation=outcome.explanation,
         )
         for outcome in result.claims
     )
 
     return VerifyResponse(
         case_id=str(result.case_id),
+        verdict=result.case_decision.verdict,
+        confidence=result.case_decision.confidence,
+        summary=case_summary(
+            result.case_decision.verdict,
+            [(o.decision.status, o.claim.importance, o.explanation) for o in result.claims],
+        ),
         action=result.action,
         action_reason=result.case_decision.reason,
         rule_version=result.rule_version,
@@ -314,6 +325,10 @@ async def verify(payload: VerifyRequest, request: Request) -> VerifyResponse:
     "service unavailable" instead of 422. A client cannot tell those apart, and one
     of them is its own fault.
     """
+    # The time budget runs from here, not from after extraction. Reading a long page
+    # and extracting its claims takes ten to twenty seconds, and starting the clock
+    # after that let a four-claim link run to 68 seconds against an app that waits 75.
+    arrived = time.perf_counter()
     orchestrator = get_orchestrator(request)
 
     try:
@@ -367,7 +382,7 @@ async def verify(payload: VerifyRequest, request: Request) -> VerifyResponse:
         )
 
     result = await orchestrator.verify(  # type: ignore[attr-defined]
-        intake, case_id=case_id, claims=list(extracted.claims)
+        intake, case_id=case_id, claims=list(extracted.claims), started_at=arrived
     )
 
     cached = await cached_full_response(request, result)

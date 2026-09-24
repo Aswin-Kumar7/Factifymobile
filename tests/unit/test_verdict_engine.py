@@ -13,6 +13,7 @@ from app.domain import (
     ClaimStatus,
     ClaimType,
     CoverageExpectation,
+    Credibility,
     Direction,
     EvidenceKind,
     Importance,
@@ -20,6 +21,7 @@ from app.domain import (
     Severity,
     SourceRisk,
     Tier,
+    Verdict,
 )
 from app.verdict import AdvisoryLeakError, decide, roll_up
 from app.verdict.engine import RULE_VERSION
@@ -707,3 +709,120 @@ class TestAMinorDetailDoesNotSinkTheCase:
         )
 
         assert outcome.action is not Action.SAFE_TO_SHARE
+
+
+class TestOneAuthoritativeRefutationIsEnough:
+    """PIB-debunked scams abstained because rule 3b wanted two publishers to agree.
+
+    "Banks were told to stock ATMs ahead of UPI fees", the free-laptop scheme and the
+    National Sports Scholarship were all debunked by the government's own fact-check
+    unit, and all came back "not enough evidence to decide".
+    """
+
+    @staticmethod
+    def _against(url: str, credibility: Credibility | None):  # type: ignore[no-untyped-def]
+        return evidence(
+            kind=EvidenceKind.CORROBORATION,
+            direction=Direction.CONTRADICTS,
+            tier=Tier.D,
+            citation_url=url,
+        ).model_copy(update={"credibility": credibility})
+
+    def test_one_highly_credible_refutation_decides(self) -> None:
+        decision = decide(
+            claim(), [self._against("https://factcheck.pib.gov.in/1", Credibility.HIGH)]
+        )
+
+        assert decision.status is ClaimStatus.CONTRADICTED
+        assert decision.rule_id == "rule.authoritative_contradiction"
+
+    def test_one_ordinary_newspaper_does_not(self) -> None:
+        decision = decide(claim(), [self._against("https://thehindu.com/1", Credibility.MEDIUM)])
+
+        assert decision.status is ClaimStatus.UNVERIFIED
+
+    def test_a_source_nobody_weighed_does_not(self) -> None:
+        """Credibility is only set after the relevance check. Unchecked is not enough."""
+        decision = decide(claim(), [self._against("https://apnews.com/1", None)])
+
+        assert decision.status is ClaimStatus.UNVERIFIED
+
+    def test_support_still_needs_two_independent_origins(self) -> None:
+        """The asymmetry is the point: clearing a false claim is the costlier error."""
+        support = evidence(
+            kind=EvidenceKind.CORROBORATION,
+            direction=Direction.SUPPORTS,
+            tier=Tier.D,
+            citation_url="https://apnews.com/1",
+        ).model_copy(update={"credibility": Credibility.HIGH})
+
+        decision = decide(claim(independent_origin_count=1, document_count=1), [support])
+
+        assert decision.status is ClaimStatus.UNVERIFIED
+
+
+class TestConfidenceIsArithmeticOnTheSources:
+    @staticmethod
+    def _side(direction: Direction, *urls: str, kind: EvidenceKind = EvidenceKind.CORROBORATION):  # type: ignore[no-untyped-def]
+        return [
+            evidence(kind=kind, direction=direction, tier=Tier.D, citation_url=u).model_copy(
+                update={"credibility": Credibility.HIGH}
+            )
+            for u in urls
+        ]
+
+    def test_one_credible_refutation_is_fairly_sure(self) -> None:
+        decision = decide(claim(), self._side(Direction.CONTRADICTS, "https://apnews.com/1"))
+
+        assert decision.confidence == 78
+
+    def test_more_independent_sources_raise_it(self) -> None:
+        decision = decide(
+            claim(),
+            self._side(Direction.CONTRADICTS, "https://apnews.com/1", "https://bbc.com/2"),
+        )
+
+        assert decision.confidence == 89
+
+    def test_a_published_fact_check_is_at_least_88(self) -> None:
+        decision = decide(
+            claim(),
+            self._side(
+                Direction.CONTRADICTS, "https://altnews.in/1", kind=EvidenceKind.FACT_CHECK
+            ),
+        )
+
+        assert decision.confidence is not None and decision.confidence >= 88
+
+    def test_no_verdict_means_no_confidence(self) -> None:
+        assert decide(claim(), []).confidence is None
+
+    def test_it_never_reaches_certainty(self) -> None:
+        urls = [f"https://outlet{i}.com/x" for i in range(12)]
+        decision = decide(claim(), self._side(Direction.CONTRADICTS, *urls))
+
+        assert decision.confidence == 97
+
+
+class TestTheVerdictAPersonReads:
+    def test_a_refuted_central_claim_reads_false_with_its_confidence(self) -> None:
+        refuted = decide(
+            claim(),
+            [
+                evidence(
+                    direction=Direction.CONTRADICTS, tier=Tier.D, citation_url="https://apnews.com/1"
+                ).model_copy(update={"credibility": Credibility.HIGH})
+            ],
+        )
+
+        case = roll_up([(claim(), refuted)])
+
+        assert case.verdict is Verdict.FALSE
+        assert case.confidence == refuted.confidence
+
+    def test_nothing_decided_reads_unconfirmed_and_is_not_sent_to_anyone(self) -> None:
+        case = roll_up([(claim(), decide(claim(), []))])
+
+        assert case.verdict is Verdict.UNCONFIRMED
+        assert case.confidence is None
+        assert "review" not in case.reason.lower()

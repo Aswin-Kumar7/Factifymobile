@@ -38,6 +38,9 @@ from collections.abc import Iterator, Mapping
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from app.domain.enums import Credibility
+from app.domain.publishers import is_official
+
 logger = logging.getLogger("factify.sources.credibility")
 
 # TLD suffixes whose operators are governments, universities or international bodies —
@@ -71,6 +74,34 @@ _NOT_INSTITUTIONAL = frozenset(
     }
 )
 
+# Which categories of the curated list carry which weight.
+#
+# HIGH is for publishers whose job is to get this kind of claim right and who answer
+# for it: accredited fact-checkers, wire services, public broadcasters, official and
+# intergovernmental bodies, and the medical and scientific literature. MEDIUM is the
+# rest of the named newsrooms and reference works. Anything the gate admits without
+# naming — an institution trusted only by its domain suffix — is LOW until someone
+# lists it.
+_HIGH_CATEGORY_PREFIXES = (
+    "fact_checkers",
+    "wire_services",
+    "public_broadcasters",
+    "international_organisations",
+    "india_official_and_legal",
+    "health_and_medicine",
+    "science_and_research",
+)
+_MEDIUM_CATEGORY_PREFIXES = (
+    "india_",
+    "news_",
+    "south_asia_news",
+    "investigative_and_explainers",
+    "reference",
+    "climate_and_environment",
+    "disinformation_research",
+    "government_and_academic_domains",
+)
+
 # The one non-list key the loader reads: host -> path prefixes that are open to anyone.
 _USER_CONTENT_KEY = "user_content_paths"
 
@@ -83,8 +114,12 @@ class SourceCredibility:
         trusted: frozenset[str],
         user_content_paths: Mapping[str, tuple[str, ...]] | None = None,
         fact_checkers: frozenset[str] = frozenset(),
+        high: frozenset[str] = frozenset(),
+        medium: frozenset[str] = frozenset(),
     ) -> None:
         self._trusted = trusted
+        self._high = high
+        self._medium = medium
         self._user_content_paths = dict(user_content_paths or {})
         # Publishers whose business is adjudicating claims. A page of theirs is a
         # published fact-check wherever it was found, which is a stronger class of
@@ -108,11 +143,17 @@ class SourceCredibility:
 
         domains: set[str] = set()
         fact_checkers: set[str] = set()
+        high: set[str] = set()
+        medium: set[str] = set()
         for key, value in raw.items():
             if key.startswith("_") or not isinstance(value, list):
                 continue
             hosts = {_normalise_host(d) for d in value if isinstance(d, str)}
             domains.update(hosts)
+            if key.startswith(_HIGH_CATEGORY_PREFIXES):
+                high.update(hosts)
+            elif key.startswith(_MEDIUM_CATEGORY_PREFIXES):
+                medium.update(hosts)
             # Every `fact_checkers_*` category, including the formerly accredited
             # ones: a lapsed IFCN renewal does not turn a published adjudication into
             # something else.
@@ -128,7 +169,13 @@ class SourceCredibility:
                         p.lower() for p in prefixes if isinstance(p, str) and p.startswith("/")
                     )
 
-        return cls(frozenset(domains), user_paths, frozenset(fact_checkers))
+        return cls(
+            frozenset(domains),
+            user_paths,
+            frozenset(fact_checkers),
+            frozenset(high),
+            frozenset(medium),
+        )
 
     def is_credible(self, url_or_domain: str | None) -> bool:
         """Whether this source may be cited as open-web evidence."""
@@ -146,6 +193,27 @@ class SourceCredibility:
             return False
 
         return not self._is_user_content(names, url_or_domain or "")
+
+    def credibility(self, url_or_domain: str | None) -> Credibility:
+        """How much this publisher's word weighs, for a source already found relevant.
+
+        Only ever asked of a source that passed `is_credible`, so LOW means "citable
+        but unranked", not "untrustworthy". Government and intergovernmental domains
+        rank HIGH by suffix because their registries are restricted; a university
+        ranks MEDIUM, since the domain vouches for the institution and not for
+        every page published under it.
+        """
+        domain = self._domain_of(url_or_domain)
+        names = list(_suffixes(domain)) if domain else []
+        if any(name in self._high or name in self._fact_checkers for name in names):
+            return Credibility.HIGH
+        if url_or_domain and is_official(url_or_domain):
+            return Credibility.HIGH
+        if any(name in self._medium for name in names):
+            return Credibility.MEDIUM
+        if any(name in _TRUSTED_SUFFIXES for name in names):
+            return Credibility.MEDIUM
+        return Credibility.LOW
 
     def is_fact_checker(self, url_or_domain: str | None) -> bool:
         """Whether this source publishes fact-checks, rather than reporting generally.

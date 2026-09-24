@@ -21,6 +21,7 @@ from typing import Any, Protocol
 
 from app.cache.service import CacheService
 from app.domain.claim import Claim, ClaimAnchor
+from app.domain.typography import fold
 from app.extraction.llm import EXTRACTOR_VERSION, ExtractionOutcome, ProposedClaim
 from app.observability.logging import event
 
@@ -62,7 +63,10 @@ class ExtractedClaims:
 
 
 def _normalise(text: str) -> str:
-    return " ".join(text.lower().split())
+    # Typography folded as well as case and spacing. Without it a newsonair.gov.in
+    # article produced six claims and all six were discarded as "not found in source",
+    # the same failure the citation quote gate had before it learned the same rule.
+    return fold(text)
 
 
 def _locate(claim_text: str, source: str) -> tuple[int, int] | None:

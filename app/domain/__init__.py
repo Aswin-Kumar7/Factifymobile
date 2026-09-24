@@ -6,6 +6,7 @@ from app.domain.enums import (
     ClaimStatus,
     ClaimType,
     CoverageExpectation,
+    Credibility,
     Direction,
     EvidenceKind,
     Importance,
@@ -17,6 +18,7 @@ from app.domain.enums import (
     SourceRisk,
     SyntheticSignal,
     Tier,
+    Verdict,
 )
 from app.domain.evidence import (
     Advisory,
@@ -36,6 +38,7 @@ __all__ = [
     "ClaimStatus",
     "ClaimType",
     "CoverageExpectation",
+    "Credibility",
     "Direction",
     "Evidence",
     "EvidenceKind",
@@ -51,6 +54,7 @@ __all__ = [
     "SourceRisk",
     "SyntheticSignal",
     "Tier",
+    "Verdict",
     "can_be_decisive",
     "derive_match_quality",
 ]

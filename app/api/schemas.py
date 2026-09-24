@@ -37,9 +37,12 @@ from app.domain.enums import (
     SourceRisk,
     SyntheticSignal,
     Tier,
+    Verdict,
 )
 
-CONTRACT_VERSION = "1.0"
+# 1.1 adds verdict, confidence, summary, per-claim confidence and explanation, and
+# per-source credibility. Additive: every 1.0 field is still present and unchanged.
+CONTRACT_VERSION = "1.1"
 
 
 # ------------------------------------------------------------------------ requests
@@ -139,6 +142,9 @@ class EvidenceResponse(BaseModel):
     publisher: str | None = None
     input_anchor: InputAnchorResponse | None = None
     observed_at: datetime | None = None
+    # HIGH, MEDIUM or LOW, from the curated publisher list. Absent on a source that
+    # predates the relevance check.
+    credibility: str | None = None
 
 
 class AdvisoryResponse(BaseModel):
@@ -205,6 +211,10 @@ class ClaimResponse(BaseModel):
     rule_version: str
     strength: StrengthResponse
     evidence: tuple[EvidenceResponse, ...] = ()
+    # 50-97 when the claim was decided, None when it was not.
+    confidence: int | None = None
+    # One or two plain sentences on what the sources show, in the claim's language.
+    explanation: str | None = None
 
     @model_validator(mode="after")
     def _decisive_status_carries_citations(self) -> Self:
@@ -259,6 +269,12 @@ class VerifyResponse(BaseModel):
 
     case_id: str
     contract_version: str = CONTRACT_VERSION
+    # What a person is told: TRUE, FALSE, MISLEADING or UNCONFIRMED, with how sure the
+    # sources make us and one plain sentence on why. Always derived from `action`, so
+    # the two cannot disagree; `action` stays for clients that already read it.
+    verdict: Verdict = Verdict.UNCONFIRMED
+    confidence: int | None = None
+    summary: str | None = None
     action: Action
     action_reason: str
     rule_version: str
@@ -377,6 +393,7 @@ def evidence_to_response(item: Any) -> EvidenceResponse:
         match_quality=item.match_quality.value,
         publisher=item.publisher,
         observed_at=item.observed_at,
+        credibility=(item.credibility.value if getattr(item, "credibility", None) else None),
     )
 
 

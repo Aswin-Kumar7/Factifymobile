@@ -41,7 +41,15 @@ from app.observability.logging import event
 from app.sources.base import SourceCandidate, SourceResolver, build_evidence
 from app.sources.corpus import CorroborationSignal
 from app.sources.reasoning import REASONER_VERSION
-from app.verdict.engine import RULE_VERSION, CaseDecision, Decision, decide, roll_up
+from app.sources.verification import SourceVerification, dedupe
+from app.verdict.engine import (
+    RULE_VERSION,
+    CaseDecision,
+    Decision,
+    decide,
+    roll_up,
+    verdict_for,
+)
 from app.verdict.strength import Strength, evidence_strength
 
 logger = logging.getLogger("factify.orchestration")
@@ -150,6 +158,9 @@ class ClaimOutcome:
     decision: Decision
     strength: Strength
     evidence: list[Evidence] = field(default_factory=list)
+    # One or two plain sentences on what the verified sources show, written by the
+    # source check. None when no check ran.
+    explanation: str | None = None
 
 
 @dataclass(slots=True)
@@ -217,8 +228,12 @@ class Orchestrator:
         model_id: str = "",
         concurrency: int = DEFAULT_CONCURRENCY,
         corroboration: Corroboration | None = None,
+        verification: SourceVerification | None = None,
     ) -> None:
         self._cache = cache
+        # Optional for the same reason as corroboration. Without it, sources are still
+        # deduplicated but not checked for relevance.
+        self._verification = verification
         self._governor = governor
         self._resolvers = resolvers
         self._extractor_version = extractor_version
@@ -251,6 +266,7 @@ class Orchestrator:
             extractor_version=self._extractor_version,
             model_id=self._model_id,
             corroboration=self._corroboration,
+            verification=self._verification,
         )
         clone._semaphore = self._semaphore
         return clone
@@ -309,14 +325,18 @@ class Orchestrator:
         claims: list[Claim],
         advisories: list[Advisory] | None = None,
         source_risk: SourceRisk = SourceRisk.UNKNOWN,
+        started_at: float | None = None,
     ) -> VerificationResult:
         """Run one verification end to end.
+
+        `started_at` is when the request arrived, when the caller knows it. The budget
+        is the person's wait, and extraction happened before this was called.
 
         Claims arrive already extracted: extraction is upstream because it has its own
         caching and its own provider budget, and threading it through here would put a
         second metered call inside a function whose job is to sequence, not to fetch.
         """
-        started = time.perf_counter()
+        started = started_at if started_at is not None else time.perf_counter()
         skipped: list[SkippedCheck] = []
 
         # Cache probe, before the governor and before any provider. A repeat costs
@@ -471,6 +491,7 @@ class Orchestrator:
                 rule_id="cache",
                 reason=reason,
                 rule_version=cached.rule_version,
+                verdict=verdict_for(action),
             ),
             from_cache=True,
             elapsed_ms=int((time.perf_counter() - started) * 1000),
@@ -555,12 +576,12 @@ class Orchestrator:
         scratch: list[SkippedCheck] = []
         counted = await self._count_origins(claim, evidence=evidence, skipped=scratch)
 
+        searched = False
         if fallback and allow_fallback and not decide(counted, evidence).status.is_decisive:
-            found = await self._run_stage(fallback, claim, skipped=skipped, deadline=deadline)
-            if found:
-                evidence.extend(found)
-                scratch = []
-                counted = await self._count_origins(claim, evidence=evidence, skipped=scratch)
+            evidence.extend(
+                await self._run_stage(fallback, claim, skipped=skipped, deadline=deadline)
+            )
+            searched = True
         elif fallback:
             event(
                 logger,
@@ -569,9 +590,44 @@ class Orchestrator:
                 outcome="ok",
                 reason="already decisive" if allow_fallback else "claim below the fallback cap",
             )
+
+        # Every source is verified against the claim before anything decides on it:
+        # one citation per page, only sources that take a side, and a second opinion
+        # on whether each is about this claim at all. See `app/sources/verification.py`.
+        evidence, explanation = await self._verify_sources(
+            claim, evidence, skipped=skipped, deadline=deadline
+        )
+
+        # Verification can remove the very source that made the first stage look
+        # decided, which is exactly when the open web was skipped. Search now rather
+        # than answer from nothing.
+        if fallback and allow_fallback and not searched:
+            counted = await self._count_origins(claim, evidence=evidence, skipped=[])
+            if not decide(counted, evidence).status.is_decisive:
+                evidence.extend(
+                    await self._run_stage(fallback, claim, skipped=skipped, deadline=deadline)
+                )
+                evidence, explanation = await self._verify_sources(
+                    claim, evidence, skipped=skipped, deadline=deadline
+                )
+
+        scratch = []
+        counted = await self._count_origins(claim, evidence=evidence, skipped=scratch)
         skipped.extend(scratch)
 
         decision = decide(counted, evidence)
+
+        # A plain explanation is shown only under a verdict it can agree with.
+        #
+        # The source check writes one for every claim, including undecided ones, and
+        # on an undecided claim it can say the opposite of the badge above it. For the
+        # scam "National Sports Scholarship", it matched a PIB release about the real
+        # National Scholarship Portal and wrote "pib.gov.in confirms the National
+        # Sports Scholarship portal is open" — under UNCONFIRMED, where the two-origin
+        # rule had correctly declined to call it true. The app says what UNCONFIRMED
+        # means in its own words instead.
+        if not decision.status.is_decisive:
+            explanation = None
 
         # Strength counts the evidence that *carries* this verdict, which is not
         # always the evidence the decision counted.
@@ -614,7 +670,39 @@ class Orchestrator:
             source_risk=counted.source_risk,
         )
 
-        return ClaimOutcome(claim=counted, decision=decision, strength=strength, evidence=evidence)
+        return ClaimOutcome(
+            claim=counted,
+            decision=decision,
+            strength=strength,
+            evidence=evidence,
+            explanation=explanation,
+        )
+
+    async def _verify_sources(
+        self,
+        claim: Claim,
+        evidence: list[Evidence],
+        *,
+        skipped: list[SkippedCheck],
+        deadline: float | None = None,
+    ) -> tuple[list[Evidence], str | None]:
+        """Verified evidence and a plain summary, or deduplicated evidence without one.
+
+        Deduplication happens even when no verifier is configured: a page cited three
+        times for one claim is a bug whatever else runs, and its repeated id is what
+        crashed the evidence screen.
+        """
+        if self._verification is None:
+            unique, _ = dedupe(evidence)
+            return unique, None
+
+        budget = None if deadline is None else max(0.0, deadline - time.perf_counter())
+        verified = await self._verification.check(claim, evidence, budget=budget)
+        if not verified.checked:
+            skipped.append(
+                SkippedCheck(check="source_verification", reason="model provider unavailable")
+            )
+        return verified.evidence, verified.explanation
 
     async def _run_stage(
         self,

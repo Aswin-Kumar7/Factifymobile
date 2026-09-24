@@ -49,6 +49,7 @@ from app.sources.corpus import CorpusCorroboration, CorpusResolver
 from app.sources.credibility import SourceCredibility
 from app.sources.factcheck import FactCheckRecord, FactCheckResolver, parse_rating_from_title
 from app.sources.reasoning import PassageReasoner
+from app.sources.verification import SourceVerification
 from app.sources.websearch import WebSearchResolver
 
 logger = logging.getLogger("factify.composition")
@@ -83,13 +84,11 @@ class ServedOrchestrator:
         database: Database,
         orchestrator: Orchestrator,
         media: MediaVerification | None = None,
-        review_queue: PoolReviewQueue | None = None,
         signer: ReceiptSigner | None = None,
     ) -> None:
         self._database = database
         self._orchestrator = orchestrator
         self._media = media
-        self._review_queue = review_queue
         self._signer = signer
 
     async def cached(self, intake: NormalisedIntake, *, case_id: UUID) -> VerificationResult | None:
@@ -109,6 +108,7 @@ class ServedOrchestrator:
         claims: list[Claim],
         advisories: list[Advisory] | None = None,
         source_risk: SourceRisk = SourceRisk.UNKNOWN,
+        started_at: float | None = None,
     ) -> VerificationResult:
         # An image arrives with no claims, because there is no text to extract them
         # from. Without this the resolvers had nothing to run against and every
@@ -132,6 +132,7 @@ class ServedOrchestrator:
             claims=claims,
             advisories=advisories,
             source_risk=source_risk,
+            started_at=started_at,
         )
 
         # Written after the verdict exists and never allowed to change it. A cached
@@ -154,16 +155,15 @@ class ServedOrchestrator:
                         reason="the verdict was not recorded; it cannot be retrieved later",
                     )
                 )
-            elif self._review_queue is not None:
-                # Routed only after a successful persist: the queue row carries a
-                # foreign key to the case, and M43's whole promise — abstentions go
-                # to a human — was never kept because nothing ever called route().
-                # A routing failure is logged inside the queue and must not touch
-                # the verdict.
-                try:
-                    await self._review_queue.route(result)
-                except Exception:
-                    logger.exception("review routing failed; the verdict stands")
+            # Nothing is routed to human review automatically any more.
+            #
+            # Every abstention used to be queued for a person, and 241 of 491 cases
+            # ended there — a queue nobody was working, behind an answer that told the
+            # user "queued for human review" and nothing else. An undecided claim is
+            # now answered as UNCONFIRMED, which is a finding the user can act on, and
+            # the review queue holds only what a user reports as wrong through
+            # `/v1/cases/{id}/report`. People review disputed answers, not every
+            # answer the rules declined to give.
 
         return result
 
@@ -263,7 +263,6 @@ async def build(settings: Settings) -> dict[str, Any]:
         reasoner=reasoner,
     )
     resolvers: list[SourceResolver] = [
-        corpus,
         FactCheckResolver(
             records=records,
             governor=governor,
@@ -286,6 +285,8 @@ async def build(settings: Settings) -> dict[str, Any]:
             reasoner=reasoner,
         ),
     ]
+    if settings.corpus_retrieval:
+        resolvers.insert(0, corpus)
 
     # The open-web path, when a search provider is configured. Reaches the web through
     # a search API to find pages no local source covers, and reads them with the same
@@ -323,6 +324,13 @@ async def build(settings: Settings) -> dict[str, Any]:
         extractor_version=_extractor_version(),
         model_id=settings.models.extraction,
         corroboration=CorpusCorroboration(resolver=corpus, database=database),
+        # Every source checked against the claim before anything decides. Needs the
+        # reader's model; without one, sources are only deduplicated.
+        verification=(
+            SourceVerification(checker=reasoner, ranker=SourceCredibility.load())
+            if reasoner is not None
+            else None
+        ),
     )
 
     state: dict[str, Any] = {
@@ -337,13 +345,12 @@ async def build(settings: Settings) -> dict[str, Any]:
         # to the vendor's extract when the publisher will not serve us — the second
         # rung of the ladder a retrieved source already climbs.
         "web_search_resolver": web_search,
-        "case_reader": CaseReader(database),
+        "case_reader": CaseReader(database, ranker=SourceCredibility.load()),
         "review_queue": review_queue,
         "orchestrator": ServedOrchestrator(
             database=database,
             orchestrator=orchestrator,
             media=MediaVerification(database=database, embedder=image_embedder),
-            review_queue=review_queue,
             signer=signer,
         ),
     }

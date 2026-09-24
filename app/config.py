@@ -200,6 +200,15 @@ class Settings(BaseSettings):
     # and auth header, exactly as api_format does for the LLM.
     websearch_provider: str = Field(default="tavily", pattern="^(tavily|exa)$")
 
+    # Whether the ingested local corpus is searched for evidence. Off by default.
+    #
+    # The corpus stopped updating on 2026-08-18, so for anything recent it can only
+    # offer old articles on a nearby topic. It ran first on every claim, cost up to
+    # six model reads per claim, and supplied 11% of all stored evidence. It stays
+    # built — origin counting still reads its stored signatures — and comes back with
+    # FACTIFY_CORPUS_RETRIEVAL=true once ingestion runs again.
+    corpus_retrieval: bool = False
+
     @model_validator(mode="after")
     def _model_ids_required_when_llm_enabled(self) -> Self:
         if self.llm.enabled and not self.models.extraction:

@@ -41,7 +41,7 @@ PROVIDER = "llm"
 
 # Bumped whenever the prompt or the schema changes, because either changes what the
 # same document extracts to — and the extraction cache is keyed on it.
-EXTRACTOR_VERSION = "2026.09.4"
+EXTRACTOR_VERSION = "2026.09.5"
 
 MAX_CLAIMS_PER_DOCUMENT = 7
 
@@ -125,8 +125,9 @@ _SYSTEM_INSTRUCTION = (
     "claim is an EVENT or STATISTIC, not an OPINION. "
     "Misfiling a false factual claim as OPINION removes it from checking entirely, "
     "which is the one outcome this extraction must never produce. "
-    "importance ranks the claims against each other; it is not a label you may give "
-    "them all. At most one claim is the HEADLINE and at most one is the MAIN_THESIS - "
+    "The importance field - not claim_type, which says what kind of assertion it is "
+    "- ranks the claims against each other, and it is not a label you may give them "
+    "all. At most one claim is the HEADLINE and at most one is the MAIN_THESIS - "
     "the single assertion the piece exists to make. Everything else is "
     "SUPPORTING_DETAIL, or BACKGROUND for context the argument leans on but does not "
     "assert. A commentary that names seven main theses has ranked nothing, and "
@@ -149,6 +150,38 @@ _SYSTEM_INSTRUCTION = (
     "claim's own entities and plain nouns, no quotation marks, and never phrase one "
     "so that it presumes an answer."
 )
+
+
+def _valid_claims_only(payload: Any) -> Any:
+    """The payload with any claim that fails validation removed, and only that claim.
+
+    One malformed field used to discard the whole extraction. A Wikipedia article
+    returned seven claims, one of them with an importance value written into
+    `claim_type`, and the page came back with nothing to check — reported to the user
+    as a link that could not be read. A claim that does not validate is still
+    dropped, never repaired or guessed at; the other six are no less valid for it.
+    """
+    if not isinstance(payload, dict) or not isinstance(payload.get("claims"), list):
+        return payload
+    kept = []
+    for item in payload["claims"]:
+        try:
+            ProposedClaim.model_validate(item)
+        except ValidationError:
+            continue
+        kept.append(item)
+    dropped = len(payload["claims"]) - len(kept)
+    if dropped:
+        event(
+            logger,
+            "extraction returned malformed claims; the rest were kept",
+            module="extraction.llm",
+            outcome="degraded",
+            provider=PROVIDER,
+            dropped=dropped,
+            kept=len(kept),
+        )
+    return {**payload, "claims": kept}
 
 
 def _enum_values(enum_type: type[StrEnum]) -> list[str]:
@@ -292,7 +325,7 @@ class LLMExtractor:
 
         try:
             payload = self._parse(response)
-            validated = ExtractionResponse.model_validate(payload)
+            validated = ExtractionResponse.model_validate(_valid_claims_only(payload))
         except (json.JSONDecodeError, ValidationError, KeyError, TypeError) as exc:
             event(
                 logger,

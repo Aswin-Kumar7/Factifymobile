@@ -27,7 +27,7 @@ Row = dict[str, Any]
 # The product was renamed to Factify everywhere a person can see it. Renaming the
 # schema is a different kind of change — an ALTER against a live database holding
 # the corpus, the ledger and every issued receipt — so it is not bundled into a
-# rename of display text. `migrations/0003_rename_schema.sql` does it in one
+# rename of display text. `migrations/manual/rename_schema.sql` does it in one
 # statement whenever that is wanted; until it runs, this name must match what is
 # actually there. It briefly did not, and every query failed with
 # `relation "corpus_item" does not exist`.

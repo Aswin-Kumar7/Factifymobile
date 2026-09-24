@@ -309,3 +309,22 @@ class TestPhrasing:
         rendered = phrasing.render(status=ClaimStatus.UNVERIFIED, action=Action.SEND_TO_REVIEW)
 
         assert "not used in this verdict" in rendered.advisory_heading
+
+
+def test_one_malformed_claim_does_not_discard_the_rest() -> None:
+    """A Wikipedia page returned seven claims, one with an importance value in
+    `claim_type`, and the whole page came back with nothing to check."""
+    from app.extraction.llm import _valid_claims_only
+
+    good = {
+        "text": "ISRO launched EOS-05 aboard GSLV-F17.",
+        "claim_type": "EVENT",
+        "severity": "LOW",
+        "importance": "HEADLINE",
+    }
+    bad = {**good, "claim_type": "BACKGROUND"}
+
+    kept = _valid_claims_only({"claims": [good, bad, good]})
+
+    assert len(kept["claims"]) == 2
+    assert all(item["claim_type"] == "EVENT" for item in kept["claims"])

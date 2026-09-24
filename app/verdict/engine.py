@@ -11,6 +11,7 @@ guard catches the untyped caller as well.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, replace
 
 from app.domain.claim import Claim
@@ -19,19 +20,21 @@ from app.domain.enums import (
     ClaimStatus,
     ClaimType,
     CoverageExpectation,
+    Credibility,
     Direction,
     EvidenceKind,
     Importance,
     Severity,
     SourceRisk,
     Tier,
+    Verdict,
 )
 from app.domain.evidence import Evidence
 from app.domain.publishers import publishers_of
 
 # Stamped on every verdict. A cached verdict produced under older rules is therefore
 # identifiable, and the cache can refuse to serve it (M13).
-RULE_VERSION = "2026.09.12"
+RULE_VERSION = "2026.09.13"
 
 # Default number of genuinely independent origins required before corroboration can
 # support a claim. Tenant-configurable later; never below two, because one origin is
@@ -58,6 +61,9 @@ class Decision:
     rule_version: str = RULE_VERSION
     supporting_evidence_ids: tuple[str, ...] = ()
     conflicting: bool = False
+    # 50-97 for a decisive status, None otherwise. Computed from the cited sources by
+    # `_confidence`, never supplied by a caller.
+    confidence: int | None = None
 
     def __post_init__(self) -> None:
         if self.status.is_decisive and not self.supporting_evidence_ids:
@@ -75,6 +81,8 @@ class CaseDecision:
     rule_id: str
     reason: str
     rule_version: str = RULE_VERSION
+    verdict: Verdict = Verdict.UNCONFIRMED
+    confidence: int | None = None
 
 
 def _reject_non_evidence(items: list[Evidence]) -> None:
@@ -139,6 +147,78 @@ def _silence_clause(claim: Claim, supporting: list[Evidence]) -> str:
 
 
 def decide(
+    claim: Claim,
+    evidence: list[Evidence],
+    *,
+    min_origins: int = DEFAULT_MIN_ORIGINS,
+) -> Decision:
+    """Resolve one claim against its evidence, with a confidence when it is decided."""
+    decision = _decide_status(claim, evidence, min_origins=min_origins)
+    return replace(decision, confidence=_confidence(decision, evidence))
+
+
+# How much one publisher's word weighs, by credibility. A source nobody has weighed —
+# evidence from before the relevance check, or from a caller that runs without one —
+# counts as a middling source rather than as nothing, so older paths keep their meaning.
+_WEIGHT = {
+    Credibility.HIGH: 1.0,
+    Credibility.MEDIUM: 0.6,
+    Credibility.LOW: 0.3,
+    None: 0.5,
+}
+
+
+def _side_weight(items: list[Evidence]) -> float:
+    """Total weight of the publishers on one side, each counted once at its best."""
+    best: dict[str, float] = {}
+    for item in items:
+        publisher = next(iter(publishers_of([item.citation_url])), item.citation_url)
+        best[publisher] = max(best.get(publisher, 0.0), _WEIGHT[item.credibility])
+    return sum(best.values())
+
+
+def _confidence(decision: Decision, evidence: list[Evidence]) -> int | None:
+    """How sure the verdict is, from 50 to 97, or None when there is no verdict.
+
+    Arithmetic on the sources the verdict cites, so two people with the same evidence
+    get the same number and nobody's opinion — a model's included — sets it:
+
+      - more independent, more credible sources on the winning side raise it, with
+        diminishing returns: one highly credible source gives 78, two give 89, three
+        give 94; one ordinary newsroom gives 70 and two give 81;
+      - a published fact-check on the winning side lifts it to at least 88, because
+        someone has already done this work and put their name to it;
+      - credible sources on the other side pull it down in proportion to their share.
+
+    It never reaches 100 and never falls below 50. A verdict is never certain, and a
+    verdict we are less than even about is not a verdict — that is `UNCONFIRMED`.
+    """
+    if not decision.status.is_decisive:
+        return None
+    cited = [e for e in evidence if e.id in decision.supporting_evidence_ids]
+    if not cited:
+        return None
+
+    winning = cited[0].direction
+    opposing_direction = (
+        Direction.CONTRADICTS if winning is Direction.SUPPORTS else Direction.SUPPORTS
+    )
+    opposing = [
+        e for e in evidence if e.direction is opposing_direction and e.is_decisive_capable
+    ]
+
+    ours = _side_weight(cited)
+    theirs = _side_weight(opposing)
+
+    score = 50.0 + 47.0 * (1.0 - math.exp(-0.9 * ours))
+    if any(e.kind is EvidenceKind.FACT_CHECK for e in cited):
+        score = max(score, 88.0)
+    if theirs:
+        score -= 30.0 * theirs / (ours + theirs)
+    return round(min(97.0, max(50.0, score)))
+
+
+def _decide_status(
     claim: Claim,
     evidence: list[Evidence],
     *,
@@ -310,6 +390,33 @@ def _decide_rules(
             supporting_evidence_ids=tuple(e.id for e in contradicting),
         )
 
+    # Rule 3c — one highly credible source that has been checked against this exact
+    # claim is enough to call it false.
+    #
+    # Rule 3b asks two publishers to agree, and for a viral scam there is usually one:
+    # PIB's fact-check, or a single wire refutation. "Banks were told to stock ATMs
+    # ahead of UPI fees", "free laptops under the National Student Laptop Scheme" and
+    # "the National Sports Scholarship 2026-27" were all debunked by the government's
+    # own fact-check unit and all came back "not enough evidence to decide" — on the
+    # exact category of forward this product exists for.
+    #
+    # Only in this direction, and only on HIGH credibility, which is a property of the
+    # publisher and never a model's opinion. Support still needs two independent
+    # origins: wrongly telling someone a false claim is safe to share is the costlier
+    # mistake, and a scam is built to look like a real programme, so a single genuine
+    # page about the programme is exactly what a scam would be cleared on. Credibility
+    # is only ever set on a source that passed the relevance check, so an unweighed
+    # source cannot reach this rule.
+    authoritative_against = [e for e in contradicting if e.credibility is Credibility.HIGH]
+    if authoritative_against:
+        names = ", ".join(sorted(_publishers(authoritative_against)))
+        return Decision(
+            status=ClaimStatus.CONTRADICTED,
+            rule_id="rule.authoritative_contradiction",
+            reason=f"Contradicted by a highly credible source: {names}.",
+            supporting_evidence_ids=tuple(e.id for e in authoritative_against),
+        )
+
     # Rule 5 — inside the developing-news window, silence is ambiguous. Checked
     # before support so a thin early corroboration cannot harden into SUPPORTED
     # while the story is still forming.
@@ -385,6 +492,57 @@ def _decide_rules(
 
 
 def roll_up(
+    decisions: list[tuple[Claim, Decision]],
+    *,
+    source_risk: SourceRisk = SourceRisk.UNKNOWN,
+) -> CaseDecision:
+    """The case action, and the verdict and confidence a person is shown."""
+    case = _roll_up_action(decisions, source_risk=source_risk)
+    verdict = _VERDICT_OF[case.action]
+    return replace(case, verdict=verdict, confidence=_case_confidence(verdict, decisions))
+
+
+# One verdict per action, so the words a person reads can never disagree with what
+# the rules decided. Both "wait and re-check" and the old review route are
+# UNCONFIRMED: neither is waiting on a human any more.
+_VERDICT_OF = {
+    Action.SAFE_TO_SHARE: Verdict.TRUE,
+    Action.DO_NOT_SHARE: Verdict.FALSE,
+    Action.SHARE_WITH_CORRECTION: Verdict.MISLEADING,
+    Action.SHARE_WITH_CONTEXT: Verdict.MISLEADING,
+    Action.WAIT_AND_RECHECK: Verdict.UNCONFIRMED,
+    Action.SEND_TO_REVIEW: Verdict.UNCONFIRMED,
+}
+
+
+def verdict_for(action: Action) -> Verdict:
+    """The verdict a person reads for a case action."""
+    return _VERDICT_OF[action]
+
+
+def _case_confidence(verdict: Verdict, decisions: list[tuple[Claim, Decision]]) -> int | None:
+    return case_confidence(verdict, [(d.status, d.confidence) for _, d in decisions])
+
+
+def case_confidence(verdict: Verdict, claims: list[tuple[ClaimStatus, int | None]]) -> int | None:
+    """The case's confidence, from the claims that decided it.
+
+    TRUE takes the weakest of the supported claims, because the whole piece is only
+    as sound as its least-supported central claim. FALSE and MISLEADING take the
+    strongest finding against it, because one well-sourced refutation is enough to
+    make a piece unsafe to share.
+    """
+    if verdict is Verdict.UNCONFIRMED:
+        return None
+    if verdict is Verdict.TRUE:
+        scores = [c for s, c in claims if s is ClaimStatus.SUPPORTED and c is not None]
+        return min(scores) if scores else None
+    against = {ClaimStatus.CONTRADICTED, ClaimStatus.MISLEADING_CONTEXT}
+    scores = [c for s, c in claims if s in against and c is not None]
+    return max(scores) if scores else None
+
+
+def _roll_up_action(
     decisions: list[tuple[Claim, Decision]],
     *,
     source_risk: SourceRisk = SourceRisk.UNKNOWN,
@@ -495,5 +653,5 @@ def roll_up(
     return CaseDecision(
         action=Action.SEND_TO_REVIEW,
         rule_id="rollup.abstain",
-        reason="Not enough citable evidence to decide. Routed for human review.",
+        reason="The sources we could find do not confirm or rule this out yet.",
     )

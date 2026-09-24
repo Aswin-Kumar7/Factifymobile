@@ -23,6 +23,7 @@ from typing import Any, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.domain.enums import (
+    Credibility,
     Direction,
     EvidenceKind,
     MatchQuality,
@@ -166,6 +167,9 @@ class Evidence(BaseModel):
     provider: str | None = None
     provider_version: str | None = None
     observed_at: datetime | None = None
+    # Set once the source has been checked against the claim; see
+    # `app/sources/verification.py`. None means nobody has weighed it yet.
+    credibility: Credibility | None = None
 
     @model_validator(mode="after")
     def _match_quality_is_derived_not_asserted(self) -> Self:

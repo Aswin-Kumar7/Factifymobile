@@ -103,6 +103,35 @@ class Importance(StrEnum):
     BACKGROUND = "BACKGROUND"
 
 
+class Verdict(StrEnum):
+    """What a person is told, in the words they would use.
+
+    Derived from the case action, never set independently of it, so the two can
+    never disagree. `UNCONFIRMED` is a finding, not a queue: it means the sources we
+    could find do not settle the claim either way, and nothing is waiting on a
+    human to change that.
+    """
+
+    TRUE = "TRUE"
+    FALSE = "FALSE"
+    MISLEADING = "MISLEADING"
+    UNCONFIRMED = "UNCONFIRMED"
+
+
+class Credibility(StrEnum):
+    """How much a publisher's word is worth on a claim it directly addresses.
+
+    A property of the publisher, decided from the curated source list — never a
+    per-request opinion from a model, which would let the same outlet be trusted on
+    Monday and doubted on Tuesday. Relevance is a separate question and is judged
+    per source; this only weighs a source that has already been found relevant.
+    """
+
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
+
+
 class CoverageExpectation(StrEnum):
     """How widely a claim would be reported if true.
 

@@ -52,21 +52,27 @@ from app.sources.reasoning import REASONER_VERSION, PassageReasoner, split_passa
 
 logger = logging.getLogger("factify.sources.websearch")
 
-# The claim itself plus at most two of its search phrases.
-_MAX_QUERIES = 3
+# The claim itself, two of its own search questions, and one query asking for the
+# fact-check. The questions find reporting of true events; the fact-check query finds
+# debunks. Swapping one for the other traded true-claim coverage for scam coverage,
+# measured on the accuracy suites, so both stay.
+_MAX_QUERIES = 4
 
 # How long a fetched page stays reusable. Long enough for one case's claims to share
 # it, short enough that it is never a stale answer from an earlier check.
 _READ_TTL_SECONDS = 90.0
 
 NAME = "web_search"
-VERSION = "2026.09.4"
+VERSION = "2026.09.5"
 PROVIDER = "web_search"
 
 # How many credible sources to read. Each is a metered model call, and corroboration
 # needs two independent origins — three reads leaves one spare for a page the reasoner
 # finds irrelevant, without paying for five.
-_MAX_RESULTS = 5
+# How many candidates a claim may try. Raised from five because an unreadable page now
+# costs a fetch and nothing else — no model call — so reaching further down the list
+# buys more readable sources for the same model spend.
+_MAX_RESULTS = 6
 
 # Below this, what came back is a consent wall, a paywall stub or a block page rather
 # than an article, and the vendor's extraction is worth trying. Above it, our own fetch
@@ -265,9 +271,15 @@ class WebSearchResolver:
             return None
 
         text, route, final_url = await self._read(candidate.url)
-        if not text:
-            text = (page.get("content") or "").strip()
-            route, final_url = "web.snippet", candidate.url
+        # A page nobody could read is skipped, not stood in for by its search snippet.
+        #
+        # The snippet rung was worth having when a context-only source was still
+        # cited. It no longer is — a source must take a side to be cited, and a
+        # snippet is capped at context because elision strips attribution — so every
+        # snippet read cost a model call to produce something that was then thrown
+        # away. Measured on one claim: three of five read slots went to science.org's
+        # Cloudflare page, The Times' paywall and a PIB URL that refuses us, each read
+        # from its snippet and each discarded.
         if not text:
             return None
 
@@ -510,8 +522,14 @@ class WebSearchResolver:
             if len(phrase) < 8 or _comparable(phrase) == claim_text:
                 continue
             queries.append(phrase)
-            if len(queries) >= _MAX_QUERIES:
+            if len(queries) >= _MAX_QUERIES - 1:
                 break
+
+        # Last, and always: a debunk is written about the claim, and says so.
+        # Searching the claim alone returned the real government scholarship portals
+        # for a scholarship scam PIB had called fake, and not one report of the
+        # debunk; asking for the fact-check directly is what finds it.
+        queries.append(f"{claim.text} fact check")
 
         gathered = await asyncio.gather(
             *(self._search(query) for query in queries), return_exceptions=True

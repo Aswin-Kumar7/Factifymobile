@@ -1049,16 +1049,20 @@ class TestThePageIsActuallyRead:
         assert snapshot.extraction_route == "web.tavily_extract"
 
     @pytest.mark.anyio
-    async def test_the_snippet_is_the_last_rung_and_is_labelled(self) -> None:
-        """Better than nothing, but never presented as though it were the article."""
+    async def test_a_page_nobody_can_read_is_skipped(self) -> None:
+        """Not stood in for by its snippet.
+
+        A snippet is capped at context and context is no longer cited, so reading one
+        spent a model call on something that was always going to be discarded. Three
+        of five read slots went that way on one claim.
+        """
         fetcher = self._Fetcher(None, vendor="")
 
         snapshot = await self._resolver(fetcher).snapshot(
             SourceCandidate(url="https://www.who.int/a", proposed_by="web_search:tavily")
         )
 
-        assert snapshot is not None
-        assert snapshot.extraction_route == "web.snippet"
+        assert snapshot is None
 
 
 class TestMediaClaimsAreNotSearchedAsText:
@@ -1164,10 +1168,13 @@ class TestSearchingTheQuestionBehindTheClaim:
             ),
         )
 
-        assert asked[0] == "Doctors confirm that drinking cow urine daily cures cancer."
-        assert "does cow urine cure cancer" in asked
-        assert "cow urine cancer evidence" in asked
-        assert len(rows) == 3
+        assert asked == [
+            "Doctors confirm that drinking cow urine daily cures cancer.",
+            "does cow urine cure cancer",
+            "cow urine cancer evidence",
+            "Doctors confirm that drinking cow urine daily cures cancer. fact check",
+        ]
+        assert len(rows) == 4
 
     def test_the_fan_out_is_capped(self) -> None:
         """Each query is a metered call, and the marginal result falls off fast."""
@@ -1177,7 +1184,8 @@ class TestSearchingTheQuestionBehindTheClaim:
             claim(search_phrases=tuple(f"a distinct query number {n}" for n in range(9))),
         )
 
-        assert len(asked) == 3
+        assert len(asked) == 4
+        assert asked[-1].endswith("fact check")
 
     def test_a_phrase_that_only_restates_the_claim_is_skipped(self) -> None:
         subject = self._resolver()
@@ -1186,7 +1194,7 @@ class TestSearchingTheQuestionBehindTheClaim:
             claim(text="The sky is green.", search_phrases=("the sky is green", "sky colour")),
         )
 
-        assert asked == ["The sky is green.", "sky colour"]
+        assert asked == ["The sky is green.", "sky colour", "The sky is green. fact check"]
 
     def test_one_failing_query_does_not_lose_the_others(self) -> None:
         """A search that could not run is an absence, never a failed verification."""
@@ -1204,7 +1212,7 @@ class TestSearchingTheQuestionBehindTheClaim:
             subject._queries(claim(text="A claim.", search_phrases=("boom query here",)))
         )
 
-        assert len(asked) == 2
+        assert len(asked) == 3
         assert [row["url"] for row in rows] == ["https://example.test/kept"]
 
     def test_the_same_url_from_two_queries_is_one_candidate(self) -> None:
@@ -1231,7 +1239,10 @@ class TestSearchingTheQuestionBehindTheClaim:
         subject = self._resolver()
 
         async def _search(query: str) -> list[dict]:
-            tag = "claim" if query.startswith("A claim") else query.split()[0]
+            if query.endswith("fact check"):
+                tag = "factcheck"
+            else:
+                tag = "claim" if query.startswith("A claim") else query.split()[0]
             return [{"url": f"https://example.test/{tag}/{n}", "content": "x"} for n in range(5)]
 
         subject._search = _search  # type: ignore[method-assign]
@@ -1241,10 +1252,11 @@ class TestSearchingTheQuestionBehindTheClaim:
             )
         )
 
-        assert [row["url"] for row in rows[:3]] == [
+        assert [row["url"] for row in rows[:4]] == [
             "https://example.test/claim/0",
             "https://example.test/beta/0",
             "https://example.test/gamma/0",
+            "https://example.test/factcheck/0",
         ]
 
 
