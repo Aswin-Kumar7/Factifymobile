@@ -1,4 +1,4 @@
--- Factify initial schema (M03).
+-- Facify initial schema (M03).
 --
 -- Entity set from codexplan.md §10. Created in one pass, forward-only.
 --

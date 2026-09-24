@@ -14,10 +14,15 @@
 -- the schema name, and unqualified queries resolve through it; with one renamed and
 -- not the other, every query fails with `relation "corpus_item" does not exist`.
 -- After running this, change SEARCH_PATH in `app/db/pool.py` to
--- `factify,extensions,public` and the six `FROM facify.<table>` references in
--- `app/sources/corpus.py` and `app/orchestration/media.py`.
+-- `factify,extensions,public`, SCHEMA in `app/db/migrate.py` to "factify", and the
+-- six `FROM facify.<table>` references in `app/sources/corpus.py` and
+-- `app/orchestration/media.py`.
 --
---     psql "$FACTIFY_DATABASE_URL" -f migrations/0003_rename_schema.sql
+--     psql "$FACTIFY_DATABASE_URL" -f migrations/manual/rename_schema.sql
+--
+-- It lives in `manual/` on purpose. The runner applies every numbered file in
+-- `migrations/` in order, so a numbered copy here would rename the live schema the
+-- next time anyone migrated — without the four code changes that must land with it.
 --
 -- Receipts are unaffected: they are signed over evidence values, not over the
 -- schema those values are stored in.

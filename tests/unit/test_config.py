@@ -166,3 +166,31 @@ class TestEnvironmentLoading:
         settings = Settings(_env_file=None)
 
         assert all(not provider.usable for provider in settings.providers.values())
+
+
+def test_the_migration_runner_and_the_pool_name_the_same_schema() -> None:
+    """They moved apart once, silently, and nothing noticed.
+
+    A product rename's search-and-replace set the runner's schema to "factify" while
+    the database — and the pool's search path, after a hurried fix — still said
+    "facify". The service kept working, because it never runs migrations at boot,
+    and the next migration would have created an empty second schema and applied
+    everything into it.
+    """
+    from app.db.migrate import SCHEMA
+    from app.db.pool import SEARCH_PATH
+
+    assert SEARCH_PATH.split(",")[0] == SCHEMA
+
+
+def test_no_numbered_migration_renames_the_schema() -> None:
+    """A schema rename must never be picked up by the forward-only runner.
+
+    It has to land together with code changes, so it lives in `migrations/manual/`.
+    A numbered copy would rename the live schema on the next run and break every
+    query that still used the old name.
+    """
+    from app.db.migrate import discover
+
+    for migration in discover():
+        assert "RENAME TO" not in migration.sql.upper() or "SCHEMA" not in migration.sql.upper()

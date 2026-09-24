@@ -27,7 +27,14 @@ _FILENAME = re.compile(r"^(\d{4})_([a-z0-9_]+)\.sql$")
 # The schema name is composed with psycopg's identifier quoting rather than string
 # interpolation. It is a constant today, but a query built by concatenation is a
 # habit that outlives the constant that made it safe.
-SCHEMA = "factify"
+# Still `facify`: the product was renamed, the database schema was not, and
+# `migrations/manual/rename_schema.sql` is the one deliberate step that changes it.
+# The rename's search-and-replace set this to "factify" on its way past, and the
+# next migration run would have created an empty second schema beside the real one
+# and applied every migration into it — a service reading one schema while the
+# runner writes another. `app/db/pool.py` carries the same constant for the same
+# reason; the two must move together.
+SCHEMA = "facify"
 _SCHEMA_ID = sql.Identifier(SCHEMA)
 
 _CREATE_SCHEMA = sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(_SCHEMA_ID)
