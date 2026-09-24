@@ -41,7 +41,7 @@ PROVIDER = "llm"
 
 # Bumped whenever the prompt or the schema changes, because either changes what the
 # same document extracts to — and the extraction cache is keyed on it.
-EXTRACTOR_VERSION = "2026.09.3"
+EXTRACTOR_VERSION = "2026.09.4"
 
 MAX_CLAIMS_PER_DOCUMENT = 7
 
@@ -125,6 +125,14 @@ _SYSTEM_INSTRUCTION = (
     "claim is an EVENT or STATISTIC, not an OPINION. "
     "Misfiling a false factual claim as OPINION removes it from checking entirely, "
     "which is the one outcome this extraction must never produce. "
+    "importance ranks the claims against each other; it is not a label you may give "
+    "them all. At most one claim is the HEADLINE and at most one is the MAIN_THESIS - "
+    "the single assertion the piece exists to make. Everything else is "
+    "SUPPORTING_DETAIL, or BACKGROUND for context the argument leans on but does not "
+    "assert. A commentary that names seven main theses has ranked nothing, and "
+    "downstream every one of them is then treated as load-bearing. Ask which claim "
+    "the piece would be pointless without: that one, and no other, is the main "
+    "thesis. "
     "A sentence reporting that someone said, announced, found, ruled or DEBUNKED "
     "something is an ATTRIBUTION claim, not an EVENT: what can be checked is that "
     "they said it. Keep the whole sentence, including what they said, so the claim "

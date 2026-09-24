@@ -27,11 +27,11 @@ from app.domain.enums import (
     Tier,
 )
 from app.domain.evidence import Evidence
-from app.domain.publishers import is_official, publishers_of
+from app.domain.publishers import publishers_of
 
 # Stamped on every verdict. A cached verdict produced under older rules is therefore
 # identifiable, and the cache can refuse to serve it (M13).
-RULE_VERSION = "2026.09.11"
+RULE_VERSION = "2026.09.12"
 
 # Default number of genuinely independent origins required before corroboration can
 # support a claim. Tenant-configurable later; never below two, because one origin is
@@ -320,35 +320,25 @@ def _decide_rules(
             reason="Too recent to corroborate; scheduled for re-check.",
         )
 
-    # Rule 4a — an official primary source carries a claim on its own.
+    # Rule 4a is deliberately absent. It was here and it cleared a scam.
     #
-    # Rule 4 asks for independent origins because twenty outlets running one wire
-    # story is one origin wearing twenty mastheads. That reasoning is about
-    # *witnesses*: two of them agreeing is evidence, one of them repeated is not.
-    # It stops making sense when the fact's origin is the body announcing it. There
-    # is one witness to a ministry's own release, one to a central bank's notice,
-    # one to what a government fact-check unit found — and asking for a second is
-    # asking for something that cannot exist.
+    # "A government source is authoritative" is right about a ministry reporting its
+    # own actions, and it was implemented as "one citation on an official domain is
+    # enough". Those are not the same rule. "Applications are open for the National
+    # Sports Scholarship 2026-27" — a flyer PIB had already called fake — came back
+    # SAFE_TO_SHARE on a single quote from scholarships.gov.in reading "students may
+    # apply for one merit-based scholarship scheme and one or more welfare-based
+    # scholarship schemes". That is the real National Scholarship Portal saying
+    # something true and general, matched to a specific invented scheme, and the
+    # domain suffix did the rest.
     #
-    # Measured: "IIT Madras inaugurated a robotics laboratory" abstained under
-    # `rule.insufficient_origins` while holding citations from PIB and from IIT
-    # Madras itself, which between them are the entire primary record.
+    # A scam impersonates a real programme; that is what makes it a scam, and it is
+    # exactly the case where a generic page from the impersonated body looks like
+    # corroboration. Two independent origins caught it before and catches it now.
     #
-    # This is not a credibility judgement — the allowlist already decided the source
-    # may be cited — and it does not make an official statement true. A contradicting
-    # citation still beats it, because the contradiction rules run first.
-    official = [item for item in supporting if is_official(item.citation_url)]
-    if official and claim.independent_origin_count >= 1:
-        return Decision(
-            status=ClaimStatus.SUPPORTED,
-            rule_id="rule.official_primary_source",
-            reason=(
-                "Supported by an official primary source: "
-                + ", ".join(sorted(publishers_of([item.citation_url for item in official])))
-                + "."
-            ),
-            supporting_evidence_ids=tuple(item.id for item in official),
-        )
+    # The idea is still worth having. It needs the official source to address the
+    # specific claim rather than its subject, which is a question for the reader, not
+    # for a list of domain suffixes.
 
     # Rule 4 — support requires genuinely independent origins, not documents. Twenty
     # outlets carrying one wire copy is one origin wearing twenty mastheads.
