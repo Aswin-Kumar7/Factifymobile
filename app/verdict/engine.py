@@ -31,7 +31,7 @@ from app.domain.publishers import is_official, publishers_of
 
 # Stamped on every verdict. A cached verdict produced under older rules is therefore
 # identifiable, and the cache can refuse to serve it (M13).
-RULE_VERSION = "2026.09.10"
+RULE_VERSION = "2026.09.11"
 
 # Default number of genuinely independent origins required before corroboration can
 # support a claim. Tenant-configurable later; never below two, because one origin is
@@ -465,11 +465,39 @@ def roll_up(
             reason="Nothing could be verified, and the publisher carries risk signals.",
         )
 
-    if all(d.status is ClaimStatus.SUPPORTED for _, d in decisions):
+    # Every claim that carries the document must be supported. The rest may be
+    # unverified without sinking the case.
+    #
+    # This asked for *every* claim to be supported, which a real article can almost
+    # never manage. An Economic Times commentary produced seven claims; three were
+    # searched and supported with thirteen citations between them, and the other four
+    # were below the cap that decides how many claims are worth an open-web search,
+    # so they were never searched at all. The case came back "not enough evidence to
+    # decide" — on the strength of four claims nobody had looked at. The longer and
+    # better-sourced the article, the more certain that outcome became.
+    #
+    # `is_material` is the same test the contradiction rules above already use: a
+    # headline or main thesis, or anything severe enough that being wrong about it
+    # matters wherever it sits. It is also what decides which claims get the
+    # expensive search, so the claims that were checked are the claims that count.
+    #
+    # The bar is not lowered. A material claim that is unverified still abstains, a
+    # contradiction anywhere still wins, and at least one claim must be positively
+    # supported — silence about everything is not a clearance. What changes is that a
+    # background detail nobody could confirm no longer outvotes the thesis.
+    supported = [decision for _, decision in decisions if decision.status is ClaimStatus.SUPPORTED]
+    unchecked = [claim for claim, _ in unverified if not claim.is_material]
+
+    if supported and not any(claim.is_material for claim, _ in unverified):
         return CaseDecision(
             action=Action.SAFE_TO_SHARE,
-            rule_id="rollup.all_supported",
-            reason="Every checkable claim is supported by cited evidence.",
+            rule_id="rollup.material_supported" if unchecked else "rollup.all_supported",
+            reason=(
+                "Every central claim is supported by cited evidence. "
+                f"{len(unchecked)} minor detail(s) could not be checked."
+                if unchecked
+                else "Every checkable claim is supported by cited evidence."
+            ),
         )
 
     # Abstention is the designed destination, not a fallthrough. Source risk alone

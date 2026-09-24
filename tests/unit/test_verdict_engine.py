@@ -641,3 +641,91 @@ class TestAnOfficialSourceCarriesAClaimAlone:
         )
 
         assert decision.status is not ClaimStatus.SUPPORTED
+
+
+class TestAMinorDetailDoesNotSinkTheCase:
+    """The clearance rule asked for every claim to be supported. Articles fail that.
+
+    An Economic Times commentary produced seven claims. Three were searched and
+    supported, with thirteen citations between them; the other four sat below the
+    cap that decides how many claims are worth an open-web search, so nothing ever
+    looked at them. The case came back "not enough evidence to decide" on the
+    strength of four claims nobody had checked — and the longer and better sourced
+    the article, the more certain that outcome became.
+    """
+
+    @staticmethod
+    def _supported():  # type: ignore[no-untyped-def]
+        return decide(
+            claim(independent_origin_count=2, document_count=2),
+            [
+                evidence(direction=Direction.SUPPORTS, tier=Tier.D, citation_url="https://a.com/1"),
+                evidence(direction=Direction.SUPPORTS, tier=Tier.D, citation_url="https://b.com/2"),
+            ],
+        )
+
+    @staticmethod
+    def _unverified():  # type: ignore[no-untyped-def]
+        return decide(claim(), [])
+
+    def test_a_background_claim_nobody_checked_does_not_block(self) -> None:
+        minor = claim(
+            claim_id="cl_2", importance=Importance.BACKGROUND, severity=Severity.LOW
+        )
+
+        outcome = roll_up(
+            [
+                (claim(independent_origin_count=2, document_count=2), self._supported()),
+                (minor, self._unverified()),
+            ]
+        )
+
+        assert outcome.action is Action.SAFE_TO_SHARE
+        assert "minor detail" in outcome.reason
+
+    def test_an_unverified_thesis_still_abstains(self) -> None:
+        """The bar is not lowered for the claims that carry the document."""
+        outcome = roll_up(
+            [
+                (claim(independent_origin_count=2, document_count=2), self._supported()),
+                (claim(claim_id="cl_2", importance=Importance.MAIN_THESIS), self._unverified()),
+            ]
+        )
+
+        assert outcome.action is Action.SEND_TO_REVIEW
+
+    def test_a_severe_unverified_claim_still_abstains(self) -> None:
+        """Severity counts wherever the claim sits in the piece."""
+        severe = claim(
+            claim_id="cl_2", importance=Importance.BACKGROUND, severity=Severity.CRITICAL
+        )
+
+        outcome = roll_up(
+            [
+                (claim(independent_origin_count=2, document_count=2), self._supported()),
+                (severe, self._unverified()),
+            ]
+        )
+
+        assert outcome.action is Action.SEND_TO_REVIEW
+
+    def test_silence_about_everything_is_not_a_clearance(self) -> None:
+        """At least one claim has to be positively supported."""
+        outcome = roll_up(
+            [
+                (
+                    claim(importance=Importance.BACKGROUND, severity=Severity.LOW),
+                    self._unverified(),
+                ),
+                (
+                    claim(
+                        claim_id="cl_2",
+                        importance=Importance.BACKGROUND,
+                        severity=Severity.LOW,
+                    ),
+                    self._unverified(),
+                ),
+            ]
+        )
+
+        assert outcome.action is not Action.SAFE_TO_SHARE

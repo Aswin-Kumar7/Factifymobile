@@ -94,9 +94,19 @@ class FactifyClient {
   final http.Client _http;
   final String baseUrl;
 
-  /// The synchronous budget the server targets is 3-8 seconds; allow headroom
-  /// for a cold start rather than failing a request that was about to succeed.
-  static const Duration _timeout = Duration(seconds: 45);
+  /// How long to wait before deciding the server is not coming back.
+  ///
+  /// This said "the server targets 3-8 seconds" and allowed 45, which was true
+  /// before verification read its sources. The server now gives itself forty
+  /// (`REASONING_TARGET_SECONDS`), answers at that mark with whatever it has, and
+  /// marks the run incomplete — so 45 left five seconds of margin, and a long
+  /// article spends all of it. Measured: a request that returned a perfectly good
+  /// verdict in 42.3 seconds, five times over, right on the edge of being thrown
+  /// away by the app that asked for it.
+  ///
+  /// Seventy-five is not a slower app. It is the difference between showing a
+  /// verdict the server already computed and showing a timeout instead.
+  static const Duration _timeout = Duration(seconds: 75);
 
   /// [language] is the interface language, so the verdict can be phrased in the
   /// language it will be read in (PLAN 1.7.6).

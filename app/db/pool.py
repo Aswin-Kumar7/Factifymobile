@@ -44,6 +44,27 @@ class Database:
             min_size=min_size,
             max_size=max_size,
             open=False,
+            # Test a connection before handing it out.
+            #
+            # Supabase sits behind a pooler that closes connections it considers
+            # idle. Without this the pool keeps handing out sockets the server has
+            # already hung up on, and the failure lands far from its cause: a verify
+            # request returned HTTP 500 with "consuming input failed: server closed
+            # the connection unexpectedly", and a slower one took 62 seconds to
+            # answer with no evidence at all, because the governor meters providers
+            # through this same database — it could not read its budget, so it
+            # skipped every provider, and the reply said "not enough evidence to
+            # decide" about sources nobody had searched.
+            #
+            # The check is a round trip per checkout. That is a few milliseconds
+            # against a verification measured in seconds, and it converts a hard
+            # failure into a reconnect nobody notices.
+            check=AsyncConnectionPool.check_connection,
+            # Retire connections before the pooler does. Closing our own idle
+            # connection is orderly; being closed while holding it is the outage
+            # above.
+            max_idle=120.0,
+            max_lifetime=1800.0,
             kwargs={
                 "row_factory": dict_row,
                 "options": f"-c search_path={SEARCH_PATH}",
