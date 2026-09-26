@@ -319,6 +319,8 @@ class Claim {
     required this.evidence,
     this.confidence,
     this.explanation,
+    this.search,
+    this.sourcesLookedAt,
   });
 
   final String id;
@@ -338,6 +340,15 @@ class Claim {
   /// decided claim, so it can never disagree with the badge beside it.
   final String? explanation;
 
+  /// Whether the web was searched for this claim: "searched", "not_searched" or
+  /// "timed_out". Null on results stored before the server recorded it.
+  final String? search;
+
+  /// How many pages were read for this claim, whatever they said.
+  final int? sourcesLookedAt;
+
+  bool get wasNotSearched => search == 'not_searched';
+
   factory Claim.fromJson(Map<String, dynamic> json) => Claim(
     id: json['id'] as String,
     text: json['text'] as String,
@@ -352,6 +363,8 @@ class Claim {
         .toList(),
     confidence: (json['confidence'] as num?)?.toInt(),
     explanation: json['explanation'] as String?,
+    search: json['search'] as String?,
+    sourcesLookedAt: (json['sources_looked_at'] as num?)?.toInt(),
   );
 
   bool get isDecisive => status.isDecisive;

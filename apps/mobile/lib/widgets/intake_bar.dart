@@ -19,6 +19,8 @@ class IntakeBar extends StatelessWidget {
     required this.onCheck,
     required this.onPick,
     required this.busy,
+    this.recheckFor,
+    this.onRecheck,
     super.key,
   });
 
@@ -26,6 +28,13 @@ class IntakeBar extends StatelessWidget {
   final VoidCallback onCheck;
   final void Function(IntakeSource) onPick;
   final bool busy;
+
+  /// What the last finished check was of, as it sat in the box. While the box still
+  /// holds exactly that, the button checks it again, fresh, instead of checking
+  /// something new; edit it and the button goes back to "Check this". An empty
+  /// string stands for a picture or document, which the box cannot show.
+  final String? recheckFor;
+  final VoidCallback? onRecheck;
 
   @override
   Widget build(BuildContext context) {
@@ -37,6 +46,9 @@ class IntakeBar extends StatelessWidget {
       children: [
         TextField(
           controller: controller,
+          // Locked while a check runs, so what is on screen stays what is being
+          // checked.
+          enabled: !busy,
           maxLines: 5,
           minLines: 3,
           textInputAction: TextInputAction.newline,
@@ -48,7 +60,7 @@ class IntakeBar extends StatelessWidget {
             fillColor: theme.colorScheme.surface,
             suffixIcon: ValueListenableBuilder<TextEditingValue>(
               valueListenable: controller,
-              builder: (context, value, _) => value.text.isEmpty
+              builder: (context, value, _) => value.text.isEmpty || busy
                   ? const SizedBox.shrink()
                   : IconButton(
                       icon: const Icon(Icons.clear),
@@ -61,17 +73,24 @@ class IntakeBar extends StatelessWidget {
         const SizedBox(height: 12),
         ValueListenableBuilder<TextEditingValue>(
           valueListenable: controller,
-          builder: (context, value, _) => FilledButton.icon(
-            // Disabled on empty rather than accepting and failing: an empty
-            // submission has no honest answer, and a 422 explaining that is a
-            // worse experience than a button that plainly is not ready.
-            onPressed: busy || value.text.trim().isEmpty ? null : onCheck,
-            icon: const Icon(Icons.fact_check_outlined),
-            label: Text(l10n.checkThis),
-            style: FilledButton.styleFrom(
-              minimumSize: const Size.fromHeight(48),
-            ),
-          ),
+          builder: (context, value, _) {
+            final again = onRecheck != null && recheckFor == value.text.trim();
+            return FilledButton.icon(
+              // Disabled on empty rather than accepting and failing: an empty
+              // submission has no honest answer, and a 422 explaining that is a
+              // worse experience than a button that plainly is not ready.
+              onPressed: busy
+                  ? null
+                  : again
+                  ? onRecheck
+                  : value.text.trim().isEmpty
+                  ? null
+                  : onCheck,
+              icon: Icon(again ? Icons.refresh_rounded : Icons.fact_check_outlined),
+              label: Text(again ? l10n.checkAgain : l10n.checkThis),
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+            );
+          },
         ),
         const SizedBox(height: 12),
         Row(

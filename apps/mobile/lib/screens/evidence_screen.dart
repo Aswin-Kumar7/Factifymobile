@@ -169,6 +169,7 @@ class _ClaimCard extends StatelessWidget {
       ClaimStatus.supported => l10n.headlineSafeToShare,
       ClaimStatus.contradicted => l10n.headlineDoNotShare,
       ClaimStatus.misleadingContext => l10n.headlineShareWithContext,
+      ClaimStatus.unverified when claim.wasNotSearched => l10n.statusNotChecked,
       ClaimStatus.unverified => l10n.headlineSendToReview,
     };
     final confidence = claim.confidence;
@@ -216,7 +217,7 @@ class _ClaimCard extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             Text(
-              claim.isDecisive && explanation != null ? explanation : l10n.unconfirmedBody,
+              claim.isDecisive && explanation != null ? explanation : _whyUndecided(claim, l10n),
               style: theme.textTheme.bodySmall,
             ),
             if (technique != null) ...[
@@ -239,6 +240,25 @@ class _ClaimCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Why a claim has no verdict, in the terms of what was actually done for it.
+///
+/// "We couldn't find enough reliable sources" was said of every undecided claim,
+/// including ones that were never searched: a check searches its three most
+/// important claims, and on a Hindu article of four the fourth was below the cap
+/// and told the reader no source addressed it.
+String _whyUndecided(Claim claim, AppLocalizations l10n) {
+  final taking = claim.evidence.where((e) => e.supports || e.contradicts).length;
+  final looked = claim.sourcesLookedAt ?? 0;
+  return switch (claim.search) {
+    'not_searched' => l10n.claimNotSearched,
+    'timed_out' when taking == 0 => l10n.claimTimedOut,
+    'searched' when taking == 1 => l10n.claimOneSource,
+    'searched' when taking == 0 && looked > 0 => l10n.claimNoSources(looked),
+    'searched' when taking == 0 => l10n.claimNothingFound,
+    _ => l10n.unconfirmedBody,
+  };
 }
 
 /// Where the claim sits in what was submitted: the reader's own words with the

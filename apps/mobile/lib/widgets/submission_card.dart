@@ -12,13 +12,9 @@ import '../l10n/app_localizations.dart';
 import '../models/submission.dart';
 
 class SubmissionCard extends StatelessWidget {
-  const SubmissionCard({required this.submission, this.onRecheck, super.key});
+  const SubmissionCard({required this.submission, super.key});
 
   final Submission submission;
-
-  /// Checks the same submission again, fresh. Null while a check is running, or
-  /// before there is an answer to replace. (Clearing is the input box's own ✕.)
-  final VoidCallback? onRecheck;
 
   @override
   Widget build(BuildContext context) {
@@ -74,32 +70,7 @@ class SubmissionCard extends StatelessWidget {
       ),
     );
 
-    final recheck = onRecheck;
-    if (recheck == null) {
-      return Card(margin: EdgeInsets.zero, clipBehavior: Clip.antiAlias, child: body);
-    }
-    return Card(
-      margin: EdgeInsets.zero,
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          body,
-          const Divider(height: 1),
-          Align(
-            alignment: AlignmentDirectional.centerEnd,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: TextButton.icon(
-                onPressed: recheck,
-                icon: const Icon(Icons.refresh_rounded, size: 18),
-                label: Text(l10n.checkAgain),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+    return Card(margin: EdgeInsets.zero, clipBehavior: Clip.antiAlias, child: body);
   }
 }
 

@@ -254,6 +254,42 @@ abstract class AppLocalizations {
   /// **'A check usually takes 20–50 seconds.'**
   String get usuallyTakes;
 
+  /// No description provided for @statusNotChecked.
+  ///
+  /// In en, this message translates to:
+  /// **'Not checked'**
+  String get statusNotChecked;
+
+  /// No description provided for @claimNotSearched.
+  ///
+  /// In en, this message translates to:
+  /// **'Each check searches its three most important claims, and this wasn\'t one of them.'**
+  String get claimNotSearched;
+
+  /// No description provided for @claimTimedOut.
+  ///
+  /// In en, this message translates to:
+  /// **'We ran out of time before any source for this could be read. Tap Check again.'**
+  String get claimTimedOut;
+
+  /// No description provided for @claimNothingFound.
+  ///
+  /// In en, this message translates to:
+  /// **'We searched trusted news and fact-checkers and found nothing that addresses this.'**
+  String get claimNothingFound;
+
+  /// No description provided for @claimNoSources.
+  ///
+  /// In en, this message translates to:
+  /// **'We read {count, plural, =1{1 source} other{{count} sources}} and none addressed this directly.'**
+  String claimNoSources(int count);
+
+  /// No description provided for @claimOneSource.
+  ///
+  /// In en, this message translates to:
+  /// **'Only one source addressed this. We need two independent ones before calling it true.'**
+  String get claimOneSource;
+
   /// No description provided for @elapsedSeconds.
   ///
   /// In en, this message translates to:

@@ -45,6 +45,7 @@ from app.sources.base import (
     SourceCandidate,
     SourceRelation,
     SourceSnapshot,
+    current_check,
     insufficient,
     locate_excerpt,
 )
@@ -136,9 +137,11 @@ class WebSearchResolver:
         self._max_results = max_results
         # url -> the provider's result row, kept from the search call so snapshot and
         # relate need no second fetch — the search API already returned the content.
-        self._pages: dict[str, dict[str, Any]] = {}
+        # Per check, never shared: a search row or a page read for one person's
+        # check is invisible to every other. See `current_check`.
+        self._pages_by_check: dict[str, dict[str, dict[str, Any]]] = {}
         # url -> (when it was read, what the ladder returned). See `_read`.
-        self._reads: dict[str, tuple[float, tuple[str, str, str]]] = {}
+        self._reads_by_check: dict[str, dict[str, tuple[float, tuple[str, str, str]]]] = {}
 
     @property
     def reads_sources(self) -> bool:
@@ -161,6 +164,31 @@ class WebSearchResolver:
         if self._credibility.is_fact_checker(source):
             return Tier.C, EvidenceKind.FACT_CHECK, Method.CLAIM_REVIEW
         return Tier.D, EvidenceKind.CORROBORATION, Method.PASSAGE_ENTAILMENT
+
+    @property
+    def _pages(self) -> dict[str, dict[str, Any]]:
+        """This check's search rows."""
+        return self._pages_by_check.setdefault(current_check.get(), {})
+
+    @property
+    def _reads(self) -> dict[str, tuple[float, tuple[str, str, str]]]:
+        """This check's page reads."""
+        return self._reads_by_check.setdefault(current_check.get(), {})
+
+    @_reads.setter
+    def _reads(self, value: dict[str, tuple[float, tuple[str, str, str]]]) -> None:
+        self._reads_by_check[current_check.get()] = value
+
+    def end_check(self, check_id: str) -> None:
+        """Forget everything this check searched and read.
+
+        Both stores used to be shared by every check the server ran: pages read for
+        one person's check were served to another's for ninety seconds, and search
+        rows were never dropped at all, so the dictionary grew for the life of the
+        process.
+        """
+        self._pages_by_check.pop(check_id, None)
+        self._reads_by_check.pop(check_id, None)
 
     async def candidates(self, claim: Claim) -> list[SourceCandidate]:
         # A media provenance claim is not searchable text, and must never be treated as

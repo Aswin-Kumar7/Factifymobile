@@ -161,6 +161,8 @@ void main() {
 
     expect(find.text('Check again'), findsOneWidget);
     expect(sent.single.containsKey('recheck'), isFalse);
+    // The message is in the box already; it is not shown a second time below.
+    expect(find.text('Checking this message'), findsNothing);
 
     await tester.tap(find.text('Check again'));
     await tester.pumpAndSettle();
@@ -168,6 +170,22 @@ void main() {
     expect(sent, hasLength(2));
     expect(sent.last['text'], 'The minister said the scheme was cancelled.');
     expect(sent.last['recheck'], isTrue);
+  });
+
+  testWidgets('editing the box turns "Check again" back into "Check this"', (tester) async {
+    await _pumpApp(tester, _FakeClipboard(hasText: false));
+
+    await tester.enterText(find.byType(TextField), 'The minister said the scheme was cancelled.');
+    await tester.pump();
+    await tester.tap(find.text('Check this'));
+    await tester.pumpAndSettle();
+    expect(find.text('Check again'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'Something else entirely.');
+    await tester.pump();
+
+    expect(find.text('Check again'), findsNothing);
+    expect(find.text('Check this'), findsOneWidget);
   });
 }
 

@@ -198,6 +198,8 @@ class Ledger:
                 **asdict(outcome.strength),
                 "confidence": outcome.decision.confidence,
                 "explanation": outcome.explanation,
+                "search": outcome.search,
+                "looked_at": outcome.looked_at,
             },
         )
 
@@ -370,6 +372,8 @@ class CaseReader:
                         ),
                         confidence=strength.get("confidence"),
                         explanation=strength.get("explanation"),
+                        search=strength.get("search"),
+                        sources_looked_at=strength.get("looked_at"),
                     )
                 )
 

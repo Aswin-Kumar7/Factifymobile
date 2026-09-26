@@ -27,6 +27,7 @@ the system working, not failing.
 
 from __future__ import annotations
 
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol
@@ -36,6 +37,11 @@ from app.domain.claim import Claim
 from app.domain.enums import Direction, EvidenceKind, Method, Relation, Tier
 from app.domain.evidence import Evidence, MatchBasis, SourceAnchor
 from app.domain.typography import fold, unquoted
+
+# Which check is running. Set by the orchestrator for the length of one verification,
+# and inherited by every task it starts, so a resolver that keeps working state can
+# keep it per check: nothing one check found or read is visible to another.
+current_check: ContextVar[str] = ContextVar("current_check", default="")
 
 
 @dataclass(frozen=True, slots=True)

@@ -389,6 +389,8 @@ def to_response(result: VerificationResult, *, receipt_url: str | None = None) -
             evidence=tuple(evidence_to_response(item) for item in outcome.evidence),
             confidence=outcome.decision.confidence,
             explanation=outcome.explanation,
+            search=outcome.search,
+            sources_looked_at=outcome.looked_at,
         )
         for outcome in result.claims
     )

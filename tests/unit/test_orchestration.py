@@ -1347,7 +1347,7 @@ class TestOneSlowPageDoesNotLoseTheRest:
 
         orchestrator._resolve_candidate = _resolve  # type: ignore[method-assign]
 
-        found, skip = await orchestrator._run_resolver(
+        found, skip, read = await orchestrator._run_resolver(
             self._ThreePages(),  # type: ignore[arg-type]
             claim(),
             read_by=time.perf_counter() + 0.2,
@@ -1358,6 +1358,7 @@ class TestOneSlowPageDoesNotLoseTheRest:
             "https://example.org/fast-2",
         ]
         assert skip == "1 of 3 sources not read before the deadline"
+        assert read == 2
         # Abandoned, not left running past the request that asked for it.
         assert cancelled == ["hangs"]
 
@@ -1403,3 +1404,46 @@ class TestCheckAgainIsAFreshCheck:
 
         assert stored.from_cache
         assert not fresh.from_cache
+
+
+class TestEveryClaimSaysWhetherItWasSearched:
+    """An unconfirmed claim that was never searched read "we couldn't find sources".
+
+    On a Hindu article of four claims, three were searched and the fourth sat below
+    the per-check cap; the app told the reader no reliable source addressed it.
+    """
+
+    class _Search:
+        name = "web_search"
+        fallback = True
+
+        def __init__(self) -> None:
+            self.asked: list[str] = []
+
+        async def candidates(self, claim: Any) -> list[Any]:
+            self.asked.append(claim.id)
+            return []
+
+    @pytest.mark.anyio
+    async def test_a_claim_below_the_cap_is_marked_not_searched(self) -> None:
+        from app.orchestration.pipeline import MAX_FALLBACK_CLAIMS
+
+        search = self._Search()
+        orchestrator = Orchestrator(
+            cache=NullCache(),  # type: ignore[arg-type]
+            governor=RecordingGovernor(),  # type: ignore[arg-type]
+            resolvers=[search],  # type: ignore[list-item]
+            extractor_version="test",
+        )
+        claims = [
+            claim(claim_id=f"cl_{n}", importance=Importance.SUPPORTING_DETAIL)
+            for n in range(MAX_FALLBACK_CLAIMS + 1)
+        ]
+        intake = normalise_text("Four claims, one more than the search cap.")
+
+        result = await orchestrator.verify(intake, case_id=uuid4(), claims=claims)
+
+        statuses = {outcome.claim.id: outcome.search for outcome in result.claims}
+        assert sorted(search.asked) == sorted(statuses)[:MAX_FALLBACK_CLAIMS]
+        assert list(statuses.values()).count("searched") == MAX_FALLBACK_CLAIMS
+        assert list(statuses.values()).count("not_searched") == 1

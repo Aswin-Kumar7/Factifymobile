@@ -38,7 +38,7 @@ from app.domain.evidence import Advisory, Evidence
 from app.governor.governor import ProviderUnavailable, Skip
 from app.intake.normalizer import NormalisedIntake
 from app.observability.logging import event
-from app.sources.base import SourceCandidate, SourceResolver, build_evidence
+from app.sources.base import SourceCandidate, SourceResolver, build_evidence, current_check
 from app.sources.corpus import CorroborationSignal
 from app.sources.reasoning import REASONER_VERSION
 from app.sources.verification import SourceVerification, dedupe, page_key
@@ -176,6 +176,12 @@ class ClaimOutcome:
     # One or two plain sentences on what the verified sources show, written by the
     # source check. None when no check ran.
     explanation: str | None = None
+    # Whether the open web was searched for this claim: "searched", "not_searched"
+    # (below the per-check cap) or "timed_out". An unconfirmed claim that was never
+    # searched said "we couldn't find reliable sources" all the same.
+    search: str = "searched"
+    # How many candidate pages were read for it, whatever they turned out to say.
+    looked_at: int = 0
 
 
 @dataclass(slots=True)
@@ -398,9 +404,17 @@ class Orchestrator:
         # off mid-call or let every lexical one dawdle.
         deadline = started + (REASONING_TARGET_SECONDS if self._reads_sources else TARGET_SECONDS)
 
-        outcomes = await self._resolve_all(
-            claims, skipped=skipped, deadline=deadline, own_pages=frozenset(own)
-        )
+        check = current_check.set(str(case_id))
+        try:
+            outcomes = await self._resolve_all(
+                claims, skipped=skipped, deadline=deadline, own_pages=frozenset(own)
+            )
+        finally:
+            current_check.reset(check)
+            for resolver in self._resolvers:
+                end_check = getattr(resolver, "end_check", None)
+                if end_check is not None:
+                    end_check(str(case_id))
 
         case_decision = roll_up(
             [(outcome.claim, outcome.decision) for outcome in outcomes], source_risk=source_risk
@@ -606,7 +620,12 @@ class Orchestrator:
         primary = [r for r in self._resolvers if not getattr(r, "fallback", False)]
         fallback = [r for r in self._resolvers if getattr(r, "fallback", False)]
 
-        evidence = await self._run_stage(primary, claim, skipped=skipped, deadline=deadline)
+        # This claim's own gaps and page count, to say what was done for it.
+        mine: list[SkippedCheck] = []
+        looked = [0]
+        evidence = await self._run_stage(
+            primary, claim, skipped=mine, deadline=deadline, tally=looked
+        )
 
         # Corroboration is counted after the evidence exists and before anything
         # decides. Rule 4 reads `independent_origin_count` off the claim, and nothing
@@ -625,7 +644,9 @@ class Orchestrator:
         searched = False
         if fallback and allow_fallback and not decide(counted, evidence).status.is_decisive:
             evidence.extend(
-                await self._run_stage(fallback, claim, skipped=skipped, deadline=deadline)
+                await self._run_stage(
+                    fallback, claim, skipped=mine, deadline=deadline, tally=looked
+                )
             )
             searched = True
         elif fallback:
@@ -653,8 +674,11 @@ class Orchestrator:
             counted = await self._count_origins(claim, evidence=evidence, skipped=[])
             if not decide(counted, evidence).status.is_decisive:
                 evidence.extend(
-                    await self._run_stage(fallback, claim, skipped=skipped, deadline=deadline)
+                    await self._run_stage(
+                        fallback, claim, skipped=mine, deadline=deadline, tally=looked
+                    )
                 )
+                searched = True
                 evidence = _not_own(evidence, own_pages)
                 evidence, explanation = await self._verify_sources(
                     claim, evidence, skipped=skipped, deadline=deadline
@@ -663,6 +687,14 @@ class Orchestrator:
         scratch = []
         counted = await self._count_origins(claim, evidence=evidence, skipped=scratch)
         skipped.extend(scratch)
+        skipped.extend(mine)
+
+        if fallback and not searched and not allow_fallback:
+            search = "not_searched"
+        elif any("deadline" in gap.reason for gap in mine):
+            search = "timed_out"
+        else:
+            search = "searched"
 
         decision = decide(counted, evidence)
 
@@ -726,6 +758,8 @@ class Orchestrator:
             strength=strength,
             evidence=evidence,
             explanation=explanation,
+            search=search,
+            looked_at=looked[0],
         )
 
     async def _verify_sources(
@@ -761,6 +795,7 @@ class Orchestrator:
         *,
         skipped: list[SkippedCheck],
         deadline: float | None,
+        tally: list[int] | None = None,
     ) -> list[Evidence]:
         """Run a set of resolvers concurrently for one claim and collect their evidence.
 
@@ -808,9 +843,11 @@ class Orchestrator:
                 skipped.append(SkippedCheck(check=name, reason=type(outcome).__name__))
                 continue
 
-            found, skip = outcome
+            found, skip, read = outcome
             if skip is not None:
                 skipped.append(SkippedCheck(check=name, reason=skip))
+            if tally is not None:
+                tally[0] += read
             evidence.extend(found)
 
         return evidence
@@ -861,7 +898,7 @@ class Orchestrator:
 
     async def _run_resolver(
         self, resolver: SourceResolver, claim: Claim, *, read_by: float | None = None
-    ) -> tuple[list[Evidence], str | None]:
+    ) -> tuple[list[Evidence], str | None, int]:
         """Drive one resolver through candidates → snapshot → relate.
 
         Returns what it found and, separately, why it found nothing when the reason
@@ -883,10 +920,10 @@ class Orchestrator:
                 # reader the budget ran out, where `ProviderUnavailable` only says
                 # something went wrong. It also marks the run incomplete, which is
                 # what keeps `cacheable` from freezing the gap into a stored verdict.
-                return [], unavailable.reason.value
+                return [], unavailable.reason.value, 0
 
         if not candidates:
-            return [], None
+            return [], None, 0
 
         # Candidates are fetched concurrently. They are independent pages and nothing
         # about one informs another, so serialising them only added latency: six
@@ -929,7 +966,7 @@ class Orchestrator:
             if pending
             else None
         )
-        return evidence, skip
+        return evidence, skip, len(done)
 
     async def _resolve_candidate(
         self, resolver: SourceResolver, claim: Claim, candidate: SourceCandidate

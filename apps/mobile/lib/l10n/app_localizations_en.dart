@@ -98,6 +98,36 @@ class AppLocalizationsEn extends AppLocalizations {
   String get usuallyTakes => 'A check usually takes 20–50 seconds.';
 
   @override
+  String get statusNotChecked => 'Not checked';
+
+  @override
+  String get claimNotSearched =>
+      'Each check searches its three most important claims, and this wasn\'t one of them.';
+
+  @override
+  String get claimTimedOut =>
+      'We ran out of time before any source for this could be read. Tap Check again.';
+
+  @override
+  String get claimNothingFound =>
+      'We searched trusted news and fact-checkers and found nothing that addresses this.';
+
+  @override
+  String claimNoSources(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count sources',
+      one: '1 source',
+    );
+    return 'We read $_temp0 and none addressed this directly.';
+  }
+
+  @override
+  String get claimOneSource =>
+      'Only one source addressed this. We need two independent ones before calling it true.';
+
+  @override
   String elapsedSeconds(int seconds) {
     return '${seconds}s';
   }

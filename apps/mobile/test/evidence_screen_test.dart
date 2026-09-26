@@ -284,6 +284,24 @@ void main() {
       expect(find.textContaining('% confidence'), findsNothing);
     });
 
+    testWidgets('a claim that was never searched says so, not "no sources found"', (tester) async {
+      final claim = _claim(status: 'UNVERIFIED')..['search'] = 'not_searched';
+      await _open(tester, _verdict(action: 'SEND_TO_REVIEW', claims: [claim]));
+
+      expect(find.text('Not checked'), findsOneWidget);
+      expect(find.textContaining("this wasn't one of them"), findsOneWidget);
+      expect(find.textContaining("couldn't find enough reliable sources"), findsNothing);
+    });
+
+    testWidgets('a searched claim says how many sources were read', (tester) async {
+      final claim = _claim(status: 'UNVERIFIED')
+        ..['search'] = 'searched'
+        ..['sources_looked_at'] = 6;
+      await _open(tester, _verdict(action: 'SEND_TO_REVIEW', claims: [claim]));
+
+      expect(find.text('We read 6 sources and none addressed this directly.'), findsOneWidget);
+    });
+
     testWidgets('the same page cited twice does not crash the screen', (tester) async {
       // "Duplicate keys found": the old screen keyed each citation by evidence id,
       // and one page cited twice for a claim took the whole screen down.

@@ -1686,3 +1686,57 @@ class TestOneCasesClaimsShareTheirReading:
         asyncio.run(_drive())
 
         assert len(reads) == 2
+
+
+class TestChecksDoNotShareWhatTheyRead:
+    """Search rows and page reads were shared by every check the server ran."""
+
+    @staticmethod
+    def _resolver() -> WebSearchResolver:
+        return WebSearchResolver(
+            fetcher=None,  # type: ignore[arg-type]
+            reasoner=None,
+            provider="tavily",
+            endpoint="https://example.invalid/search",
+            api_key="k",
+        )
+
+    def test_one_checks_pages_are_invisible_to_another(self) -> None:
+        from app.sources.base import current_check
+
+        resolver = self._resolver()
+
+        async def run(check: str, url: str) -> set[str]:
+            token = current_check.set(check)
+            try:
+                resolver._pages[url] = {"url": url}
+                await asyncio.sleep(0)  # the other check runs in between
+                return set(resolver._pages)
+            finally:
+                current_check.reset(token)
+
+        async def both() -> list[set[str]]:
+            return await asyncio.gather(
+                run("case-a", "https://a.example/1"), run("case-b", "https://b.example/2")
+            )
+
+        seen_by_a, seen_by_b = asyncio.run(both())
+
+        assert seen_by_a == {"https://a.example/1"}
+        assert seen_by_b == {"https://b.example/2"}
+
+    def test_a_finished_check_leaves_nothing_behind(self) -> None:
+        from app.sources.base import current_check
+
+        resolver = self._resolver()
+        token = current_check.set("case-a")
+        try:
+            resolver._pages["https://a.example/1"] = {"url": "https://a.example/1"}
+            resolver._reads["https://a.example/1"] = (0.0, ("text", "web.fetched", ""))
+        finally:
+            current_check.reset(token)
+
+        resolver.end_check("case-a")
+
+        assert resolver._pages_by_check == {}
+        assert resolver._reads_by_check == {}

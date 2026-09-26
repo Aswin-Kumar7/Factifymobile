@@ -217,6 +217,11 @@ class ClaimResponse(BaseModel):
     confidence: int | None = None
     # One or two plain sentences on what the sources show, in the claim's language.
     explanation: str | None = None
+    # Whether the web was searched for this claim - "searched", "not_searched" or
+    # "timed_out" - and how many pages were read for it. None on cases stored before
+    # this was recorded.
+    search: str | None = None
+    sources_looked_at: int | None = None
 
     @model_validator(mode="after")
     def _decisive_status_carries_citations(self) -> Self:

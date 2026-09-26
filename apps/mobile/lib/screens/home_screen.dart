@@ -101,6 +101,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// it was.
   Future<void> Function()? _recheckRun;
 
+  /// What the last finished check was of, as the input box held it ('' for a
+  /// picture or document). Null while a check runs and before the first one.
+  String? _checkedText;
+
   /// The interface language, sent with every check so the verdict can come back
   /// in the language it will be read in (PLAN 1.7.6). The phone's language unless
   /// the reader picked another from the language menu.
@@ -243,6 +247,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (value.isEmpty) return;
     _lastRun = () => _verify(raw);
     _recheckRun = () => _verify(raw, recheck: true);
+    _checkedText = null;
     final language = _language;
 
     // A bare URL and a block of text are different endpoints on the server, so
@@ -270,7 +275,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _fail(failure);
       }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _checkedText = value;
+        });
+      }
     }
   }
 
@@ -279,6 +289,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final language = _language;
     final described = submission ?? await _describe(file);
     _recheckRun = () => _verifyFile(file, submission: described, recheck: true);
+    _checkedText = null;
     _beginRun(described);
 
     try {
@@ -309,6 +320,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         setState(() {
           _busy = false;
           _uploadProgress = null;
+          // The box cannot show a picture; an empty box stands for it.
+          if (_input.text.trim().isEmpty) _checkedText = '';
         });
       }
     }
@@ -568,16 +581,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           busy: _busy,
           onCheck: () => _verify(_input.text),
           onPick: _pick,
+          recheckFor: _busy || (verdict == null && error == null) ? null : _checkedText,
+          onRecheck: _recheckRun == null ? null : () => unawaited(_recheckRun!()),
         ),
         const SizedBox(height: 18),
 
-        if (submission != null) ...[
-          SubmissionCard(
-            submission: submission,
-            onRecheck: !_busy && (verdict != null || error != null) && _recheckRun != null
-                ? () => unawaited(_recheckRun!())
-                : null,
-          ),
+        // A picture or document is shown back, since the box above cannot show
+        // it. Text and links are already there, in the box, and were shown twice.
+        if (submission != null && submission.isMedia) ...[
+          SubmissionCard(submission: submission),
           const SizedBox(height: 12),
         ],
 

@@ -97,6 +97,37 @@ class AppLocalizationsHi extends AppLocalizations {
   String get usuallyTakes => 'एक जाँच में आम तौर पर 20–50 सेकंड लगते हैं।';
 
   @override
+  String get statusNotChecked => 'जाँचा नहीं गया';
+
+  @override
+  String get claimNotSearched =>
+      'हर जाँच में सबसे अहम तीन दावे खोजे जाते हैं, यह उनमें नहीं था।';
+
+  @override
+  String get claimTimedOut =>
+      'इसका कोई स्रोत पढ़ने से पहले समय खत्म हो गया। फिर से जाँचें दबाएँ।';
+
+  @override
+  String get claimNothingFound =>
+      'हमने भरोसेमंद समाचार और फ़ैक्ट-चेकर खोजे, पर इस बारे में कुछ नहीं मिला।';
+
+  @override
+  String claimNoSources(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'हमने $count स्रोत पढ़े, पर किसी ने सीधे इस बारे में कुछ नहीं कहा।',
+      one: 'हमने 1 स्रोत पढ़ा, पर उसमें सीधे इस बारे में कुछ नहीं था।',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get claimOneSource =>
+      'सिर्फ़ एक स्रोत ने इस बारे में बताया। सच कहने से पहले हमें दो स्वतंत्र स्रोत चाहिए।';
+
+  @override
   String elapsedSeconds(int seconds) {
     return '$seconds से.';
   }
