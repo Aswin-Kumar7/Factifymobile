@@ -57,7 +57,7 @@ from app.sources.corpus_text import is_navigation
 logger = logging.getLogger("factify.sources.reasoning")
 
 PROVIDER = "llm"
-REASONER_VERSION = "2026.09.26.2"
+REASONER_VERSION = "2026.09.26.3"
 
 # How many passages go to the model in one call. One call per source, not one per
 # passage: the model needs to see the alternatives to judge which actually bears on
@@ -563,8 +563,9 @@ For each source:
     the same count over the same period, a different outcome of the same event, an
     explicit denial. It is UNCLEAR, not FALSE, when the passage names other or extra
     details (a menu listing another dish), leaves some of the claim's details out,
-    gives a figure for a different day or period, or debunks a different claim about
-    the same people.
+    gives a figure for a different day or period, debunks a different claim about
+    the same people, or reports how things stood before a change the claim says has
+    since happened (an arrest, for a claim of release).
   * UNCLEAR if it only reports that others believe it, only makes it likelier or less
     likely, describes a study without its result, or answers a different question.
 
@@ -684,9 +685,13 @@ For each judgement:
     report of one earthquake is a different subject from another earthquake. A
     figure for one day, or from an earlier date, is a different subject from a total
     over a longer period: "41 buildings demolished on Thursday" does not contradict
-    "543 demolished in 17 days". A fact-check that rates a different claim about the
-    same people false is a different subject too: "a reporter questioned him about
-    it" being fake says nothing about whether he was mocked online for it. So is a
+    "543 demolished in 17 days". How things stood at an earlier time is a different
+    subject from a claim that they have since changed: "he was arrested and remanded
+    in August" does not contradict "he has been released", and a ban reported in
+    March does not contradict "the ban has been lifted". A fact-check that rates a
+    different claim about the same people false is a different subject too: "a
+    reporter questioned him about it" being fake says nothing about whether he was
+    mocked online for it. So is a
     passage about a different video, photo or post than the one the claim is about.
     Use this freely: most passages retrieved for a claim are about something else.
   * DIFFERENT_QUESTION - the passage is on the claim's topic but answers a
