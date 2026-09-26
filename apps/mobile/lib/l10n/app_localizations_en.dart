@@ -1280,4 +1280,261 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get switchLanguage => 'Switch language';
+
+  @override
+  String get verdictOverline => 'VERDICT';
+
+  @override
+  String get confidenceChip => 'confidence';
+
+  @override
+  String get whyChip => 'Why?';
+
+  @override
+  String checkedEarlierOn(String date) {
+    return 'Checked earlier · reused from $date';
+  }
+
+  @override
+  String whatWeCheckedKind(String kind) {
+    return 'What we checked · $kind';
+  }
+
+  @override
+  String get kindText => 'Text';
+
+  @override
+  String get kindLink => 'Link';
+
+  @override
+  String get kindImage => 'Image';
+
+  @override
+  String get kindPdf => 'PDF';
+
+  @override
+  String claimCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count claims',
+      one: '1 claim',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get claimStateSupported => 'Supported';
+
+  @override
+  String get claimStateContradicted => 'Contradicted';
+
+  @override
+  String get claimStateMissingContext => 'Missing context';
+
+  @override
+  String get claimStateUnconfirmed => 'Unconfirmed';
+
+  @override
+  String claimStateCount(int count, String state) {
+    return '$count $state';
+  }
+
+  @override
+  String get tapToRead => 'Tap to read';
+
+  @override
+  String get readSource => 'Read';
+
+  @override
+  String directionShort(String direction) {
+    String _temp0 = intl.Intl.selectLogic(direction, {
+      'supports': 'Supports',
+      'contradicts': 'Refutes',
+      'other': 'Context',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String get noSourceTitle => 'No citable source was found';
+
+  @override
+  String get noSourceBody =>
+      'This does not mean the content is false. It means nothing we could cite either supports or contradicts it, so Factify did not decide.';
+
+  @override
+  String get receiptVerifiedTitle => 'Receipt verified';
+
+  @override
+  String get receiptVerifiedBody =>
+      'The evidence is unchanged since it was signed';
+
+  @override
+  String get receiptFailedTitle => 'Receipt did not verify';
+
+  @override
+  String get receiptFailedBody =>
+      'The stored evidence no longer matches what was signed';
+
+  @override
+  String get shareResult => 'Share result';
+
+  @override
+  String get whyOverline => 'HOW SURE WE ARE';
+
+  @override
+  String whyTitle(int value) {
+    return 'Why $value% confidence';
+  }
+
+  @override
+  String get whyBody =>
+      'Arithmetic on the cited sources: how many, how credible, and whether any disagree. Never a model score.';
+
+  @override
+  String get whyScaleLow => '50 · even';
+
+  @override
+  String get whyScaleHigh => '97 · never certain';
+
+  @override
+  String get whyExcluded => 'Excluded from this score: forensic signals.';
+
+  @override
+  String get whyNoVerdictOverline => 'WHY NO VERDICT';
+
+  @override
+  String get whyUncNotFalse =>
+      'Unconfirmed is not the same as false. Factify decides only when cited sources settle it.';
+
+  @override
+  String get whyUncLater =>
+      'New claims often get covered within a day or two. Check again later.';
+
+  @override
+  String get gotIt => 'Got it';
+
+  @override
+  String get mediaYourPicture => 'YOUR PICTURE';
+
+  @override
+  String get mediaEarlierCopy => 'EARLIER COPY';
+
+  @override
+  String get mediaSharedToday => 'Shared today';
+
+  @override
+  String mediaPublished(String date) {
+    return 'Published $date';
+  }
+
+  @override
+  String mediaMatchedBy(String publisher) {
+    return '$publisher · earlier copy';
+  }
+
+  @override
+  String get mediaMatchesEarlier => 'Matches a picture published earlier';
+
+  @override
+  String verdictSemantics(String verdict, int value) {
+    return '$verdict, $value% confidence';
+  }
+
+  @override
+  String get textInPicture => 'Text in the picture';
+
+  @override
+  String shows(String publisher) {
+    return 'Shows: $publisher';
+  }
+
+  @override
+  String compTier(String tier, int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count signed credentials',
+      one: '1 signed credential',
+    );
+    String _temp1 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count dated sources',
+      one: '1 dated source',
+    );
+    String _temp2 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count fact-checks',
+      one: '1 fact-check',
+    );
+    String _temp3 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count news reports',
+      one: '1 news report',
+    );
+    String _temp4 = intl.Intl.selectLogic(tier, {
+      'A': '$_temp0',
+      'B': '$_temp1',
+      'C': '$_temp2',
+      'other': '$_temp3',
+    });
+    return '$_temp4';
+  }
+
+  @override
+  String get compNoEvidence => 'No evidence';
+
+  @override
+  String compOrigins(int origins, int documents) {
+    String _temp0 = intl.Intl.pluralLogic(
+      origins,
+      locale: localeName,
+      other: '$origins independent publishers',
+      one: '1 independent publisher',
+    );
+    String _temp1 = intl.Intl.pluralLogic(
+      documents,
+      locale: localeName,
+      other: '$documents pages',
+      one: '1 page',
+    );
+    return '$_temp0, $_temp1';
+  }
+
+  @override
+  String get compNoDated => 'No source carries a date';
+
+  @override
+  String compDated(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count dated findings',
+      one: '1 dated finding',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String compRisk(String risk) {
+    String _temp0 = intl.Intl.selectLogic(risk, {
+      'LOW': 'Publishers with a clean record',
+      'MEDIUM': 'Some publisher risk',
+      'HIGH': 'High publisher risk',
+      'other': 'Publisher record not assessed',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String get compNoConflict => 'No source disagrees';
+
+  @override
+  String compConflict(int supports, int contradicts) {
+    return '$supports supporting, $contradicts contradicting';
+  }
 }

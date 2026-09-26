@@ -747,5 +747,177 @@
     }
   },
   "historyNoResults": "No checks match this search.",
-  "switchLanguage": "Switch language"
+  "switchLanguage": "Switch language",
+  "verdictOverline": "VERDICT",
+  "confidenceChip": "confidence",
+  "whyChip": "Why?",
+  "checkedEarlierOn": "Checked earlier · reused from {date}",
+  "@checkedEarlierOn": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "whatWeCheckedKind": "What we checked · {kind}",
+  "@whatWeCheckedKind": {
+    "placeholders": {
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
+  "kindText": "Text",
+  "kindLink": "Link",
+  "kindImage": "Image",
+  "kindPdf": "PDF",
+  "claimCount": "{count, plural, =1{1 claim} other{{count} claims}}",
+  "@claimCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "claimStateSupported": "Supported",
+  "claimStateContradicted": "Contradicted",
+  "claimStateMissingContext": "Missing context",
+  "claimStateUnconfirmed": "Unconfirmed",
+  "claimStateCount": "{count} {state}",
+  "@claimStateCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "state": {
+        "type": "String"
+      }
+    }
+  },
+  "tapToRead": "Tap to read",
+  "readSource": "Read",
+  "directionShort": "{direction, select, supports{Supports} contradicts{Refutes} other{Context}}",
+  "@directionShort": {
+    "placeholders": {
+      "direction": {
+        "type": "String"
+      }
+    }
+  },
+  "noSourceTitle": "No citable source was found",
+  "noSourceBody": "This does not mean the content is false. It means nothing we could cite either supports or contradicts it, so Factify did not decide.",
+  "receiptVerifiedTitle": "Receipt verified",
+  "receiptVerifiedBody": "The evidence is unchanged since it was signed",
+  "receiptFailedTitle": "Receipt did not verify",
+  "receiptFailedBody": "The stored evidence no longer matches what was signed",
+  "shareResult": "Share result",
+  "whyOverline": "HOW SURE WE ARE",
+  "whyTitle": "Why {value}% confidence",
+  "@whyTitle": {
+    "placeholders": {
+      "value": {
+        "type": "int"
+      }
+    }
+  },
+  "whyBody": "Arithmetic on the cited sources: how many, how credible, and whether any disagree. Never a model score.",
+  "whyScaleLow": "50 · even",
+  "whyScaleHigh": "97 · never certain",
+  "whyExcluded": "Excluded from this score: forensic signals.",
+  "whyNoVerdictOverline": "WHY NO VERDICT",
+  "whyUncNotFalse": "Unconfirmed is not the same as false. Factify decides only when cited sources settle it.",
+  "whyUncLater": "New claims often get covered within a day or two. Check again later.",
+  "gotIt": "Got it",
+  "mediaYourPicture": "YOUR PICTURE",
+  "mediaEarlierCopy": "EARLIER COPY",
+  "mediaSharedToday": "Shared today",
+  "mediaPublished": "Published {date}",
+  "@mediaPublished": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "mediaMatchedBy": "{publisher} · earlier copy",
+  "@mediaMatchedBy": {
+    "placeholders": {
+      "publisher": {
+        "type": "String"
+      }
+    }
+  },
+  "mediaMatchesEarlier": "Matches a picture published earlier",
+  "verdictSemantics": "{verdict}, {value}% confidence",
+  "@verdictSemantics": {
+    "placeholders": {
+      "verdict": {
+        "type": "String"
+      },
+      "value": {
+        "type": "int"
+      }
+    }
+  },
+  "textInPicture": "Text in the picture",
+  "shows": "Shows: {publisher}",
+  "@shows": {
+    "placeholders": {
+      "publisher": {
+        "type": "String"
+      }
+    }
+  },
+  "compTier": "{tier, select, A{{count, plural, =1{1 signed credential} other{{count} signed credentials}}} B{{count, plural, =1{1 dated source} other{{count} dated sources}}} C{{count, plural, =1{1 fact-check} other{{count} fact-checks}}} other{{count, plural, =1{1 news report} other{{count} news reports}}}}",
+  "@compTier": {
+    "placeholders": {
+      "tier": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "compNoEvidence": "No evidence",
+  "compOrigins": "{origins, plural, =1{1 independent publisher} other{{origins} independent publishers}}, {documents, plural, =1{1 page} other{{documents} pages}}",
+  "@compOrigins": {
+    "placeholders": {
+      "origins": {
+        "type": "int"
+      },
+      "documents": {
+        "type": "int"
+      }
+    }
+  },
+  "compNoDated": "No source carries a date",
+  "compDated": "{count, plural, =1{1 dated finding} other{{count} dated findings}}",
+  "@compDated": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "compRisk": "{risk, select, LOW{Publishers with a clean record} MEDIUM{Some publisher risk} HIGH{High publisher risk} other{Publisher record not assessed}}",
+  "@compRisk": {
+    "placeholders": {
+      "risk": {
+        "type": "String"
+      }
+    }
+  },
+  "compNoConflict": "No source disagrees",
+  "compConflict": "{supports} supporting, {contradicts} contradicting",
+  "@compConflict": {
+    "placeholders": {
+      "supports": {
+        "type": "int"
+      },
+      "contradicts": {
+        "type": "int"
+      }
+    }
+  }
 }

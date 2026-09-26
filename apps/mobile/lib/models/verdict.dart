@@ -321,6 +321,8 @@ class Claim {
     this.explanation,
     this.search,
     this.sourcesLookedAt,
+    this.ownAnchor,
+    this.technique,
   });
 
   final String id;
@@ -366,15 +368,30 @@ class Claim {
     explanation: json['explanation'] as String?,
     search: json['search'] as String?,
     sourcesLookedAt: (json['sources_looked_at'] as num?)?.toInt(),
+    ownAnchor: json['input_anchor'] == null
+        ? null
+        : InputAnchor.fromJson((json['input_anchor'] as Map).cast<String, dynamic>()),
+    technique: json['technique'] as String?,
   );
 
   bool get isDecisive => status.isDecisive;
   List<Evidence> get contradicting => evidence.where((e) => e.contradicts).toList();
   List<Evidence> get supporting => evidence.where((e) => e.supports).toList();
 
-  /// Where the claim sits in the submission, from the first evidence item that
-  /// recorded it. The contract carries the anchor per citation, not per claim.
+  /// Where the claim sits in the submission, as the server located it (contract
+  /// 1.3). Null from an older server.
+  final InputAnchor? ownAnchor;
+
+  /// The manipulation technique the server named for a contradicted or
+  /// recontextualised claim (contract 1.3): RECYCLED_MEDIA, MISSING_CONTEXT,
+  /// MISATTRIBUTED_QUOTE, TWISTED_NUMBER or WRONG_IDENTITY. Null otherwise.
+  final String? technique;
+
+  /// Where the claim sits in the submission: its own anchor, else the first
+  /// evidence item's (contracts before 1.3 carried it per citation only).
   InputAnchor? get inputAnchor {
+    final own = ownAnchor;
+    if (own != null && !own.isEmpty) return own;
     for (final item in evidence) {
       final anchor = item.inputAnchor;
       if (anchor != null && !anchor.isEmpty) return anchor;

@@ -1969,6 +1969,318 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Switch language'**
   String get switchLanguage;
+
+  /// No description provided for @verdictOverline.
+  ///
+  /// In en, this message translates to:
+  /// **'VERDICT'**
+  String get verdictOverline;
+
+  /// No description provided for @confidenceChip.
+  ///
+  /// In en, this message translates to:
+  /// **'confidence'**
+  String get confidenceChip;
+
+  /// No description provided for @whyChip.
+  ///
+  /// In en, this message translates to:
+  /// **'Why?'**
+  String get whyChip;
+
+  /// No description provided for @checkedEarlierOn.
+  ///
+  /// In en, this message translates to:
+  /// **'Checked earlier · reused from {date}'**
+  String checkedEarlierOn(String date);
+
+  /// No description provided for @whatWeCheckedKind.
+  ///
+  /// In en, this message translates to:
+  /// **'What we checked · {kind}'**
+  String whatWeCheckedKind(String kind);
+
+  /// No description provided for @kindText.
+  ///
+  /// In en, this message translates to:
+  /// **'Text'**
+  String get kindText;
+
+  /// No description provided for @kindLink.
+  ///
+  /// In en, this message translates to:
+  /// **'Link'**
+  String get kindLink;
+
+  /// No description provided for @kindImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Image'**
+  String get kindImage;
+
+  /// No description provided for @kindPdf.
+  ///
+  /// In en, this message translates to:
+  /// **'PDF'**
+  String get kindPdf;
+
+  /// No description provided for @claimCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 claim} other{{count} claims}}'**
+  String claimCount(int count);
+
+  /// No description provided for @claimStateSupported.
+  ///
+  /// In en, this message translates to:
+  /// **'Supported'**
+  String get claimStateSupported;
+
+  /// No description provided for @claimStateContradicted.
+  ///
+  /// In en, this message translates to:
+  /// **'Contradicted'**
+  String get claimStateContradicted;
+
+  /// No description provided for @claimStateMissingContext.
+  ///
+  /// In en, this message translates to:
+  /// **'Missing context'**
+  String get claimStateMissingContext;
+
+  /// No description provided for @claimStateUnconfirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'Unconfirmed'**
+  String get claimStateUnconfirmed;
+
+  /// No description provided for @claimStateCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} {state}'**
+  String claimStateCount(int count, String state);
+
+  /// No description provided for @tapToRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap to read'**
+  String get tapToRead;
+
+  /// No description provided for @readSource.
+  ///
+  /// In en, this message translates to:
+  /// **'Read'**
+  String get readSource;
+
+  /// No description provided for @directionShort.
+  ///
+  /// In en, this message translates to:
+  /// **'{direction, select, supports{Supports} contradicts{Refutes} other{Context}}'**
+  String directionShort(String direction);
+
+  /// No description provided for @noSourceTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No citable source was found'**
+  String get noSourceTitle;
+
+  /// No description provided for @noSourceBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This does not mean the content is false. It means nothing we could cite either supports or contradicts it, so Factify did not decide.'**
+  String get noSourceBody;
+
+  /// No description provided for @receiptVerifiedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Receipt verified'**
+  String get receiptVerifiedTitle;
+
+  /// No description provided for @receiptVerifiedBody.
+  ///
+  /// In en, this message translates to:
+  /// **'The evidence is unchanged since it was signed'**
+  String get receiptVerifiedBody;
+
+  /// No description provided for @receiptFailedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Receipt did not verify'**
+  String get receiptFailedTitle;
+
+  /// No description provided for @receiptFailedBody.
+  ///
+  /// In en, this message translates to:
+  /// **'The stored evidence no longer matches what was signed'**
+  String get receiptFailedBody;
+
+  /// No description provided for @shareResult.
+  ///
+  /// In en, this message translates to:
+  /// **'Share result'**
+  String get shareResult;
+
+  /// No description provided for @whyOverline.
+  ///
+  /// In en, this message translates to:
+  /// **'HOW SURE WE ARE'**
+  String get whyOverline;
+
+  /// No description provided for @whyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Why {value}% confidence'**
+  String whyTitle(int value);
+
+  /// No description provided for @whyBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Arithmetic on the cited sources: how many, how credible, and whether any disagree. Never a model score.'**
+  String get whyBody;
+
+  /// No description provided for @whyScaleLow.
+  ///
+  /// In en, this message translates to:
+  /// **'50 · even'**
+  String get whyScaleLow;
+
+  /// No description provided for @whyScaleHigh.
+  ///
+  /// In en, this message translates to:
+  /// **'97 · never certain'**
+  String get whyScaleHigh;
+
+  /// No description provided for @whyExcluded.
+  ///
+  /// In en, this message translates to:
+  /// **'Excluded from this score: forensic signals.'**
+  String get whyExcluded;
+
+  /// No description provided for @whyNoVerdictOverline.
+  ///
+  /// In en, this message translates to:
+  /// **'WHY NO VERDICT'**
+  String get whyNoVerdictOverline;
+
+  /// No description provided for @whyUncNotFalse.
+  ///
+  /// In en, this message translates to:
+  /// **'Unconfirmed is not the same as false. Factify decides only when cited sources settle it.'**
+  String get whyUncNotFalse;
+
+  /// No description provided for @whyUncLater.
+  ///
+  /// In en, this message translates to:
+  /// **'New claims often get covered within a day or two. Check again later.'**
+  String get whyUncLater;
+
+  /// No description provided for @gotIt.
+  ///
+  /// In en, this message translates to:
+  /// **'Got it'**
+  String get gotIt;
+
+  /// No description provided for @mediaYourPicture.
+  ///
+  /// In en, this message translates to:
+  /// **'YOUR PICTURE'**
+  String get mediaYourPicture;
+
+  /// No description provided for @mediaEarlierCopy.
+  ///
+  /// In en, this message translates to:
+  /// **'EARLIER COPY'**
+  String get mediaEarlierCopy;
+
+  /// No description provided for @mediaSharedToday.
+  ///
+  /// In en, this message translates to:
+  /// **'Shared today'**
+  String get mediaSharedToday;
+
+  /// No description provided for @mediaPublished.
+  ///
+  /// In en, this message translates to:
+  /// **'Published {date}'**
+  String mediaPublished(String date);
+
+  /// No description provided for @mediaMatchedBy.
+  ///
+  /// In en, this message translates to:
+  /// **'{publisher} · earlier copy'**
+  String mediaMatchedBy(String publisher);
+
+  /// No description provided for @mediaMatchesEarlier.
+  ///
+  /// In en, this message translates to:
+  /// **'Matches a picture published earlier'**
+  String get mediaMatchesEarlier;
+
+  /// No description provided for @verdictSemantics.
+  ///
+  /// In en, this message translates to:
+  /// **'{verdict}, {value}% confidence'**
+  String verdictSemantics(String verdict, int value);
+
+  /// No description provided for @textInPicture.
+  ///
+  /// In en, this message translates to:
+  /// **'Text in the picture'**
+  String get textInPicture;
+
+  /// No description provided for @shows.
+  ///
+  /// In en, this message translates to:
+  /// **'Shows: {publisher}'**
+  String shows(String publisher);
+
+  /// No description provided for @compTier.
+  ///
+  /// In en, this message translates to:
+  /// **'{tier, select, A{{count, plural, =1{1 signed credential} other{{count} signed credentials}}} B{{count, plural, =1{1 dated source} other{{count} dated sources}}} C{{count, plural, =1{1 fact-check} other{{count} fact-checks}}} other{{count, plural, =1{1 news report} other{{count} news reports}}}}'**
+  String compTier(String tier, int count);
+
+  /// No description provided for @compNoEvidence.
+  ///
+  /// In en, this message translates to:
+  /// **'No evidence'**
+  String get compNoEvidence;
+
+  /// No description provided for @compOrigins.
+  ///
+  /// In en, this message translates to:
+  /// **'{origins, plural, =1{1 independent publisher} other{{origins} independent publishers}}, {documents, plural, =1{1 page} other{{documents} pages}}'**
+  String compOrigins(int origins, int documents);
+
+  /// No description provided for @compNoDated.
+  ///
+  /// In en, this message translates to:
+  /// **'No source carries a date'**
+  String get compNoDated;
+
+  /// No description provided for @compDated.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 dated finding} other{{count} dated findings}}'**
+  String compDated(int count);
+
+  /// No description provided for @compRisk.
+  ///
+  /// In en, this message translates to:
+  /// **'{risk, select, LOW{Publishers with a clean record} MEDIUM{Some publisher risk} HIGH{High publisher risk} other{Publisher record not assessed}}'**
+  String compRisk(String risk);
+
+  /// No description provided for @compNoConflict.
+  ///
+  /// In en, this message translates to:
+  /// **'No source disagrees'**
+  String get compNoConflict;
+
+  /// No description provided for @compConflict.
+  ///
+  /// In en, this message translates to:
+  /// **'{supports} supporting, {contradicts} contradicting'**
+  String compConflict(int supports, int contradicts);
 }
 
 class _AppLocalizationsDelegate

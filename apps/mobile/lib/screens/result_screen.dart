@@ -1,14 +1,17 @@
-/// The answer, on its own page: what was checked, what was read, the verdict, and
-/// the sources it rests on.
+/// The answer, on its own page (v5): the verdict in its colour, then what was
+/// checked, each claim, the sources and the receipt.
 ///
 /// Opened when a check finishes and again from History, from the same saved data.
-/// "Check again" runs the same thing fresh; "New check" goes back to an empty Home.
+/// The bottom bar re-runs the check fresh, and carries the one thing to do next:
+/// send a correction back for False, context for Misleading, the result for True,
+/// or check again for Unconfirmed.
 library;
 
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../api/client.dart';
 import '../app_services.dart';
@@ -16,11 +19,11 @@ import '../l10n/app_localizations.dart';
 import '../l10n/phrases.dart';
 import '../models/submission.dart';
 import '../models/verdict.dart';
-import '../theme/colors.dart';
-import '../widgets/checked_item_card.dart';
+import '../widgets/action_style.dart';
 import '../widgets/correction_sheet.dart';
-import '../widgets/image_reading_card.dart';
+import '../widgets/ui/ui.dart';
 import '../widgets/verdict_card.dart';
+import '../widgets/why_sheet.dart';
 import 'checking_screen.dart';
 import 'evidence_screen.dart';
 
@@ -55,6 +58,8 @@ class ResultScreen extends StatefulWidget {
 class _ResultScreenState extends State<ResultScreen> {
   bool _reporting = false;
   bool _reported = false;
+  ReceiptState? _receipt;
+  String? _receiptId;
 
   Verdict get _verdict => widget.verdict;
 
@@ -62,6 +67,35 @@ class _ResultScreenState extends State<ResultScreen> {
     final submission = widget.submission;
     if (submission == null) return false;
     return submission.text != null || (submission.file?.existsSync() ?? false);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // A pulse as the verdict appears (v5 accessibility): felt, not only seen.
+    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(HapticFeedback.mediumImpact()));
+    final receiptUrl = _verdict.receiptUrl;
+    if (receiptUrl != null) {
+      _receipt = ReceiptState.checking;
+      unawaited(_checkReceipt(receiptUrl));
+    }
+  }
+
+  Future<void> _checkReceipt(String url) async {
+    try {
+      final receipt = await widget.services.client.getReceipt(url);
+      if (!mounted) return;
+      setState(() {
+        _receipt = receipt == null
+            ? null
+            : receipt.verified
+            ? ReceiptState.verified
+            : ReceiptState.failed;
+        _receiptId = receipt == null ? null : shortReceiptId(receipt.receiptId);
+      });
+    } on ApiFailure {
+      if (mounted) setState(() => _receipt = null);
+    }
   }
 
   void _checkAgain() {
@@ -77,9 +111,11 @@ class _ResultScreenState extends State<ResultScreen> {
     );
   }
 
-  void _newCheck() => Navigator.of(context).popUntil((route) => route.isFirst);
+  void _home() => Navigator.of(context).popUntil((route) => route.isFirst);
 
-  void _openEvidence() => unawaited(
+  void _share() => unawaited(showCorrectionSheet(context, _verdict));
+
+  void _openClaim(Claim claim) => unawaited(
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => EvidenceScreen(
@@ -91,6 +127,12 @@ class _ResultScreenState extends State<ResultScreen> {
       ),
     ),
   );
+
+  Future<void> _openSource(Evidence evidence) async {
+    final uri = Uri.tryParse(evidence.citationUrl);
+    if (uri == null) return;
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
 
   /// Flag this verdict for human review: a real request, confirmed only once the
   /// server has queued it.
@@ -115,87 +157,145 @@ class _ResultScreenState extends State<ResultScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final k = FactifyTokens.of(context);
     final l10n = AppLocalizations.of(context);
-    final reading = _verdict.imageReading;
+    final nothing = _verdict.nothingToCheck;
+    final (_, soft) = nothing ? (k.uC, k.uS) : ActionStyle.colours(_verdict.factVerdict, k);
+    final tint = Color.alphaBlend(soft, k.bg);
+    final top = MediaQuery.paddingOf(context).top;
+
+    final (label, icon, action) = switch (_verdict.factVerdict) {
+      _ when nothing => (l10n.newCheck, FxIcons.forward, _home),
+      FactVerdict.falseClaim => (l10n.shareCorrection, FxIcons.correction, _share),
+      FactVerdict.misleading => (l10n.shareContext, FxIcons.correction, _share),
+      FactVerdict.trueClaim => (l10n.shareResult, FxIcons.share, _share),
+      FactVerdict.unconfirmed when _canCheckAgain => (
+        l10n.checkAgain,
+        FxIcons.recheck,
+        _checkAgain,
+      ),
+      FactVerdict.unconfirmed => (l10n.newCheck, FxIcons.forward, _home),
+    };
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(l10n.resultTitle),
-        actions: [
-          IconButton(
-            tooltip: l10n.shareCorrection,
-            icon: const Icon(Icons.ios_share_rounded),
-            onPressed: () => unawaited(showCorrectionSheet(context, _verdict)),
+      body: Stack(
+        children: [
+          ListView(
+            padding: EdgeInsets.zero,
+            children: [
+              Container(
+                color: tint,
+                padding: EdgeInsets.fromLTRB(12, top + 2, 12, 0),
+                child: Row(
+                  children: [
+                    FxCircleButton(
+                      icon: FxIcons.back,
+                      tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                      onPressed: () => Navigator.of(context).maybePop(),
+                    ),
+                    Expanded(
+                      child: Text(
+                        l10n.resultTitle,
+                        textAlign: TextAlign.center,
+                        style: FactifyText.sans(13, weight: FontWeight.w600, color: k.ink2),
+                      ),
+                    ),
+                    FxCircleButton(
+                      icon: FxIcons.share,
+                      tooltip: l10n.shareCorrection,
+                      iconSize: 19,
+                      onPressed: nothing ? null : _share,
+                    ),
+                  ],
+                ),
+              ),
+              VerdictCard(
+                verdict: _verdict,
+                kind: widget.kind,
+                submittedText: widget.submission?.text,
+                thumbnail: widget.thumbnail,
+                onWhy: () => unawaited(showWhySheet(context, _verdict)),
+                onOpenClaim: _openClaim,
+                onOpenSource: _openSource,
+                onReportForReview: _reported ? null : _report,
+                reporting: _reporting,
+                reported: _reported,
+                receipt: _receipt,
+                receiptId: _receiptId,
+              ),
+            ],
+          ),
+          // The status bar keeps the verdict's tint, so the page scrolls beneath it
+          // rather than under the clock.
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: top,
+            child: ColoredBox(color: tint),
           ),
         ],
       ),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-          children: [
-            CheckedItemCard(
-              kind: widget.kind,
-              summary: widget.summary,
-              thumbnail: widget.thumbnail,
-              label: l10n.whatWeCheckedTitle,
-            ),
-            const SizedBox(height: 12),
-            if (reading != null) ...[
-              ImageReadingCard(reading: reading, document: widget.kind == SubmissionKind.document),
-              const SizedBox(height: 12),
-            ],
-            VerdictCard(
-              verdict: _verdict,
-              reporting: _reporting,
-              onSeeEvidence: _openEvidence,
-              onShareCorrection: () => unawaited(showCorrectionSheet(context, _verdict)),
-              onReportForReview: _reported ? null : _report,
-            ),
-            if (_reported)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  l10n.reportedNote,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.labelSmall?.copyWith(color: FactifyColors.inkMuted),
-                ),
-              ),
-          ],
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: k.nav,
+          border: Border(top: BorderSide(color: k.line)),
         ),
-      ),
-      bottomNavigationBar: SafeArea(
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            border: Border(top: BorderSide(color: FactifyColors.line)),
-          ),
-          child: Row(
-            children: [
-              if (_canCheckAgain) ...[
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _checkAgain,
-                    icon: const Icon(Icons.refresh_rounded),
-                    label: Text(l10n.checkAgain),
-                    style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(50)),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Row(
+              children: [
+                Semantics(
+                  button: true,
+                  label: l10n.checkAgain,
+                  excludeSemantics: true,
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 200),
+                    opacity: _canCheckAgain ? 1 : 0.4,
+                    child: Material(
+                      color: k.sf2,
+                      borderRadius: BorderRadius.circular(18),
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        onTap: _canCheckAgain ? _checkAgain : null,
+                        child: SizedBox(
+                          width: 52,
+                          height: 52,
+                          child: Icon(FxIcons.recheck, size: 22, color: k.ink),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 10),
-              ],
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: _newCheck,
-                  icon: const Icon(Icons.add_rounded),
-                  label: Text(l10n.newCheck),
-                  style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(50)),
+                Expanded(
+                  child: FxButton(
+                    label: label,
+                    icon: icon,
+                    variant: FxButtonVariant.dark,
+                    height: 52,
+                    radius: 18,
+                    fontSize: 15,
+                    onPressed: action,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+/// A receipt id as shown on the seal: its first seven characters, "7F3A-21C".
+String shortReceiptId(String id) {
+  final plain = id
+      .replaceFirst(RegExp(r'^[A-Za-z]+[_:]'), '')
+      .replaceAll(RegExp('[^0-9A-Za-z]'), '')
+      .toUpperCase();
+  if (plain.length < 7) return plain;
+  return '${plain.substring(0, 4)}-${plain.substring(4, 7)}';
 }

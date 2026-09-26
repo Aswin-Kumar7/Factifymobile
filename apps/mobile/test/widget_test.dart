@@ -11,11 +11,15 @@ library;
 import 'dart:convert';
 
 import 'package:factify_mobile/api/client.dart';
+import 'package:factify_mobile/app_services.dart';
+import 'package:factify_mobile/auth/auth_service.dart';
+import 'package:factify_mobile/history/history_store.dart';
 import 'package:factify_mobile/l10n/app_localizations.dart';
 import 'package:factify_mobile/l10n/language_preference.dart';
 import 'package:factify_mobile/main.dart';
 import 'package:factify_mobile/models/verdict.dart';
 import 'package:factify_mobile/screens/evidence_screen.dart';
+import 'package:factify_mobile/screens/result_screen.dart';
 import 'package:factify_mobile/widgets/advisory_panel.dart';
 import 'package:factify_mobile/widgets/correction_card.dart';
 import 'package:factify_mobile/widgets/correction_sheet.dart';
@@ -131,13 +135,23 @@ Verdict _abstention({String? search}) => Verdict.fromJson(
   ),
 );
 
-/// A result card whose actions do nothing.
-VerdictCard _card(Verdict verdict) => VerdictCard(
-  verdict: verdict,
-  onSeeEvidence: () {},
-  onShareCorrection: () {},
-  onReportForReview: () {},
-);
+AppServices _services() {
+  final client = FactifyClient(baseUrl: 'http://factify.test');
+  return AppServices(
+    client: client,
+    auth: AuthService(client: client, persist: false),
+    language: LanguagePreference.inMemory(),
+    history: HistoryStore(),
+  );
+}
+
+/// A result whose actions do nothing.
+VerdictCard _card(Verdict verdict) => VerdictCard(verdict: verdict, onReportForReview: () {});
+
+/// The verdict itself - word, confidence, subhead, summary - apart from the
+/// explanations under it.
+Finder _inHeader(Finder finder) =>
+    find.descendant(of: find.byKey(const ValueKey('verdict-header')), matching: finder);
 
 /// A 411-dp-wide phone: the width the longer Hindi strings have to fit into.
 /// [height] is in physical pixels; a tall one lays out a whole scrolling screen,
@@ -290,10 +304,10 @@ void main() {
       expect(find.text('Two outlets report it.'), findsOneWidget);
       // The verdict is never asked to be believed on its own.
       expect(find.text('Factchecker'), findsOneWidget);
-      expect(find.text('Confirms'), findsOneWidget);
+      expect(find.text('Supports'), findsOneWidget);
     });
 
-    testWidgets('says False, and offers the correction to send back', (tester) async {
+    testWidgets('says False, with the source that refutes it', (tester) async {
       await _pump(
         tester,
         _card(
@@ -307,9 +321,9 @@ void main() {
         ),
       );
 
-      expect(find.text('False'), findsOneWidget);
+      expect(_inHeader(find.text('False')), findsOneWidget);
+      expect(find.text('78%'), findsOneWidget);
       expect(find.text('Refutes'), findsOneWidget);
-      expect(find.text('Share correction'), findsOneWidget);
     });
 
     testWidgets('states when the check was made', (tester) async {
@@ -341,7 +355,7 @@ void main() {
     testWidgets('an abstaining case reads as unconfirmed — not true, not false', (tester) async {
       await _pump(tester, _card(_abstention()));
 
-      expect(find.text('Unconfirmed'), findsOneWidget);
+      expect(_inHeader(find.text('Unconfirmed')), findsOneWidget);
       expect(find.text('True'), findsNothing);
       expect(find.text('False'), findsNothing);
       // No confidence figure when nothing was decided.
@@ -414,22 +428,16 @@ void main() {
         ),
       );
 
-      expect(find.textContaining("news search couldn't be reached"), findsOneWidget);
+      expect(_inHeader(find.textContaining("news search couldn't be reached")), findsOneWidget);
       expect(find.textContaining('in time'), findsNothing);
     });
 
     testWidgets('a wrong result can be reported from the card', (tester) async {
       var reported = 0;
-      await _pump(
-        tester,
-        VerdictCard(
-          verdict: confirmed(),
-          onSeeEvidence: () {},
-          onShareCorrection: () {},
-          onReportForReview: () => reported++,
-        ),
-      );
+      await _pump(tester, VerdictCard(verdict: confirmed(), onReportForReview: () => reported++));
 
+      await tester.ensureVisible(find.text('Report wrong result'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Report wrong result'));
       expect(reported, 1);
     });
@@ -439,13 +447,18 @@ void main() {
     testWidgets('an abstention reads as unconfirmed, and never as true or false', (tester) async {
       await _pump(tester, _card(_abstention()), locale: _hindi);
 
-      expect(find.text('अपुष्ट'), findsOneWidget);
+      expect(_inHeader(find.text('अपुष्ट')), findsOneWidget);
       expect(find.textContaining('Unconfirmed'), findsNothing);
       expect(find.text('सुधार साझा करें'), findsNothing);
       // सच and सही say "true", झूठ says "false"; सत्य is "truth", and also begins
-      // सत्यापित, "verified".
+      // सत्यापित, "verified". The verdict itself never uses them. (The explanation
+      // below it may: "this does not mean it is false" is the point of Unconfirmed.)
       for (final word in const ['सच', 'सही', 'सत्य', 'झूठ']) {
-        expect(find.textContaining(word), findsNothing, reason: 'the card says "$word"');
+        expect(
+          _inHeader(find.textContaining(word)),
+          findsNothing,
+          reason: 'the verdict says "$word"',
+        );
       }
     });
 
@@ -468,7 +481,7 @@ void main() {
         locale: _hindi,
       );
 
-      expect(find.text('सच'), findsOneWidget);
+      expect(_inHeader(find.text('सच')), findsOneWidget);
       expect(find.text('Factchecker'), findsOneWidget);
     });
 
@@ -588,10 +601,26 @@ void main() {
     });
 
     testWidgets('missing context can be sent back too; an abstention cannot', (tester) async {
-      await _pump(tester, _card(Verdict.fromJson(_payload(action: 'SHARE_WITH_CONTEXT'))));
+      Widget result(String action, List<Map<String, dynamic>> claims) => ResultScreen(
+        services: _services(),
+        verdict: Verdict.fromJson(_payload(action: action, claims: claims)),
+      );
+
+      await tester.pumpWidget(
+        _app(
+          result('SHARE_WITH_CONTEXT', [
+            _claim(
+              status: 'MISLEADING_CONTEXT',
+              evidence: [_evidence(direction: 'context')],
+            ),
+          ]),
+        ),
+      );
+      await tester.pumpAndSettle();
       expect(find.text('Share with context'), findsOneWidget);
 
-      await _pump(tester, _card(Verdict.fromJson(_payload(action: 'SEND_TO_REVIEW'))));
+      await tester.pumpWidget(_app(result('SEND_TO_REVIEW', [_claim(status: 'UNVERIFIED')])));
+      await tester.pumpAndSettle();
       expect(find.text('Share with context'), findsNothing);
       expect(find.text('Share correction'), findsNothing);
     });
@@ -635,7 +664,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(sent.single['language'], 'hi');
-      expect(find.text('अपुष्ट'), findsOneWidget);
+      expect(_inHeader(find.text('अपुष्ट')), findsOneWidget);
     });
 
     testWidgets('with nothing chosen, the phone language decides, falling back to English', (

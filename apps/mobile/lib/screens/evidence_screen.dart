@@ -33,7 +33,7 @@ import '../widgets/evidence_timeline.dart';
 import '../widgets/language_menu.dart';
 import '../widgets/source_tile.dart';
 import '../widgets/teaching_line.dart';
-import '../widgets/verdict_card.dart' show ConfidenceRing;
+import '../widgets/ui/fx_confidence_ring.dart';
 
 class EvidenceScreen extends StatelessWidget {
   const EvidenceScreen({
@@ -145,7 +145,7 @@ class _Header extends StatelessWidget {
           ),
           if (decided && confidence != null) ...[
             const SizedBox(width: 10),
-            ConfidenceRing(value: confidence, tone: style.tone, size: 52),
+            FxConfidenceRing(value: confidence, colour: style.tone, tint: style.container, size: 52),
           ],
         ],
       ),

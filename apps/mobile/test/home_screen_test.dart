@@ -107,6 +107,12 @@ Future<void> _check(WidgetTester tester, String text) async {
   await tester.pumpAndSettle();
 }
 
+/// The verdict word, in the result's header.
+Finder _verdictWord(String word) => find.descendant(
+  of: find.byKey(const ValueKey('verdict-header')),
+  matching: find.text(word),
+);
+
 void main() {
   const offer = 'Paste copied text';
   const claim = 'The minister said the scheme was cancelled.';
@@ -205,8 +211,8 @@ void main() {
 
       expect(sent.single['text'], claim);
       expect(find.text('Result'), findsOneWidget);
-      expect(find.text('Unconfirmed'), findsOneWidget);
-      expect(find.text(claim), findsOneWidget); // what was checked, above the answer
+      expect(_verdictWord('Unconfirmed'), findsOneWidget);
+      expect(find.textContaining(claim), findsOneWidget); // what was checked, quoted
     });
 
     testWidgets('a link the server could not check says so, not "Unconfirmed"', (tester) async {
@@ -246,11 +252,11 @@ void main() {
       expect(find.text('Result'), findsOneWidget);
     });
 
-    testWidgets('"New check" returns to an empty Home', (tester) async {
+    testWidgets('back from the result returns to an empty Check', (tester) async {
       await _pumpApp(tester, _FakeClipboard(hasText: false));
 
       await _check(tester, claim);
-      await tester.tap(find.text('New check'));
+      await tester.tap(find.byTooltip('Back'));
       await tester.pumpAndSettle();
 
       expect(find.text('What would you like to check?'), findsOneWidget);
@@ -316,7 +322,7 @@ void main() {
       await _pumpApp(tester, _FakeClipboard(hasText: false));
 
       await _check(tester, claim);
-      await tester.tap(find.text('New check'));
+      await tester.tap(find.byTooltip('Back'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('History'));
       await tester.pumpAndSettle();
@@ -329,7 +335,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Result'), findsOneWidget);
-      expect(find.text('Unconfirmed'), findsOneWidget);
+      expect(_verdictWord('Unconfirmed'), findsOneWidget);
     });
 
     testWidgets('is empty, and says what it is for, before anything is checked', (tester) async {

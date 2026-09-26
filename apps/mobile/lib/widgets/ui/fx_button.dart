@@ -112,7 +112,7 @@ class FxButton extends StatelessWidget {
               ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-                child: Center(widthFactor: expand ? null : 1, child: content),
+                child: Center(widthFactor: expand ? null : 1, heightFactor: 1, child: content),
               ),
             ),
           ),
