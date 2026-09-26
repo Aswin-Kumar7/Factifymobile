@@ -41,11 +41,14 @@ Future<bool> _waitFor(
   return false;
 }
 
+// The four verdicts a card can carry since the redesign. The old evidence-only
+// headlines ("Nothing contradicts this", "Not enough evidence to decide") are gone,
+// and waiting for them timed out on a card that had drawn perfectly well.
 bool _anyVerdictShown() => const [
-  'Nothing contradicts this',
-  'Contradicted by sources',
-  'Not enough evidence to decide',
-  'True, but missing context',
+  'True',
+  'False',
+  'Misleading',
+  'Unconfirmed',
 ].any((headline) => find.text(headline).evaluate().isNotEmpty);
 
 Future<void> _submit(WidgetTester tester, String text) async {
@@ -83,10 +86,8 @@ void main() {
           'result did not draw',
     );
 
-    // The product's own rule, checked on screen rather than in a model: every
-    // headline is a statement about evidence, never about truth.
-    expect(find.text('True'), findsNothing);
-    expect(find.text('False'), findsNothing);
+    // A known falsehood must never read True, whatever else the sources say.
+    expect(find.text('True'), findsNothing, reason: '5G does not spread the coronavirus');
   });
 
   testWidgets('a Hindi claim survives the keyboard, the request and the result', (tester) async {
