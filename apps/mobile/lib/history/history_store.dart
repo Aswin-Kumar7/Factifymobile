@@ -113,7 +113,7 @@ class HistoryStore extends ChangeNotifier {
     final record = HistoryRecord(
       id: '${verdict.caseId}-${DateTime.now().microsecondsSinceEpoch}',
       kind: submission.kind,
-      summary: submission.summary,
+      summary: submission.summaryWith(verdict),
       text: submission.text,
       thumbnail: await _smallPreview(submission.thumbnail),
       checkedAt: DateTime.now(),

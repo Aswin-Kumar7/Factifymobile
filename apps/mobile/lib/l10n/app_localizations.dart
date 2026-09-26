@@ -1819,6 +1819,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Google sign-in isn\'t set up on this server yet. Use your email and a password.'**
   String get authGoogleUnavailable;
+
+  /// Names a picture being checked before anything is known about it; its file name is never shown.
+  ///
+  /// In en, this message translates to:
+  /// **'Your picture'**
+  String get yourPicture;
+
+  /// No description provided for @headlineNothingToCheck.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing to fact-check'**
+  String get headlineNothingToCheck;
+
+  /// No description provided for @subheadNothingToCheck.
+  ///
+  /// In en, this message translates to:
+  /// **'No claim found in it'**
+  String get subheadNothingToCheck;
+
+  /// No description provided for @nothingToCheckPicture.
+  ///
+  /// In en, this message translates to:
+  /// **'We read this picture and found no claim in it that can be checked - no news, figure or announcement, just an image. There\'s nothing here to confirm or rule out.'**
+  String get nothingToCheckPicture;
+
+  /// No description provided for @nothingToCheckText.
+  ///
+  /// In en, this message translates to:
+  /// **'We didn\'t find a factual claim in this - it reads as opinion, a joke or conversation, so there\'s nothing here to confirm or rule out.'**
+  String get nothingToCheckText;
+
+  /// No description provided for @searchUnavailableNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Our news search couldn\'t be reached, so this wasn\'t checked against news reports. Tap Check again in a little while.'**
+  String get searchUnavailableNote;
+
+  /// No description provided for @claimSearchUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Our news search couldn\'t be reached, so no news reports were looked at for this. It isn\'t the same as finding nothing.'**
+  String get claimSearchUnavailable;
+
+  /// No description provided for @documentReadTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'What we read in your document'**
+  String get documentReadTitle;
 }
 
 class _AppLocalizationsDelegate

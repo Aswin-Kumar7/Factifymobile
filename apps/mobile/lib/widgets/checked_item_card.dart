@@ -8,6 +8,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/submission.dart';
 import '../theme/colors.dart';
 
@@ -78,7 +79,7 @@ class CheckedItemCard extends StatelessWidget {
                     const SizedBox(height: 2),
                   ],
                   Text(
-                    summary,
+                    summary.isEmpty ? AppLocalizations.of(context).yourPicture : summary,
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodyMedium,

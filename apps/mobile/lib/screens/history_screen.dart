@@ -242,7 +242,7 @@ class _HistoryTile extends StatelessWidget {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
     final verdict = record.verdict;
-    final style = ActionStyle.of(verdict.action, theme.brightness, l10n);
+    final style = ActionStyle.forVerdict(verdict, theme.brightness, l10n);
     final sources = {for (final e in verdict.allEvidence) e.citationUrl}.length;
     final time = TimeOfDay.fromDateTime(record.checkedAt).format(context);
     final thumb = record.thumbnail;
@@ -272,7 +272,7 @@ class _HistoryTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      record.summary,
+                      record.summary.isEmpty ? l10n.yourPicture : record.summary,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),

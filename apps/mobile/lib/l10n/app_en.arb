@@ -674,5 +674,16 @@
   "authWrongCredentials": "That email and password don't match an account.",
   "authUseGoogle": "This account was made with Google. Use Continue with Google.",
   "authGoogleFailed": "Google sign-in didn't finish. Try again.",
-  "authGoogleUnavailable": "Google sign-in isn't set up on this server yet. Use your email and a password."
+  "authGoogleUnavailable": "Google sign-in isn't set up on this server yet. Use your email and a password.",
+  "yourPicture": "Your picture",
+  "@yourPicture": {
+    "description": "Names a picture being checked before anything is known about it; its file name is never shown."
+  },
+  "headlineNothingToCheck": "Nothing to fact-check",
+  "subheadNothingToCheck": "No claim found in it",
+  "nothingToCheckPicture": "We read this picture and found no claim in it that can be checked - no news, figure or announcement, just an image. There's nothing here to confirm or rule out.",
+  "nothingToCheckText": "We didn't find a factual claim in this - it reads as opinion, a joke or conversation, so there's nothing here to confirm or rule out.",
+  "searchUnavailableNote": "Our news search couldn't be reached, so this wasn't checked against news reports. Tap Check again in a little while.",
+  "claimSearchUnavailable": "Our news search couldn't be reached, so no news reports were looked at for this. It isn't the same as finding nothing.",
+  "documentReadTitle": "What we read in your document"
 }

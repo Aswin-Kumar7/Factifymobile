@@ -115,6 +115,18 @@ Widget _app(Widget home, {Locale locale = _english}) => MaterialApp(
 Future<void> _pump(WidgetTester tester, Widget child, {Locale locale = _english}) =>
     tester.pumpWidget(_app(Scaffold(body: SingleChildScrollView(child: child)), locale: locale));
 
+/// A claim was found and no source settled it.
+Verdict _abstention({String? search}) => Verdict.fromJson(
+  _payload(
+    action: 'SEND_TO_REVIEW',
+    claims: [
+      _claim(status: 'UNVERIFIED')
+        ..['importance'] = 'HEADLINE'
+        ..['search'] = search,
+    ],
+  ),
+);
+
 /// A result card whose actions do nothing.
 VerdictCard _card(Verdict verdict) => VerdictCard(
   verdict: verdict,
@@ -317,7 +329,7 @@ void main() {
     });
 
     testWidgets('an abstaining case reads as unconfirmed — not true, not false', (tester) async {
-      await _pump(tester, _card(Verdict.fromJson(_payload(action: 'SEND_TO_REVIEW'))));
+      await _pump(tester, _card(_abstention()));
 
       expect(find.text('Unconfirmed'), findsOneWidget);
       expect(find.text('True'), findsNothing);
@@ -326,6 +338,74 @@ void main() {
       expect(find.textContaining('%'), findsNothing);
       // No correction to share when nothing was established.
       expect(find.text('Share correction'), findsNothing);
+    });
+
+    testWidgets('with no claim in it, there is nothing to fact-check - not "unconfirmed"', (
+      tester,
+    ) async {
+      final opinion = Verdict.fromJson(_payload(action: 'SEND_TO_REVIEW'));
+      await _pump(tester, _card(opinion));
+
+      expect(find.text('Nothing to fact-check'), findsOneWidget);
+      expect(find.text('Unconfirmed'), findsNothing);
+      expect(find.textContaining('caution'), findsNothing);
+      expect(find.text('Why unconfirmed?'), findsNothing);
+    });
+
+    testWidgets('a picture whose only question was its own history has nothing to check', (
+      tester,
+    ) async {
+      final picture = Verdict.fromJson(
+        _payload(
+          action: 'SEND_TO_REVIEW',
+          claims: [
+            _claim(status: 'UNVERIFIED')
+              ..['claim_type'] = 'MEDIA'
+              ..['text'] = 'This image has been published before.',
+          ],
+        )..['image_reading'] = {'text': '', 'description': 'A hillside at sunset.'},
+      );
+      await _pump(tester, _card(picture));
+
+      expect(find.text('Nothing to fact-check'), findsOneWidget);
+      expect(find.textContaining('found no claim in it'), findsOneWidget);
+    });
+
+    testWidgets('a picture that could not be read is not "nothing to check"', (tester) async {
+      final unread = Verdict.fromJson(
+        _payload(
+          action: 'SEND_TO_REVIEW',
+          skipped: [
+            {'check': 'image_text', 'reason': 'the image could not be read (provider failed)'},
+          ],
+        ),
+      );
+      await _pump(tester, _card(unread));
+
+      expect(find.text('Unconfirmed'), findsOneWidget);
+      expect(find.text('Nothing to fact-check'), findsNothing);
+    });
+
+    testWidgets('a search that could not run says so, not "incomplete in time"', (tester) async {
+      await _pump(
+        tester,
+        _card(
+          Verdict.fromJson(
+            _payload(
+              action: 'SEND_TO_REVIEW',
+              completenessNote: 'web_search skipped: provider error',
+              claims: [
+                _claim(status: 'UNVERIFIED')
+                  ..['importance'] = 'HEADLINE'
+                  ..['search'] = 'unavailable',
+              ],
+            ),
+          ),
+        ),
+      );
+
+      expect(find.textContaining("news search couldn't be reached"), findsOneWidget);
+      expect(find.textContaining('in time'), findsNothing);
     });
 
     testWidgets('a wrong result can be reported from the card', (tester) async {
@@ -349,7 +429,7 @@ void main() {
     testWidgets('an abstention reads as unconfirmed, and never as true or false', (tester) async {
       await _pump(
         tester,
-        _card(Verdict.fromJson(_payload(action: 'SEND_TO_REVIEW'))),
+        _card(_abstention()),
         locale: _hindi,
       );
 
@@ -522,7 +602,7 @@ void main() {
             return http.Response('{"ready": true, "missing": []}', 200);
           }
           sent.add(jsonDecode(request.body) as Map<String, dynamic>);
-          return http.Response(jsonEncode(_payload(action: 'SEND_TO_REVIEW')), 200);
+          return http.Response(jsonEncode(_abstention().raw), 200);
         }),
       );
 

@@ -23,7 +23,21 @@ Map<String, dynamic> _verdictJson() => {
   'action': 'SEND_TO_REVIEW',
   'action_reason': 'Not enough citable evidence to decide.',
   'rule_version': '2026.08.1',
-  'claims': <Map<String, dynamic>>[],
+  // One claim no source settled: an answer with no claim at all is "nothing to
+  // fact-check", a different card.
+  'claims': <Map<String, dynamic>>[
+    {
+      'id': 'cl_1',
+      'text': 'RBI is withdrawing Rs 500 notes.',
+      'claim_type': 'EVENT',
+      'status': 'UNVERIFIED',
+      'severity': 'HIGH',
+      'importance': 'HEADLINE',
+      'reason': 'Not enough citable evidence.',
+      'strength': {'score': 0.0, 'band': 'WEAK', 'components': <Object>[], 'version': 'v'},
+      'evidence': <Object>[],
+    },
+  ],
   'advisories': <Map<String, dynamic>>[],
   'skipped': <Map<String, dynamic>>[],
   'completeness_note': null,

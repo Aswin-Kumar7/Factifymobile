@@ -6,7 +6,10 @@
 /// with what kind of picture it is and whose name it carries.
 library;
 
+import 'dart:io';
+
 import 'package:factify_mobile/l10n/app_localizations.dart';
+import 'package:factify_mobile/models/submission.dart';
 import 'package:factify_mobile/models/verdict.dart';
 import 'package:factify_mobile/widgets/image_reading_card.dart';
 import 'package:flutter/material.dart';
@@ -130,5 +133,43 @@ void main() {
     expect(find.text('आपकी तस्वीर में हमने क्या पढ़ा'), findsOneWidget);
     expect(find.text('चैट फ़ॉरवर्ड'), findsOneWidget);
     expect(find.text(hindi), findsOneWidget);
+  });
+
+  group('a picture is named by what it says, never by its file name', () {
+    final picture = Submission.image(File('/cache/share-1727-IMG-20260927-WA0003.jpg'), null);
+    Map<String, dynamic> claim(String text, String importance) => {
+      'id': 'cl_$importance',
+      'text': text,
+      'claim_type': 'EVENT',
+      'status': 'SUPPORTED',
+      'severity': 'HIGH',
+      'importance': importance,
+      'reason': 'Reported.',
+      'strength': {'score': 0.8, 'band': 'STRONG', 'components': const [], 'version': 'v'},
+      'evidence': const <Map<String, dynamic>>[],
+    };
+
+    test('before the check it has no name of its own', () {
+      expect(picture.summary, '');
+      expect(Submission.document(File('/cache/share-1727-circular.pdf')).summary, 'circular.pdf');
+    });
+
+    test('after it, the headline claim found in it', () {
+      final verdict = Verdict.fromJson(
+        _payload({'text': 'x', 'description': 'A TV graphic.'})
+          ..['claims'] = [
+            claim('Rohit Sharma lifted the trophy.', 'SUPPORTING_DETAIL'),
+            claim('India won the T20 World Cup.', 'HEADLINE'),
+          ],
+      );
+      expect(picture.summaryWith(verdict), 'India won the T20 World Cup.');
+    });
+
+    test('with nothing to check in it, what it shows', () {
+      final verdict = Verdict.fromJson(
+        _payload({'text': '', 'description': 'A hillside at sunset.'}),
+      );
+      expect(picture.summaryWith(verdict), 'A hillside at sunset.');
+    });
   });
 }

@@ -1175,4 +1175,32 @@ class AppLocalizationsHi extends AppLocalizations {
   @override
   String get authGoogleUnavailable =>
       'इस सर्वर पर Google साइन-इन अभी चालू नहीं है। अपने ईमेल और पासवर्ड का उपयोग करें।';
+
+  @override
+  String get yourPicture => 'आपकी तस्वीर';
+
+  @override
+  String get headlineNothingToCheck => 'जाँचने लायक कुछ नहीं';
+
+  @override
+  String get subheadNothingToCheck => 'इसमें कोई दावा नहीं मिला';
+
+  @override
+  String get nothingToCheckPicture =>
+      'हमने यह तस्वीर पढ़ी, पर इसमें जाँचने लायक कोई दावा नहीं मिला - न कोई ख़बर, न आँकड़ा, न कोई घोषणा, बस एक तस्वीर। इसमें पुष्टि करने या नकारने को कुछ नहीं है।';
+
+  @override
+  String get nothingToCheckText =>
+      'इसमें हमें कोई तथ्यात्मक दावा नहीं मिला - यह राय, मज़ाक या बातचीत जैसा है, इसलिए इसमें पुष्टि करने या नकारने को कुछ नहीं है।';
+
+  @override
+  String get searchUnavailableNote =>
+      'हमारी समाचार खोज से संपर्क नहीं हो सका, इसलिए इसे समाचार रिपोर्टों से नहीं मिलाया गया। थोड़ी देर बाद फिर से जाँचें दबाएँ।';
+
+  @override
+  String get claimSearchUnavailable =>
+      'हमारी समाचार खोज से संपर्क नहीं हो सका, इसलिए इसके लिए कोई समाचार रिपोर्ट नहीं देखी गई। इसका मतलब यह नहीं कि कुछ नहीं मिला।';
+
+  @override
+  String get documentReadTitle => 'आपके दस्तावेज़ में हमने क्या पढ़ा';
 }

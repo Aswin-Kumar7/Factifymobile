@@ -51,13 +51,15 @@ class VerdictCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
-    final style = ActionStyle.of(verdict.action, Brightness.light, l10n);
+    final style = ActionStyle.forVerdict(verdict, Brightness.light, l10n);
     final decided = verdict.factVerdict.isDecided;
     final sources = verdict.allEvidence;
     final confidence = verdict.confidence;
 
     final summary = decided
         ? (verdict.summary ?? verdict.actionReason)
+        : verdict.nothingToCheck
+        ? (verdict.imageReading != null ? l10n.nothingToCheckPicture : l10n.nothingToCheckText)
         : l10n.unconfirmedBody;
 
     final correctionLabel = switch (verdict.factVerdict) {
@@ -118,7 +120,10 @@ class VerdictCard extends StatelessWidget {
                 // the app's; a Hindi reader is told so rather than surprised.
                 const EnglishOnlyNote(padding: EdgeInsets.only(bottom: 8)),
                 Text(summary, style: theme.textTheme.bodyMedium),
-                if (verdict.completenessNote != null) ...[
+                if (verdict.searchUnavailable) ...[
+                  const SizedBox(height: 10),
+                  _Note(text: l10n.searchUnavailableNote),
+                ] else if (verdict.completenessNote != null) ...[
                   const SizedBox(height: 10),
                   _Note(text: l10n.incompleteNote),
                 ],
@@ -138,16 +143,17 @@ class VerdictCard extends StatelessWidget {
                   ],
                 ],
                 const SizedBox(height: 16),
-                FilledButton.tonal(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: FactifyColors.emeraldTint,
-                    foregroundColor: FactifyColors.emeraldDeep,
+                if (!verdict.nothingToCheck)
+                  FilledButton.tonal(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: FactifyColors.emeraldTint,
+                      foregroundColor: FactifyColors.emeraldDeep,
+                    ),
+                    onPressed: onSeeEvidence,
+                    child: Text(
+                      sources.isEmpty ? l10n.whyNoVerdict : l10n.seeEvidence(sources.length),
+                    ),
                   ),
-                  onPressed: onSeeEvidence,
-                  child: Text(
-                    sources.isEmpty ? l10n.whyNoVerdict : l10n.seeEvidence(sources.length),
-                  ),
-                ),
                 if (correctionLabel != null) ...[
                   const SizedBox(height: 8),
                   OutlinedButton.icon(

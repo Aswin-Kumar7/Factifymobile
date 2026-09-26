@@ -35,7 +35,7 @@ class ResultScreen extends StatefulWidget {
     super.key,
   }) : submission = submission,
        kind = kind ?? submission?.kind ?? SubmissionKind.text,
-       summary = summary ?? submission?.summary ?? '',
+       summary = summary ?? submission?.summaryWith(verdict) ?? '',
        thumbnail = thumbnail ?? submission?.thumbnail;
 
   final AppServices services;
@@ -142,7 +142,7 @@ class _ResultScreenState extends State<ResultScreen> {
             ),
             const SizedBox(height: 12),
             if (reading != null) ...[
-              ImageReadingCard(reading: reading),
+              ImageReadingCard(reading: reading, document: widget.kind == SubmissionKind.document),
               const SizedBox(height: 12),
             ],
             VerdictCard(

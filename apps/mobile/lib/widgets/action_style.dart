@@ -55,6 +55,19 @@ class ActionStyle {
     onContainer: Color.lerp(tone, Colors.black, 0.35)!,
   );
 
+  /// The style for a whole result: [of] its action, or a neutral "nothing to
+  /// fact-check" when nothing in it could be checked ([Verdict.nothingToCheck]).
+  static ActionStyle forVerdict(Verdict verdict, Brightness brightness, AppLocalizations l10n) =>
+      verdict.nothingToCheck
+      ? _tinted(
+          verdict: FactVerdict.unconfirmed,
+          headline: l10n.headlineNothingToCheck,
+          subhead: l10n.subheadNothingToCheck,
+          icon: Icons.info_rounded,
+          tone: _unconfirmed,
+        )
+      : of(verdict.action, brightness, l10n);
+
   /// The style for a result. [brightness] is accepted for the correction card,
   /// which always renders on white, and otherwise unused: the app is light only.
   static ActionStyle of(VerdictAction action, Brightness brightness, AppLocalizations l10n) =>

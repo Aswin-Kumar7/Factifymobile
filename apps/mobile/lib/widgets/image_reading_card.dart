@@ -13,9 +13,12 @@ import '../models/verdict.dart';
 import '../theme/colors.dart';
 
 class ImageReadingCard extends StatefulWidget {
-  const ImageReadingCard({required this.reading, super.key});
+  const ImageReadingCard({required this.reading, this.document = false, super.key});
 
   final ImageReading reading;
+
+  /// Read from a PDF's pages rather than a picture, and named so.
+  final bool document;
 
   @override
   State<ImageReadingCard> createState() => _ImageReadingCardState();
@@ -50,7 +53,7 @@ class _ImageReadingCardState extends State<ImageReadingCard> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    l10n.imageReadTitle,
+                    widget.document ? l10n.documentReadTitle : l10n.imageReadTitle,
                     style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
                   ),
                 ),

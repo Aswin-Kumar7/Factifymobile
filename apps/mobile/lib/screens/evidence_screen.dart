@@ -60,7 +60,7 @@ class EvidenceScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
-    final style = ActionStyle.of(verdict.action, Brightness.light, l10n);
+    final style = ActionStyle.forVerdict(verdict, Brightness.light, l10n);
 
     return Scaffold(
       appBar: AppBar(
@@ -253,6 +253,7 @@ String _whyUndecided(Claim claim, AppLocalizations l10n) {
   final looked = claim.sourcesLookedAt ?? 0;
   return switch (claim.search) {
     'not_searched' => l10n.claimNotSearched,
+    'unavailable' when taking == 0 => l10n.claimSearchUnavailable,
     'timed_out' when taking == 0 => l10n.claimTimedOut,
     'searched' when taking == 1 => l10n.claimOneSource,
     'searched' when taking == 0 && looked > 0 => l10n.claimNoSources(looked),

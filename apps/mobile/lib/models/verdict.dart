@@ -340,8 +340,9 @@ class Claim {
   /// decided claim, so it can never disagree with the badge beside it.
   final String? explanation;
 
-  /// Whether the web was searched for this claim: "searched", "not_searched" or
-  /// "timed_out". Null on results stored before the server recorded it.
+  /// Whether the web was searched for this claim: "searched", "not_searched",
+  /// "timed_out" or "unavailable" (the news search could not be reached). Null on
+  /// results stored before the server recorded it.
   final String? search;
 
   /// How many pages were read for this claim, whatever they said.
@@ -533,6 +534,15 @@ class Verdict {
   /// For an uploaded picture: what was read in it. Null for text and links.
   final ImageReading? imageReading;
 
+  /// The claim the checked thing is mainly about: the headline claim, else the
+  /// first. Null when nothing checkable was found.
+  String? get headline {
+    for (final claim in claims) {
+      if (claim.importance == 'HEADLINE') return claim.text;
+    }
+    return claims.isEmpty ? null : claims.first.text;
+  }
+
   /// The response exactly as the server sent it, so a check kept in history on this
   /// phone is shown again from the same data, citations and all.
   final Map<String, dynamic> raw;
@@ -588,6 +598,24 @@ class Verdict {
   /// Distinct from "found to be false", and the interface must never merge the
   /// two: abstaining is the designed answer, not a failed one.
   bool get abstained => claims.isEmpty || claims.every((c) => !c.isDecisive);
+
+  /// Nothing in what was checked says anything a source could settle: no claim was
+  /// found in it, or the only question asked was a picture's own history and no
+  /// earlier copy of it turned up. Not "unconfirmed" - there is nothing to confirm,
+  /// and a sunset photo or a joke must not be told to "treat it with caution".
+  ///
+  /// Never when reading or extraction failed: no claims then means nothing was
+  /// read, not that nothing was said.
+  bool get nothingToCheck =>
+      factVerdict == FactVerdict.unconfirmed &&
+      claims.every((c) => c.claimType == 'MEDIA' && !c.isDecisive && c.evidence.isEmpty) &&
+      !skipped.any((s) => _readingChecks.contains(s.check));
+
+  static const _readingChecks = {'claim_extraction', 'image_text', 'document_text'};
+
+  /// The news search could not be reached for some claim, so the answer rests on
+  /// less than a check normally reads.
+  bool get searchUnavailable => claims.any((c) => c.search == 'unavailable');
 }
 
 /// A tamper-evident receipt for a verdict, and the result of checking it (M42).

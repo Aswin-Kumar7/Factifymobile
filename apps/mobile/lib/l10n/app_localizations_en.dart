@@ -1177,4 +1177,32 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get authGoogleUnavailable =>
       'Google sign-in isn\'t set up on this server yet. Use your email and a password.';
+
+  @override
+  String get yourPicture => 'Your picture';
+
+  @override
+  String get headlineNothingToCheck => 'Nothing to fact-check';
+
+  @override
+  String get subheadNothingToCheck => 'No claim found in it';
+
+  @override
+  String get nothingToCheckPicture =>
+      'We read this picture and found no claim in it that can be checked - no news, figure or announcement, just an image. There\'s nothing here to confirm or rule out.';
+
+  @override
+  String get nothingToCheckText =>
+      'We didn\'t find a factual claim in this - it reads as opinion, a joke or conversation, so there\'s nothing here to confirm or rule out.';
+
+  @override
+  String get searchUnavailableNote =>
+      'Our news search couldn\'t be reached, so this wasn\'t checked against news reports. Tap Check again in a little while.';
+
+  @override
+  String get claimSearchUnavailable =>
+      'Our news search couldn\'t be reached, so no news reports were looked at for this. It isn\'t the same as finding nothing.';
+
+  @override
+  String get documentReadTitle => 'What we read in your document';
 }

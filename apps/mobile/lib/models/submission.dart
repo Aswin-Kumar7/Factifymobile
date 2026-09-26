@@ -12,15 +12,12 @@ library;
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'verdict.dart';
+
 enum SubmissionKind { text, link, image, document }
 
 class Submission {
-  const Submission._({
-    required this.kind,
-    this.text,
-    this.file,
-    this.thumbnail,
-  });
+  const Submission._({required this.kind, this.text, this.file, this.thumbnail});
 
   factory Submission.text(String value) => Submission._(kind: SubmissionKind.text, text: value);
 
@@ -29,16 +26,10 @@ class Submission {
   /// [thumbnail] is read once at pick time rather than re-read on every rebuild:
   /// the picked file lives in a cache directory the system may clear, and a
   /// preview that vanishes mid-session looks like a bug in the verdict.
-  factory Submission.image(File file, Uint8List? thumbnail) => Submission._(
-    kind: SubmissionKind.image,
-    file: file,
-    thumbnail: thumbnail,
-  );
+  factory Submission.image(File file, Uint8List? thumbnail) =>
+      Submission._(kind: SubmissionKind.image, file: file, thumbnail: thumbnail);
 
-  factory Submission.document(File file) => Submission._(
-    kind: SubmissionKind.document,
-    file: file,
-  );
+  factory Submission.document(File file) => Submission._(kind: SubmissionKind.document, file: file);
 
   final SubmissionKind kind;
   final String? text;
@@ -48,16 +39,29 @@ class Submission {
   bool get isMedia => kind == SubmissionKind.image || kind == SubmissionKind.document;
 
   /// A short line naming the submission, for history rows and the preview card:
-  /// the text itself, or the file's name.
+  /// the text itself, or a document's name. Empty for a picture: its file name
+  /// ("IMG-20260927-WA0003.jpg") means nothing to anyone, so the interface names it
+  /// until the check says what it is about ([summaryWith]).
   String get summary {
     final value = text;
-    if (value != null) {
-      final flat = value.replaceAll(RegExp(r'\s+'), ' ').trim();
-      return flat.length <= 90 ? flat : '${flat.substring(0, 88)}…';
-    }
+    if (value != null) return _short(value);
+    if (kind == SubmissionKind.image) return '';
     // A shared file is copied under "share-<time>-<name>" (MainActivity); the name
     // is what the person would recognise.
     final name = file?.uri.pathSegments.last ?? '';
     return name.replaceFirst(RegExp(r'^share-\d+-'), '');
+  }
+
+  /// [summary], with a picture named by what the check found in it: its headline
+  /// claim, else what the picture shows.
+  String summaryWith(Verdict? verdict) {
+    if (kind != SubmissionKind.image || verdict == null) return summary;
+    final named = verdict.headline ?? verdict.imageReading?.description ?? '';
+    return named.trim().isEmpty ? '' : _short(named);
+  }
+
+  static String _short(String value) {
+    final flat = value.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return flat.length <= 90 ? flat : '${flat.substring(0, 88)}…';
   }
 }
