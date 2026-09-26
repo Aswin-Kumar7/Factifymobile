@@ -157,13 +157,24 @@ class AuthSettings(BaseModel):
 
     supabase_url: str | None = None
     anon_key: SecretStr | None = None
-    # Whether a check needs a signed-in person. Off until the app ships sign-in.
-    required: bool = False
+    # Whether a check needs a signed-in person. It does: an account is compulsory.
+    # Off only for a deliberately open server, and for tests that are not about
+    # accounts (tests/conftest.py).
+    required: bool = True
     signup_credits: int = Field(default=100, ge=0)
     check_cost: int = Field(default=1, ge=0)
     deep_check_cost: int = Field(default=3, ge=0)
     # Off until plans exist: usage is recorded, nothing is refused.
     enforce_credits: bool = False
+    # This server's own sign-in (app/accounts/local_auth.py).
+    session_days: int = Field(default=30, gt=0)
+    min_password_length: int = Field(default=8, ge=6)
+    # Google sign-in: a Google Cloud OAuth client (web application). Off until both
+    # are set; `public_url` is this server as the phone's browser reaches it, and
+    # `<public_url>/v1/auth/google/callback` must be an authorised redirect URI.
+    google_client_id: str | None = None
+    google_client_secret: SecretStr | None = None
+    public_url: str | None = None
 
 
 class LimitSettings(BaseModel):

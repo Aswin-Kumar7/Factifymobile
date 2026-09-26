@@ -1200,3 +1200,95 @@ class AccountRepository(_Repository):
         await self._execute(
             "UPDATE app_user SET display_name = %s WHERE id = %s", (name, UUID(user_id))
         )
+
+
+class LoginRepository(_Repository):
+    """How people sign in (0004_local_auth): their login and their sessions.
+
+    Passwords arrive here already hashed and sessions as the hash of their token;
+    nothing in these tables can be used as a password or a session on its own.
+    """
+
+    async def by_email(self, email: str) -> dict[str, object] | None:
+        return await self._one(
+            """
+            SELECT l.user_id, l.email, l.password_hash, l.google_sub,
+                   u.display_name, u.avatar_url
+              FROM user_login l JOIN app_user u ON u.id = l.user_id
+             WHERE lower(l.email) = lower(%s)
+            """,
+            (email,),
+        )
+
+    async def by_google(self, sub: str) -> dict[str, object] | None:
+        return await self._one(
+            """
+            SELECT l.user_id, l.email, l.password_hash, l.google_sub,
+                   u.display_name, u.avatar_url
+              FROM user_login l JOIN app_user u ON u.id = l.user_id
+             WHERE l.google_sub = %s
+            """,
+            (sub,),
+        )
+
+    async def create(
+        self,
+        *,
+        user_id: str,
+        email: str,
+        name: str | None,
+        avatar_url: str | None,
+        password_hash: str | None,
+        google_sub: str | None,
+    ) -> bool:
+        """Make the person and their login together. False when the email is taken."""
+        async with self._conn.transaction():
+            taken = await self._one(
+                "SELECT 1 FROM user_login WHERE lower(email) = lower(%s)", (email,)
+            )
+            if taken is not None:
+                return False
+            await self._conn.execute(
+                """
+                INSERT INTO app_user (id, email, display_name, avatar_url)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (UUID(user_id), email, name, avatar_url),
+            )
+            await self._conn.execute(
+                """
+                INSERT INTO user_login (user_id, email, password_hash, google_sub)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (UUID(user_id), email, password_hash, google_sub),
+            )
+        return True
+
+    async def link_google(self, *, user_id: str, sub: str) -> None:
+        await self._conn.execute(
+            "UPDATE user_login SET google_sub = %s WHERE user_id = %s", (sub, UUID(user_id))
+        )
+
+    async def open_session(
+        self, *, token_hash: str, user_id: str, method: str, expires_at: datetime
+    ) -> None:
+        await self._conn.execute(
+            """
+            INSERT INTO auth_session (token_hash, user_id, method, expires_at)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (token_hash, UUID(user_id), method, expires_at),
+        )
+
+    async def session_person(self, token_hash: str, now: datetime) -> dict[str, object] | None:
+        return await self._one(
+            """
+            SELECT s.user_id, u.email, u.display_name, u.avatar_url
+              FROM auth_session s JOIN app_user u ON u.id = s.user_id
+             WHERE s.token_hash = %s AND s.expires_at > %s
+            """,
+            (token_hash, now),
+        )
+
+    async def close_session(self, token_hash: str) -> None:
+        await self._conn.execute("DELETE FROM auth_session WHERE token_hash = %s", (token_hash,))

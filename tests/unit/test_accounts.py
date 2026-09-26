@@ -143,6 +143,17 @@ class TestTheCreditBook:
         assert first.used == 0
 
     @pytest.mark.anyio
+    async def test_someone_their_login_made_is_granted_on_arrival_once(self) -> None:
+        store = _Store()
+        await store.upsert(PERSON)  # as a Factify login does, at registration
+        book = CreditBook(store, signup_credits=100)
+
+        first = await book.account(PERSON, arriving=True)
+        again = await book.account(PERSON, arriving=True)
+
+        assert first.balance == again.balance == 100
+
+    @pytest.mark.anyio
     async def test_a_check_is_recorded_and_nothing_is_refused_while_unlimited(self) -> None:
         book = CreditBook(_Store(), signup_credits=1)
 
@@ -254,10 +265,13 @@ class TestTheAccountEndpoints:
 
         assert body["name"] == "Asha K"
 
-    def test_sign_in_config_is_off_until_the_project_key_is_set(self) -> None:
+    def test_sign_in_config_is_off_until_the_servers_sign_in_is_composed(self) -> None:
+        """Sign-in is this server's own now: nothing about a third-party auth
+        project, and no key of any kind, is handed to the app."""
         from app.main import create_app
 
         body = TestClient(create_app()).get("/v1/auth/config").json()
 
         assert body["enabled"] is False
-        assert body["anon_key"] is None
+        assert body["providers"] == []
+        assert "anon_key" not in body

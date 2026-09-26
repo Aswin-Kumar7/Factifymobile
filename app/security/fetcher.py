@@ -277,6 +277,41 @@ class SecureFetcher:
             elapsed_ms=(time.perf_counter() - started) * 1000,
         )
 
+    async def post_form(
+        self, url: str, form: dict[str, str], *, provider: str
+    ) -> FetchResult | FetchFailure:
+        """POST form fields to a configured endpoint, and keep its status.
+
+        OAuth's token exchange is a form post, and its errors come back as 400s with
+        a reason in the body, so like `get_json` any HTTP response is a result. SSRF-
+        checked like every other call; no redirects are followed.
+        """
+        started = time.perf_counter()
+        try:
+            resolve_and_validate(url)
+        except BlockedDestination as blocked:
+            return self._failure(url, blocked.reason, kind="blocked", provider=provider)
+        try:
+            response = await self._client.post(url, data=form)
+        except httpx.TimeoutException:
+            return self._failure(url, "request timed out", kind="timeout", provider=provider)
+        except httpx.HTTPError as exc:
+            return self._failure(
+                url, f"transport error: {type(exc).__name__}", kind="transport", provider=provider
+            )
+        body = await response.aread()
+        await response.aclose()
+        return FetchResult(
+            url=url,
+            final_url=url,
+            status_code=response.status_code,
+            content_type=response.headers.get("content-type", "").split(";")[0] or None,
+            body=body,
+            byte_count=len(body),
+            fetched_at=datetime.now(UTC),
+            elapsed_ms=(time.perf_counter() - started) * 1000,
+        )
+
     async def post_json(
         self,
         url: str,

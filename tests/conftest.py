@@ -31,6 +31,12 @@ from app.db.pool import Database
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
+# A check needs an account (app/config.py). Tests about the pipeline, the cache or
+# reading a picture post checks with no one signed in, so accounts are off for the
+# test run, whatever a developer's `.env` says; tests about accounts turn them on
+# for their own app (tests/unit/test_local_auth.py).
+os.environ["FACTIFY_AUTH__REQUIRED"] = "false"
+
 
 def _test_database_url() -> str | None:
     """The test connection string, from the environment or from `.env`.

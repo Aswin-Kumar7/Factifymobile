@@ -70,10 +70,15 @@ class CreditBook:
     def enforced(self) -> bool:
         return self._enforce
 
-    async def account(self, user: AuthUser) -> Account:
-        """The person's account, created — with its starting grant — on first sight."""
+    async def account(self, user: AuthUser, *, arriving: bool = False) -> Account:
+        """The person's account, created — with its starting grant — on first sight.
+
+        `arriving` is for a sign-in or sign-up: a Factify login makes the person
+        itself, at registration, so "created here" cannot be what gives the grant.
+        The grant's key means it is only ever given once either way.
+        """
         created = await self._store.upsert(user)
-        if created and self._signup_credits:
+        if (created or arriving) and self._signup_credits:
             # Keyed, so a race between two first requests grants once.
             await self._store.record(user.id, self._signup_credits, "signup_grant", "signup")
         profile = await self._store.profile(user.id) or {}

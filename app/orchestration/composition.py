@@ -27,6 +27,8 @@ from typing import Any
 from uuid import UUID
 
 from app.accounts import CreditBook, SupabaseIdentity
+from app.accounts.google import GoogleOAuth
+from app.accounts.local_auth import Identities, LocalAuth
 from app.config import Settings, supabase_url_for
 from app.db.pool import Database
 from app.domain.claim import Claim
@@ -44,6 +46,7 @@ from app.orchestration.adapters import (
     PoolAccountStore,
     PoolCacheService,
     PoolGovernor,
+    PoolLoginStore,
     PoolReviewQueue,
 )
 from app.orchestration.ledger import CaseReader, Ledger
@@ -351,12 +354,36 @@ async def build(settings: Settings) -> dict[str, Any]:
 
     anon_key = settings.auth.anon_key.get_secret_value() if settings.auth.anon_key else None
     project = supabase_url_for(settings)
+    # This server's own sign-in: an email and a password, or Google.
+    local_auth = LocalAuth(
+        PoolLoginStore(database),
+        session_days=settings.auth.session_days,
+        min_password_length=settings.auth.min_password_length,
+    )
+    google_secret = (
+        settings.auth.google_client_secret.get_secret_value()
+        if settings.auth.google_client_secret
+        else None
+    )
+    google_oauth = (
+        GoogleOAuth(
+            client_id=settings.auth.google_client_id,
+            client_secret=google_secret,
+            redirect_uri=f"{settings.auth.public_url.rstrip('/')}/v1/auth/google/callback",
+            fetcher=SecureFetcher(timeout_seconds=15.0),
+        )
+        if settings.auth.google_client_id and google_secret and settings.auth.public_url
+        else None
+    )
     state: dict[str, Any] = {
         "database": database,
-        # Sign-in is checked with Supabase itself; absent until the project's public
-        # key is configured, and until then every check is anonymous.
-        "identity": (
-            SupabaseIdentity(url=project, anon_key=anon_key) if project and anon_key else None
+        "local_auth": local_auth,
+        "google_oauth": google_oauth,
+        # A request's session: this server's own first, then a Supabase session from
+        # before, while that project is still configured.
+        "identity": Identities(
+            local_auth,
+            SupabaseIdentity(url=project, anon_key=anon_key) if project and anon_key else None,
         ),
         "credits": CreditBook(
             PoolAccountStore(database),

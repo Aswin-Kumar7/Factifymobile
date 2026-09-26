@@ -25,13 +25,14 @@ there is exactly one of it.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 
 from app.cache.keys import CacheKeyParts
 from app.cache.service import CachedVerdict, CacheService
 from app.config import ProviderSettings
 from app.db.pool import Database
-from app.db.repositories import AccountRepository
+from app.db.repositories import AccountRepository, LoginRepository
 from app.governor.governor import Governor, ProviderUnavailable, Skip, SkipReason, pace
 from app.security.ratelimit import SlidingWindowLimiter
 
@@ -184,3 +185,42 @@ class PoolAccountStore:
     async def set_name(self, user_id: str, name: str) -> None:
         async with self._database.connection() as conn:
             await AccountRepository(conn).set_name(user_id=user_id, name=name)
+
+
+class PoolLoginStore:
+    """Sign-in (`LocalAuth`'s store), one short-lived connection per operation."""
+
+    def __init__(self, database: Database) -> None:
+        self._database = database
+
+    async def login_by_email(self, email: str) -> dict[str, Any] | None:
+        async with self._database.connection() as conn:
+            return await LoginRepository(conn).by_email(email)
+
+    async def login_by_google(self, sub: str) -> dict[str, Any] | None:
+        async with self._database.connection() as conn:
+            return await LoginRepository(conn).by_google(sub)
+
+    async def create_user(self, **fields: Any) -> bool:
+        async with self._database.connection() as conn:
+            return await LoginRepository(conn).create(**fields)
+
+    async def link_google(self, *, user_id: str, sub: str) -> None:
+        async with self._database.connection() as conn:
+            await LoginRepository(conn).link_google(user_id=user_id, sub=sub)
+
+    async def create_session(
+        self, *, token_hash: str, user_id: str, method: str, expires_at: datetime
+    ) -> None:
+        async with self._database.connection() as conn:
+            await LoginRepository(conn).open_session(
+                token_hash=token_hash, user_id=user_id, method=method, expires_at=expires_at
+            )
+
+    async def session_user(self, token_hash: str, now: datetime) -> dict[str, Any] | None:
+        async with self._database.connection() as conn:
+            return await LoginRepository(conn).session_person(token_hash, now)
+
+    async def delete_session(self, token_hash: str) -> None:
+        async with self._database.connection() as conn:
+            await LoginRepository(conn).close_session(token_hash)

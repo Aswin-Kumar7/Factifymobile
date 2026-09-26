@@ -8,12 +8,16 @@ run.
 from __future__ import annotations
 
 import logging
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Request, status
+from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.accounts import Account, AuthUser, IdentityUnavailable
-from app.config import supabase_url_for
+from app.accounts.google import APP_REDIRECT, GoogleSignInFailed
+from app.accounts.local_auth import AuthRefused, IssuedSession
+from app.security.ratelimit import RateLimit, SlidingWindowLimiter
 
 logger = logging.getLogger("factify.api.accounts")
 
@@ -26,11 +30,34 @@ class AuthConfigResponse(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     enabled: bool
-    supabase_url: str | None = None
-    anon_key: str | None = None
     # Whether a check needs a signed-in person.
     required: bool = False
+    # "password", and "google" once a Google OAuth client is configured.
     providers: tuple[str, ...] = ()
+    min_password_length: int = 8
+
+
+class RegisterRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=1, max_length=200)
+    name: str | None = Field(default=None, max_length=60)
+
+
+class SignInRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=1, max_length=200)
+
+
+class SessionResponse(BaseModel):
+    """A new session: the token the app sends with every request, and who it is for."""
+
+    model_config = ConfigDict(frozen=True)
+
+    access_token: str
+    expires_at: str
+    method: str
+    email: str
+    name: str | None = None
 
 
 class CreditsResponse(BaseModel):
@@ -141,16 +168,151 @@ async def charge(request: Request, user: AuthUser | None, cost: int, *, deep: bo
 @router.get("/auth/config", response_model=AuthConfigResponse, summary="How to sign in")
 async def auth_config(request: Request) -> AuthConfigResponse:
     settings = request.app.state.settings
-    project = supabase_url_for(settings)
-    key = settings.auth.anon_key.get_secret_value() if settings.auth.anon_key else None
-    enabled = bool(project and key and getattr(request.app.state, "identity", None))
+    enabled = getattr(request.app.state, "local_auth", None) is not None
+    google = getattr(request.app.state, "google_oauth", None) is not None
+    providers: tuple[str, ...] = ()
+    if enabled:
+        providers = ("password", "google") if google else ("password",)
     return AuthConfigResponse(
         enabled=enabled,
-        supabase_url=project if enabled else None,
-        anon_key=key if enabled else None,
         required=settings.auth.required,
-        providers=("email", "google") if enabled else (),
+        providers=providers,
+        min_password_length=settings.auth.min_password_length,
     )
+
+
+# Refusals, as HTTP: what the app shows is chosen from `detail`, which is the reason.
+_REFUSED_STATUS = {
+    "invalid_email": status.HTTP_422_UNPROCESSABLE_ENTITY,
+    "weak_password": status.HTTP_422_UNPROCESSABLE_ENTITY,
+    "email_taken": status.HTTP_409_CONFLICT,
+    "use_google": status.HTTP_409_CONFLICT,
+    "wrong_credentials": status.HTTP_401_UNAUTHORIZED,
+}
+
+# Password guessing is slowed per address and per network address: ten tries in
+# fifteen minutes each, well past anyone mistyping.
+_ATTEMPTS = RateLimit(requests=10, window_seconds=900)
+_attempts = SlidingWindowLimiter()
+
+
+def _throttle(request: Request, email: str) -> None:
+    client = request.client.host if request.client else "unknown"
+    for key in (f"email:{email.strip().lower()}", f"ip:{client}"):
+        if not _attempts.check(key, _ATTEMPTS).allowed:
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail="too_many_attempts")
+
+
+def _local(request: Request):  # type: ignore[no-untyped-def]
+    auth = getattr(request.app.state, "local_auth", None)
+    if auth is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="sign_in_unavailable")
+    return auth
+
+
+async def _welcome(request: Request, user: AuthUser) -> None:
+    """Open the person's credit account (the signup grant) as they arrive."""
+    book = getattr(request.app.state, "credits", None)
+    if book is None:
+        return
+    try:
+        await book.account(user, arriving=True)
+    except Exception:
+        # Credits are shown on the profile and are opened there too; a sign-in
+        # never fails because the ledger could not be written at that moment.
+        logger.exception("could not open the credit account at sign-in")
+
+
+def _session(session: IssuedSession) -> SessionResponse:
+    return SessionResponse(
+        access_token=session.token,
+        expires_at=session.expires_at.isoformat(),
+        method=session.method,
+        email=session.user.email,
+        name=session.user.name,
+    )
+
+
+@router.post(
+    "/auth/register",
+    response_model=SessionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create an account with an email and a password",
+)
+async def register(payload: RegisterRequest, request: Request) -> SessionResponse:
+    auth = _local(request)
+    _throttle(request, payload.email)
+    try:
+        session = await auth.register(
+            email=payload.email, password=payload.password, name=payload.name
+        )
+    except AuthRefused as refused:
+        raise HTTPException(_REFUSED_STATUS[refused.reason], detail=refused.reason) from None
+    await _welcome(request, session.user)
+    return _session(session)
+
+
+@router.post(
+    "/auth/login", response_model=SessionResponse, summary="Sign in with an email and a password"
+)
+async def login(payload: SignInRequest, request: Request) -> SessionResponse:
+    auth = _local(request)
+    _throttle(request, payload.email)
+    try:
+        session = await auth.sign_in(email=payload.email, password=payload.password)
+    except AuthRefused as refused:
+        raise HTTPException(_REFUSED_STATUS[refused.reason], detail=refused.reason) from None
+    await _welcome(request, session.user)
+    return _session(session)
+
+
+@router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT, summary="End this session")
+async def logout(request: Request) -> Response:
+    header = request.headers.get("authorization", "")
+    token = header[7:].strip() if header[:7].lower() == "bearer " else ""
+    auth = getattr(request.app.state, "local_auth", None)
+    if token and auth is not None:
+        await auth.sign_out(token)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/auth/google/start", summary="Begin signing in with Google, in the browser")
+async def google_start(request: Request) -> RedirectResponse:
+    google = getattr(request.app.state, "google_oauth", None)
+    if google is None:
+        return RedirectResponse(f"{APP_REDIRECT}#{urlencode({'error': 'google_unavailable'})}")
+    return RedirectResponse(google.start())
+
+
+@router.get("/auth/google/callback", include_in_schema=False)
+async def google_callback(
+    request: Request, code: str = "", state: str = "", error: str = ""
+) -> RedirectResponse:
+    """Where Google sends the browser back. Ends at the app, signed in or not."""
+    google = getattr(request.app.state, "google_oauth", None)
+    auth = getattr(request.app.state, "local_auth", None)
+    if error or google is None or auth is None or not code:
+        reason = "google_cancelled" if error == "access_denied" else "google_failed"
+        return RedirectResponse(f"{APP_REDIRECT}#{urlencode({'error': reason})}")
+    try:
+        profile = await google.finish(code=code, state=state)
+        session = await auth.sign_in_google(
+            sub=profile.sub, email=profile.email, name=profile.name, avatar_url=profile.picture
+        )
+    except (GoogleSignInFailed, AuthRefused) as failure:
+        logger.warning("google sign-in failed: %s", failure)
+        return RedirectResponse(f"{APP_REDIRECT}#{urlencode({'error': 'google_failed'})}")
+    await _welcome(request, session.user)
+    # In the fragment, so the session never reaches any server's logs on the way.
+    fragment = urlencode(
+        {
+            "access_token": session.token,
+            "expires_at": session.expires_at.isoformat(),
+            "method": "google",
+            "email": session.user.email,
+        }
+    )
+    return RedirectResponse(f"{APP_REDIRECT}#{fragment}")
 
 
 @router.get("/me", response_model=AccountResponse, summary="The signed-in person")
