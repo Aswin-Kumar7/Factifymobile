@@ -58,12 +58,12 @@ class TestValidation:
 
 
 class TestUsability:
-    def test_provider_with_zero_cap_is_not_usable(self) -> None:
-        """Cap zero is valid and meaningful: skip the provider, record the reason."""
-        provider = ProviderSettings(enabled=True, api_key="k", daily_cap=0)
+    def test_a_daily_cap_no_longer_decides_whether_a_provider_is_used(self) -> None:
+        """The daily cap is a spend alarm now, not a permission (2026-09-26)."""
+        assert ProviderSettings(enabled=True, api_key="k", daily_cap=0).usable
 
-        assert provider.enabled
-        assert not provider.usable
+    def test_a_disabled_provider_is_not_usable(self) -> None:
+        assert not ProviderSettings(enabled=False, api_key="k", daily_cap=10).usable
 
     def test_fully_configured_provider_is_usable(self) -> None:
         provider = ProviderSettings(enabled=True, api_key="k", daily_cap=33)

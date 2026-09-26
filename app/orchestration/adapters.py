@@ -31,7 +31,7 @@ from app.cache.keys import CacheKeyParts
 from app.cache.service import CachedVerdict, CacheService
 from app.config import ProviderSettings
 from app.db.pool import Database
-from app.governor.governor import Governor
+from app.governor.governor import Governor, ProviderUnavailable, Skip, SkipReason, pace
 from app.security.ratelimit import SlidingWindowLimiter
 
 logger = logging.getLogger("factify.orchestration.adapters")
@@ -46,12 +46,24 @@ class PoolGovernor:
         self._burst = SlidingWindowLimiter()
 
     async def acquire(self, provider: str) -> Any:
-        async with self._database.connection() as conn:
-            return await Governor(conn, self._providers, burst=self._burst).acquire(provider)
+        outcome = await self.try_acquire(provider)
+        if isinstance(outcome, Skip):
+            raise ProviderUnavailable(provider, outcome.reason)
+        return outcome
 
     async def try_acquire(self, provider: str) -> Any:
+        # Paced before a connection is taken. A call waiting for room under a
+        # provider's per-minute ceiling can wait for seconds, and holding one of the
+        # pool's connections all that time would starve every other request.
+        settings = self._providers.get(provider)
+        if not await pace(provider, settings, self._burst):
+            async with self._database.connection() as conn:
+                governor = Governor(conn, self._providers, burst=self._burst)
+                return governor._record_skip(provider, SkipReason.RATE_LIMITED)
         async with self._database.connection() as conn:
-            return await Governor(conn, self._providers, burst=self._burst).try_acquire(provider)
+            return await Governor(conn, self._providers, burst=self._burst).try_acquire(
+                provider, paced=True
+            )
 
 
 class PoolCacheService:

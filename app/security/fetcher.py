@@ -13,6 +13,7 @@ for us would take that hop before we ever see it.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
@@ -116,6 +117,23 @@ def _www_variant(url: str) -> str | None:
         return None
     port = f":{parts.port}" if parts.port else ""
     return urlunsplit((parts.scheme, f"www.{host}{port}", parts.path, parts.query, parts.fragment))
+
+
+# Provider answers that mean "try again in a moment". 432, Tavily's plan limit, is
+# not one of them: waiting does not refill a plan.
+_RETRYABLE = frozenset({429, 502, 503, 504})
+_PROVIDER_RETRIES = 2
+_BACKOFF_SECONDS = (1.0, 3.0)
+_MAX_RETRY_AFTER_SECONDS = 10.0
+
+
+def _retry_delay(response: httpx.Response, attempt: int) -> float:
+    """The provider's Retry-After when it gives one (capped), else a short backoff."""
+    header = response.headers.get("retry-after", "")
+    try:
+        return min(max(float(header), 0.0), _MAX_RETRY_AFTER_SECONDS)
+    except ValueError:
+        return _BACKOFF_SECONDS[min(attempt, len(_BACKOFF_SECONDS) - 1)]
 
 
 class SecureFetcher:
@@ -245,19 +263,33 @@ class SecureFetcher:
         except BlockedDestination as blocked:
             return self._failure(url, blocked.reason, kind="blocked", provider=provider)
 
-        try:
-            response = await self._client.post(
-                url, json=payload, headers={"Content-Type": "application/json", **(headers or {})}
-            )
-        except httpx.TimeoutException:
-            return self._failure(url, "request timed out", kind="timeout", provider=provider)
-        except httpx.HTTPError as exc:
-            return self._failure(
-                url, f"transport error: {type(exc).__name__}", kind="transport", provider=provider
-            )
+        # A provider saying "too many requests" or "busy" is asking for a moment, not
+        # refusing. That answer used to drop the call: a source read on a busy minute
+        # simply vanished from the check. A short wait and another try, honouring the
+        # provider's own Retry-After, recovers it. Anything else fails at once.
+        for attempt in range(_PROVIDER_RETRIES + 1):
+            try:
+                response = await self._client.post(
+                    url,
+                    json=payload,
+                    headers={"Content-Type": "application/json", **(headers or {})},
+                )
+            except httpx.TimeoutException:
+                return self._failure(url, "request timed out", kind="timeout", provider=provider)
+            except httpx.HTTPError as exc:
+                return self._failure(
+                    url,
+                    f"transport error: {type(exc).__name__}",
+                    kind="transport",
+                    provider=provider,
+                )
 
-        body = await response.aread()
-        await response.aclose()
+            body = await response.aread()
+            await response.aclose()
+            if response.status_code not in _RETRYABLE or attempt == _PROVIDER_RETRIES:
+                break
+            await asyncio.sleep(_retry_delay(response, attempt))
+
         elapsed_ms = (time.perf_counter() - started) * 1000
 
         if response.status_code >= 400:

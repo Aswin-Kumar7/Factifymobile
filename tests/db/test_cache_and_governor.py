@@ -35,7 +35,10 @@ def _parts(**overrides: Any) -> CacheKeyParts:
 
 def _providers(**caps: int) -> dict[str, ProviderSettings]:
     return {
-        name: ProviderSettings(enabled=True, api_key="test-key", daily_cap=cap, per_minute_cap=0)
+        # The emergency stop: since 2026-09-26 the only daily limit that refuses.
+        name: ProviderSettings(
+            enabled=True, api_key="test-key", daily_hard_cap=cap, per_minute_cap=0
+        )
         for name, cap in caps.items()
     }
 
@@ -219,18 +222,14 @@ class TestGovernorBudget:
         assert isinstance(outcome, Skip)
         assert outcome.reason is SkipReason.DISABLED
 
-    async def test_zero_cap_reads_as_capacity_not_as_absence(self, conn: Any) -> None:
-        """A configured provider budgeted to nothing is exhausted, not missing.
+    async def test_a_daily_alarm_never_refuses(self, conn: Any) -> None:
+        """The daily cap is a spend alarm: crossing it logs, and calls continue."""
+        providers = {"vision": ProviderSettings(enabled=True, api_key="k", daily_cap=1)}
+        governor = Governor(conn, providers)
 
-        The distinction reaches the user: "capacity limited" invites trying later,
-        "disabled" says the check is not on offer at all.
-        """
-        governor = Governor(conn, _providers(vision=0))
+        outcomes = [await governor.try_acquire("vision") for _ in range(3)]
 
-        outcome = await governor.try_acquire("vision")
-
-        assert isinstance(outcome, Skip)
-        assert outcome.reason is SkipReason.CAPACITY_LIMITED
+        assert all(isinstance(o, Grant) for o in outcomes)
 
     async def test_an_unknown_provider_is_skipped(self, conn: Any) -> None:
         governor = Governor(conn, {})
@@ -239,15 +238,13 @@ class TestGovernorBudget:
 
         assert isinstance(outcome, Skip)
 
-    async def test_the_burst_ceiling_is_enforced_separately_from_the_daily_one(
-        self, conn: Any
-    ) -> None:
-        """Three items shared in quick succession trip a rate limit in seconds, long
-        before a day's budget runs out."""
+    async def test_the_burst_ceiling_gives_up_only_after_waiting(self, conn: Any) -> None:
+        """A burst waits for room in the window; it is refused only when none comes
+        within the allowed wait (kept short here so the test does not sleep)."""
         providers = {
             "llm": ProviderSettings(enabled=True, api_key="k", daily_cap=1000, per_minute_cap=2)
         }
-        governor = Governor(conn, providers)
+        governor = Governor(conn, providers, pace_max_wait=0.05)
 
         first = await governor.try_acquire("llm")
         second = await governor.try_acquire("llm")
@@ -259,7 +256,8 @@ class TestGovernorBudget:
         assert third.reason is SkipReason.RATE_LIMITED
 
     async def test_acquire_raises_for_callers_that_cannot_proceed(self, conn: Any) -> None:
-        governor = Governor(conn, _providers(vision=0))
+        governor = Governor(conn, _providers(vision=1))
+        await governor.acquire("vision")
 
         with pytest.raises(ProviderUnavailable, match="capacity limited"):
             await governor.acquire("vision")

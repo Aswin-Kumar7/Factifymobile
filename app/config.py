@@ -34,10 +34,17 @@ class Environment(StrEnum):
 class ProviderSettings(BaseModel):
     """One external provider's operating envelope.
 
-    `daily_cap` is deliberately set *below* the provider's own limit so the system
-    degrades on our terms before the provider degrades on its own (codexplan.md §11).
-    A cap of zero is a valid, meaningful configuration: the provider is skipped and
-    the reason is recorded.
+    None of these limits a person's checks; that is the per-user credit book's job
+    (`app/accounts`). What is left here protects the account, not the product:
+
+    - `daily_cap` is a spend **alarm**. Crossing it logs a warning once that day and
+      calls continue. Zero means no alarm. It used to refuse, which made it a product
+      limit shared by everyone — about 27 checks a day for the whole service.
+    - `daily_hard_cap` is the emergency stop against a runaway bug: past it, calls
+      are refused. Zero, the default, means never.
+    - `per_minute_cap` paces rather than refuses: a call beyond it waits for room in
+      the window, because the ceiling it mirrors (a provider's own rate limit) clears
+      in seconds.
     """
 
     model_config = {"frozen": True}
@@ -45,6 +52,7 @@ class ProviderSettings(BaseModel):
     enabled: bool = False
     api_key: SecretStr | None = None
     daily_cap: int = Field(default=0, ge=0)
+    daily_hard_cap: int = Field(default=0, ge=0)
     per_minute_cap: int = Field(default=0, ge=0)
     timeout_seconds: float = Field(default=10.0, gt=0, le=120)
     max_retries: int = Field(default=1, ge=0, le=5)
@@ -98,13 +106,14 @@ class ProviderSettings(BaseModel):
 
     @property
     def usable(self) -> bool:
-        """Enabled, credentialled, and permitted at least one call per day.
+        """Enabled and credentialled.
 
         The governor's question, deliberately not including the endpoint: quota
         accounting and transport are separate concerns, and a component that only
-        meters calls should not need a URL to do it.
+        meters calls should not need a URL to do it. A daily cap no longer decides it:
+        the cap is an alarm, not a permission.
         """
-        return self.enabled and self.api_key is not None and self.daily_cap > 0
+        return self.enabled and self.api_key is not None
 
     @property
     def is_callable(self) -> bool:

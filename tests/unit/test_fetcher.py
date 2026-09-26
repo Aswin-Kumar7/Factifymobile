@@ -246,3 +246,64 @@ class TestSingleClientDiscipline:
                     offenders.append(f"{path.name}: {marker}")
 
         assert not offenders, f"HTTP clients outside the secure fetcher: {offenders}"
+
+
+class TestAProviderAskingForAMomentGetsOne:
+    """A 429 or 503 from a model or search provider used to drop the call outright."""
+
+    @pytest.mark.anyio
+    async def test_a_busy_provider_is_retried_and_the_call_recovers(
+        self, _restore_resolver: object, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import app.security.fetcher as fetcher_module
+
+        _resolver({"api.example.org": PUBLIC})
+        waits: list[float] = []
+
+        async def _sleep(seconds: float) -> None:
+            waits.append(seconds)
+
+        monkeypatch.setattr(fetcher_module.asyncio, "sleep", _sleep)
+        answers = iter(
+            [
+                httpx.Response(429, headers={"retry-after": "2"}),
+                httpx.Response(503),
+                httpx.Response(200, json={"ok": True}),
+            ]
+        )
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return next(answers)
+
+        result = await _fetcher(handler).post_json(
+            "https://api.example.org/v1/chat", {"q": 1}, provider="llm"
+        )
+
+        assert isinstance(result, FetchResult)
+        assert waits == [2.0, 3.0]  # the provider's Retry-After, then the backoff
+
+    @pytest.mark.anyio
+    async def test_a_plan_limit_is_not_retried(
+        self, _restore_resolver: object, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Tavily's 432 means the plan is spent; waiting does not refill it."""
+        import app.security.fetcher as fetcher_module
+
+        _resolver({"api.example.org": PUBLIC})
+        calls: list[int] = []
+
+        async def _sleep(seconds: float) -> None:
+            raise AssertionError("a plan limit must not be waited on")
+
+        monkeypatch.setattr(fetcher_module.asyncio, "sleep", _sleep)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append(1)
+            return httpx.Response(432)
+
+        result = await _fetcher(handler).post_json(
+            "https://api.example.org/search", {"q": 1}, provider="web_search"
+        )
+
+        assert isinstance(result, FetchFailure)
+        assert calls == [1]

@@ -1,5 +1,11 @@
 """The call governor (M14).
 
+Since 2026-09-26 it no longer refuses on volume. Daily caps are spend alarms and the
+per-minute ceiling paces calls instead of dropping them; limits on what a person may
+check live in the per-user credit book, decided on the server. What still refuses is
+an explicit emergency stop (`daily_hard_cap`), a disabled provider, and a budget store
+it cannot reach. The paragraphs below describe the refusing design this replaced.
+
 No external provider can be called more times per day than its budget allows, and
 running out is an honest, first-class state rather than an error.
 
@@ -21,6 +27,7 @@ abstention with a stated reason is a correct answer, not a degraded one.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections.abc import AsyncIterator
@@ -35,6 +42,40 @@ from app.observability.metrics import metrics
 from app.security.ratelimit import RateLimit, SlidingWindowLimiter
 
 logger = logging.getLogger("factify.governor")
+
+# Longest a call waits for room under a provider's per-minute ceiling before it is
+# given up on. Inside the request's own deadline, which cancels a wait that outlasts it.
+_PACE_MAX_WAIT_SECONDS = 20.0
+
+
+async def pace(
+    provider: str,
+    settings: ProviderSettings | None,
+    burst: SlidingWindowLimiter,
+    *,
+    max_wait: float = _PACE_MAX_WAIT_SECONDS,
+) -> bool:
+    """Wait for room under a provider's per-minute ceiling. False if none came in time.
+
+    Paced, not refused. The ceiling mirrors a provider's own rate limit, which clears
+    in seconds; refusing turned a burst of claims into claims marked "rate limited"
+    that a short wait would have checked. Needs no database, so a caller holding a
+    pooled connection can do this first and not hold the connection while it waits.
+    """
+    if settings is None or not settings.per_minute_cap:
+        return True
+    limit = RateLimit(requests=settings.per_minute_cap, window_seconds=60)
+    waited = 0.0
+    while True:
+        decision = burst.check(f"provider:{provider}", limit)
+        if decision.allowed:
+            return True
+        remaining = max_wait - waited
+        if remaining <= 0:
+            return False
+        pause = min(max(decision.reset_after_seconds, 0.05), remaining)
+        await asyncio.sleep(pause)
+        waited += pause
 
 
 class SkipReason(StrEnum):
@@ -103,8 +144,10 @@ class Governor:
         providers: dict[str, ProviderSettings],
         *,
         burst: SlidingWindowLimiter | None = None,
+        pace_max_wait: float = _PACE_MAX_WAIT_SECONDS,
     ) -> None:
         self._budget = BudgetRepository(conn)
+        self._pace_max_wait = pace_max_wait
         self._providers = providers
         # Injectable because the limiter only limits if it is shared. A Governor
         # constructed per request gets a fresh window per request, which counts each
@@ -133,41 +176,47 @@ class Governor:
         )
         return skip
 
-    async def try_acquire(self, provider: str) -> Grant | Skip:
+    async def try_acquire(self, provider: str, *, paced: bool = False) -> Grant | Skip:
         """Take one unit of budget, or explain why not.
 
         Returns a value rather than raising, because "we did not call this provider"
-        is an ordinary branch of a successful request.
+        is an ordinary branch of a successful request. `paced` says the caller has
+        already waited for room under the per-minute ceiling (see `PoolGovernor`).
         """
         settings = self._providers.get(provider)
 
         if settings is None or not settings.enabled or settings.api_key is None:
             return self._record_skip(provider, SkipReason.DISABLED)
 
-        # A cap of zero is configured-but-budgeted-to-nothing, which is exhaustion
-        # from the first call rather than an absent provider. The distinction reaches
-        # the user: "capacity limited" invites trying later, "disabled" does not.
-        if settings.daily_cap == 0:
-            return self._record_skip(provider, SkipReason.CAPACITY_LIMITED)
-
-        if settings.per_minute_cap:
-            burst = self._burst.check(
-                f"provider:{provider}",
-                RateLimit(requests=settings.per_minute_cap, window_seconds=60),
-            )
-            if not burst.allowed:
-                return self._record_skip(provider, SkipReason.RATE_LIMITED)
+        if not paced and not await pace(
+            provider, settings, self._burst, max_wait=self._pace_max_wait
+        ):
+            return self._record_skip(provider, SkipReason.RATE_LIMITED)
 
         try:
-            taken = await self._budget.try_consume(provider=provider, cap=settings.daily_cap)
+            used = await self._budget.consume(provider=provider, hard_cap=settings.daily_hard_cap)
         except Exception:
             # Fails closed. If we cannot account for a call, we do not make it — an
             # unaccounted call is exactly the one that overruns a free tier.
             logger.exception("governor could not reach the budget store")
             return self._record_skip(provider, SkipReason.GOVERNOR_UNAVAILABLE)
 
-        if not taken:
+        # Only the emergency stop refuses.
+        if used is None:
             return self._record_skip(provider, SkipReason.CAPACITY_LIMITED)
+
+        # The alarm: once, as the day's spend crosses it. Calls continue.
+        if settings.daily_cap and used == settings.daily_cap:
+            event(
+                logger,
+                "provider spend alarm",
+                module="governor",
+                outcome="degraded",
+                provider=provider,
+                used=used,
+                alarm=settings.daily_cap,
+                level=logging.WARNING,
+            )
 
         return Grant(provider=provider, granted_at=time.perf_counter())
 
@@ -198,10 +247,12 @@ class Governor:
     async def usage(self, provider: str) -> dict[str, int]:
         """Today's spend against today's cap, for the usage endpoint."""
         row = await self._budget.usage(provider=provider)
-        if row is None:
-            settings = self._providers.get(provider)
-            return {"used": 0, "cap": settings.daily_cap if settings else 0}
-        return {"used": int(row["used"]), "cap": int(row["cap"])}
+        settings = self._providers.get(provider)
+        return {
+            "used": 0 if row is None else int(row["used"]),
+            "alarm": settings.daily_cap if settings else 0,
+            "hard_cap": settings.daily_hard_cap if settings else 0,
+        }
 
     def capacity_notes(self) -> tuple[str, ...]:
         """What the response says about checks that did not happen."""

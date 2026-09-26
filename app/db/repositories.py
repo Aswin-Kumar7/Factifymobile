@@ -865,6 +865,10 @@ class CacheRepository(_Repository):
         )
 
 
+# `call_budget.cap` when no hard cap is configured: the largest INTEGER.
+_NO_CEILING = 2_147_483_647
+
+
 class BudgetRepository(_Repository):
     """Daily per-provider counters. The governor (M14) enforces policy on top."""
 
@@ -893,6 +897,35 @@ class BudgetRepository(_Repository):
             (provider, day),
         )
         return row is not None
+
+    async def consume(
+        self, *, provider: str, hard_cap: int = 0, day: date | None = None
+    ) -> int | None:
+        """Count one call and return today's total, or None past the hard cap.
+
+        `hard_cap` zero means no ceiling; the table's `used <= cap` constraint is then
+        satisfied with the largest value the column holds rather than by relaxing it.
+        """
+        day = day or datetime.now(UTC).date()
+        ceiling = hard_cap if hard_cap > 0 else _NO_CEILING
+        await self._execute(
+            """
+            INSERT INTO call_budget (provider, day, used, cap)
+            VALUES (%s, %s, 0, %s)
+            ON CONFLICT (provider, day) DO UPDATE SET cap = EXCLUDED.cap
+            """,
+            (provider, day, ceiling),
+        )
+        row = await self._one(
+            """
+            UPDATE call_budget
+               SET used = used + 1
+             WHERE provider = %s AND day = %s AND used < cap
+            RETURNING used
+            """,
+            (provider, day),
+        )
+        return None if row is None else int(row["used"])
 
     async def usage(self, *, provider: str, day: date | None = None) -> Row | None:
         day = day or datetime.now(UTC).date()
