@@ -205,7 +205,7 @@ class FactCheckResolver:
         self,
         *,
         records: list[FactCheckRecord],
-        governor: Governor | None = None,
+        governor: Governor | Any | None = None,
         api_available: bool = False,
         fetcher: SecureFetcher | None = None,
         endpoint: str = "",

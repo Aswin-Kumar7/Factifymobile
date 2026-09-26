@@ -39,6 +39,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -56,7 +57,7 @@ from app.sources.corpus_text import is_navigation
 logger = logging.getLogger("factify.sources.reasoning")
 
 PROVIDER = "llm"
-REASONER_VERSION = "2026.09.24.6"
+REASONER_VERSION = "2026.09.26.2"
 
 # How many passages go to the model in one call. One call per source, not one per
 # passage: the model needs to see the alternatives to judge which actually bears on
@@ -468,6 +469,7 @@ _RESPONSE_SCHEMA: dict[str, Any] = {
                         "enum": [
                             "DENIES",
                             "INCOMPATIBLE",
+                            "DIFFERENT_DETAILS",
                             "DIFFERENT_SUBJECT",
                             "DIFFERENT_QUESTION",
                             "NO_OUTCOME_STATED",
@@ -546,14 +548,23 @@ For each source:
   Atal Pension Yojana is not an "Atal Free Pension Scheme". An earlier or later event
   of the same kind is a different event too: last year's cut in fuel prices does not
   address a claim about a new one, however alike they sound. Old news recirculated as
-  new is one of the commonest fakes. When unsure, false.
+  new is one of the commonest fakes. A PUBLISHED date, when given, is when the page
+  appeared: a page published before the event a claim describes cannot be reporting
+  that event, however alike it reads - "the White House state dinner" in April is not
+  the one in September. When unsure, false.
 - verdict:
   * TRUE if the passage, in its own voice, establishes that the claim is correct. If
     the claim is itself about what someone said, announced or ruled, a passage
     reporting that they did so establishes it.
   * FALSE if the passage establishes that the claim is wrong, including a fact-check
     rating it false and an official denial. A passage that repeats the claim in order
-    to debunk it is FALSE, never TRUE.
+    to debunk it is FALSE, never TRUE. Wrong means it states something that cannot be
+    true at the same time as the claim, about the same thing: a different total for
+    the same count over the same period, a different outcome of the same event, an
+    explicit denial. It is UNCLEAR, not FALSE, when the passage names other or extra
+    details (a menu listing another dish), leaves some of the claim's details out,
+    gives a figure for a different day or period, or debunks a different claim about
+    the same people.
   * UNCLEAR if it only reports that others believe it, only makes it likelier or less
     likely, describes a study without its result, or answers a different question.
 
@@ -628,6 +639,11 @@ An ARTICLE TITLE may also be given. Use it only to tell what kind of article the
 passages come from — a fact-check, a myth-buster, a news report, an advertisement.
 It is context, never evidence: every quote must come from a numbered passage.
 
+A PUBLISHED date may also be given: the day the article appeared. An article
+published before the event a claim describes cannot be reporting that event. It is
+about an earlier one of the same kind - DIFFERENT_SUBJECT, however alike it reads. It
+can still speak to background the claim states about the past.
+
 For each judgement:
 
 - relation:
@@ -652,12 +668,27 @@ For each judgement:
   * DENIES - the passage says the claim is false, or denies the thing claimed.
   * INCOMPATIBLE - the passage states a fact that cannot be true at the same time
     as the claim: the same event, place, period or person, with a different
-    outcome.
+    outcome - another winner, a different total for the same count over the same
+    period, a different date for the same event. Ask whether both could be true at
+    once; if they could, it is not INCOMPATIBLE.
+  * DIFFERENT_DETAILS - the passage is about the same event but names other or
+    additional details, or leaves some of the claim's details out, without saying
+    that any detail in the claim is wrong. A report that the dinner menu included
+    honey ice cream does not contradict a claim that the dessert was a vanilla
+    cremeux - a menu has several dishes. A report of an assault that does not
+    mention a knife does not contradict a claim that it was at knifepoint. Lists,
+    menus, attendees, charges and descriptions are rarely complete in one report.
   * DIFFERENT_SUBJECT - the passage is about another event, place, time or person,
     even when it is the same *kind* of event. An article about the 2004 Indian Ocean
     tsunami is a different subject from a tsunami reported in Mumbai last week; a
-    report of one earthquake is a different subject from another earthquake. Use
-    this freely: most passages retrieved for a claim are about something else.
+    report of one earthquake is a different subject from another earthquake. A
+    figure for one day, or from an earlier date, is a different subject from a total
+    over a longer period: "41 buildings demolished on Thursday" does not contradict
+    "543 demolished in 17 days". A fact-check that rates a different claim about the
+    same people false is a different subject too: "a reporter questioned him about
+    it" being fake says nothing about whether he was mocked online for it. So is a
+    passage about a different video, photo or post than the one the claim is about.
+    Use this freely: most passages retrieved for a claim are about something else.
   * DIFFERENT_QUESTION - the passage is on the claim's topic but answers a
     different question, so believing it settles nothing about the claim. For
     "turmeric milk cures diabetes", a passage about whether advertising law lets
@@ -711,7 +742,8 @@ Rules:
    found / announced / debunked B", what is being checked is whether A did that -
    never whether B is true. A passage settling B answers a different question, and
    for a debunk it usually agrees with the claim rather than opposing it.
-5. Absence of mention is not contradiction. Omit the passage instead. This holds
+5. Absence of mention is not contradiction, and neither is a different detail of
+   the same event (DIFFERENT_DETAILS). Omit the passage instead. This holds
    however complete the passage looks: a database, a list, a chronology or a history
    that does not include an event is silent about it, not evidence against it. You
    are shown a few paragraphs, never the whole record, and you cannot tell from them
@@ -754,6 +786,7 @@ class PassageReasoner:
         title: str | None = None,
         language: Any | None = None,
         claim_type: str | None = None,
+        published: date | None = None,
     ) -> ReasoningOutcome:
         """Judge up to `MAX_PASSAGES` passages, returning only verified quotes.
 
@@ -791,7 +824,9 @@ class PassageReasoner:
             return ReasoningOutcome(reason=f"unavailable: {unavailable.reason.value}")
         del grant
 
-        fenced = fence(self._render(claim_text, selected, title), label="untrusted_source")
+        fenced = fence(
+            self._render(claim_text, selected, title, published), label="untrusted_source"
+        )
 
         url, headers, body = build_call(
             fmt=self._api_format,
@@ -1089,6 +1124,25 @@ class PassageReasoner:
                 relation = Relation.CONTEXTUALIZES
                 demoted += 1
 
+            # The same event told with other details: context, never a refutation.
+            #
+            # Four live misreads in one batch of ten links (2026-09-26): AP listing
+            # "White House honey ice cream for dessert" read as contradicting a
+            # vanilla cremeux (both were served); NDTV's account of a Kalkaji assault
+            # contradicting "at knifepoint" because it did not mention the knife;
+            # India Today's first-day demolition count contradicting the MCD's
+            # 17-day total; and on a BOOM fact-check, two fact-checks of a
+            # *different* claim about the same spokesperson. Each contradiction
+            # alone turned a supported claim into "conflicting", and on BOOM it
+            # called a correct fact-check FALSE. The basis gives the model somewhere
+            # to put "same event, other details"; this line makes sure it cannot
+            # count against the claim.
+            if relation is Relation.CONTRADICTS and judgement.contradiction_basis == (
+                "DIFFERENT_DETAILS"
+            ):
+                relation = Relation.CONTEXTUALIZES
+                demoted += 1
+
             located = verify_quote(judgement.quote, passage.text)
             if located is None:
                 rejected += 1
@@ -1154,10 +1208,18 @@ class PassageReasoner:
             rejected_quotes=rejected,
         )
 
-    def _render(self, claim_text: str, passages: list[Passage], title: str | None = None) -> str:
+    def _render(
+        self,
+        claim_text: str,
+        passages: list[Passage],
+        title: str | None = None,
+        published: date | None = None,
+    ) -> str:
         lines = [f"CLAIM: {plain_punctuation(claim_text)}", ""]
         if title and title.strip():
             lines += [f"ARTICLE TITLE: {plain_punctuation(title.strip())}", ""]
+        if published is not None:
+            lines += [f"PUBLISHED: {published.isoformat()}", ""]
         lines.append("PASSAGES:")
         for passage in passages:
             lines.append(f"[{passage.index}] {plain_punctuation(passage.text)}")

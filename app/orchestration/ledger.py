@@ -284,16 +284,16 @@ class CaseReader:
 
             for row in claim_rows:
                 claim_id = UUID(str(row["id"]))
-                verdict = await VerdictRepository(conn).for_claim(claim_id)
-                if verdict is None:
+                row_verdict = await VerdictRepository(conn).for_claim(claim_id)
+                if row_verdict is None:
                     # A claim with no verdict row is an incomplete write, not a
                     # claim that abstained. Skipped rather than shown as UNVERIFIED,
                     # which would present a storage gap as a finding.
                     continue
 
-                action = str(verdict["action"])
-                rule_version = str(verdict["rule_version"])
-                strength = verdict["strength_json"] or {}
+                action = str(row_verdict["action"])
+                rule_version = str(row_verdict["rule_version"])
+                strength = row_verdict["strength_json"] or {}
 
                 evidence_rows = await EvidenceRepository(conn).for_claim(claim_id)
                 claims.append(
@@ -301,11 +301,11 @@ class CaseReader:
                         id=str(claim_id),
                         text=str(row["text"]),
                         claim_type=str(row["claim_type"]),
-                        status=str(verdict["status"]),
+                        status=str(row_verdict["status"]),
                         severity=str(row["severity"]),
                         importance=str(row["importance"]),
-                        reason=str(verdict["reason"]),
-                        rule_id=str(verdict["rule_id"]),
+                        reason=str(row_verdict["reason"]),
+                        rule_id=str(row_verdict["rule_id"]),
                         rule_version=rule_version,
                         # The stored strength carries its components and excluded
                         # signals; reading back only score and band dropped the

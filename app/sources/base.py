@@ -27,9 +27,10 @@ the system working, not failing.
 
 from __future__ import annotations
 
+import re
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from typing import Protocol
 from urllib.parse import urlsplit
 
@@ -87,6 +88,46 @@ class SourceCandidate:
         return urlsplit(self.url).netloc.lower()
 
 
+_MONTHS = {
+    name: number
+    for number, name in enumerate(
+        ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"),
+        start=1,
+    )
+}
+# /2026/04/28/, /2026/9/25/, /2026/Sep/09/, -2026-02-25, _20260925. Separated so a
+# story id that merely contains "2026" is not read as a date.
+_URL_DATE = re.compile(
+    r"(?<![0-9])(20[0-9]{2})(?:[/_-]([0-9]{1,2}|[A-Za-z]{3})[/_-]([0-9]{1,2})(?![0-9])"
+    r"|([01][0-9])([0-3][0-9])(?![0-9]))"
+)
+
+
+def date_in_url(url: str) -> date | None:
+    """The publication date a news address carries in its path, if it carries one.
+
+    Most news sites date their URLs, and the date is the one fact about a page that
+    tells an old story from a new one. A Politico page on King Charles's state dinner
+    in April was read as contradicting the menu of Xi Jinping's in September - both
+    are "the White House state dinner" - and its address said 2026/04/28 all along.
+    """
+    path = urlsplit(url if "://" in url else f"https://{url}").path
+    for match in _URL_DATE.finditer(path):
+        year = int(match.group(1))
+        if match.group(2):
+            raw_month, raw_day = match.group(2), match.group(3)
+        else:
+            raw_month, raw_day = match.group(4), match.group(5)
+        month = _MONTHS.get(raw_month.lower()) if raw_month.isalpha() else int(raw_month)
+        if month is None:
+            continue
+        try:
+            return date(year, month, int(raw_day))
+        except ValueError:
+            continue
+    return None
+
+
 @dataclass(frozen=True, slots=True)
 class SourceSnapshot:
     """Proof that a fetch happened, and what it returned.
@@ -112,6 +153,13 @@ class SourceSnapshot:
     # quote that genuinely exists on the page, so "we could not read this" and "the
     # page does not say this" must stay distinguishable in the ledger.
     extraction_route: str = ""
+
+    @property
+    def published_on(self) -> date | None:
+        """When the page appeared: the provider's date, else the one in its address."""
+        if self.published_at is not None:
+            return self.published_at.date()
+        return date_in_url(self.final_url or self.url)
 
     @property
     def domain(self) -> str:
@@ -258,6 +306,7 @@ def build_evidence(
         ),
         publisher=snapshot.publisher,
         title=snapshot.title,
+        published_on=snapshot.published_on,
         provider=relation.validator,
         provider_version=relation.validator_version,
         observed_at=snapshot.fetched_at,

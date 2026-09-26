@@ -169,6 +169,33 @@ class TestAnchorVerification:
         assert len(result.claims) == 1
         assert len(result.discarded) == 1
 
+    async def test_there_is_at_most_one_main_thesis(self) -> None:
+        """An India TV fact-check came back with two main theses, and every main
+        thesis must be confirmed before a case reads True. The first keeps the rank;
+        the rest become supporting details."""
+        pipeline = ClaimPipeline(
+            FakeExtractor(
+                ExtractionOutcome(
+                    claims=(
+                        _proposal("The government announced a relief scheme for farmers"),
+                        _proposal("applications would open next month across every district"),
+                        _proposal(
+                            "The total outlay is five hundred crore rupees",
+                            importance="HEADLINE",
+                        ),
+                    )
+                )
+            )
+        )
+
+        result = await pipeline.extract(DOCUMENT, content_hash="sha256:doc")
+
+        assert [claim.importance.value for claim in result.claims] == [
+            "MAIN_THESIS",
+            "SUPPORTING_DETAIL",
+            "HEADLINE",
+        ]
+
 
 class TestOneCallPerDocument:
     async def test_exactly_one_call_is_made(self) -> None:

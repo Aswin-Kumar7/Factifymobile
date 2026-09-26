@@ -34,7 +34,7 @@ from app.domain.publishers import publishers_of
 
 # Stamped on every verdict. A cached verdict produced under older rules is therefore
 # identifiable, and the cache can refuse to serve it (M13).
-RULE_VERSION = "2026.09.26.2"
+RULE_VERSION = "2026.09.26.3"
 
 # Default number of genuinely independent origins required before corroboration can
 # support a claim. Tenant-configurable later; never below two, because one origin is
@@ -540,8 +540,12 @@ def case_confidence(verdict: Verdict, claims: list[tuple[ClaimStatus, int | None
     return max(scores) if scores else None
 
 
-def _blocks_clearance(claim: Claim) -> bool:
-    """Whether this claim, left unconfirmed, keeps the case from being called true."""
+def blocks_clearance(claim: Claim) -> bool:
+    """Whether this claim, left unconfirmed, keeps the case from being called true.
+
+    Public because the pipeline ranks claims for searching by it: a claim that can
+    hold the verdict back must never be the one left unsearched.
+    """
     return (
         claim.importance in {Importance.HEADLINE, Importance.MAIN_THESIS}
         or claim.severity is Severity.CRITICAL
@@ -580,14 +584,19 @@ def _roll_up_action(
                 reason="A central claim in this content is contradicted by cited evidence.",
             )
 
-    for claim, _ in contradicted:
-        if claim.severity is Severity.HIGH:
-            return CaseDecision(
-                action=Action.DO_NOT_SHARE,
-                rule_id="rollup.contradicted_high_severity",
-                reason="A high-severity claim in this content is contradicted by cited evidence.",
-            )
-
+    # A contradicted detail is a correction, not a verdict on the whole piece.
+    #
+    # This row used to send any contradicted HIGH-severity claim to DO_NOT_SHARE,
+    # wherever it sat. The extractor rates most political and public-safety claims
+    # HIGH, so one detail decided the verdict on everything around it: a BOOM
+    # fact-check of a deepfake - a correct debunk by an IFCN signatory - came back
+    # FALSE 89 because two side details ("detection tools flagged the video", "he
+    # was trolled over the snacking") drew contradictions. The same reasoning that
+    # stopped an unconfirmed HIGH detail from blocking a clearance (below) applies
+    # here: what makes a piece false is its headline, its main claim, or anything
+    # CRITICAL, which the row above still catches. A wrong HIGH detail now reads
+    # MISLEADING - share only with the correction - and the claim itself is still
+    # shown as contradicted.
     for claim, _ in misleading:
         if claim.is_material:
             return CaseDecision(
@@ -653,9 +662,9 @@ def _roll_up_action(
     # *contradicted* still sinks the case above; one that is merely unconfirmed is
     # reported as unchecked, not treated as a strike against what was confirmed.
     supported = [decision for _, decision in decisions if decision.status is ClaimStatus.SUPPORTED]
-    unchecked = [claim for claim, _ in unverified if not _blocks_clearance(claim)]
+    unchecked = [claim for claim, _ in unverified if not blocks_clearance(claim)]
 
-    if supported and not any(_blocks_clearance(claim) for claim, _ in unverified):
+    if supported and not any(blocks_clearance(claim) for claim, _ in unverified):
         return CaseDecision(
             action=Action.SAFE_TO_SHARE,
             rule_id="rollup.material_supported" if unchecked else "rollup.all_supported",

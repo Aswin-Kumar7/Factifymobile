@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -40,6 +40,7 @@ from app.sources.factcheck import (
 from app.sources.reasoning import (
     _SYSTEM_INSTRUCTION,
     Passage,
+    PassageJudgement,
     PassageReasoner,
     ReasoningOutcome,
     _ReasoningResponse,
@@ -605,6 +606,17 @@ class TestTheReaderIsToldWhatItIsReading:
         )
         assert "ARTICLE TITLE: Fact check: cow urine does not cure COVID-19" in rendered
 
+    def test_the_publication_date_reaches_the_prompt(self) -> None:
+        """A page published before the claimed event cannot be reporting it."""
+        rendered = PassageReasoner._render(
+            None,  # type: ignore[arg-type]
+            "cow urine cures COVID-19",
+            self._passages(),
+            None,
+            date(2026, 4, 28),
+        )
+        assert "PUBLISHED: 2026-04-28" in rendered
+
     def test_a_source_with_no_headline_renders_no_title_line(self) -> None:
         """An empty title must not become an empty label the model has to interpret."""
         rendered = PassageReasoner._render(
@@ -636,6 +648,7 @@ class TestTheReaderIsToldWhatItIsReading:
                 title: str | None = None,
                 language: object | None = None,
                 claim_type: str | None = None,
+                published: object | None = None,
             ) -> ReasoningOutcome:
                 seen["title"] = title
                 seen["claim_type"] = claim_type
@@ -661,6 +674,96 @@ class TestTheReaderIsToldWhatItIsReading:
         await resolver.relate(claim(), snapshot)
 
         assert seen["title"] == "COVID-19 myths debunked"
+
+
+class TestAFactCheckFoundBySearchMustBeOfThisClaim:
+    """Newschecker's check that "a reporter questioned the MEA spokesperson about
+    snacking" is false was counted against "he was trolled online over the snacking"
+    - which happened - and a correct BOOM fact-check read MISLEADING. A fact-check
+    decides a claim on its own, so it must be a check of this claim."""
+
+    TEXT = (
+        "Our investigation found that the viral video has been manipulated to make it "
+        "appear as though the spokesperson was questioned about his snacking. " * 3
+    )
+    QUOTE = (
+        "Our investigation found that the viral video has been manipulated to make it "
+        "appear as though the spokesperson was questioned about his snacking."
+    )
+
+    def _resolver(self, same: bool | None) -> tuple[WebSearchResolver, list[str]]:
+        asked: list[str] = []
+        quote = self.QUOTE
+
+        class _Reader:
+            reads_sources = True
+
+            async def judge(self, *_args: object, **_kwargs: object) -> ReasoningOutcome:
+                return ReasoningOutcome(
+                    judgements=(
+                        PassageJudgement(
+                            relation=Relation.CONTRADICTS,
+                            quote=quote,
+                            reason="r",
+                            relevance=0.9,
+                            passage_index=0,
+                        ),
+                    ),
+                    passages_read=1,
+                )
+
+            async def same_claim(self, claim_text: str, reviewed_text: str) -> bool | None:
+                asked.append(reviewed_text)
+                return same
+
+        resolver = WebSearchResolver(
+            fetcher=None,  # type: ignore[arg-type]
+            reasoner=_Reader(),  # type: ignore[arg-type]
+            provider="tavily",
+            endpoint="https://example.invalid/search",
+            api_key="k",
+            credibility=SourceCredibility(
+                frozenset({"newschecker.in"}), fact_checkers=frozenset({"newschecker.in"})
+            ),
+        )
+        return resolver, asked
+
+    def _snapshot(self) -> SourceSnapshot:
+        return SourceSnapshot(
+            id="s1",
+            url="https://newschecker.in/fact-check/mea-spokesperson-questioned",
+            final_url="https://newschecker.in/fact-check/mea-spokesperson-questioned",
+            content_hash="sha256:1",
+            fetched_at=datetime.now(UTC),
+            text=self.TEXT,
+            title="MEA spokesperson questioned over snacking video? No, it is AI-altered",
+        )
+
+    @pytest.mark.anyio
+    async def test_a_check_of_a_different_claim_is_context(self) -> None:
+        resolver, asked = self._resolver(same=False)
+
+        relation = await resolver.relate(claim(), self._snapshot())
+
+        assert relation.relation is Relation.CONTEXTUALIZES
+        # asked about what the fact-check reviewed, which its headline names
+        assert asked == ["MEA spokesperson questioned over snacking video? No, it is AI-altered"]
+
+    @pytest.mark.anyio
+    async def test_a_check_of_this_claim_still_contradicts(self) -> None:
+        resolver, _ = self._resolver(same=True)
+
+        relation = await resolver.relate(claim(), self._snapshot())
+
+        assert relation.relation is Relation.CONTRADICTS
+
+    @pytest.mark.anyio
+    async def test_when_the_question_cannot_be_asked_the_finding_stands(self) -> None:
+        resolver, _ = self._resolver(same=None)
+
+        relation = await resolver.relate(claim(), self._snapshot())
+
+        assert relation.relation is Relation.CONTRADICTS
 
 
 class TestSupportMustBeTheArticlesOwnVoice:
@@ -815,6 +918,16 @@ class TestContradictionMustBeAboutThisClaim:
         it is not a refutation, so it must not be counted as one.
         """
         outcome = self._judge("NO_OUTCOME_STATED")
+
+        assert outcome.judgements[0].relation is Relation.CONTEXTUALIZES
+
+    def test_other_details_of_the_same_event_are_context_not_contradiction(self) -> None:
+        """AP listing "White House honey ice cream for dessert" was read as
+        contradicting a claim that the dessert was a vanilla cremeux; both were
+        served. A passage naming other or extra details of the same event says
+        nothing against the claim's own, so it is shown as context and never counted.
+        """
+        outcome = self._judge("DIFFERENT_DETAILS")
 
         assert outcome.judgements[0].relation is Relation.CONTEXTUALIZES
 

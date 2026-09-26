@@ -4,6 +4,7 @@ second opinion on whether each is about this claim at all."""
 from __future__ import annotations
 
 import asyncio
+from datetime import date
 from typing import Any
 
 import pytest
@@ -256,6 +257,21 @@ class TestTheCheckReadsTheHeadline:
         shown = checker.shown[0][0][1]
         assert shown.startswith("HEADLINE: Union warns of a Delhi rally if the minister stays")
         assert item.source_excerpt in shown
+
+    def test_the_publication_date_is_shown_with_the_passage(self) -> None:
+        """Politico on King Charles's state dinner in April was read as contradicting
+        the menu of Xi Jinping's in September: both are "the state dinner", and only
+        the date tells them apart."""
+        checker = _Checker({0: (True, "TRUE")})
+        item = evidence(
+            direction=Direction.CONTRADICTS,
+            citation_url="https://www.politico.com/live-updates/2026/04/28/menu",
+        ).model_copy(update={"title": "State dinner menu", "published_on": date(2026, 4, 28)})
+
+        _run(checker, [item])
+
+        shown = checker.shown[0][0][1]
+        assert shown.splitlines()[:2] == ["HEADLINE: State dinner menu", "PUBLISHED: 2026-04-28"]
 
     def test_without_a_headline_the_passage_is_shown_alone(self) -> None:
         checker = _Checker({0: (True, "TRUE")})

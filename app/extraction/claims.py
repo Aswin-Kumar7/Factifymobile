@@ -22,6 +22,7 @@ from typing import Any, Protocol
 
 from app.cache.service import CacheService
 from app.domain.claim import Claim, ClaimAnchor
+from app.domain.enums import Importance
 from app.domain.typography import fold
 from app.extraction.llm import EXTRACTOR_VERSION, ExtractionOutcome, ProposedClaim
 from app.observability.logging import event
@@ -316,8 +317,20 @@ class ClaimPipeline:
     ) -> tuple[tuple[Claim, ...], tuple[str, ...]]:
         claims: list[Claim] = []
         discarded: list[str] = []
+        # At most one headline and one main thesis, enforced rather than trusted: the
+        # instruction says so, and an India TV fact-check still came back with two
+        # main theses. Every one of them must be confirmed before a case can read
+        # True, so a second one quietly raises the bar. Later ones become details.
+        ranked_once: set[Importance] = set()
 
         for index, proposal in enumerate(proposals):
+            if proposal.importance in (Importance.HEADLINE, Importance.MAIN_THESIS):
+                if proposal.importance in ranked_once:
+                    proposal = proposal.model_copy(
+                        update={"importance": Importance.SUPPORTING_DETAIL}
+                    )
+                else:
+                    ranked_once.add(proposal.importance)
             claim = _to_claim(
                 proposal,
                 claim_id=f"cl_{index + 1}",

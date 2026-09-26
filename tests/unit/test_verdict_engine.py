@@ -247,14 +247,17 @@ class TestCaseRollup:
 
         assert roll_up([(c, decision)]).action is Action.DO_NOT_SHARE
 
-    def test_contradicted_high_severity_detail_blocks_sharing(self) -> None:
+    def test_contradicted_high_severity_detail_is_a_correction_not_false(self) -> None:
+        """One wrong detail does not make the piece false: a BOOM fact-check of a
+        deepfake read FALSE because two side details drew contradictions. The
+        headline, main thesis and CRITICAL claims still decide FALSE (above)."""
         c = claim(importance=Importance.SUPPORTING_DETAIL, severity=Severity.HIGH)
         decision = decide(c, [_contradicting_factcheck()])  # type: ignore[list-item]
 
         case = roll_up([(c, decision)])
 
-        assert case.action is Action.DO_NOT_SHARE
-        assert case.rule_id == "rollup.contradicted_high_severity"
+        assert case.action is Action.SHARE_WITH_CORRECTION
+        assert case.rule_id == "rollup.minor_correction"
 
     def test_misleading_material_claim_shares_with_context(self) -> None:
         c = claim(importance=Importance.HEADLINE, severity=Severity.HIGH)

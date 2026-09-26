@@ -141,7 +141,7 @@ def headline_and_summary(html: str) -> tuple[str | None, str | None]:
         def meta(*names: str) -> str | None:
             for name in names:
                 found = doc.xpath(f'//meta[@property="{name}" or @name="{name}"]/@content')
-                if found and str(found[0]).strip():
+                if isinstance(found, list) and found and str(found[0]).strip():
                     return " ".join(str(found[0]).split())
             return None
 
@@ -149,7 +149,9 @@ def headline_and_summary(html: str) -> tuple[str | None, str | None]:
         summary = summary or meta("og:description", "twitter:description", "description")
         if headline is None:
             titles = doc.xpath("//title/text()")
-            headline = " ".join(str(titles[0]).split()) if titles else None
+            headline = (
+                " ".join(str(titles[0]).split()) if isinstance(titles, list) and titles else None
+            )
 
     # A title alone is a site name as often as a headline ("reuters.com"); a summary
     # is what makes this worth checking.

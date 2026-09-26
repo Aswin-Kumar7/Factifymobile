@@ -68,7 +68,7 @@ _MAX_QUERIES = 4
 _READ_TTL_SECONDS = 90.0
 
 NAME = "web_search"
-VERSION = "2026.09.8"
+VERSION = "2026.09.26"
 PROVIDER = "web_search"
 
 # How many credible sources to read. Each is a metered model call, and corroboration
@@ -529,6 +529,7 @@ class WebSearchResolver:
             title=snapshot.title,
             language=claim.language,
             claim_type=claim.claim_type.value,
+            published=snapshot.published_on,
         )
         if not outcome.succeeded:
             return insufficient(NAME, VERSION, f"reasoning unavailable: {outcome.reason}")
@@ -584,6 +585,26 @@ class WebSearchResolver:
         ):
             relation = Relation.CONTEXTUALIZES
             note = " (from a search snippet; not read as the article)"
+
+        # A fact-check settles a claim on its own, so it has to be a fact-check of
+        # *this* claim - the gate the fact-check API's matches already pass.
+        #
+        # Found by search, fact-checks of a neighbouring claim came straight through.
+        # On a BOOM debunk of a deepfake, Newschecker's and NewsMobile's checks that
+        # "a reporter questioned the MEA spokesperson about snacking" is false were
+        # counted against "he was trolled online over the snacking" - which happened -
+        # and turned a correct fact-check MISLEADING. The reader had been told a
+        # different claim is a different subject; asked as one narrow question,
+        # "would that verdict be a verdict on this claim?", the answer is reliable.
+        # The fact-check's headline names what it reviewed. `None` is "could not
+        # ask", and keeps the finding, as the API path does.
+        if relation is Relation.CONTRADICTS and self._credibility.is_fact_checker(
+            snapshot.final_url or snapshot.url
+        ):
+            reviewed = (snapshot.title or "").strip() or best.quote
+            if await self._reasoner.same_claim(claim.text, reviewed) is False:
+                relation = Relation.CONTEXTUALIZES
+                note = " (a fact-check of a different claim)"
 
         return SourceRelation(
             relation=relation,

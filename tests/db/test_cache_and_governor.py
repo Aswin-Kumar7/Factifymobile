@@ -282,15 +282,20 @@ class TestGovernorBudget:
         assert metrics.snapshot()["vision"]["failures"] == 1
 
 
-class TestEveryCapAtZero:
+def _switched_off(*names: str) -> dict[str, ProviderSettings]:
+    return {name: ProviderSettings(enabled=False) for name in names}
+
+
+class TestNothingEnabled:
     async def test_a_complete_honest_run_with_nothing_enabled(self, conn: Any) -> None:
         """**The M14 gate.**
 
-        Every provider capped at zero. The run completes, nothing is called, and
-        every skip carries a reason the response can quote.
+        Every provider switched off. The run completes, nothing is called, and every
+        skip carries a reason the response can quote. (Since 2026-09-26 a daily cap
+        of zero means "no emergency stop", so switching off is how nothing is called.)
         """
         metrics.reset()
-        governor = Governor(conn, _providers(llm=0, factcheck=0, vision=0, archive=0))
+        governor = Governor(conn, _switched_off("llm", "factcheck", "vision", "archive"))
 
         outcomes = [
             await governor.try_acquire(name) for name in ("llm", "factcheck", "vision", "archive")
@@ -301,10 +306,10 @@ class TestEveryCapAtZero:
 
         notes = governor.capacity_notes()
         assert notes == (
-            "llm: capacity limited",
-            "factcheck: capacity limited",
-            "vision: capacity limited",
-            "archive: capacity limited",
+            "llm: disabled",
+            "factcheck: disabled",
+            "vision: disabled",
+            "archive: disabled",
         )
 
         # Skips are not failures: the honest degradation path must not read as an
@@ -316,11 +321,19 @@ class TestEveryCapAtZero:
             assert snapshot[name]["failure_rate"] == 0.0
 
     async def test_usage_reports_zero_spend(self, conn: Any) -> None:
-        governor = Governor(conn, _providers(vision=0))
+        governor = Governor(conn, _switched_off("vision"))
 
         await governor.try_acquire("vision")
 
-        assert await governor.usage("vision") == {"used": 0, "cap": 0}
+        assert await governor.usage("vision") == {"used": 0, "alarm": 0, "hard_cap": 0}
+
+    async def test_a_zero_cap_is_no_ceiling_not_a_refusal(self, conn: Any) -> None:
+        """Daily caps are alarms now; zero on the emergency stop means it is off."""
+        governor = Governor(conn, _providers(vision=0))
+
+        outcomes = [await governor.try_acquire("vision") for _ in range(3)]
+
+        assert all(isinstance(o, Grant) for o in outcomes)
 
 
 class TestFailsClosed:
@@ -334,7 +347,7 @@ class TestFailsClosed:
         async def broken(**kwargs: Any) -> bool:
             raise RuntimeError("database unreachable")
 
-        governor._budget.try_consume = broken  # type: ignore[method-assign]
+        governor._budget.consume = broken  # type: ignore[method-assign]
 
         outcome = await governor.try_acquire("vision")
 

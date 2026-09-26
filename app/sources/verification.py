@@ -314,9 +314,14 @@ def _under_headline(item: Evidence) -> str:
     article's own headline did, in the words of the claim. The first reader already
     sees the headline; the check now does too.
     """
+    lines = []
     if item.title and item.title.strip():
-        return f"HEADLINE: {item.title.strip()}\nPASSAGE: {item.source_excerpt}"
-    return item.source_excerpt
+        lines.append(f"HEADLINE: {item.title.strip()}")
+    if item.published_on is not None:
+        lines.append(f"PUBLISHED: {item.published_on.isoformat()}")
+    if not lines:
+        return item.source_excerpt
+    return "\n".join([*lines, f"PASSAGE: {item.source_excerpt}"])
 
 
 def _host(url: str) -> str:

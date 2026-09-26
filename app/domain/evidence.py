@@ -17,7 +17,7 @@ Three rules are enforced at construction, so an invalid object cannot exist:
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -167,6 +167,9 @@ class Evidence(BaseModel):
     # Carried so the source check reads a quoted sentence the way a person
     # does - under its headline - rather than stripped of it.
     title: str | None = None
+    # When that page was published, when known. Shown to the source check beside the
+    # headline, so a page about an earlier event of the same kind can be told apart.
+    published_on: date | None = None
     input_anchor: InputAnchor | None = None
     provider: str | None = None
     provider_version: str | None = None

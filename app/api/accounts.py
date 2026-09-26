@@ -83,7 +83,7 @@ async def signed_in(request: Request) -> AuthUser | None:
         return None
 
     try:
-        user = await identity.verify(token)
+        user: AuthUser | None = await identity.verify(token)
     except IdentityUnavailable as outage:
         logger.warning("sign-in could not be checked: %s", outage)
         raise HTTPException(

@@ -521,6 +521,7 @@ class CorpusResolver:
             title=snapshot.title,
             language=claim.language,
             claim_type=claim.claim_type.value,
+            published=snapshot.published_on,
         )
         if not outcome.succeeded:
             event(

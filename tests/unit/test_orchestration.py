@@ -952,6 +952,38 @@ class TestTheFallbackStage:
         # the top five by importance; the tie between details keeps extraction order
         assert set(web.asked) == {"headline", "thesis", "detail_1", "detail_2", "detail_3"}
 
+    @pytest.mark.anyio
+    async def test_a_critical_detail_is_searched_before_minor_ones(self) -> None:
+        """A claim that can hold the verdict back is never the one left unsearched.
+
+        An NBC report's critical-severity detail came sixth in extraction order,
+        behind a minor quotation, and ranking by importance alone left it unsearched
+        — so it stayed unconfirmed and kept a confirmed headline from reading True.
+        """
+        web = _web_search()
+        minor = [
+            _claim(
+                claim_id=f"detail_{n}",
+                importance=Importance.SUPPORTING_DETAIL,
+                severity=Severity.MEDIUM,
+            )
+            for n in range(1, 6)
+        ]
+        critical = _claim(
+            claim_id="critical",
+            importance=Importance.SUPPORTING_DETAIL,
+            severity=Severity.CRITICAL,
+        )
+
+        await _economy_orchestrator([_fact_check(None), web]).verify(
+            normalise_text("An article whose critical detail comes last."),
+            case_id=uuid4(),
+            claims=[*minor, critical],
+        )
+
+        assert "critical" in web.asked
+        assert len(web.asked) == 5
+
 
 class TestTheCacheIsAskedFirst:
     """A repeat is answered before extraction or media work is paid for."""
@@ -1379,6 +1411,19 @@ class TestASubmittedPageIsNotItsOwnEvidence:
         other = evidence(citation_url="https://www.thehindu.com/sport/y.ece")
 
         assert _not_own([itself, other], own) == [other]
+
+    def test_the_submitting_outlet_cannot_confirm_its_own_report(self) -> None:
+        """A CNN report's claims were "confirmed" by cnn.com, us.cnn.com and
+        edition.cnn.com: the same newsroom repeating itself is one witness."""
+        from app.orchestration.pipeline import _not_own
+        from app.sources.verification import page_key
+
+        own = frozenset({page_key("https://www.cnn.com/2026/09/24/politics/ruling")})
+        live_blog = evidence(citation_url="https://edition.cnn.com/politics/live-news/x")
+        follow_up = evidence(citation_url="https://us.cnn.com/2026/09/25/politics/next")
+        other = evidence(citation_url="https://www.npr.org/2026/09/24/ruling")
+
+        assert _not_own([live_blog, follow_up, other], own) == [other]
 
     def test_nothing_is_removed_when_nothing_was_submitted(self) -> None:
         from app.orchestration.pipeline import _not_own

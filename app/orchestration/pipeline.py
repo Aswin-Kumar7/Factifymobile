@@ -37,6 +37,7 @@ from app.cache.service import CachedVerdict
 from app.domain.claim import Claim
 from app.domain.enums import Action, ClaimStatus, Direction, Importance, SourceRisk
 from app.domain.evidence import Advisory, Evidence
+from app.domain.publishers import registrable_domain
 from app.governor.governor import ProviderUnavailable, Skip
 from app.intake.normalizer import NormalisedIntake
 from app.observability.logging import event
@@ -55,6 +56,7 @@ from app.verdict.engine import (
     RULE_VERSION,
     CaseDecision,
     Decision,
+    blocks_clearance,
     decide,
     roll_up,
     verdict_for,
@@ -115,6 +117,12 @@ DEFAULT_CONCURRENCY = 6
 # and still read "Unconfirmed" — on a Hindu analysis, the one claim that kept the
 # answer from True. Five covers most articles whole, for about ten more seconds and
 # two more searched claims' worth of model calls.
+#
+# Which five: first every claim that can hold the verdict back (`blocks_clearance`:
+# the headline, the main thesis, anything of critical severity), then by importance.
+# Ranked by importance alone, an NBC report's critical-severity detail sat sixth
+# behind a minor quotation, was never searched, and kept a confirmed headline at
+# "Unconfirmed" for a claim nobody had looked for.
 MAX_FALLBACK_CLAIMS = 5
 
 _IMPORTANCE_ORDER = {
@@ -257,17 +265,30 @@ class VerificationResult:
 
 
 def _not_own(evidence: list[Evidence], own_pages: frozenset[str]) -> list[Evidence]:
-    """The evidence, less anything from the pages the person submitted.
+    """The evidence, less anything from the outlets whose pages the person submitted.
 
     A submitted article cannot confirm itself. Searching for the claims of a Times of
     India kabaddi report found that same report, and it stood as the headline claim's
     only supporting source — the article, quoted back as evidence that the article is
     right. For a fabricated page that search can reach, the same loop would support
     every claim it makes.
+
+    Nor can its outlet. A CNN report's claims were "confirmed" by cnn.com,
+    us.cnn.com and edition.cnn.com — CNN's own live blog and follow-ups — and one
+    detail stood on CNN plus one other outlet, counted as two. BOOM's fact-check had
+    two other BOOM pages as the only support for its main claim. The same newsroom
+    repeating itself is one witness, and the question a reader asks is whether
+    anyone else reports it.
     """
     if not own_pages:
         return evidence
-    return [item for item in evidence if page_key(item.citation_url) not in own_pages]
+    own_outlets = {domain for key in own_pages if (domain := registrable_domain(key))}
+    return [
+        item
+        for item in evidence
+        if page_key(item.citation_url) not in own_pages
+        and registrable_domain(item.citation_url) not in own_outlets
+    ]
 
 
 class Orchestrator:
@@ -595,8 +616,9 @@ class Orchestrator:
         """Resolve every claim, bounded by the concurrency ceiling.
 
         Only the `MAX_FALLBACK_CLAIMS` most important claims may reach a fallback
-        resolver. The ranking is stable, so equally important claims keep the order the
-        extractor gave them.
+        resolver: those that can block a True verdict first, then by importance. The
+        ranking is stable, so equally ranked claims keep the order the extractor gave
+        them.
         """
         if not claims:
             return []
@@ -604,7 +626,10 @@ class Orchestrator:
         unranked = len(_IMPORTANCE_ORDER)
         ranked = sorted(
             range(len(claims)),
-            key=lambda index: _IMPORTANCE_ORDER.get(claims[index].importance, unranked),
+            key=lambda index: (
+                not blocks_clearance(claims[index]),
+                _IMPORTANCE_ORDER.get(claims[index].importance, unranked),
+            ),
         )
         depth = current_depth.get()
         cap = MAX_FALLBACK_CLAIMS if depth is NORMAL else depth.claims
