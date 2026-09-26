@@ -736,7 +736,16 @@ async def _checked_file(
     )
     if hit is not None:
         served = await cached_full_response(request, hit) or to_response(hit)
-        return served.model_copy(update={"image_reading": readings.get(intake.primary.sha256)})
+        shown = readings.get(intake.primary.sha256)
+        if shown is None and intake.input_type is InputType.IMAGE:
+            # Remembered only in memory, so a repeat after a restart reads the picture
+            # again - one model call, against a check that is otherwise free - rather
+            # than showing a verdict with no sign of what it was about.
+            _, reading, _ = await _read_document(request, intake)
+            shown = _reading_response(reading)
+            if shown is not None:
+                _remember(readings, intake.primary.sha256, shown)
+        return served.model_copy(update={"image_reading": shown})
 
     # Read before checking. An image or a PDF used to reach the checker with no claims
     # at all: a screenshot of a forward announcing a ban on ₹500 notes was
@@ -828,6 +837,15 @@ async def _read_document(
                 )
             )
             return "", None, notes
+        if reading.cut_off:
+            notes.append(
+                SkippedCheck(
+                    check="image_text",
+                    reason=(
+                        "the image holds more text than is read at once; only its start was checked"
+                    ),
+                )
+            )
         return reading.text, reading, notes
 
     if intake.input_type is InputType.PDF:

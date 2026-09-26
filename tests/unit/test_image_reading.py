@@ -23,7 +23,7 @@ from PIL import Image
 from app.extraction.claims import ExtractedClaims
 from app.extraction.language import detect
 from app.extraction.model_wire import WireFormat, build_call
-from app.extraction.ocr import OcrExtractor, OcrOutcome
+from app.extraction.ocr import MAX_READ_TOKENS, OcrExtractor, OcrOutcome
 from app.security.fetcher import FetchFailure, FetchResult
 from tests.unit.factories import claim
 from tests.unit.test_orchestration import _result
@@ -84,16 +84,27 @@ class TestTheImageTravelsInTheProvidersShape:
 
 
 class _Fetcher:
-    def __init__(self, answer: dict[str, Any] | None, status: int = 200) -> None:
+    def __init__(
+        self,
+        answer: dict[str, Any] | None,
+        status: int = 200,
+        *,
+        raw: str | None = None,
+        finish: str = "stop",
+    ) -> None:
         self.answer = answer
         self.status = status
+        # The model's answer exactly as sent, for one that stopped part-way.
+        self.raw = raw
+        self.finish = finish
         self.sent: list[dict[str, Any]] = []
 
     async def post_json(self, url: str, body: dict[str, Any], **_: Any) -> Any:
         self.sent.append(body)
-        if self.answer is None:
+        if self.answer is None and self.raw is None:
             return FetchFailure(url=url, reason="transport error: ConnectError", kind="network")
-        envelope = {"choices": [{"message": {"content": json.dumps(self.answer)}}]}
+        content = self.raw if self.raw is not None else json.dumps(self.answer)
+        envelope = {"choices": [{"message": {"content": content}, "finish_reason": self.finish}]}
         body = json.dumps(envelope).encode()
         return FetchResult(
             url=url,
@@ -163,6 +174,86 @@ class TestTheReading:
         outcome = await _reader(_Fetcher({"text": "x"}, status=429)).transcribe(_png())
 
         assert outcome.reason == "provider returned 429"
+
+
+class TestAReadingThatLosesItsWay:
+    """A 1x1 test image came back as "THE NEW YORK TIMES", line after line, 32,768
+    tokens long: three minutes, then a timeout, at seventy times a reading's cost."""
+
+    @pytest.mark.anyio
+    async def test_a_picture_too_small_to_hold_text_is_not_sent_to_be_read(self) -> None:
+        buffer = io.BytesIO()
+        Image.new("RGB", (1, 1), "white").save(buffer, format="JPEG")
+        fetcher = _Fetcher({"text": "THE NEW YORK TIMES"})
+
+        outcome = await _reader(fetcher).transcribe(buffer.getvalue())
+
+        assert fetcher.sent == []
+        assert outcome.reason is not None and outcome.reason.startswith("no legible text")
+
+    @pytest.mark.anyio
+    async def test_the_reading_is_capped(self) -> None:
+        fetcher = _Fetcher({"text": FORWARD, "description": "", "kind": "OTHER", "publisher": ""})
+
+        await _reader(fetcher).transcribe(_png())
+
+        assert fetcher.sent[0]["max_tokens"] == MAX_READ_TOKENS
+
+    @pytest.mark.anyio
+    async def test_one_line_over_and_over_until_the_cap_is_no_reading(self) -> None:
+        loop = '{"text":"' + "THE NEW YORK TIMES\\n" * 400 + "THE NEW YO"
+        fetcher = _Fetcher(None, raw=loop, finish="length")
+
+        outcome = await _reader(fetcher).transcribe(_png())
+
+        assert not outcome.succeeded
+        assert outcome.text == ""
+        assert outcome.reason is not None and outcome.reason.startswith("no legible text")
+
+    @pytest.mark.anyio
+    async def test_one_line_over_and_over_is_no_reading_even_when_it_ends(self) -> None:
+        answer = {
+            "text": "Breaking news\n" * 12,
+            "description": "",
+            "kind": "OTHER",
+            "publisher": "",
+        }
+
+        outcome = await _reader(_Fetcher(answer)).transcribe(_png())
+
+        assert not outcome.succeeded
+
+    @pytest.mark.anyio
+    async def test_a_long_page_cut_off_keeps_what_was_read(self) -> None:
+        page = "\n\n".join(
+            f"Paragraph {n}: the council met on day {n} to discuss item {n}." for n in range(40)
+        )
+        cut = json.dumps({"text": page})[:1500]  # stopped part-way through a word
+        fetcher = _Fetcher(None, raw=cut, finish="length")
+
+        outcome = await _reader(fetcher).transcribe(_png())
+
+        assert outcome.succeeded and outcome.cut_off
+        assert page.startswith(outcome.text)
+        assert len(outcome.text) > 1000
+        assert not outcome.text.endswith(page[len(outcome.text) : len(outcome.text) + 1])
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize("tail", ["\\", "\\u09", "\\ud83d"])
+    async def test_a_cut_inside_an_escape_still_keeps_the_text_before_it(self, tail: str) -> None:
+        cut = '{"text":"सरकार ने नई योजना शुरू की है और सभी को लाभ मिलेगा ' + tail
+        fetcher = _Fetcher(None, raw=cut, finish="length")
+
+        outcome = await _reader(fetcher).transcribe(_png())
+
+        assert outcome.succeeded and outcome.cut_off
+        assert outcome.text == "सरकार ने नई योजना शुरू की है और सभी को लाभ मिलेगा"
+
+    @pytest.mark.anyio
+    async def test_an_answer_that_is_simply_broken_is_still_unreadable(self) -> None:
+        outcome = await _reader(_Fetcher(None, raw='{"text": "x', finish="stop")).transcribe(_png())
+
+        assert outcome.reason == "unreadable provider response: JSONDecodeError"
 
 
 class TestAnUploadedImageIsReadAndChecked:
@@ -253,6 +344,17 @@ class TestAnUploadedImageIsReadAndChecked:
         assert response.json()["image_reading"] is None
 
     @pytest.mark.anyio
+    async def test_a_reading_cut_off_is_checked_and_says_only_its_start_was(self) -> None:
+        reading = OcrOutcome(text=FORWARD, language=detect(FORWARD), cut_off=True)
+        app, seen = self._app(reading)
+
+        response = await self._upload(app)
+
+        assert seen["extracted"][0][0] == FORWARD
+        skipped = {item["check"]: item["reason"] for item in response.json()["skipped"]}
+        assert "only its start was checked" in skipped["image_text"]
+
+    @pytest.mark.anyio
     async def test_a_picture_with_no_text_is_checked_as_a_picture(self) -> None:
         reading = OcrOutcome(text="", description="A flooded street.", kind="PHOTO")
         app, seen = self._app(reading)
@@ -334,3 +436,17 @@ class TestAnUploadedPdfIsReadAndChecked:
         assert circular in text
         assert kwargs["input_kind"] == "pdf"
         assert response.json()["image_reading"] is None
+
+
+class TestARepeatAfterARestart:
+    @pytest.mark.anyio
+    async def test_the_picture_is_read_again_when_nothing_remembers_it(self) -> None:
+        """What was read is kept in memory; after a restart a repeat served from the
+        verdict cache would otherwise show a verdict with no sign of what it was about."""
+        reading = OcrOutcome(text=FORWARD, language=detect(FORWARD), kind="CHAT_MESSAGE")
+        app, seen = TestAnUploadedImageIsReadAndChecked()._app(reading, cached=True)
+
+        response = await TestAnUploadedImageIsReadAndChecked()._upload(app)
+
+        assert response.json()["image_reading"]["text"] == FORWARD
+        assert seen["claims"] == []  # served from the cache, not checked again

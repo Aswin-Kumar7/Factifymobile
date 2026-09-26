@@ -60,6 +60,7 @@ def build_call(
     temperature: float = 0.0,
     thinking: str | None = None,
     image: tuple[bytes, str] | None = None,
+    max_output_tokens: int | None = None,
 ) -> tuple[str, dict[str, str], dict[str, Any]]:
     """Assemble one JSON-returning completion as ``(url, headers, body)``.
 
@@ -76,6 +77,10 @@ def build_call(
     composition. It is applied only to Gemini: it is not a portable knob, and the
     OpenAI-compatible models reached this way are already fast without one, so it is
     dropped rather than guessed at a per-provider equivalent that some would reject.
+
+    `max_output_tokens` stops an answer that has lost its way. Without it a model
+    that starts repeating itself runs to its own maximum - tens of thousands of
+    tokens, minutes of waiting - and `was_cut_off` then says the answer is partial.
     """
     url = endpoint.format(model=model_id)
 
@@ -88,6 +93,8 @@ def build_call(
         }
         if thinking is not None:
             generation["thinkingConfig"] = {"thinkingLevel": thinking}
+        if max_output_tokens is not None:
+            generation["maxOutputTokens"] = max_output_tokens
         parts: list[dict[str, Any]] = [{"text": user_block}]
         if image is not None:
             parts.append({"inlineData": {"mimeType": image[1], "data": _base64(image[0])}})
@@ -129,6 +136,8 @@ def build_call(
         "response_format": {"type": "json_object"},
         "temperature": temperature,
     }
+    if max_output_tokens is not None:
+        body["max_tokens"] = max_output_tokens
     return url, _openai_headers(api_key), body
 
 
@@ -156,6 +165,19 @@ def response_text(fmt: WireFormat, envelope: dict[str, Any]) -> str:
     if fmt is WireFormat.GEMINI:
         return str(envelope["candidates"][0]["content"]["parts"][0]["text"])
     return str(envelope["choices"][0]["message"]["content"])
+
+
+def was_cut_off(fmt: WireFormat, envelope: dict[str, Any]) -> bool:
+    """Whether the answer stopped at the output limit rather than where it ended.
+
+    Never raises: an envelope without a stop reason is taken as complete.
+    """
+    try:
+        if fmt is WireFormat.GEMINI:
+            return str(envelope["candidates"][0].get("finishReason")) == "MAX_TOKENS"
+        return str(envelope["choices"][0].get("finish_reason")) == "length"
+    except (KeyError, IndexError, TypeError, AttributeError):
+        return False
 
 
 @dataclass(frozen=True, slots=True)

@@ -32,13 +32,24 @@ other evidence exists. There is no fallback that produces approximate text.
 
 from __future__ import annotations
 
+import io
 import json
 import logging
+import re
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
+from PIL import Image, UnidentifiedImageError
+
 from app.extraction.language import Detection, detect
-from app.extraction.model_wire import WireFormat, build_call, response_text, usage_of
+from app.extraction.model_wire import (
+    WireFormat,
+    build_call,
+    response_text,
+    usage_of,
+    was_cut_off,
+)
 from app.governor.governor import ProviderUnavailable
 from app.observability.logging import event
 from app.security.fetcher import FetchResult, SecureFetcher
@@ -46,6 +57,17 @@ from app.security.fetcher import FetchResult, SecureFetcher
 logger = logging.getLogger("factify.ocr")
 
 PROVIDER = "llm"
+
+# The longest reading asked for. A forward, a post or a screenshot of an article reads
+# in 130-500 tokens, a dense page in a few thousand. A picture with nothing legible in
+# it is where a model loses its place and repeats a line until it is stopped: a 1x1
+# test image came back as "THE NEW YORK TIMES" 32,768 tokens long - three minutes of
+# output, at seventy times the cost of a real reading.
+MAX_READ_TOKENS = 4096
+
+# Fewer pixels than a 32x32 square holds no legible text, so no model is asked to read
+# one: asked anyway, it reads a masthead into a single pixel (above).
+_MIN_READABLE_PIXELS = 32 * 32
 
 # What kind of image it is. Closed, so the app can label it and the extractor can
 # rely on it; anything else is OTHER.
@@ -129,6 +151,8 @@ class OcrOutcome:
     kind: str = "OTHER"
     # Whose name the image carries - a masthead, a channel, an @handle - as written.
     publisher: str = ""
+    # The reading stopped at its limit: `text` is the start of what the image holds.
+    cut_off: bool = False
 
     @property
     def succeeded(self) -> bool:
@@ -160,6 +184,8 @@ class OcrExtractor:
         self._api_format = api_format
 
     async def transcribe(self, image: bytes, *, mime_type: str = "image/jpeg") -> OcrOutcome:
+        if _too_small_to_read(image):
+            return OcrOutcome(reason="no legible text: the image is too small to hold any")
         try:
             await self._governor.acquire(PROVIDER)
         except ProviderUnavailable as unavailable:
@@ -175,6 +201,7 @@ class OcrExtractor:
             response_schema=_SCHEMA,
             temperature=0.0,
             image=(image, mime_type),
+            max_output_tokens=MAX_READ_TOKENS,
         )
         response = await self._fetcher.post_json(url, body, provider=PROVIDER, headers=headers)
         if not isinstance(response, FetchResult):
@@ -184,7 +211,16 @@ class OcrExtractor:
 
         try:
             envelope = json.loads(response.text)
-            payload = json.loads(response_text(self._api_format, envelope))
+            answer = response_text(self._api_format, envelope)
+            cut_off = was_cut_off(self._api_format, envelope)
+            try:
+                payload = json.loads(answer)
+            except json.JSONDecodeError:
+                if not cut_off:
+                    raise
+                # Stopped at the limit part-way through the transcription, which comes
+                # first: what was read up to there is kept, and said to be partial.
+                payload = {"text": _as_far_as_it_got(answer)}
             text = str(payload.get("text") or "")
             description = " ".join(str(payload.get("description") or "").split())
             kind = str(payload.get("kind") or "OTHER").upper()
@@ -195,8 +231,22 @@ class OcrExtractor:
         # Transcribed text is external text: it came from an image an attacker chose,
         # so it carries exactly the same trust level as a fetched page and is fenced
         # by the caller before it reaches any further model call.
-        language = detect(text)
         usage = usage_of(self._api_format, envelope)
+        if _repeats_itself(text):
+            event(
+                logger,
+                "image reading discarded",
+                module="extraction.ocr",
+                outcome="skipped",
+                provider=PROVIDER,
+                model_id=self._model_id,
+                failure_reason="the reading repeated one line",
+                cut_off=cut_off,
+                completion_tokens=usage.completion,
+            )
+            return OcrOutcome(reason="no legible text: the reading only repeated itself")
+
+        language = detect(text)
 
         event(
             logger,
@@ -211,6 +261,7 @@ class OcrExtractor:
             publisher=publisher[:80],
             prompt_tokens=usage.prompt,
             completion_tokens=usage.completion,
+            cut_off=cut_off,
         )
 
         regions = tuple(
@@ -227,7 +278,70 @@ class OcrExtractor:
             description=description,
             kind=kind if kind in KINDS else "OTHER",
             publisher=publisher,
+            cut_off=cut_off,
         )
+
+
+def _too_small_to_read(image: bytes) -> bool:
+    """Whether the picture has too few pixels to hold text. Only its header is read;
+    a picture this cannot size is left for the model to judge."""
+    try:
+        with Image.open(io.BytesIO(image)) as opened:
+            width, height = opened.size
+    except (UnidentifiedImageError, OSError, ValueError):
+        return False
+    return width * height < _MIN_READABLE_PIXELS
+
+
+_TEXT_FIELD = re.compile(r'"text"\s*:\s*"')
+# The end of an answer stopped mid-escape: part of a \uXXXX, or the first half of a
+# surrogate pair whose second half never came.
+_BROKEN_ESCAPE = re.compile(r"(\\u[dD][89abAB][0-9a-fA-F]{2}|\\u[0-9a-fA-F]{0,3})$")
+
+
+def _as_far_as_it_got(answer: str) -> str:
+    """The transcription of an answer stopped part-way, up to its last whole word.
+
+    The answer is a JSON object that opens with `text`, so a reading stopped at the
+    limit is `{"text": "...` with no end. Everything before the cut is still exactly
+    what was read; the word the cut fell in is dropped rather than shown half-read.
+    """
+    opening = _TEXT_FIELD.search(answer)
+    if opening is None:
+        return ""
+    body = answer[opening.end() :]
+    try:
+        # The transcription itself was complete, and the cut came in a later field.
+        whole, _ = json.decoder.scanstring(body, 0)  # type: ignore[attr-defined]
+        return str(whole)
+    except json.JSONDecodeError:
+        pass
+    body = _BROKEN_ESCAPE.sub("", body)
+    if (len(body) - len(body.rstrip("\\"))) % 2:
+        body = body[:-1]  # a lone backslash, its escaped character never sent
+    try:
+        text = str(json.loads(f'"{body}"'))
+    except json.JSONDecodeError:
+        return ""
+    text = text.encode("utf-8", "ignore").decode("utf-8")
+    if text[-1:].isspace():
+        return text.rstrip()  # the cut fell between words
+    whole_words = text.rsplit(maxsplit=1)
+    return whole_words[0] if len(whole_words) == 2 else ""
+
+
+def _repeats_itself(text: str) -> bool:
+    """Whether a reading is one line or phrase said over and over.
+
+    That is a model that lost its place on a picture with nothing legible in it, not
+    text the picture holds - and checking it would mean fact-checking words the
+    picture never contained.
+    """
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if len(lines) >= 8 and Counter(lines).most_common(1)[0][1] * 2 > len(lines):
+        return True
+    words = text.split()
+    return len(words) >= 80 and len(set(words)) * 8 < len(words)
 
 
 class UnavailableOcr:
