@@ -155,6 +155,20 @@ class TestCoverage:
             assert cred.is_credible(url), url
             assert cred.credibility(url).value == "MEDIUM", url
 
+    def test_outlets_added_on_2026_09_26_are_citable_and_read_early(self) -> None:
+        """An MEA debunk reported by News18 and Firstpost read "Unconfirmed": both
+        were dropped as not credible, and neither had ever been assessed."""
+        cred = _credibility()
+        for url in (
+            "https://www.news18.com/india/brics-summit-mea-fact-check-9571234.html",
+            "https://www.firstpost.com/india/mea-fact-check-breakfast-13901234.html",
+            "https://www.freepressjournal.in/india/mea-debunks-breakfast-claim",
+            "https://thehill.com/homenews/administration/6110866-trump-xi-white-house-dinner/",
+        ):
+            assert cred.is_credible(url), url
+            assert cred.credibility(url).value == "MEDIUM", url
+            assert cred.is_prominent(url), url
+
     def test_times_of_india_reporting_is_citable_but_its_open_sections_are_not(self) -> None:
         cred = _credibility()
         assert cred.is_credible("https://timesofindia.indiatimes.com/india/x/articleshow/1.cms")
@@ -384,3 +398,35 @@ class TestWhichSourcesAreReadFirst:
         shortlist = asyncio.run(resolver.candidates(claim()))
 
         assert [c.url for c in shortlist] == ["https://www.politifact.com/factchecks/2026/x/"]
+
+
+class TestAListChangeReachesTheCache:
+    """The verdict cache is keyed on the search resolver's version. Adding a host
+    changes what a check may read, so it must change that version too, or answers
+    cached before the host was trusted keep being served."""
+
+    def test_adding_a_host_changes_the_fingerprint(self) -> None:
+        before = SourceCredibility(frozenset({"thehindu.com"}))
+        after = SourceCredibility(frozenset({"thehindu.com", "news18.com"}))
+
+        assert before.fingerprint != after.fingerprint
+        assert before.fingerprint == SourceCredibility(frozenset({"thehindu.com"})).fingerprint
+
+    def test_the_search_resolver_version_carries_it(self) -> None:
+        from app.sources.websearch import VERSION, WebSearchResolver
+
+        def resolver(hosts: frozenset[str]) -> WebSearchResolver:
+            return WebSearchResolver(
+                fetcher=None,  # type: ignore[arg-type]
+                reasoner=None,
+                provider="tavily",
+                endpoint="https://example.invalid/search",
+                api_key="k",
+                credibility=SourceCredibility(hosts),
+            )
+
+        old = resolver(frozenset({"thehindu.com"}))
+        new = resolver(frozenset({"thehindu.com", "news18.com"}))
+
+        assert old.version.startswith(VERSION)
+        assert old.version != new.version

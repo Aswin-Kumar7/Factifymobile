@@ -136,6 +136,9 @@ class WebSearchResolver:
         # Only credible publishers are read and cited from the open web. Junk is
         # dropped here, before it costs a reasoning call or contradicts a real source.
         self._credibility = credibility or SourceCredibility(frozenset())
+        # The code's version and the list's: either changing changes what a check
+        # finds, and this is what the verdict cache is keyed on.
+        self.version = f"{VERSION}+{self._credibility.fingerprint}"
         self._max_results = max_results
         # url -> the provider's result row, kept from the search call so snapshot and
         # relate need no second fetch — the search API already returned the content.

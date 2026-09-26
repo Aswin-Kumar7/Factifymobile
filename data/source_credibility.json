@@ -1,5 +1,5 @@
 {
-  "_comment": "Domains whose reporting is credible enough to cite as open-web (web-search) evidence. This is source SELECTION, not verdict determination: source risk stays about the publisher and never makes a claim false (app/verdict/engine.py rule 6). Entries are bare hosts - no scheme, www or path - and a listed host covers its subdomains. The core government, education and international suffixes (gov, mil, int, edu, gov.in, nic.in, ac.in, ac.uk, gov.uk, edu.au, gov.au, edu.pk) are trusted in app/sources/credibility.py and are not repeated here. user_content_paths names sections of listed hosts that anyone can post to; pages there are not citable. Every host was resolved and fetched when added - on 2026-09-17, and sports_news on 2026-09-24 - and served the named organisation (or a bot wall in front of it). This is data: grow it, and tests/unit/test_credibility.py keeps its shape honest.",
+  "_comment": "Domains whose reporting is credible enough to cite as open-web (web-search) evidence. This is source SELECTION, not verdict determination: source risk stays about the publisher and never makes a claim false (app/verdict/engine.py rule 6). Entries are bare hosts - no scheme, www or path - and a listed host covers its subdomains. The core government, education and international suffixes (gov, mil, int, edu, gov.in, nic.in, ac.in, ac.uk, gov.uk, edu.au, gov.au, edu.pk) are trusted in app/sources/credibility.py and are not repeated here. user_content_paths names sections of listed hosts that anyone can post to; pages there are not citable. Every host was resolved and fetched when added - on 2026-09-17, sports_news on 2026-09-24, and news18.com, firstpost.com, freepressjournal.in and thehill.com on 2026-09-26 - and served the named organisation (or a bot wall in front of it). This is data: grow it, and tests/unit/test_credibility.py keeps its shape honest.",
   "_verified": "2026-09-17",
   "_criteria": {
     "sources": [
@@ -277,6 +277,8 @@
     "epw.in",
     "etvbharat.com",
     "financialexpress.com",
+    "firstpost.com",
+    "freepressjournal.in",
     "hindustantimes.com",
     "indianexpress.com",
     "indiaspend.com",
@@ -287,6 +289,7 @@
     "ndtv.com",
     "ndtv.in",
     "newindianexpress.com",
+    "news18.com",
     "newslaundry.com",
     "onmanorama.com",
     "outlookindia.com",
@@ -474,6 +477,7 @@
     "theatlantic.com",
     "thedispatch.com",
     "theglobeandmail.com",
+    "thehill.com",
     "thestar.com",
     "time.com",
     "univision.com",

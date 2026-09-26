@@ -32,6 +32,7 @@ deploy.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from collections.abc import Iterator, Mapping
@@ -148,6 +149,23 @@ class SourceCredibility:
         # published fact-check wherever it was found, which is a stronger class of
         # evidence than a news report that happens to bear on the claim.
         self._fact_checkers = fact_checkers
+        # What this list says, in eight characters. The verdict cache is keyed on
+        # the search resolver's version, which carries this: a host added or removed
+        # changes which pages a check may read, so answers cached under the old list
+        # must not be served. Adding News18 without it would have kept serving the
+        # "Unconfirmed" cached before News18 could be read.
+        self.fingerprint = hashlib.sha256(
+            json.dumps(
+                [
+                    sorted(trusted),
+                    sorted(fact_checkers),
+                    sorted(high),
+                    sorted(medium),
+                    sorted(prominent),
+                    sorted((k, list(v)) for k, v in self._user_content_paths.items()),
+                ]
+            ).encode()
+        ).hexdigest()[:8]
 
     @classmethod
     def load(cls, path: Path | str | None = None) -> SourceCredibility:
