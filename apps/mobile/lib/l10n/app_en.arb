@@ -601,7 +601,7 @@
   "historyClearConfirm": "Delete every saved check from this phone?",
   "historyDelete": "Delete",
   "historyFilterAll": "All",
-  "historyStoredNote": "Saved only on this phone. Nothing you check is kept on our servers.",
+  "historyStoredNote": "Saved only on this phone. Nothing you check is kept on our servers. Swipe a check left to delete it.",
   "historySources": "{count, plural, =0{No sources} =1{1 source} other{{count} sources}}",
   "@historySources": {
     "placeholders": {
@@ -685,5 +685,67 @@
   "nothingToCheckText": "We didn't find a factual claim in this - it reads as opinion, a joke or conversation, so there's nothing here to confirm or rule out.",
   "searchUnavailableNote": "Our news search couldn't be reached, so this wasn't checked against news reports. Tap Check again in a little while.",
   "claimSearchUnavailable": "Our news search couldn't be reached, so no news reports were looked at for this. It isn't the same as finding nothing.",
-  "documentReadTitle": "What we read in your document"
+  "documentReadTitle": "What we read in your document",
+  "pasteCopiedText": "Paste copied text",
+  "deepChip": "Deep",
+  "deepChipOnHint": "Deep check is on",
+  "shareFromWhatsApp": "Or share from WhatsApp",
+  "checkTakes": "Usually takes 20–50 seconds",
+  "checkTakesDeep": "Deep check · usually 1–3 minutes",
+  "recentTitle": "Recent",
+  "seeAll": "See all",
+  "historySearchHint": "Search past checks",
+  "historyWeekRange": "This week · {range}",
+  "@historyWeekRange": {
+    "placeholders": {
+      "range": {
+        "type": "String"
+      }
+    }
+  },
+  "historyChecksUnit": "{count, plural, =1{check} other{checks}}",
+  "@historyChecksUnit": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "historyChecksCount": "{count, plural, =1{1 check} other{{count} checks}}",
+  "@historyChecksCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "historyBusiest": "Busiest: {days}",
+  "@historyBusiest": {
+    "placeholders": {
+      "days": {
+        "type": "String"
+      }
+    }
+  },
+  "historyDaysJoin": "{first} and {second}",
+  "@historyDaysJoin": {
+    "placeholders": {
+      "first": {
+        "type": "String"
+      },
+      "second": {
+        "type": "String"
+      }
+    }
+  },
+  "historyStopped": "You stopped {count} false or misleading forwards from spreading this week.",
+  "@historyStopped": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "historyNoResults": "No checks match this search.",
+  "switchLanguage": "Switch language"
 }

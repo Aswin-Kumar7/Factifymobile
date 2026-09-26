@@ -1,13 +1,15 @@
-/// Home: choose what to check, add it, and check it.
+/// Check: choose what to check, add it, and check it (v5).
 ///
 /// One kind of input at a time - text or a link, a picture, or a PDF. Once something
-/// is added the other kinds are locked, and it is removed with its own X to switch:
-/// a check is of one thing, and a screen that took a message, a picture and a file
-/// together left it unclear which one the answer was about.
+/// is added the other kinds are locked, and it is removed to switch: a check is of
+/// one thing, and a screen that took a message, a picture and a file together left
+/// it unclear which one the answer was about.
 ///
-/// The check itself opens on its own page (`checking_screen.dart`), and the answer
-/// on another (`result_screen.dart`); past checks live on the History tab. This page
-/// only ever holds what is about to be checked.
+/// The composer card is the page's focus: the three kinds as tabs, then the input
+/// itself - a large serif text box, or a picture or a PDF - and one row of actions
+/// under it. The check opens on its own page (`checking_screen.dart`) and the answer
+/// on another (`result_screen.dart`); the last three checks are listed under
+/// "Recent", and all of them on the History tab.
 ///
 /// Permissions: the camera is the only one requested, and only when the camera
 /// button is pressed. The gallery and the file picker go through the system picker,
@@ -21,14 +23,17 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 
 import '../api/share_intake.dart';
 import '../app_services.dart';
+import '../history/history_store.dart';
 import '../l10n/app_localizations.dart';
 import '../models/submission.dart';
-import '../theme/colors.dart';
-import '../widgets/language_menu.dart';
+import '../widgets/action_style.dart';
+import '../widgets/ui/ui.dart';
 import 'checking_screen.dart';
+import 'history_screen.dart';
 
 /// The largest picture read into memory for its preview.
 const int _previewBytesLimit = 4 * 1024 * 1024;
@@ -37,9 +42,12 @@ const int _previewBytesLimit = 4 * 1024 * 1024;
 enum InputType { text, image, pdf }
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({required this.services, super.key});
+  const HomeScreen({required this.services, this.onSeeAll, super.key});
 
   final AppServices services;
+
+  /// Opens the History tab, from "See all".
+  final VoidCallback? onSeeAll;
 
   @override
   State<HomeScreen> createState() => HomeScreenState();
@@ -114,22 +122,17 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (mounted && hasText != _clipboardOffer) setState(() => _clipboardOffer = hasText);
   }
 
-  /// Reads the clipboard, only now, because the person asked, and checks it.
-  Future<void> _pasteAndCheck() async {
+  /// Reads the clipboard, only now, because the person asked, into the text box.
+  Future<void> _paste() async {
     setState(() => _clipboardOffer = false);
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     final text = data?.text?.trim() ?? '';
     if (!mounted || text.isEmpty) return;
     _text.text = text;
-    _check();
   }
 
   void _select(InputType type) {
     if (type == _type) return;
-    if (_hasInput) {
-      _say(AppLocalizations.of(context).inputLocked);
-      return;
-    }
     setState(() {
       _type = type;
       _clipboardOffer = false;
@@ -145,6 +148,13 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _preview = null;
       _fileSize = null;
     });
+  }
+
+  /// Opens Check with this text in the box, ready to check (from an error screen).
+  void fillText(String text) {
+    clearInput();
+    setState(() => _type = InputType.text);
+    _text.text = text;
   }
 
   void _say(String message) {
@@ -178,6 +188,13 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         error.code == 'camera_access_denied' ? l10n.errorCameraDenied : l10n.errorFileUnopenable,
       );
     }
+  }
+
+  /// Opens the camera straight away (the home-screen widget's "Photo").
+  Future<void> takePhoto() async {
+    clearInput();
+    setState(() => _type = InputType.image);
+    await _pickImage(ImageSource.camera);
   }
 
   Future<void> _pickPdf() async {
@@ -278,406 +295,91 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final k = FactifyTokens.of(context);
+    final t = FactifyText.of(context);
     final l10n = AppLocalizations.of(context);
-    final auth = _services.auth;
 
     return Scaffold(
       body: SafeArea(
+        bottom: false,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: ListenableBuilder(
-                    listenable: auth,
-                    builder: (context, _) {
-                      final account = auth.account;
-                      return Text(
-                        account == null
-                            ? l10n.homeGreetingGuest
-                            : l10n.homeGreeting(account.displayName),
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          color: FactifyColors.inkMuted,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                _StatusPill(ready: _serviceReady, onTap: _probeService),
-                const SizedBox(width: 8),
-                LanguageMenu(preference: _services.language),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Text(
-              l10n.homeTitle,
-              style: theme.textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.5,
-                height: 1.2,
-              ),
+            _Header(services: _services, ready: _serviceReady, onProbe: _probeService),
+            const SizedBox(height: 26),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: Text(l10n.homeTitle, style: t.display),
             ),
             const SizedBox(height: 18),
-            _TypeSelector(selected: _type, locked: _hasInput, onSelect: _select),
-            const SizedBox(height: 16),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
+            _Composer(
+              type: _type,
+              hasInput: _hasInput,
+              onSelect: _select,
+              onLocked: (_) => _say(l10n.inputLocked),
               child: switch (_type) {
-                InputType.text => _TextPanel(
-                  key: const ValueKey('text'),
+                InputType.text => _TextInput(
                   controller: _text,
-                  showLinkNote: _looksLikeLink,
+                  isLink: _looksLikeLink,
                   clipboardOffer: _clipboardOffer && !_hasInput,
-                  onPasteAndCheck: _pasteAndCheck,
-                  onDismissClipboard: () => setState(() => _clipboardOffer = false),
+                  deep: _deep,
+                  onPaste: _paste,
                   onClear: clearInput,
+                  onToggleDeep: () => setState(() => _deep = !_deep),
                 ),
-                InputType.image => _ImagePanel(
-                  key: const ValueKey('image'),
-                  file: _file,
+                InputType.image when _file == null => _DropArea(
+                  icon: FxIcons.addImage,
+                  title: l10n.pickImageTitle,
+                  body: l10n.pickImageBody,
+                  buttons: [
+                    _DropButton(
+                      icon: FxIcons.gallery,
+                      label: l10n.sourceGallery,
+                      primary: true,
+                      onTap: () => _pickImage(ImageSource.gallery),
+                    ),
+                    _DropButton(
+                      icon: FxIcons.camera,
+                      label: l10n.sourceCamera,
+                      onTap: () => _pickImage(ImageSource.camera),
+                    ),
+                  ],
+                ),
+                InputType.pdf when _file == null => _DropArea(
+                  icon: FxIcons.addFile,
+                  title: l10n.pickPdfTitle,
+                  body: l10n.pickPdfBody,
+                  buttons: [
+                    _DropButton(
+                      icon: FxIcons.folder,
+                      label: l10n.choosePdf,
+                      primary: true,
+                      onTap: _pickPdf,
+                    ),
+                  ],
+                ),
+                _ => _FilePreview(
+                  image: _type == InputType.image,
                   preview: _preview,
+                  name: _nameOf(_file!),
                   size: _fileSize,
-                  onGallery: () => _pickImage(ImageSource.gallery),
-                  onCamera: () => _pickImage(ImageSource.camera),
-                  onClear: clearInput,
-                ),
-                InputType.pdf => _PdfPanel(
-                  key: const ValueKey('pdf'),
-                  file: _file,
-                  size: _fileSize,
-                  onPick: _pickPdf,
                   onClear: clearInput,
                 ),
               },
             ),
-            if (_type == InputType.text) ...[
-              const SizedBox(height: 12),
-              _DeepSwitch(value: _deep, onChanged: (value) => setState(() => _deep = value)),
-            ],
-            const SizedBox(height: 18),
-            FilledButton.icon(
+            const SizedBox(height: 14),
+            FxButton(
+              label: l10n.checkNow,
+              trailingIcon: FxIcons.forward,
               onPressed: _hasInput ? _check : null,
-              icon: const Icon(Icons.fact_check_rounded),
-              label: Text(l10n.checkNow),
-              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(56)),
             ),
-            const SizedBox(height: 24),
-            _Tip(text: l10n.emptyBody),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Text or link, Image, PDF: one at a time, the others locked while one is added.
-class _TypeSelector extends StatelessWidget {
-  const _TypeSelector({required this.selected, required this.locked, required this.onSelect});
-
-  final InputType selected;
-  final bool locked;
-  final ValueChanged<InputType> onSelect;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: FactifyColors.ground,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: FactifyColors.line),
-      ),
-      child: Row(
-        children: [
-          for (final (type, icon, label) in [
-            (InputType.text, Icons.notes_rounded, l10n.inputTypeText),
-            (InputType.image, Icons.image_outlined, l10n.inputTypeImage),
-            (InputType.pdf, Icons.picture_as_pdf_outlined, l10n.inputTypePdf),
-          ])
-            Expanded(
-              child: _TypeButton(
-                icon: icon,
-                label: label,
-                selected: type == selected,
-                enabled: type == selected || !locked,
-                onTap: () => onSelect(type),
-              ),
+            const SizedBox(height: 10),
+            Text(
+              _type == InputType.text && _deep ? l10n.checkTakesDeep : l10n.checkTakes,
+              textAlign: TextAlign.center,
+              style: t.caption.copyWith(color: k.ink3),
             ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TypeButton extends StatelessWidget {
-  const _TypeButton({
-    required this.icon,
-    required this.label,
-    required this.selected,
-    required this.enabled,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final bool selected;
-  final bool enabled;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colour = selected ? FactifyColors.emeraldDeep : FactifyColors.inkMuted;
-    return Semantics(
-      button: true,
-      selected: selected,
-      enabled: enabled,
-      child: Opacity(
-        opacity: enabled ? 1 : 0.38,
-        child: Material(
-          color: selected ? Colors.white : Colors.transparent,
-          elevation: selected ? 1 : 0,
-          shadowColor: Colors.black26,
-          borderRadius: BorderRadius.circular(12),
-          child: InkWell(
-            // Still tappable when locked, so the lock can explain itself.
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(12),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-              child: Column(
-                children: [
-                  Icon(icon, size: 22, color: colour),
-                  const SizedBox(height: 4),
-                  Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: colour,
-                      fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _TextPanel extends StatelessWidget {
-  const _TextPanel({
-    required this.controller,
-    required this.showLinkNote,
-    required this.clipboardOffer,
-    required this.onPasteAndCheck,
-    required this.onDismissClipboard,
-    required this.onClear,
-    super.key,
-  });
-
-  final TextEditingController controller;
-  final bool showLinkNote;
-  final bool clipboardOffer;
-  final VoidCallback onPasteAndCheck;
-  final VoidCallback onDismissClipboard;
-  final VoidCallback onClear;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final l10n = AppLocalizations.of(context);
-    final filled = controller.text.isNotEmpty;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (clipboardOffer) ...[
-          _ClipboardOffer(onCheck: onPasteAndCheck, onDismiss: onDismissClipboard),
-          const SizedBox(height: 10),
-        ],
-        TextField(
-          controller: controller,
-          minLines: 5,
-          maxLines: 10,
-          textInputAction: TextInputAction.newline,
-          decoration: InputDecoration(
-            hintText: l10n.inputTextHint,
-            contentPadding: const EdgeInsets.fromLTRB(16, 16, 8, 16),
-            suffixIcon: filled
-                ? Align(
-                    widthFactor: 1,
-                    heightFactor: 1,
-                    alignment: Alignment.topCenter,
-                    child: IconButton(
-                      tooltip: l10n.removeInput,
-                      onPressed: onClear,
-                      icon: const Icon(Icons.close_rounded),
-                    ),
-                  )
-                : null,
-          ),
-        ),
-        if (showLinkNote) ...[
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              const Icon(Icons.link_rounded, size: 18, color: FactifyColors.emeraldDark),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  l10n.inputLinkDetected,
-                  style: theme.textTheme.bodySmall?.copyWith(color: FactifyColors.emeraldDeep),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-class _ImagePanel extends StatelessWidget {
-  const _ImagePanel({
-    required this.file,
-    required this.preview,
-    required this.size,
-    required this.onGallery,
-    required this.onCamera,
-    required this.onClear,
-    super.key,
-  });
-
-  final File? file;
-  final Uint8List? preview;
-  final int? size;
-  final VoidCallback onGallery;
-  final VoidCallback onCamera;
-  final VoidCallback onClear;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    final chosen = file;
-    if (chosen == null) {
-      return _DropArea(
-        icon: Icons.add_photo_alternate_outlined,
-        title: l10n.pickImageTitle,
-        body: l10n.pickImageBody,
-        actions: [
-          Expanded(
-            child: FilledButton.tonalIcon(
-              onPressed: onGallery,
-              icon: const Icon(Icons.photo_library_outlined),
-              label: Text(l10n.sourceGallery),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: onCamera,
-              icon: const Icon(Icons.photo_camera_outlined),
-              label: Text(l10n.sourceCamera),
-            ),
-          ),
-        ],
-      );
-    }
-
-    final image = preview;
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Stack(
-            children: [
-              Container(
-                height: 220,
-                color: FactifyColors.ground,
-                child: image == null
-                    ? const Center(
-                        child: Icon(Icons.image_outlined, size: 48, color: FactifyColors.inkMuted),
-                      )
-                    : Image.memory(
-                        image,
-                        fit: BoxFit.contain,
-                        errorBuilder: (_, _, _) => const Center(
-                          child: Icon(
-                            Icons.image_outlined,
-                            size: 48,
-                            color: FactifyColors.inkMuted,
-                          ),
-                        ),
-                      ),
-              ),
-              PositionedDirectional(top: 8, end: 8, child: _RemoveButton(onPressed: onClear)),
-            ],
-          ),
-          _FileLine(icon: Icons.image_outlined, name: _nameOf(chosen), size: size),
-        ],
-      ),
-    );
-  }
-}
-
-class _PdfPanel extends StatelessWidget {
-  const _PdfPanel({
-    required this.file,
-    required this.size,
-    required this.onPick,
-    required this.onClear,
-    super.key,
-  });
-
-  final File? file;
-  final int? size;
-  final VoidCallback onPick;
-  final VoidCallback onClear;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    final chosen = file;
-    if (chosen == null) {
-      return _DropArea(
-        icon: Icons.upload_file_rounded,
-        title: l10n.pickPdfTitle,
-        body: l10n.pickPdfBody,
-        actions: [
-          Expanded(
-            child: FilledButton.tonalIcon(
-              onPressed: onPick,
-              icon: const Icon(Icons.folder_open_rounded),
-              label: Text(l10n.choosePdf),
-            ),
-          ),
-        ],
-      );
-    }
-    return Card(
-      child: Padding(
-        padding: const EdgeInsetsDirectional.fromSTEB(4, 4, 4, 4),
-        child: Row(
-          children: [
-            Expanded(
-              child: _FileLine(
-                icon: Icons.picture_as_pdf_rounded,
-                name: _nameOf(chosen),
-                size: size,
-                large: true,
-              ),
-            ),
-            _RemoveButton(onPressed: onClear, flat: true),
+            _Recent(services: _services, onSeeAll: widget.onSeeAll),
           ],
         ),
       ),
@@ -692,47 +394,129 @@ String _sizeOf(int bytes) {
   return '${(bytes / 1024).ceil()} KB';
 }
 
-class _FileLine extends StatelessWidget {
-  const _FileLine({required this.icon, required this.name, this.size, this.large = false});
+/// Avatar, greeting and date; the service's status and the language switch.
+class _Header extends StatelessWidget {
+  const _Header({required this.services, required this.ready, required this.onProbe});
 
-  final IconData icon;
-  final String name;
-  final int? size;
-  final bool large;
+  final AppServices services;
+  final bool? ready;
+  final VoidCallback onProbe;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.all(12),
+    final k = FactifyTokens.of(context);
+    final l10n = AppLocalizations.of(context);
+    final locale = Localizations.localeOf(context);
+    final hindi = locale.languageCode == 'hi';
+    final (dot, status) = switch (ready) {
+      true => (k.tC, l10n.statusOnline),
+      false => (k.fC, l10n.statusOffline),
+      null => (k.ink3, l10n.statusChecking),
+    };
+
+    return SizedBox(
+      height: 44,
       child: Row(
         children: [
-          Container(
-            width: large ? 44 : 34,
-            height: large ? 44 : 34,
-            decoration: BoxDecoration(
-              color: FactifyColors.emeraldTint,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: FactifyColors.emeraldDark, size: large ? 24 : 20),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+          ListenableBuilder(
+            listenable: services.auth,
+            builder: (context, _) {
+              final name = services.auth.account?.displayName;
+              final shown = (name == null || name.trim().isEmpty) ? null : name.trim();
+              return Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(color: k.accS, shape: BoxShape.circle),
+                      child: Text(
+                        (shown ?? 'F').characters.first.toUpperCase(),
+                        style: FactifyText.sans(14, weight: FontWeight.w700, color: k.acc),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            shown == null ? l10n.homeGreetingGuest : l10n.homeGreeting(shown),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: FactifyText.sans(14, weight: FontWeight.w600, color: k.ink),
+                          ),
+                          Text(
+                            DateFormat(
+                              'EEEE, d MMMM',
+                              locale.toLanguageTag(),
+                            ).format(DateTime.now()),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: FactifyText.sans(12, color: k.ink3),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                if (size != null)
-                  Text(
-                    _sizeOf(size!),
-                    style: theme.textTheme.bodySmall?.copyWith(color: FactifyColors.inkMuted),
-                  ),
-              ],
+              );
+            },
+          ),
+          Semantics(
+            button: true,
+            label: status,
+            child: GestureDetector(
+              onTap: onProbe,
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      status,
+                      style: FactifyText.sans(12, weight: FontWeight.w600, color: k.ink2),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Semantics(
+            button: true,
+            label: l10n.switchLanguage,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => unawaited(services.language.choose(Locale(hindi ? 'en' : 'hi'))),
+              child: Container(
+                height: 36,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: k.line),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(FxIcons.language, size: 16, color: k.ink),
+                    const SizedBox(width: 5),
+                    Text(
+                      hindi ? 'हि' : 'EN',
+                      style: FactifyText.sans(12, weight: FontWeight.w600, color: k.ink),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ],
@@ -741,25 +525,179 @@ class _FileLine extends StatelessWidget {
   }
 }
 
-class _RemoveButton extends StatelessWidget {
-  const _RemoveButton({required this.onPressed, this.flat = false});
+/// The composer card: the three kinds as tabs over the input itself.
+class _Composer extends StatelessWidget {
+  const _Composer({
+    required this.type,
+    required this.hasInput,
+    required this.onSelect,
+    required this.onLocked,
+    required this.child,
+  });
 
-  final VoidCallback onPressed;
-  final bool flat;
+  final InputType type;
+  final bool hasInput;
+  final ValueChanged<InputType> onSelect;
+  final ValueChanged<InputType> onLocked;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
+    final k = FactifyTokens.of(context);
     final l10n = AppLocalizations.of(context);
-    return IconButton(
-      tooltip: l10n.removeInput,
-      onPressed: onPressed,
-      style: flat
-          ? null
-          : IconButton.styleFrom(
-              backgroundColor: Colors.black.withValues(alpha: 0.55),
-              foregroundColor: Colors.white,
+    return Container(
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        color: k.sf,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: k.line),
+        boxShadow: const [
+          BoxShadow(
+            offset: Offset(0, 12),
+            blurRadius: 32,
+            spreadRadius: -22,
+            color: Color(0x4D000000),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          FxSegmented<InputType>(
+            segments: [
+              FxSegment(InputType.text, l10n.inputTypeText, icon: FxIcons.text),
+              FxSegment(InputType.image, l10n.inputTypeImage, icon: FxIcons.image),
+              FxSegment(InputType.pdf, l10n.inputTypePdf, icon: FxIcons.pdf),
+            ],
+            selected: type,
+            locked: hasInput ? InputType.values.toSet() : const {},
+            onChanged: onSelect,
+            onLocked: onLocked,
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            alignment: Alignment.topCenter,
+            child: child,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The text box (Newsreader 21, 196 tall) and the row of actions under it.
+class _TextInput extends StatelessWidget {
+  const _TextInput({
+    required this.controller,
+    required this.isLink,
+    required this.clipboardOffer,
+    required this.deep,
+    required this.onPaste,
+    required this.onClear,
+    required this.onToggleDeep,
+  });
+
+  final TextEditingController controller;
+  final bool isLink;
+  final bool clipboardOffer;
+  final bool deep;
+  final VoidCallback onPaste;
+  final VoidCallback onClear;
+  final VoidCallback onToggleDeep;
+
+  @override
+  Widget build(BuildContext context) {
+    final k = FactifyTokens.of(context);
+    final t = FactifyText.of(context);
+    final l10n = AppLocalizations.of(context);
+    final filled = controller.text.trim().isNotEmpty;
+
+    final Widget left;
+    if (clipboardOffer && !filled) {
+      left = FxChip(label: l10n.pasteCopiedText, icon: FxIcons.paste, height: 30, onTap: onPaste);
+    } else {
+      final (icon, label, colour, onTap) = isLink
+          ? (FxIcons.link, l10n.inputLinkDetected, k.acc, null)
+          : filled
+          ? (FxIcons.close, l10n.removeInput, k.ink3, onClear)
+          : (FxIcons.chat, l10n.shareFromWhatsApp, k.ink3, null);
+      left = Semantics(
+        button: onTap != null,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 15, color: colour),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: FactifyText.sans(12, weight: FontWeight.w500, color: colour),
+                  ),
+                ),
+              ],
             ),
-      icon: const Icon(Icons.close_rounded),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          height: 196,
+          child: TextField(
+            controller: controller,
+            expands: true,
+            maxLines: null,
+            textAlignVertical: TextAlignVertical.top,
+            keyboardType: TextInputType.multiline,
+            style: t.input,
+            decoration: InputDecoration(
+              hintText: l10n.inputTextHint,
+              hintStyle: t.input.copyWith(color: k.ink3),
+              filled: false,
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              contentPadding: const EdgeInsets.fromLTRB(12, 16, 12, 8),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 0, 6, 6),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 32),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Align(alignment: AlignmentDirectional.centerStart, child: left),
+                ),
+                const SizedBox(width: 8),
+                FxChip(
+                  label: l10n.deepChip,
+                  icon: FxIcons.deep,
+                  height: 30,
+                  fontSize: 12,
+                  iconSize: 14,
+                  selected: deep,
+                  background: deep ? k.accS : Colors.transparent,
+                  foreground: deep ? k.acc : k.ink3,
+                  border: deep ? null : k.line,
+                  onTap: onToggleDeep,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -769,184 +707,287 @@ class _DropArea extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.body,
-    required this.actions,
+    required this.buttons,
   });
 
   final IconData icon;
   final String title;
   final String body;
-  final List<Widget> actions;
+  final List<Widget> buttons;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.fromLTRB(18, 22, 18, 18),
-      decoration: BoxDecoration(
-        color: FactifyColors.ground,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: FactifyColors.line, width: 1.2),
-      ),
+    final k = FactifyTokens.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 30, 10, 12),
       child: Column(
         children: [
           Container(
-            width: 56,
-            height: 56,
-            decoration: const BoxDecoration(
-              color: FactifyColors.emeraldTint,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: FactifyColors.emeraldDark, size: 28),
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(color: k.accS, borderRadius: BorderRadius.circular(17)),
+            child: Icon(icon, size: 25, color: k.acc),
           ),
           const SizedBox(height: 12),
-          Text(title, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 4),
           Text(
-            body,
+            title,
             textAlign: TextAlign.center,
-            style: theme.textTheme.bodySmall?.copyWith(color: FactifyColors.inkMuted),
+            style: FactifyText.sans(16, weight: FontWeight.w600, color: k.ink),
           ),
-          const SizedBox(height: 16),
-          Row(children: actions),
+          const SizedBox(height: 4),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 240),
+            child: Text(
+              body,
+              textAlign: TextAlign.center,
+              style: FactifyText.sans(12.5, color: k.ink3).copyWith(height: 1.5),
+            ),
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              for (final (index, button) in buttons.indexed) ...[
+                if (index > 0) const SizedBox(width: 8),
+                Expanded(child: button),
+              ],
+            ],
+          ),
         ],
       ),
     );
   }
 }
 
-class _DeepSwitch extends StatelessWidget {
-  const _DeepSwitch({required this.value, required this.onChanged});
+class _DropButton extends StatelessWidget {
+  const _DropButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.primary = false,
+  });
 
-  final bool value;
-  final ValueChanged<bool> onChanged;
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool primary;
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
+    final k = FactifyTokens.of(context);
+    final fg = primary ? k.onAcc : k.ink;
     return Material(
-      color: value ? FactifyColors.emeraldTint : Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: BorderSide(color: value ? FactifyColors.emeraldSoft : FactifyColors.line),
-      ),
+      color: primary ? k.acc : k.sf2,
+      borderRadius: BorderRadius.circular(12),
       clipBehavior: Clip.antiAlias,
-      child: SwitchListTile.adaptive(
-        value: value,
-        onChanged: onChanged,
-        contentPadding: const EdgeInsetsDirectional.fromSTEB(12, 0, 8, 0),
-        secondary: Icon(
-          Icons.travel_explore_rounded,
-          color: value ? FactifyColors.emeraldDark : FactifyColors.inkMuted,
+      child: InkWell(
+        onTap: onTap,
+        child: SizedBox(
+          height: 44,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 18, color: fg),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: FactifyText.sans(14, weight: FontWeight.w600, color: fg),
+                ),
+              ),
+            ],
+          ),
         ),
-        title: Text(l10n.deepCheck, style: const TextStyle(fontWeight: FontWeight.w700)),
-        subtitle: Text(l10n.deepCheckHint),
       ),
     );
   }
 }
 
-class _Tip extends StatelessWidget {
-  const _Tip({required this.text});
+/// The added picture or PDF: its preview, name and size, and the X to remove it.
+class _FilePreview extends StatelessWidget {
+  const _FilePreview({
+    required this.image,
+    required this.preview,
+    required this.name,
+    required this.size,
+    required this.onClear,
+  });
 
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Row(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      const Icon(Icons.lightbulb_outline_rounded, size: 18, color: FactifyColors.inkMuted),
-      const SizedBox(width: 8),
-      Expanded(
-        child: Text(
-          text,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: FactifyColors.inkMuted),
-        ),
-      ),
-    ],
-  );
-}
-
-/// Offers to check what was copied, without reading it until asked.
-class _ClipboardOffer extends StatelessWidget {
-  const _ClipboardOffer({required this.onCheck, required this.onDismiss});
-
-  final VoidCallback onCheck;
-  final VoidCallback onDismiss;
+  final bool image;
+  final Uint8List? preview;
+  final String name;
+  final int? size;
+  final VoidCallback onClear;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final k = FactifyTokens.of(context);
     final l10n = AppLocalizations.of(context);
-    return Material(
-      color: FactifyColors.emeraldTint,
-      borderRadius: BorderRadius.circular(14),
-      child: Padding(
-        padding: const EdgeInsetsDirectional.fromSTEB(12, 4, 4, 4),
-        child: Row(
+    final shown = preview;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (image)
+          Container(
+            height: 170,
+            margin: const EdgeInsets.only(top: 6),
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(color: k.sf2, borderRadius: BorderRadius.circular(18)),
+            child: shown == null
+                ? Icon(FxIcons.image, size: 40, color: k.ink3)
+                : Image.memory(
+                    shown,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => Icon(FxIcons.image, size: 40, color: k.ink3),
+                  ),
+          ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 12, 8, 6),
+          child: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(color: k.accS, borderRadius: BorderRadius.circular(12)),
+                child: Icon(image ? FxIcons.image : FxIcons.pdf, size: 18, color: k.acc),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: FactifyText.sans(13.5, weight: FontWeight.w600, color: k.ink),
+                    ),
+                    if (size != null)
+                      Text(_sizeOf(size!), style: FactifyText.sans(11.5, color: k.ink3)),
+                  ],
+                ),
+              ),
+              FxCircleButton(
+                icon: FxIcons.close,
+                tooltip: l10n.removeInput,
+                onPressed: onClear,
+                size: 32,
+                iconSize: 16,
+                background: k.sf2,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The last three checks, opening their answers; "See all" goes to History.
+class _Recent extends StatelessWidget {
+  const _Recent({required this.services, required this.onSeeAll});
+
+  final AppServices services;
+  final VoidCallback? onSeeAll;
+
+  @override
+  Widget build(BuildContext context) {
+    final k = FactifyTokens.of(context);
+    final t = FactifyText.of(context);
+    final l10n = AppLocalizations.of(context);
+    return ListenableBuilder(
+      listenable: services.history,
+      builder: (context, _) {
+        final recent = services.history.records.take(3).toList();
+        if (recent.isEmpty) return const SizedBox.shrink();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Icon(Icons.content_paste_rounded, size: 18, color: FactifyColors.emeraldDeep),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                l10n.clipboardOffer,
-                style: theme.textTheme.bodySmall?.copyWith(color: FactifyColors.emeraldDeep),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 28, 4, 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Expanded(child: Text(l10n.recentTitle, style: t.section)),
+                  if (onSeeAll != null)
+                    Semantics(
+                      button: true,
+                      child: GestureDetector(
+                        onTap: onSeeAll,
+                        behavior: HitTestBehavior.opaque,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Text(
+                            l10n.seeAll,
+                            style: FactifyText.sans(12.5, weight: FontWeight.w600, color: k.acc),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
-            TextButton(onPressed: onCheck, child: Text(l10n.clipboardPasteAndCheck)),
-            IconButton(
-              onPressed: onDismiss,
-              icon: const Icon(Icons.close, size: 18),
-              tooltip: l10n.clipboardDismiss,
-              visualDensity: VisualDensity.compact,
+            FxListCard(
+              bordered: true,
+              children: [
+                for (final record in recent) _RecentRow(services: services, record: record),
+              ],
             ),
           ],
-        ),
-      ),
+        );
+      },
     );
   }
 }
 
-/// Whether the service can check right now: checking, online, or offline.
-class _StatusPill extends StatelessWidget {
-  const _StatusPill({required this.ready, required this.onTap});
+class _RecentRow extends StatelessWidget {
+  const _RecentRow({required this.services, required this.record});
 
-  final bool? ready;
-  final VoidCallback onTap;
+  final AppServices services;
+  final HistoryRecord record;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final k = FactifyTokens.of(context);
     final l10n = AppLocalizations.of(context);
-    final (colour, label) = switch (ready) {
-      true => (FactifyColors.emerald, l10n.statusOnline),
-      false => (theme.colorScheme.error, l10n.statusOffline),
-      null => (FactifyColors.inkMuted, l10n.statusChecking),
-    };
+    final locale = Localizations.localeOf(context).toLanguageTag();
+    final verdict = record.factVerdict;
     return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(999),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: colour.withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(999),
-        ),
+      onTap: () => openHistoryRecord(context, services, record),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 7,
-              height: 7,
-              decoration: BoxDecoration(color: colour, shape: BoxShape.circle),
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(color: k.sf2, borderRadius: BorderRadius.circular(12)),
+              child: Icon(FxIcons.forKind(record.kind), size: 17, color: k.ink2),
             ),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: colour,
-                fontWeight: FontWeight.w600,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    record.summary.isEmpty ? l10n.yourPicture : record.summary,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: FactifyText.sans(13.5, weight: FontWeight.w500, color: k.ink),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${DateFormat.Hm(locale).format(record.checkedAt.toLocal())} · '
+                    '${l10n.historySources(record.sourceCount)}',
+                    style: FactifyText.sans(11.5, color: k.ink3),
+                  ),
+                ],
               ),
             ),
+            const SizedBox(width: 8),
+            FxVerdictPill(verdict: verdict, label: ActionStyle.word(verdict, l10n)),
           ],
         ),
       ),

@@ -1589,7 +1589,7 @@ abstract class AppLocalizations {
   /// No description provided for @historyStoredNote.
   ///
   /// In en, this message translates to:
-  /// **'Saved only on this phone. Nothing you check is kept on our servers.'**
+  /// **'Saved only on this phone. Nothing you check is kept on our servers. Swipe a check left to delete it.'**
   String get historyStoredNote;
 
   /// No description provided for @historySources.
@@ -1867,6 +1867,108 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'What we read in your document'**
   String get documentReadTitle;
+
+  /// No description provided for @pasteCopiedText.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste copied text'**
+  String get pasteCopiedText;
+
+  /// No description provided for @deepChip.
+  ///
+  /// In en, this message translates to:
+  /// **'Deep'**
+  String get deepChip;
+
+  /// No description provided for @deepChipOnHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Deep check is on'**
+  String get deepChipOnHint;
+
+  /// No description provided for @shareFromWhatsApp.
+  ///
+  /// In en, this message translates to:
+  /// **'Or share from WhatsApp'**
+  String get shareFromWhatsApp;
+
+  /// No description provided for @checkTakes.
+  ///
+  /// In en, this message translates to:
+  /// **'Usually takes 20–50 seconds'**
+  String get checkTakes;
+
+  /// No description provided for @checkTakesDeep.
+  ///
+  /// In en, this message translates to:
+  /// **'Deep check · usually 1–3 minutes'**
+  String get checkTakesDeep;
+
+  /// No description provided for @recentTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Recent'**
+  String get recentTitle;
+
+  /// No description provided for @seeAll.
+  ///
+  /// In en, this message translates to:
+  /// **'See all'**
+  String get seeAll;
+
+  /// No description provided for @historySearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search past checks'**
+  String get historySearchHint;
+
+  /// No description provided for @historyWeekRange.
+  ///
+  /// In en, this message translates to:
+  /// **'This week · {range}'**
+  String historyWeekRange(String range);
+
+  /// No description provided for @historyChecksUnit.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{check} other{checks}}'**
+  String historyChecksUnit(int count);
+
+  /// No description provided for @historyChecksCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 check} other{{count} checks}}'**
+  String historyChecksCount(int count);
+
+  /// No description provided for @historyBusiest.
+  ///
+  /// In en, this message translates to:
+  /// **'Busiest: {days}'**
+  String historyBusiest(String days);
+
+  /// No description provided for @historyDaysJoin.
+  ///
+  /// In en, this message translates to:
+  /// **'{first} and {second}'**
+  String historyDaysJoin(String first, String second);
+
+  /// No description provided for @historyStopped.
+  ///
+  /// In en, this message translates to:
+  /// **'You stopped {count} false or misleading forwards from spreading this week.'**
+  String historyStopped(int count);
+
+  /// No description provided for @historyNoResults.
+  ///
+  /// In en, this message translates to:
+  /// **'No checks match this search.'**
+  String get historyNoResults;
+
+  /// No description provided for @switchLanguage.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch language'**
+  String get switchLanguage;
 }
 
 class _AppLocalizationsDelegate

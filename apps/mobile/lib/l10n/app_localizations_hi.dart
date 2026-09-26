@@ -1024,7 +1024,7 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get historyStoredNote =>
-      'सिर्फ़ इसी फ़ोन पर सहेजा गया। आपकी जाँच हमारे सर्वर पर नहीं रखी जाती।';
+      'सिर्फ़ इसी फ़ोन पर सहेजा गया। आप जो जाँचते हैं, वह हमारे सर्वर पर नहीं रखा जाता। किसी जाँच को मिटाने के लिए उसे बाईं ओर सरकाएँ।';
 
   @override
   String historySources(int count) {
@@ -1203,4 +1203,79 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get documentReadTitle => 'आपके दस्तावेज़ में हमने क्या पढ़ा';
+
+  @override
+  String get pasteCopiedText => 'चिपकाएँ';
+
+  @override
+  String get deepChip => 'गहरी';
+
+  @override
+  String get deepChipOnHint => 'गहरी जाँच चालू है';
+
+  @override
+  String get shareFromWhatsApp => 'या WhatsApp से शेयर करें';
+
+  @override
+  String get checkTakes => 'आम तौर पर 20–50 सेकंड लगते हैं';
+
+  @override
+  String get checkTakesDeep => 'गहरी जाँच · 1–3 मिनट';
+
+  @override
+  String get recentTitle => 'हाल की जाँचें';
+
+  @override
+  String get seeAll => 'सभी देखें';
+
+  @override
+  String get historySearchHint => 'पिछली जाँचें खोजें';
+
+  @override
+  String historyWeekRange(String range) {
+    return 'इस हफ़्ते · $range';
+  }
+
+  @override
+  String historyChecksUnit(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'जाँचें',
+      one: 'जाँच',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String historyChecksCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count जाँचें',
+      one: '1 जाँच',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String historyBusiest(String days) {
+    return 'सबसे ज़्यादा: $days';
+  }
+
+  @override
+  String historyDaysJoin(String first, String second) {
+    return '$first और $second';
+  }
+
+  @override
+  String historyStopped(int count) {
+    return 'इस हफ़्ते आपने $count झूठे या भ्रामक फ़ॉरवर्ड फैलने से रोके।';
+  }
+
+  @override
+  String get historyNoResults => 'इस खोज से कोई जाँच नहीं मिली।';
+
+  @override
+  String get switchLanguage => 'भाषा बदलें';
 }

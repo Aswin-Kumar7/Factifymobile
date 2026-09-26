@@ -1,6 +1,6 @@
-/// The app once past the welcome: Home, History and Profile, one tab each.
+/// The app once past the welcome: Check, History and Profile, one tab each.
 ///
-/// Shares from other apps arrive here, whichever tab is open, and go to Home, which
+/// Shares from other apps arrive here, whichever tab is open, and go to Check, which
 /// starts checking them straight away: the thing this app exists to check arrives in
 /// a forward, and a share that only fills a box is a share half-finished.
 library;
@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import '../api/share_intake.dart';
 import '../app_services.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/ui/ui.dart';
 import 'history_screen.dart';
 import 'home_screen.dart';
 import 'profile_screen.dart';
@@ -88,29 +89,29 @@ class _MainShellState extends State<MainShell> {
       body: IndexedStack(
         index: _tab,
         children: [
-          HomeScreen(key: _home, services: widget.services),
+          HomeScreen(
+            key: _home,
+            services: widget.services,
+            onSeeAll: () => setState(() => _tab = 1),
+          ),
           HistoryScreen(services: widget.services, onStartChecking: () => setState(() => _tab = 0)),
           ProfileScreen(services: widget.services),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: (index) => setState(() => _tab = index),
-        destinations: [
-          NavigationDestination(
-            icon: const Icon(Icons.home_outlined),
-            selectedIcon: const Icon(Icons.home_rounded),
-            label: l10n.tabHome,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.history_outlined),
-            selectedIcon: const Icon(Icons.history_rounded),
+      bottomNavigationBar: FxBottomNav(
+        selected: _tab,
+        onSelected: (index) => setState(() => _tab = index),
+        items: [
+          FxNavItem(label: l10n.tabCheck, icon: FxIcons.check, selectedIcon: FxIcons.checkFill),
+          FxNavItem(
             label: l10n.tabHistory,
+            icon: FxIcons.history,
+            selectedIcon: FxIcons.historyFill,
           ),
-          NavigationDestination(
-            icon: const Icon(Icons.person_outline_rounded),
-            selectedIcon: const Icon(Icons.person_rounded),
+          FxNavItem(
             label: l10n.tabProfile,
+            icon: FxIcons.profile,
+            selectedIcon: FxIcons.profileFill,
           ),
         ],
       ),

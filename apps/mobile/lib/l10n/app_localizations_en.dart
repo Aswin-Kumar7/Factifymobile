@@ -1028,7 +1028,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get historyStoredNote =>
-      'Saved only on this phone. Nothing you check is kept on our servers.';
+      'Saved only on this phone. Nothing you check is kept on our servers. Swipe a check left to delete it.';
 
   @override
   String historySources(int count) {
@@ -1205,4 +1205,79 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get documentReadTitle => 'What we read in your document';
+
+  @override
+  String get pasteCopiedText => 'Paste copied text';
+
+  @override
+  String get deepChip => 'Deep';
+
+  @override
+  String get deepChipOnHint => 'Deep check is on';
+
+  @override
+  String get shareFromWhatsApp => 'Or share from WhatsApp';
+
+  @override
+  String get checkTakes => 'Usually takes 20–50 seconds';
+
+  @override
+  String get checkTakesDeep => 'Deep check · usually 1–3 minutes';
+
+  @override
+  String get recentTitle => 'Recent';
+
+  @override
+  String get seeAll => 'See all';
+
+  @override
+  String get historySearchHint => 'Search past checks';
+
+  @override
+  String historyWeekRange(String range) {
+    return 'This week · $range';
+  }
+
+  @override
+  String historyChecksUnit(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'checks',
+      one: 'check',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String historyChecksCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count checks',
+      one: '1 check',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String historyBusiest(String days) {
+    return 'Busiest: $days';
+  }
+
+  @override
+  String historyDaysJoin(String first, String second) {
+    return '$first and $second';
+  }
+
+  @override
+  String historyStopped(int count) {
+    return 'You stopped $count false or misleading forwards from spreading this week.';
+  }
+
+  @override
+  String get historyNoResults => 'No checks match this search.';
+
+  @override
+  String get switchLanguage => 'Switch language';
 }

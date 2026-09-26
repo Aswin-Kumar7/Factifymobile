@@ -11,6 +11,7 @@ import 'dart:convert';
 import 'package:factify_mobile/api/client.dart';
 import 'package:factify_mobile/l10n/language_preference.dart';
 import 'package:factify_mobile/main.dart';
+import 'package:factify_mobile/widgets/ui/ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -107,7 +108,7 @@ Future<void> _check(WidgetTester tester, String text) async {
 }
 
 void main() {
-  const offer = 'You have text copied. Check it?';
+  const offer = 'Paste copied text';
   const claim = 'The minister said the scheme was cancelled.';
 
   group('the clipboard', () {
@@ -119,10 +120,16 @@ void main() {
       // Offering is not reading: the content stays unread until the tap.
       expect(clipboard.read, isFalse);
 
-      await tester.tap(find.text('Paste and check'));
+      await tester.tap(find.text(offer));
       await tester.pumpAndSettle();
 
+      // Pasted into the box, to be looked at before it is checked.
       expect(clipboard.read, isTrue);
+      expect(find.text(claim), findsOneWidget);
+      expect(sent, isEmpty);
+
+      await tester.tap(find.text('Check now'));
+      await tester.pumpAndSettle();
       expect(sent.single['text'], claim);
       expect(find.text('Result'), findsOneWidget);
     });
@@ -133,11 +140,11 @@ void main() {
       expect(find.text(offer), findsNothing);
     });
 
-    testWidgets('can be dismissed without being read', (tester) async {
+    testWidgets('goes once something is typed, still unread', (tester) async {
       final clipboard = _FakeClipboard(hasText: true, text: 'Anything');
       await _pumpApp(tester, clipboard);
 
-      await tester.tap(find.byTooltip('Not now'));
+      await tester.enterText(find.byType(TextField), claim);
       await tester.pumpAndSettle();
 
       expect(find.text(offer), findsNothing);
@@ -161,7 +168,7 @@ void main() {
       expect(find.text("Remove what you've added to switch to another type."), findsOneWidget);
       expect(find.text('Add a picture'), findsNothing);
 
-      await tester.tap(find.byTooltip('Remove'));
+      await tester.tap(find.text('Remove'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Image'));
       await tester.pumpAndSettle();
@@ -174,8 +181,8 @@ void main() {
     testWidgets('nothing can be checked until something is added', (tester) async {
       await _pumpApp(tester, _FakeClipboard(hasText: false));
 
-      final button = tester.widget<ButtonStyleButton>(
-        find.ancestor(of: find.text('Check now'), matching: find.bySubtype<ButtonStyleButton>()),
+      final button = tester.widget<FxButton>(
+        find.ancestor(of: find.text('Check now'), matching: find.byType(FxButton)),
       );
       expect(button.onPressed, isNull);
     });
@@ -247,7 +254,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('What would you like to check?'), findsOneWidget);
-      expect(find.text(claim), findsNothing);
+      // The box is empty again; the check is listed under Recent.
+      expect(tester.widget<TextField>(find.byType(TextField)).controller?.text, isEmpty);
+      expect(find.text('Recent'), findsOneWidget);
     });
 
     testWidgets('a deep check shows the progress the server reports, then the verdict', (
@@ -281,7 +290,7 @@ void main() {
       await tester.pumpWidget(FactifyApp(language: LanguagePreference.inMemory(), client: client));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Deep check'));
+      await tester.tap(find.text('Deep'));
       await tester.pump();
       await tester.enterText(find.byType(TextField), claim);
       await tester.pump();
@@ -309,7 +318,7 @@ void main() {
       await _check(tester, claim);
       await tester.tap(find.text('New check'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byIcon(Icons.history_outlined));
+      await tester.tap(find.text('History'));
       await tester.pumpAndSettle();
 
       expect(find.text('Today'), findsOneWidget);
@@ -326,7 +335,7 @@ void main() {
     testWidgets('is empty, and says what it is for, before anything is checked', (tester) async {
       await _pumpApp(tester, _FakeClipboard(hasText: false));
 
-      await tester.tap(find.byIcon(Icons.history_outlined));
+      await tester.tap(find.text('History'));
       await tester.pumpAndSettle();
 
       expect(find.text('No checks yet'), findsOneWidget);
@@ -405,7 +414,7 @@ void main() {
       expect(find.text('Hi, Asha'), findsOneWidget);
       expect(find.text('What would you like to check?'), findsOneWidget);
 
-      await tester.tap(find.byIcon(Icons.person_outline_rounded));
+      await tester.tap(find.text('Profile'));
       await tester.pumpAndSettle();
       expect(find.text('Signed in with email'), findsOneWidget);
       expect(find.text('100 credits left'), findsOneWidget);

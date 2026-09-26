@@ -132,6 +132,7 @@ class FxCircleButton extends StatelessWidget {
     this.iconSize = 20,
     this.background,
     this.bordered = false,
+    this.shadow = false,
     super.key,
   });
 
@@ -142,6 +143,9 @@ class FxCircleButton extends StatelessWidget {
   final double iconSize;
   final Color? background;
   final bool bordered;
+
+  /// The card shadow on the circle itself.
+  final bool shadow;
 
   @override
   Widget build(BuildContext context) {
@@ -157,16 +161,22 @@ class FxCircleButton extends StatelessWidget {
           width: size < 44 ? 44 : size,
           height: size < 44 ? 44 : size,
           child: Center(
-            child: Material(
-              color: background ?? k.sf,
-              shape: CircleBorder(side: bordered ? BorderSide(color: k.line) : BorderSide.none),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: onPressed,
-                child: SizedBox(
-                  width: size,
-                  height: size,
-                  child: Icon(icon, size: iconSize, color: k.ink),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: shadow ? k.shadow : null,
+              ),
+              child: Material(
+                color: background ?? k.sf,
+                shape: CircleBorder(side: bordered ? BorderSide(color: k.line) : BorderSide.none),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: onPressed,
+                  child: SizedBox(
+                    width: size,
+                    height: size,
+                    child: Icon(icon, size: iconSize, color: k.ink),
+                  ),
                 ),
               ),
             ),

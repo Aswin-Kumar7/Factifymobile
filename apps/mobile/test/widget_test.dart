@@ -19,7 +19,6 @@ import 'package:factify_mobile/screens/evidence_screen.dart';
 import 'package:factify_mobile/widgets/advisory_panel.dart';
 import 'package:factify_mobile/widgets/correction_card.dart';
 import 'package:factify_mobile/widgets/correction_sheet.dart';
-import 'package:factify_mobile/widgets/language_menu.dart';
 import 'package:factify_mobile/widgets/verdict_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -113,7 +112,12 @@ Widget _app(Widget home, {Locale locale = _english}) => MaterialApp(
 );
 
 Future<void> _pump(WidgetTester tester, Widget child, {Locale locale = _english}) =>
-    tester.pumpWidget(_app(Scaffold(body: SingleChildScrollView(child: child)), locale: locale));
+    tester.pumpWidget(
+      _app(
+        Scaffold(body: SingleChildScrollView(child: child)),
+        locale: locale,
+      ),
+    );
 
 /// A claim was found and no source settled it.
 Verdict _abstention({String? search}) => Verdict.fromJson(
@@ -270,7 +274,10 @@ void main() {
       _payload(
         action: 'SAFE_TO_SHARE',
         claims: [
-          _claim(status: 'SUPPORTED', evidence: [_evidence(direction: 'supports')]),
+          _claim(
+            status: 'SUPPORTED',
+            evidence: [_evidence(direction: 'supports')],
+          ),
         ],
       )..addAll({'verdict': 'TRUE', 'confidence': 89, 'summary': 'Two outlets report it.'}),
     );
@@ -291,8 +298,11 @@ void main() {
         tester,
         _card(
           Verdict.fromJson(
-            _payload(claims: [_claim(evidence: [_evidence()])])
-              ..addAll({'verdict': 'FALSE', 'confidence': 78}),
+            _payload(
+              claims: [
+                _claim(evidence: [_evidence()]),
+              ],
+            )..addAll({'verdict': 'FALSE', 'confidence': 78}),
           ),
         ),
       );
@@ -427,11 +437,7 @@ void main() {
 
   group('the design law, in Hindi', () {
     testWidgets('an abstention reads as unconfirmed, and never as true or false', (tester) async {
-      await _pump(
-        tester,
-        _card(_abstention()),
-        locale: _hindi,
-      );
+      await _pump(tester, _card(_abstention()), locale: _hindi);
 
       expect(find.text('अपुष्ट'), findsOneWidget);
       expect(find.textContaining('Unconfirmed'), findsNothing);
@@ -451,7 +457,10 @@ void main() {
             _payload(
               action: 'SAFE_TO_SHARE',
               claims: [
-                _claim(status: 'SUPPORTED', evidence: [_evidence(direction: 'supports')]),
+                _claim(
+                  status: 'SUPPORTED',
+                  evidence: [_evidence(direction: 'supports')],
+                ),
               ],
             )..addAll({'verdict': 'TRUE', 'confidence': 89}),
           ),
@@ -498,8 +507,10 @@ void main() {
       ),
     );
 
-    Widget correctionCard(Verdict verdict) =>
-        SizedBox(width: correctionCardWidth, child: CorrectionCard(verdict: verdict));
+    Widget correctionCard(Verdict verdict) => SizedBox(
+      width: correctionCardWidth,
+      child: CorrectionCard(verdict: verdict),
+    );
 
     testWidgets('names the decided claim, who said so and when, and no advisory', (tester) async {
       await _pump(tester, correctionCard(contradicted()));
@@ -531,7 +542,10 @@ void main() {
       expect(text, contains('https://factchecker.example/1'));
 
       final undecided = Verdict.fromJson(
-        _payload(action: 'SEND_TO_REVIEW', claims: [_claim(status: 'UNVERIFIED')]),
+        _payload(
+          action: 'SEND_TO_REVIEW',
+          claims: [_claim(status: 'UNVERIFIED')],
+        ),
       );
       expect(correctionText(undecided, l10n), contains('No published source could confirm'));
     });
@@ -610,9 +624,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('What would you like to check?'), findsOneWidget);
 
-      await tester.tap(find.byType(LanguageMenu));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('हिन्दी'));
+      // One tap on the EN pill switches to Hindi.
+      await tester.tap(find.text('EN'));
       await tester.pumpAndSettle();
       expect(find.text('आप क्या जाँचना चाहते हैं?'), findsOneWidget);
 
@@ -679,7 +692,10 @@ void main() {
             // would keep only its message and lose that name.
             printOnFailure('${screen.runtimeType}, $locale, ${direction.name}');
             await tester.pumpWidget(
-              _app(Directionality(textDirection: direction, child: screen), locale: locale),
+              _app(
+                Directionality(textDirection: direction, child: screen),
+                locale: locale,
+              ),
             );
             await tester.pumpAndSettle();
           }

@@ -137,6 +137,22 @@ class ActionStyle {
     };
   }
 
+  /// The one word for a verdict: True, False, Misleading, Unconfirmed.
+  static String word(FactVerdict verdict, AppLocalizations l10n) => switch (verdict) {
+    FactVerdict.trueClaim => l10n.headlineSafeToShare,
+    FactVerdict.falseClaim => l10n.headlineDoNotShare,
+    FactVerdict.misleading => l10n.headlineShareWithContext,
+    FactVerdict.unconfirmed => l10n.headlineSendToReview,
+  };
+
+  /// The icon for a verdict.
+  static IconData iconFor(FactVerdict verdict) => switch (verdict) {
+    FactVerdict.trueClaim => FxIcons.trueV,
+    FactVerdict.falseClaim => FxIcons.falseV,
+    FactVerdict.misleading => FxIcons.misleadingV,
+    FactVerdict.unconfirmed => FxIcons.unconfirmedV,
+  };
+
   /// The colour for one claim's status, for the smaller per-claim marks.
   static Color forStatus(ClaimStatus status, [Brightness brightness = Brightness.light]) {
     final k = _tokens(brightness);

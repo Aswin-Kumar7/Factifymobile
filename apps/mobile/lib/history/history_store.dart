@@ -11,6 +11,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:ui' as ui;
 
+import 'package:flutter/material.dart' show DateUtils;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -19,7 +20,7 @@ import '../models/verdict.dart';
 
 /// One finished check, as it is kept.
 class HistoryRecord {
-  const HistoryRecord({
+  HistoryRecord({
     required this.id,
     required this.kind,
     required this.summary,
@@ -43,7 +44,18 @@ class HistoryRecord {
   final DateTime checkedAt;
   final Map<String, dynamic> verdictJson;
 
-  Verdict get verdict => Verdict.fromJson(verdictJson);
+  /// The answer, read once from the kept response.
+  late final Verdict verdict = Verdict.fromJson(verdictJson);
+
+  /// The verdict it is listed and counted under. A check with nothing in it to
+  /// check is filed with Unconfirmed: it was not found true or false.
+  FactVerdict get factVerdict => verdict.factVerdict;
+
+  /// How many different pages the answer cited.
+  int get sourceCount => {for (final e in verdict.allEvidence) e.citationUrl}.length;
+
+  /// The calendar day it was checked on, in the phone's time.
+  DateTime get day => DateUtils.dateOnly(checkedAt.toLocal());
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -86,6 +98,7 @@ class HistoryStore extends ChangeNotifier {
 
   final SharedPreferencesAsync? _store;
   List<HistoryRecord> _records = const [];
+  int _added = 0;
   bool _loaded = false;
 
   List<HistoryRecord> get records => _records;
@@ -111,7 +124,8 @@ class HistoryStore extends ChangeNotifier {
   /// Keep a finished check, newest first.
   Future<HistoryRecord> add(Submission submission, Verdict verdict) async {
     final record = HistoryRecord(
-      id: '${verdict.caseId}-${DateTime.now().microsecondsSinceEpoch}',
+      // The counter keeps two checks saved within one clock tick apart.
+      id: '${verdict.caseId}-${DateTime.now().microsecondsSinceEpoch}-${_added++}',
       kind: submission.kind,
       summary: submission.summaryWith(verdict),
       text: submission.text,
@@ -123,6 +137,21 @@ class HistoryStore extends ChangeNotifier {
     notifyListeners();
     await _save();
     return record;
+  }
+
+  /// This week, Monday to Sunday, for History's chart and recap (v5).
+  WeekSummary weekSummary([DateTime? now]) {
+    final today = DateUtils.dateOnly((now ?? DateTime.now()).toLocal());
+    final monday = today.subtract(Duration(days: today.weekday - DateTime.monday));
+    final days = [for (var i = 0; i < 7; i++) DateUtils.addDaysToDate(monday, i)];
+    final byDay = [
+      for (final day in days)
+        [
+          for (final record in _records)
+            if (DateUtils.isSameDay(record.day, day)) record.factVerdict,
+        ]..sort((a, b) => WeekSummary.order.indexOf(a).compareTo(WeekSummary.order.indexOf(b))),
+    ];
+    return WeekSummary(today: today, days: days, byDay: byDay);
   }
 
   Future<void> remove(String id) async {
@@ -159,5 +188,47 @@ class HistoryStore extends ChangeNotifier {
     } catch (_) {
       return null;
     }
+  }
+}
+
+/// A week of checks: per day, per verdict, for the History chart and recap.
+class WeekSummary {
+  const WeekSummary({required this.today, required this.days, required this.byDay});
+
+  /// The order a day's bar is stacked in, from the bottom.
+  static const order = [
+    FactVerdict.falseClaim,
+    FactVerdict.misleading,
+    FactVerdict.trueClaim,
+    FactVerdict.unconfirmed,
+  ];
+
+  final DateTime today;
+
+  /// Monday to Sunday.
+  final List<DateTime> days;
+
+  /// For each of [days], the verdicts checked that day, in [order].
+  final List<List<FactVerdict>> byDay;
+
+  DateTime get start => days.first;
+  DateTime get end => days.last;
+
+  int get total => byDay.fold(0, (sum, day) => sum + day.length);
+
+  int count(FactVerdict verdict) =>
+      byDay.fold(0, (sum, day) => sum + day.where((v) => v == verdict).length);
+
+  /// False and misleading forwards caught this week: the positive recap.
+  int get stopped => count(FactVerdict.falseClaim) + count(FactVerdict.misleading);
+
+  /// The busiest days, at most two, or none in an empty week.
+  List<DateTime> get busiest {
+    final most = byDay.fold(0, (m, day) => day.length > m ? day.length : m);
+    if (most == 0) return const [];
+    return [
+      for (final (i, day) in byDay.indexed)
+        if (day.length == most) days[i],
+    ].take(2).toList();
   }
 }

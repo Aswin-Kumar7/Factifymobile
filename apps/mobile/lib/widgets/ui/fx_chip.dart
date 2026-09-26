@@ -27,6 +27,7 @@ class FxChip extends StatelessWidget {
     this.fontSize = 12.5,
     this.iconSize = 15,
     this.selected,
+    this.shadow = false,
     super.key,
   });
 
@@ -49,6 +50,9 @@ class FxChip extends StatelessWidget {
   /// For assistive technology: whether this chip is the chosen one.
   final bool? selected;
 
+  /// The card shadow, on the chip itself (History's filters).
+  final bool shadow;
+
   @override
   Widget build(BuildContext context) {
     final k = FactifyTokens.of(context);
@@ -60,6 +64,7 @@ class FxChip extends StatelessWidget {
         color: background ?? k.accS,
         borderRadius: BorderRadius.circular(height / 2),
         border: border == null ? null : Border.all(color: border!),
+        boxShadow: shadow ? k.shadow : null,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -73,10 +78,13 @@ class FxChip extends StatelessWidget {
             const SizedBox(width: 7),
           ],
           if (icon != null) ...[Icon(icon, size: iconSize, color: fg), const SizedBox(width: 6)],
-          Text(
-            label,
-            maxLines: 1,
-            style: FactifyText.sans(fontSize, weight: FontWeight.w600, color: fg),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: FactifyText.sans(fontSize, weight: FontWeight.w600, color: fg),
+            ),
           ),
           if (count != null) ...[
             const SizedBox(width: 6),

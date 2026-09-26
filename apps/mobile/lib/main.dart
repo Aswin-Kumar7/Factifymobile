@@ -8,6 +8,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -126,6 +127,16 @@ class _FactifyAppState extends State<FactifyApp> {
         supportedLocales: AppLocalizations.supportedLocales,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         localeListResolutionCallback: _resolveLocale,
+        // Dark status-bar icons on the light theme, light ones on the dark: a screen
+        // with its own colours (the splash) sets its own over this.
+        builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
+          value:
+              (Theme.of(context).brightness == Brightness.dark
+                      ? SystemUiOverlayStyle.light
+                      : SystemUiOverlayStyle.dark)
+                  .copyWith(statusBarColor: Colors.transparent),
+          child: child ?? const SizedBox.shrink(),
+        ),
         home: widget.showIntro ? SplashScreen(services: _services) : MainShell(services: _services),
       ),
     );
