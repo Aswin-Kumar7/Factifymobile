@@ -41,7 +41,7 @@ PROVIDER = "llm"
 
 # Bumped whenever the prompt or the schema changes, because either changes what the
 # same document extracts to — and the extraction cache is keyed on it.
-EXTRACTOR_VERSION = "2026.09.26.3"
+EXTRACTOR_VERSION = "2026.09.27.1"
 
 MAX_CLAIMS_PER_DOCUMENT = 7
 
@@ -110,6 +110,10 @@ _SYSTEM_INSTRUCTION = (
     "the JSON described by the schema. Extract at most "
     f"{MAX_CLAIMS_PER_DOCUMENT} claims, choosing the ones that are consequential and "
     "verifiable. For each claim, report where in the document it appeared. "
+    "Write every claim in the document's own language and script, in its own words "
+    "as far as a self-contained sentence allows: a Hindi forward gives Hindi claims. "
+    "Never translate a claim - it is matched against the document's text, and a "
+    "translated claim matches nothing and is thrown away unchecked. "
     "Each claim must be a COMPLETE, self-contained assertion that can be checked on its "
     "own — a full statement about who did what, when or where. Never emit a sentence "
     "fragment, a bare noun or place ('Odisha'), a date on its own ('after five days'), "
@@ -186,7 +190,9 @@ _SYSTEM_INSTRUCTION = (
     "claim's own entities and plain nouns, no quotation marks, and never phrase one "
     "so that it presumes an answer. For a claim not written in English, write at "
     "least one phrase in English: most fact-checks and national reporting are in "
-    "English, and a search in the claim's own words alone does not reach them."
+    "English, and a search in the claim's own words alone does not reach them. The "
+    "search phrases are the only place English goes - the claim itself stays in the "
+    "document's language."
 )
 
 
