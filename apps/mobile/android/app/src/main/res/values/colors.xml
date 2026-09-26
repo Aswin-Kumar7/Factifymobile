@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Factify's emerald, as in lib/theme/colors.dart. -->
+    <color name="factify_emerald">#059669</color>
+    <color name="factify_emerald_deep">#065F46</color>
+</resources>
