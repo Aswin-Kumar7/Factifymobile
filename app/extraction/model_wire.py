@@ -23,9 +23,10 @@ counts as evidence.
 
 Not handled here, on purpose:
 
-  * **Vision (OCR).** `app/extraction/ocr.py` stays Gemini — the OpenAI-compatible
-    surfaces reached this way (Groq's free tier) expose no vision model, so vision is
-    a separate provider block (`FACTIFY_VISION__*`) that can differ from the text one.
+  * **Images.** Both shapes also carry one image beside the text (`image=`): an
+    `image_url` data URL for OpenAI, an `inlineData` part for Gemini. Reading a
+    picture is the same JSON-returning call with a picture in the user position, so
+    `app/extraction/ocr.py` uses this rather than a third request shape of its own.
   * **Azure's auth header.** Azure OpenAI authenticates with an `api-key` header and
     puts the deployment in the URL rather than the body. Bearer covers Groq and
     OpenRouter; Azure needs the small variant noted at `_openai_headers`.
@@ -33,6 +34,7 @@ Not handled here, on purpose:
 
 from __future__ import annotations
 
+import base64
 import json
 from dataclasses import dataclass
 from enum import StrEnum
@@ -57,8 +59,13 @@ def build_call(
     response_schema: dict[str, Any],
     temperature: float = 0.0,
     thinking: str | None = None,
+    image: tuple[bytes, str] | None = None,
 ) -> tuple[str, dict[str, str], dict[str, Any]]:
     """Assemble one JSON-returning completion as ``(url, headers, body)``.
+
+    `image` is ``(bytes, mime type)``: a picture sent beside the user text, for a
+    model that reads images. It travels in the user position too, which is where
+    untrusted content belongs.
 
     The external text always travels in the user position — a `contents` part for
     Gemini, a `user` message for OpenAI — never spliced into the system instruction.
@@ -81,9 +88,12 @@ def build_call(
         }
         if thinking is not None:
             generation["thinkingConfig"] = {"thinkingLevel": thinking}
+        parts: list[dict[str, Any]] = [{"text": user_block}]
+        if image is not None:
+            parts.append({"inlineData": {"mimeType": image[1], "data": _base64(image[0])}})
         body: dict[str, Any] = {
             "systemInstruction": {"parts": [{"text": system}]},
-            "contents": [{"role": "user", "parts": [{"text": user_block}]}],
+            "contents": [{"role": "user", "parts": parts}],
             "generationConfig": generation,
         }
         return url, headers, body
@@ -96,16 +106,34 @@ def build_call(
         f"{system}\n\nReturn ONLY a JSON object matching this schema:\n"
         f"{json.dumps(response_schema)}"
     )
+    user_content: str | list[dict[str, Any]] = user_block
+    if image is not None:
+        user_content = [
+            {"type": "text", "text": user_block},
+            {
+                "type": "image_url",
+                # "high": the text in a forwarded screenshot is small, and a low-
+                # detail read of it is where invented words come from.
+                "image_url": {
+                    "url": f"data:{image[1]};base64,{_base64(image[0])}",
+                    "detail": "high",
+                },
+            },
+        ]
     body = {
         "model": model_id,
         "messages": [
             {"role": "system", "content": system_with_schema},
-            {"role": "user", "content": user_block},
+            {"role": "user", "content": user_content},
         ],
         "response_format": {"type": "json_object"},
         "temperature": temperature,
     }
     return url, _openai_headers(api_key), body
+
+
+def _base64(data: bytes) -> str:
+    return base64.b64encode(data).decode("ascii")
 
 
 def _openai_headers(api_key: str) -> dict[str, str]:

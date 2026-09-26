@@ -30,6 +30,7 @@ from app.api.schemas import (
     ClaimResponse,
     ComponentResponse,
     EvidenceResponse,
+    ImageReadingResponse,
     ReceiptResponse,
     ReviewItemResponse,
     ReviewLabelRequest,
@@ -40,8 +41,12 @@ from app.api.schemas import (
     advisory_to_response,
     evidence_to_response,
 )
+from app.domain.claim import Claim
 from app.extraction.claims import ExtractedClaims
 from app.extraction.language import detect
+from app.extraction.ocr import OcrOutcome
+from app.extraction.pdf import PdfRejected
+from app.extraction.pdf import extract as extract_pdf
 from app.extraction.web import extract as extract_article
 from app.extraction.web import headline_and_summary
 from app.intake.normalizer import (
@@ -725,21 +730,193 @@ async def _checked_file(
     # Probed before media preparation (hashing, embedding, OCR), for the same reason
     # the text path probes before extraction: a repeat should cost nothing. "Check
     # again" is the exception, as it is there.
+    readings = _remembered_readings(request)
     hit = (
         None if recheck else await orchestrator.cached(intake, case_id=case_id)  # type: ignore[attr-defined]
     )
     if hit is not None:
-        return await cached_full_response(request, hit) or to_response(hit)
+        served = await cached_full_response(request, hit) or to_response(hit)
+        return served.model_copy(update={"image_reading": readings.get(intake.primary.sha256)})
 
+    # Read before checking. An image or a PDF used to reach the checker with no claims
+    # at all: a screenshot of a forward announcing a ban on ₹500 notes was
+    # fingerprinted, never read, and came back "Unconfirmed". Its text is now read and
+    # checked exactly as a pasted message is - the same extraction, the same search,
+    # the same rules - and a link in it is opened, as a link in a message is.
+    document, reading, notes = await _read_document(request, intake)
+    claims: list[Claim] = []
+    own_pages: set[str] = set()
+    if document.strip():
+        link = _first_link(document)
+        if link is not None:
+            page = await _read_linked_article(request, link)
+            if page is not None:
+                document = f"{document}\n\n{page.text}"
+                own_pages.add(page_key(link))
+        extracted = await _extract_from_document(request, intake, document)
+        claims = list(extracted.claims)
+        if extracted.reason:
+            notes.append(SkippedCheck(check="claim_extraction", reason=extracted.reason))
+
+    # With no text to check, the image's own questions are asked instead: has it been
+    # published before, and does it carry provenance (see `MediaVerification`).
     result = await orchestrator.verify(  # type: ignore[attr-defined]
-        intake, case_id=case_id, claims=[], fresh=recheck
+        intake,
+        case_id=case_id,
+        claims=claims,
+        fresh=recheck,
+        own_pages=frozenset(own_pages),
     )
 
-    cached = await cached_full_response(request, result)
-    if cached is not None:
-        return cached
+    response = await cached_full_response(request, result) or to_response(result)
+    shown = _reading_response(reading)
+    if shown is not None:
+        _remember(readings, intake.primary.sha256, shown)
+    event(
+        logger,
+        "verify request served",
+        module="api.verify",
+        outcome="ok",
+        action=result.action.value,
+        claims=len(claims),
+        from_cache=result.from_cache,
+        elapsed_ms=result.elapsed_ms,
+        input_type=intake.input_type.value,
+    )
+    return response.model_copy(
+        update={
+            "image_reading": shown,
+            "skipped": (
+                *response.skipped,
+                *(SkippedCheckResponse(check=n.check, reason=n.reason) for n in notes),
+            ),
+        }
+    )
 
-    return to_response(result)
+
+# How many images of a scanned PDF are read. A forged circular is one or two pages;
+# a long scanned document is read from its start, and the rest is said to be unread.
+_SCANNED_PAGES_READ = 3
+
+
+async def _read_document(
+    request: Request, intake: NormalisedIntake
+) -> tuple[str, OcrOutcome | None, list[SkippedCheck]]:
+    """The text of an uploaded image or PDF, what the image showed, and any gap.
+
+    An image is read by the image reader (`app/extraction/ocr.py`). A PDF's own text
+    layer is used when it has one; a scanned PDF has none, so its page images are
+    read the same way a screenshot is.
+    """
+    primary = intake.primary
+    reader = getattr(request.app.state, "ocr", None)
+    notes: list[SkippedCheck] = []
+    if primary.data is None:
+        return "", None, notes
+
+    if intake.input_type is InputType.IMAGE:
+        if reader is None:
+            notes.append(SkippedCheck(check="image_text", reason="reading images is not set up"))
+            return "", None, notes
+        reading: OcrOutcome = await reader.transcribe(
+            primary.data, mime_type=primary.mime_type or "image/jpeg"
+        )
+        if not reading.succeeded:
+            notes.append(
+                SkippedCheck(
+                    check="image_text", reason=f"the image could not be read ({reading.reason})"
+                )
+            )
+            return "", None, notes
+        return reading.text, reading, notes
+
+    if intake.input_type is InputType.PDF:
+        try:
+            pdf = await asyncio.to_thread(extract_pdf, primary.data)
+        except PdfRejected as rejected:
+            notes.append(SkippedCheck(check="document_text", reason=rejected.reason))
+            return "", None, notes
+        if not pdf.needs_ocr:
+            return pdf.text[:_MAX_ARTICLE_CHARS], None, notes
+
+        first: OcrOutcome | None = None
+        pages: list[str] = []
+        if reader is not None:
+            for image in pdf.embedded_images[:_SCANNED_PAGES_READ]:
+                mime = _image_mime(image)
+                if mime is None:
+                    continue
+                outcome: OcrOutcome = await reader.transcribe(image, mime_type=mime)
+                if outcome.has_text:
+                    pages.append(outcome.text)
+                    first = first or outcome
+        if not pages:
+            notes.append(
+                SkippedCheck(check="document_text", reason="the document has no readable text")
+            )
+        return "\n\n".join(pages)[:_MAX_ARTICLE_CHARS], first, notes
+
+    return "", None, notes
+
+
+async def _extract_from_document(
+    request: Request, intake: NormalisedIntake, document: str
+) -> ExtractedClaims:
+    """Claims from the text read out of an upload, anchored in that text."""
+    pipeline = getattr(request.app.state, "claim_pipeline", None)
+    if pipeline is None:
+        return ExtractedClaims(reason="claim extraction is not configured")
+    extracted: ExtractedClaims = await pipeline.extract(
+        document,
+        content_hash=intake.primary.sha256,
+        input_kind=intake.input_type.value,
+        language=detect(document).language.value,
+    )
+    return extracted
+
+
+def _image_mime(data: bytes) -> str | None:
+    """The type of an image pulled out of a PDF, from its first bytes."""
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith(b"\x89PNG"):
+        return "image/png"
+    return None
+
+
+def _reading_response(reading: OcrOutcome | None) -> ImageReadingResponse | None:
+    if reading is None:
+        return None
+    return ImageReadingResponse(
+        text=reading.text.strip(),
+        description=reading.description or None,
+        kind=reading.kind or None,
+        publisher=reading.publisher or None,
+        language=reading.language.language.value if reading.language else None,
+    )
+
+
+# What was read from recent images, by image hash, so a repeat served from the verdict
+# cache - which makes no model call - can still show what the picture said. Bounded,
+# and in memory: a restart forgets it, and a repeat then shows the verdict without it.
+_READINGS_KEPT = 500
+
+
+def _remembered_readings(request: Request) -> dict[str, ImageReadingResponse]:
+    readings = getattr(request.app.state, "image_readings", None)
+    if readings is None:
+        readings = {}
+        request.app.state.image_readings = readings
+    return readings
+
+
+def _remember(
+    readings: dict[str, ImageReadingResponse], key: str, reading: ImageReadingResponse
+) -> None:
+    readings.pop(key, None)
+    readings[key] = reading
+    while len(readings) > _READINGS_KEPT:
+        readings.pop(next(iter(readings)))
 
 
 async def _record_unprocessed_video(request: Request, *, case_id: UUID, intake: object) -> None:

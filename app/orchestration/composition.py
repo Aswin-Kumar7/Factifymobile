@@ -37,6 +37,7 @@ from app.embeddings.text import TextEmbedder
 from app.extraction.claims import ClaimPipeline
 from app.extraction.llm import LLMExtractor
 from app.extraction.model_wire import WireFormat
+from app.extraction.ocr import OcrExtractor
 from app.intake.normalizer import NormalisedIntake
 from app.observability.logging import event
 from app.orchestration.adapters import (
@@ -401,6 +402,17 @@ async def build(settings: Settings) -> dict[str, Any]:
             ),
             cache=cache,  # type: ignore[arg-type]
         )
+        # Reads an uploaded picture: its text, and what it shows. The same model and
+        # budget as extraction - one call per image, and a repeat is served from the
+        # verdict cache before it is made.
+        state["ocr"] = OcrExtractor(
+            fetcher=SecureFetcher(timeout_seconds=MODEL_TIMEOUT_SECONDS),
+            governor=governor,
+            endpoint=settings.llm.endpoint,
+            api_key=settings.llm.api_key.get_secret_value(),
+            model_id=settings.models.extraction,
+            api_format=WireFormat(settings.llm.api_format),
+        )
 
     await _prewarm(embedder, image_embedder)
 
@@ -412,6 +424,7 @@ async def build(settings: Settings) -> dict[str, Any]:
         resolvers=[r.name for r in resolvers],
         factcheck_records=len(records),
         extraction_configured="claim_pipeline" in state,
+        image_reading_configured="ocr" in state,
     )
     return state
 

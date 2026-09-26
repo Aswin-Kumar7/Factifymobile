@@ -42,7 +42,8 @@ from app.domain.enums import (
 
 # 1.1 adds verdict, confidence, summary, per-claim confidence and explanation, and
 # per-source credibility. Additive: every 1.0 field is still present and unchanged.
-CONTRACT_VERSION = "1.1"
+# 1.2 adds `image_reading`: what was read from an uploaded picture. Additive too.
+CONTRACT_VERSION = "1.2"
 
 
 # ------------------------------------------------------------------------ requests
@@ -265,6 +266,27 @@ class RecurrenceResponse(BaseModel):
     summary: str
 
 
+class ImageReadingResponse(BaseModel):
+    """What was read from an uploaded picture, shown beside the verdict about it.
+
+    The claims were extracted from `text`, so a person can see exactly what was
+    checked - and catch a misread before trusting the verdict built on it.
+    `description` is the model's account of what the image shows: context, never
+    evidence, and never checked.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    text: str = ""
+    description: str | None = None
+    # NEWS_ARTICLE, SOCIAL_POST, CHAT_MESSAGE, TV_GRAPHIC, POSTER, DOCUMENT, PHOTO,
+    # MEME or OTHER.
+    kind: str | None = None
+    # The outlet, channel or account the image carries, as written on it.
+    publisher: str | None = None
+    language: str | None = None
+
+
 class VerifyResponse(BaseModel):
     """The full result.
 
@@ -296,6 +318,9 @@ class VerifyResponse(BaseModel):
 
     skipped: tuple[SkippedCheckResponse, ...] = ()
     completeness_note: str | None = None
+
+    # For an uploaded image: its text and what it shows. None for everything else.
+    image_reading: ImageReadingResponse | None = None
 
     receipt_url: str | None = None
     retrieved_at: datetime
