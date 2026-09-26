@@ -12,6 +12,7 @@ import 'package:factify_mobile/models/submission.dart';
 import 'package:factify_mobile/models/verdict.dart';
 import 'package:factify_mobile/screens/result_screen.dart';
 import 'package:factify_mobile/theme/theme.dart';
+import 'package:factify_mobile/widgets/action_style.dart';
 import 'package:factify_mobile/widgets/claim_spans.dart';
 import 'package:factify_mobile/widgets/why_sheet.dart';
 import 'package:flutter/material.dart';
@@ -160,6 +161,38 @@ void main() {
     test('a claim that shares nothing with the text is not underlined anywhere', () {
       final verdict = _verdict('DO_NOT_SHARE', [_claim('The moon is made of cheese today.')]);
       expect(locateClaims(text, verdict.claims), isEmpty);
+    });
+  });
+
+  group('a picture with nothing to check (2026-09-27, on the phone)', () {
+    final landscape = Verdict.fromJson({
+      'case_id': 'case-2',
+      'action': 'SEND_TO_REVIEW',
+      'action_reason': 'r',
+      'rule_version': 'v',
+      'claims': [
+        _claim(
+          'This image has been published before, at a date and by a publisher that can be cited.',
+          status: 'UNVERIFIED',
+        )..['claim_type'] = 'MEDIA',
+      ],
+      'advisories': <Object>[],
+      'skipped': <Object>[],
+      'retrieved_at': '2026-09-27T10:00:00Z',
+      'image_reading': {'text': '', 'description': 'Two green hills.', 'kind': 'OTHER'},
+    });
+
+    test("is not titled by the server's own question about it", () {
+      expect(landscape.headline, isNull);
+    });
+
+    test('is labelled "Nothing to check" in History, as its page says', () {
+      final l10n = lookupAppLocalizations(const Locale('en'));
+      expect(ActionStyle.label(landscape, l10n), 'Nothing to check');
+      expect(
+        ActionStyle.label(_verdict('DO_NOT_SHARE', [_claim('A claim.', confidence: 90)]), l10n),
+        'False',
+      );
     });
   });
 

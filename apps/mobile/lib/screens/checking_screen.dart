@@ -1,25 +1,34 @@
-/// A check in progress, on its own page, until the answer replaces it.
+/// A check in progress, on its own page, until the answer replaces it (v5).
 ///
-/// What it shows is only what is true. An upload has a real percentage and a deep
-/// check reports claims done, so both get real bars. A normal check reports nothing
-/// until it answers, so there is no bar pretending to know how far along it is: a
-/// timer of the seconds actually spent, the steps every check goes through, and how
-/// long one usually takes, so a forty-second wait reads as normal rather than stuck.
+/// What it shows is only what is true. The scanner, the step and the sources come
+/// from the server's own reports as the check runs (contract 1.3): which step it is
+/// on, each source as it is opened, and whether that source had anything to say
+/// about the claim. An upload has a real percentage and a deep check reports claims
+/// done, so both are shown. A server that reports nothing - an older one, or a
+/// stream that could not be read - gets no invented progress: the clock of seconds
+/// actually spent, the steps every check goes through, and how long one usually
+/// takes, so a forty-second wait reads as normal rather than stuck.
+///
+/// "Notify me when ready" lets the person leave: the check carries on
+/// (lib/checks/check_job.dart) and a notification brings them back to the answer.
 library;
 
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
 import '../api/client.dart';
 import '../app_services.dart';
+import '../checks/check_job.dart';
 import '../l10n/app_localizations.dart';
 import '../l10n/phrases.dart';
 import '../models/submission.dart';
 import '../models/verdict.dart';
-import '../theme/colors.dart';
-import '../widgets/checked_item_card.dart';
+import '../theme/icons.dart';
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
+import '../widgets/scanner.dart';
+import '../widgets/ui/fx_button.dart';
 import 'result_screen.dart';
 
 typedef _Phrase = String Function(AppLocalizations l10n);
@@ -31,6 +40,7 @@ class CheckingScreen extends StatefulWidget {
     this.deep = false,
     this.recheck = false,
     this.onFinished,
+    this.job,
     super.key,
   });
 
@@ -44,18 +54,25 @@ class CheckingScreen extends StatefulWidget {
   /// Called once the answer is in, before it is shown (Home clears its input).
   final VoidCallback? onFinished;
 
+  /// Supplied by tests; the screen otherwise starts its own.
+  final CheckJob Function(String language)? job;
+
   @override
   State<CheckingScreen> createState() => _CheckingScreenState();
 }
 
 class _CheckingScreenState extends State<CheckingScreen> {
+  // How long the server may stay silent before the screen stops expecting reports.
+  static const _silence = Duration(seconds: 4);
+
   final Stopwatch _clock = Stopwatch();
   Timer? _tick;
-  double? _upload;
-  (int, int)? _deepProgress;
+  Timer? _quiet;
+  bool _silent = false;
+  CheckJob? _job;
   _Phrase? _error;
   bool _retryable = false;
-  bool _leaving = false;
+  bool _left = false;
 
   AppServices get _services => widget.services;
 
@@ -65,24 +82,39 @@ class _CheckingScreenState extends State<CheckingScreen> {
     // After the first frame: the check is sent in the interface language, which the
     // page can only read once it is in the tree.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(_run());
+      if (mounted) _run();
     });
   }
 
   @override
   void dispose() {
-    _leaving = true;
     _tick?.cancel();
+    _quiet?.cancel();
+    if (!_left) _job?.leave();
     super.dispose();
   }
 
   String get _language => Localizations.localeOf(context).languageCode;
 
-  Future<void> _run() async {
+  void _run() {
+    final job =
+        widget.job?.call(_language) ??
+        CheckJob(
+          services: _services,
+          submission: widget.submission,
+          language: _language,
+          deep: widget.deep,
+          recheck: widget.recheck,
+          notifyWhenReady: _services.notifyByDefault.value,
+        );
     setState(() {
       _error = null;
-      _upload = null;
-      _deepProgress = null;
+      _job = job;
+      _silent = false;
+    });
+    _quiet?.cancel();
+    _quiet = Timer(_silence, () {
+      if (mounted) setState(() => _silent = true);
     });
     _clock
       ..reset()
@@ -91,41 +123,22 @@ class _CheckingScreenState extends State<CheckingScreen> {
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
+    job.start();
+    unawaited(_await(job));
+  }
 
+  Future<void> _await(CheckJob job) async {
     try {
-      final verdict = await _verdict();
-      if (!mounted || _leaving) return;
+      final verdict = await job.result;
+      if (!mounted || _left || job != _job) return;
       if (verdict == null) {
         _stop((l10n) => l10n.deepTooSlow, retryable: true);
         return;
       }
-      await _services.history.add(widget.submission, verdict);
-      // The check cost a credit; show the balance the server now holds.
-      unawaited(_services.auth.refreshAccount());
-      widget.onFinished?.call();
-      if (!mounted) return;
-      unawaited(
-        Navigator.of(context).pushReplacement(
-          PageRouteBuilder<void>(
-            transitionDuration: const Duration(milliseconds: 350),
-            pageBuilder: (_, _, _) => ResultScreen(
-              services: _services,
-              verdict: verdict,
-              submission: widget.submission,
-              justChecked: true,
-            ),
-            transitionsBuilder: (_, animation, _, child) => FadeTransition(
-              opacity: animation,
-              child: SlideTransition(
-                position: Tween(begin: const Offset(0, 0.04), end: Offset.zero).animate(animation),
-                child: child,
-              ),
-            ),
-          ),
-        ),
-      );
-    } on ApiFailure catch (failure) {
-      if (!mounted) return;
+      _show(verdict);
+    } on CheckFailed catch (failed) {
+      if (!mounted || job != _job) return;
+      final failure = failed.failure;
       if (failure.kind == FailureKind.signedOut) {
         // The session is over: back to sign-in, which the app shell does on sign-out.
         unawaited(_services.auth.signOut());
@@ -141,6 +154,30 @@ class _CheckingScreenState extends State<CheckingScreen> {
     }
   }
 
+  void _show(Verdict verdict) {
+    widget.onFinished?.call();
+    unawaited(
+      Navigator.of(context).pushReplacement(
+        PageRouteBuilder<void>(
+          transitionDuration: const Duration(milliseconds: 350),
+          pageBuilder: (_, _, _) => ResultScreen(
+            services: _services,
+            verdict: verdict,
+            submission: widget.submission,
+            justChecked: true,
+          ),
+          transitionsBuilder: (_, animation, _, child) => FadeTransition(
+            opacity: animation,
+            child: SlideTransition(
+              position: Tween(begin: const Offset(0, 0.04), end: Offset.zero).animate(animation),
+              child: child,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   void _stop(_Phrase message, {required bool retryable}) {
     _tick?.cancel();
     _clock.stop();
@@ -150,281 +187,638 @@ class _CheckingScreenState extends State<CheckingScreen> {
     });
   }
 
-  Future<Verdict?> _verdict() async {
-    final submission = widget.submission;
-    final client = _services.client;
-    final language = _language;
-    switch (submission.kind) {
-      case SubmissionKind.text:
-      case SubmissionKind.link:
-        final value = submission.text ?? '';
-        final link = submission.kind == SubmissionKind.link;
-        if (widget.deep) return _deepCheck(value, link: link);
-        return link
-            ? client.verifyUrl(value, language: language, recheck: widget.recheck)
-            : client.verifyText(value, language: language, recheck: widget.recheck);
-      case SubmissionKind.image:
-      case SubmissionKind.document:
-        final outcome = await client.verifyFile(
-          submission.file!,
-          // Choosing the file is the consent: it was picked for checking, which is
-          // the only thing the flag governs.
-          consentToProcessMedia: true,
-          language: language,
-          recheck: widget.recheck,
-          onProgress: _showUpload,
-        );
-        if (mounted) setState(() => _upload = null);
-        if (outcome.isPending) return _poll(outcome.pendingCaseId!);
-        return outcome.verdict;
-    }
+  void _leave() {
+    _left = true;
+    _job?.leave();
+    Navigator.of(context).pop();
   }
 
-  /// A deep check: started, then followed until the verdict. Null past the wait.
-  Future<Verdict?> _deepCheck(String value, {required bool link}) async {
-    final caseId = await _services.client.startDeepCheck(
-      text: link ? null : value,
-      url: link ? value : null,
-      language: _language,
-      recheck: widget.recheck,
-    );
-    if (mounted) setState(() => _deepProgress = (0, 0));
-    // Up to five minutes: past the server's own three-minute budget, so a check
-    // that finished is always collected.
-    for (var attempt = 0; attempt < 100; attempt++) {
-      await Future<void>.delayed(const Duration(seconds: 3));
-      if (!mounted || _leaving) return null;
-      final progress = await _services.client.checkOn(caseId);
-      if (progress.verdict != null) return progress.verdict;
-      setState(() => _deepProgress = (progress.done, progress.total));
+  Future<void> _toggleNotify() async {
+    final job = _job;
+    if (job == null) return;
+    final l10n = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    if (!job.notifyWhenReady && !await _services.notifier.askPermission()) {
+      messenger.showSnackBar(SnackBar(content: Text(l10n.notifyDenied)));
+      return;
     }
-    return null;
-  }
-
-  /// A video: accepted, then polled for, bounded to about thirty seconds.
-  Future<Verdict?> _poll(String caseId) async {
-    for (var attempt = 0; attempt < 15; attempt++) {
-      await Future<void>.delayed(const Duration(seconds: 2));
-      if (!mounted || _leaving) return null;
-      final verdict = await _services.client.getCase(caseId);
-      if (verdict != null) return verdict;
-    }
-    return null;
-  }
-
-  /// Redrawn in steps of two percent, not on every chunk.
-  void _showUpload(int sent, int total) {
-    if (!mounted || total <= 0) return;
-    final value = sent / total;
-    final shown = _upload;
-    if (shown == null || value - shown >= 0.02 || value >= 1) setState(() => _upload = value);
+    setState(() => job.notifyWhenReady = !job.notifyWhenReady);
   }
 
   @override
   Widget build(BuildContext context) {
+    final k = FactifyTokens.of(context);
     final l10n = AppLocalizations.of(context);
     final error = _error;
-    return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          tooltip: l10n.checkingCancel,
-          icon: const Icon(Icons.close_rounded),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: Text(l10n.checkingOf),
-      ),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
-          children: [
-            CheckedItemCard.of(widget.submission),
-            const SizedBox(height: 28),
-            if (error == null) ..._working(context) else ..._failed(context, error),
-          ],
+    final job = _job;
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop && !_left) {
+          _left = true;
+          _job?.leave();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: k.bg,
+        body: SafeArea(
+          child: CustomScrollView(
+            slivers: [
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 2, 20, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _TopRow(
+                        seconds: _clock.elapsed.inSeconds,
+                        onClose: _leave,
+                        showTimer: error == null,
+                      ),
+                      if (error != null)
+                        ..._failed(context, error)
+                      else if (job != null)
+                        ValueListenableBuilder<CheckWatch>(
+                          valueListenable: job.watch,
+                          builder: (context, watch, _) => _Working(
+                            submission: widget.submission,
+                            deep: widget.deep,
+                            watch: watch,
+                            silent: !watch.heard && _silent,
+                            notify: job.notifyWhenReady,
+                            onNotify: _toggleNotify,
+                          ),
+                        ),
+                      if (error == null && job == null) const Spacer(),
+                      if (error == null && job == null)
+                        Text(
+                          l10n.checkingTitle,
+                          textAlign: TextAlign.center,
+                          style: FactifyText.sans(14, color: k.ink3),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  List<Widget> _working(BuildContext context) {
-    final theme = Theme.of(context);
-    final l10n = AppLocalizations.of(context);
-    final upload = _upload;
-    final uploading = upload != null && upload < 1;
-    final deep = _deepProgress;
-    final seconds = _clock.elapsed.inSeconds;
-    final shown = '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
-    final fraction = uploading
-        ? upload
-        : deep != null && deep.$2 > 0
-        ? deep.$1 / deep.$2
-        : null;
-
-    return [
-      Center(
-        child: SizedBox(
-          width: 168,
-          height: 168,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              SizedBox(
-                width: 168,
-                height: 168,
-                child: CircularProgressIndicator(
-                  value: fraction,
-                  strokeWidth: 8,
-                  strokeCap: StrokeCap.round,
-                  color: FactifyColors.emerald,
-                  backgroundColor: FactifyColors.emeraldTint,
-                ),
-              ),
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    shown,
-                    style: theme.textTheme.displaySmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: FactifyColors.ink,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
-                  ),
-                  if (uploading)
-                    Text(
-                      '${(upload * 100).round()}%',
-                      style: theme.textTheme.labelMedium?.copyWith(color: FactifyColors.inkMuted),
-                    ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-      const SizedBox(height: 24),
-      Text(
-        widget.deep ? l10n.deepChecking : l10n.checkingTitle,
-        textAlign: TextAlign.center,
-        style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
-      ),
-      const SizedBox(height: 6),
-      Text(
-        uploading
-            ? l10n.uploading((upload * 100).round())
-            : deep != null && deep.$2 > 0
-            ? l10n.deepProgress(deep.$1, deep.$2)
-            : l10n.working,
-        textAlign: TextAlign.center,
-        style: theme.textTheme.bodyMedium?.copyWith(color: FactifyColors.inkMuted),
-      ),
-      const SizedBox(height: 26),
-      Card(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
-          child: Column(
-            children: [
-              for (final (index, step) in [
-                l10n.stepReading,
-                l10n.stepSearching,
-                l10n.stepComparing,
-              ].indexed)
-                _Step(
-                  number: index + 1,
-                  text: step,
-                  pulse: _clock.elapsed.inMilliseconds,
-                  index: index,
-                ),
-            ],
-          ),
-        ),
-      ),
-      const SizedBox(height: 14),
-      Text(
-        widget.deep ? l10n.deepUsuallyTakes : l10n.usuallyTakes,
-        textAlign: TextAlign.center,
-        style: theme.textTheme.bodySmall?.copyWith(color: FactifyColors.inkMuted),
-      ),
-    ];
-  }
-
   List<Widget> _failed(BuildContext context, _Phrase error) {
-    final theme = Theme.of(context);
+    final k = FactifyTokens.of(context);
     final l10n = AppLocalizations.of(context);
     return [
+      const Spacer(),
       Center(
         child: Container(
           width: 84,
           height: 84,
-          decoration: BoxDecoration(
-            color: theme.colorScheme.errorContainer,
-            shape: BoxShape.circle,
-          ),
-          child: Icon(Icons.error_outline_rounded, size: 42, color: theme.colorScheme.error),
+          decoration: BoxDecoration(color: k.uS, shape: BoxShape.circle),
+          child: Icon(FxIcons.offline, size: 38, color: k.uC),
         ),
       ),
       const SizedBox(height: 18),
       Text(
         l10n.checkingFailedTitle,
         textAlign: TextAlign.center,
-        style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+        style: FactifyText.serif(24, color: k.ink),
       ),
       const SizedBox(height: 8),
       Text(
         error(l10n),
         textAlign: TextAlign.center,
-        style: theme.textTheme.bodyMedium?.copyWith(color: FactifyColors.inkSoft),
+        style: FactifyText.sans(14.5, color: k.ink2),
       ),
-      const SizedBox(height: 26),
+      const Spacer(),
       if (_retryable) ...[
-        FilledButton.icon(
-          onPressed: _run,
-          icon: const Icon(Icons.refresh_rounded),
-          label: Text(l10n.retry),
-        ),
+        FxButton(label: l10n.retry, icon: FxIcons.retry, onPressed: _run),
         const SizedBox(height: 10),
       ],
-      OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: Text(l10n.backToHome)),
+      FxButton(
+        label: l10n.backToHome,
+        variant: FxButtonVariant.secondary,
+        onPressed: () => Navigator.of(context).pop(),
+      ),
     ];
   }
 }
 
-/// One step every check goes through. Listed, not ticked off: the server does not
-/// report which step it is on, so none is claimed as done. The gentle pulse says
-/// the work is happening, and nothing more.
-class _Step extends StatelessWidget {
-  const _Step({required this.number, required this.text, required this.pulse, required this.index});
+class _TopRow extends StatelessWidget {
+  const _TopRow({required this.seconds, required this.onClose, required this.showTimer});
 
-  final int number;
-  final String text;
-  final int pulse;
-  final int index;
+  final int seconds;
+  final VoidCallback onClose;
+  final bool showTimer;
 
   @override
   Widget build(BuildContext context) {
-    final glow = 0.55 + 0.45 * (0.5 + 0.5 * math.sin(pulse / 600 + index * 1.2));
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+    final k = FactifyTokens.of(context);
+    final l10n = AppLocalizations.of(context);
+    final shown = seconds < 60
+        ? l10n.elapsedSeconds(seconds)
+        : '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
+    return SizedBox(
+      height: 44,
       child: Row(
         children: [
-          Container(
-            width: 26,
-            height: 26,
+          FxCircleButton(
+            icon: FxIcons.close,
+            tooltip: l10n.checkingCancel,
+            onPressed: onClose,
+            size: 38,
+            iconSize: 20,
+            bordered: true,
+          ),
+          Expanded(
+            child: Text(
+              l10n.checkingOf.toUpperCase(),
+              textAlign: TextAlign.center,
+              style: FactifyText.mono(11, color: k.ink3, spacing: 1.4),
+            ),
+          ),
+          SizedBox(
+            width: 44,
+            child: showTimer
+                ? Text(
+                    shown,
+                    textAlign: TextAlign.end,
+                    style: FactifyText.mono(
+                      13,
+                      color: k.ink3,
+                      spacing: 0,
+                    ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
+                  )
+                : null,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Working extends StatelessWidget {
+  const _Working({
+    required this.submission,
+    required this.deep,
+    required this.watch,
+    required this.silent,
+    required this.notify,
+    required this.onNotify,
+  });
+
+  final Submission submission;
+  final bool deep;
+  final CheckWatch watch;
+
+  /// Nothing reported yet, well into the check: the server is not reporting.
+  final bool silent;
+  final bool notify;
+  final VoidCallback onNotify;
+
+  @override
+  Widget build(BuildContext context) {
+    final k = FactifyTokens.of(context);
+    final l10n = AppLocalizations.of(context);
+    final uploading = watch.upload != null && watch.upload! < 1;
+    // Sending the file is part of reading it; before the first report the check is
+    // being read, which every check starts with.
+    final step = watch.step < 0 ? 0 : watch.step;
+    final labels = [l10n.stepReading, l10n.stepSearching, l10n.stepComparing];
+    final what = submission.kind == SubmissionKind.image && submission.summary.isEmpty
+        ? l10n.yourPicture
+        : submission.summary;
+    final detail = uploading
+        ? l10n.uploading((watch.upload! * 100).round())
+        : deep && watch.claimsTotal > 0
+        ? l10n.deepProgress(watch.claimsDone, watch.claimsTotal)
+        : null;
+
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 10),
+          Text(
+            '“$what”',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: FactifyText.serif(
+              15,
+              weight: FontWeight.w400,
+              color: k.ink2,
+            ).copyWith(fontStyle: FontStyle.italic),
+          ),
+          const SizedBox(height: 16),
+          Center(child: Scanner(sources: watch.sources)),
+          const SizedBox(height: 16),
+          if (silent) ...[
+            Text(
+              deep ? l10n.deepChecking : l10n.working,
+              textAlign: TextAlign.center,
+              style: FactifyText.serif(22, color: k.ink).copyWith(height: 1.2),
+            ),
+            if (detail != null) _Detail(detail),
+            const SizedBox(height: 20),
+            _StepsCard(labels: labels),
+            const SizedBox(height: 12),
+            Text(
+              deep ? l10n.deepUsuallyTakes : l10n.usuallyTakes,
+              textAlign: TextAlign.center,
+              style: FactifyText.sans(12.5, color: k.ink3),
+            ),
+          ] else ...[
+            Semantics(
+              liveRegion: true,
+              child: Column(
+                children: [
+                  Text(
+                    l10n.stepOf(step + 1, 3).toUpperCase(),
+                    textAlign: TextAlign.center,
+                    style: FactifyText.mono(10.5, color: k.acc),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    labels[step],
+                    textAlign: TextAlign.center,
+                    style: FactifyText.serif(
+                      22,
+                      color: k.ink,
+                    ).copyWith(height: 1.2, letterSpacing: -0.3),
+                  ),
+                ],
+              ),
+            ),
+            if (detail != null) _Detail(detail),
+            const SizedBox(height: 12),
+            _Segments(step: step, upload: uploading ? watch.upload : null),
+            const SizedBox(height: 20),
+            _SourcesCard(watch: watch),
+          ],
+          const Spacer(),
+          const SizedBox(height: 12),
+          if (!silent) _EvidenceStrip(watch: watch),
+          const SizedBox(height: 10),
+          _NotifyButton(on: notify, onTap: onNotify),
+        ],
+      ),
+    );
+  }
+}
+
+class _Detail extends StatelessWidget {
+  const _Detail(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 4),
+    child: Text(
+      text,
+      textAlign: TextAlign.center,
+      style: FactifyText.sans(12.5, color: FactifyTokens.of(context).ink3),
+    ),
+  );
+}
+
+/// Three bars, one per step: done steps full, the current one moving (or filling
+/// with an upload, which has a real fraction), later ones empty.
+class _Segments extends StatelessWidget {
+  const _Segments({required this.step, this.upload});
+
+  final int step;
+  final double? upload;
+
+  @override
+  Widget build(BuildContext context) {
+    final k = FactifyTokens.of(context);
+    return Center(
+      child: SizedBox(
+        width: 168,
+        child: Row(
+          children: [
+            for (var i = 0; i < 3; i++) ...[
+              if (i > 0) const SizedBox(width: 4),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: SizedBox(
+                    height: 4,
+                    child: i < step
+                        ? ColoredBox(color: k.acc)
+                        : i == step
+                        ? upload != null
+                              ? LinearProgressIndicator(
+                                  value: upload,
+                                  color: k.acc,
+                                  backgroundColor: k.line,
+                                )
+                              : LinearProgressIndicator(color: k.acc, backgroundColor: k.line)
+                        : ColoredBox(color: k.line),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SourcesCard extends StatelessWidget {
+  const _SourcesCard({required this.watch});
+
+  final CheckWatch watch;
+
+  @override
+  Widget build(BuildContext context) {
+    final k = FactifyTokens.of(context);
+    final l10n = AppLocalizations.of(context);
+    final recent = watch.recent;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: k.sf,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: k.line),
+      ),
+      child: Column(
+        children: [
+          SizedBox(
+            height: 40,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    l10n.sourcesTitle,
+                    style: FactifyText.sans(13, weight: FontWeight.w600, color: k.ink),
+                  ),
+                ),
+                if (watch.sources.isNotEmpty)
+                  Text(
+                    l10n.sourcesRead(watch.read, watch.sources.length),
+                    style: FactifyText.sans(12, color: k.ink3),
+                  ),
+              ],
+            ),
+          ),
+          if (recent.isEmpty)
+            _Row(initials: '·', name: l10n.sourcesWaiting, state: null, muted: true)
+          else
+            for (final source in recent)
+              _Row(initials: source.initials, name: source.publisher, state: source.state),
+        ],
+      ),
+    );
+  }
+}
+
+class _Row extends StatelessWidget {
+  const _Row({required this.initials, required this.name, required this.state, this.muted = false});
+
+  final String initials;
+  final String name;
+  final SourceState? state;
+  final bool muted;
+
+  @override
+  Widget build(BuildContext context) {
+    final k = FactifyTokens.of(context);
+    final l10n = AppLocalizations.of(context);
+    final found = state == SourceState.evidence;
+    final (label, colour) = switch (state) {
+      SourceState.reading => (l10n.sourceReading, k.ink2),
+      SourceState.evidence => (l10n.sourceEvidence, k.acc),
+      SourceState.notRelevant => (l10n.sourceNotRelevant, k.ink3),
+      null => ('', k.ink3),
+    };
+    return Container(
+      height: 44,
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: k.line)),
+      ),
+      child: Row(
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            width: 28,
+            height: 28,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: FactifyColors.emeraldTint.withValues(alpha: glow),
-              shape: BoxShape.circle,
+              color: found ? k.acc : k.sf2,
+              borderRadius: BorderRadius.circular(9),
             ),
             child: Text(
-              '$number',
-              style: const TextStyle(
-                color: FactifyColors.emeraldDeep,
-                fontWeight: FontWeight.w800,
-                fontSize: 12,
+              initials,
+              style: FactifyText.sans(
+                8.5,
+                weight: FontWeight.w700,
+                color: found ? k.onAcc : (muted ? k.ink3 : k.ink2),
               ),
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(child: Text(text, style: Theme.of(context).textTheme.bodyMedium)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: FactifyText.sans(
+                13.5,
+                weight: muted ? FontWeight.w400 : FontWeight.w500,
+                color: muted ? k.ink3 : k.ink,
+              ),
+            ),
+          ),
+          if (state != null) ...[
+            const SizedBox(width: 8),
+            if (state == SourceState.reading)
+              SizedBox.square(
+                dimension: 10,
+                child: CircularProgressIndicator(strokeWidth: 1.5, color: k.acc),
+              )
+            else
+              Icon(found ? FxIcons.check : FxIcons.minus, size: 15, color: colour),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: FactifyText.sans(12, weight: FontWeight.w600, color: colour),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _EvidenceStrip extends StatelessWidget {
+  const _EvidenceStrip({required this.watch});
+
+  final CheckWatch watch;
+
+  @override
+  Widget build(BuildContext context) {
+    final k = FactifyTokens.of(context);
+    final l10n = AppLocalizations.of(context);
+    final found = watch.found.take(4).toList();
+    final count = watch.evidence;
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(color: k.accS, borderRadius: BorderRadius.circular(20)),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    l10n.evidenceCollected,
+                    style: FactifyText.sans(12.5, weight: FontWeight.w600, color: k.acc),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(l10n.evidenceNote(count), style: FactifyText.sans(12, color: k.ink2)),
+                ],
+              ),
+            ),
+            if (found.isNotEmpty)
+              SizedBox(
+                height: 28,
+                width: 28 + 20.0 * (found.length - 1),
+                child: Stack(
+                  children: [
+                    for (var i = 0; i < found.length; i++)
+                      PositionedDirectional(
+                        start: 20.0 * i,
+                        child: Container(
+                          width: 28,
+                          height: 28,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: k.acc,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: k.bg, width: 2),
+                          ),
+                          child: Text(
+                            found[i].initials,
+                            style: FactifyText.sans(8.5, weight: FontWeight.w700, color: k.onAcc),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            const SizedBox(width: 12),
+            ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 18),
+              child: Text(
+                '$count',
+                textAlign: TextAlign.end,
+                style: FactifyText.serif(30, color: k.acc).copyWith(height: 1),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NotifyButton extends StatelessWidget {
+  const _NotifyButton({required this.on, required this.onTap});
+
+  final bool on;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final k = FactifyTokens.of(context);
+    final l10n = AppLocalizations.of(context);
+    final colour = on ? k.acc : k.ink2;
+    return Semantics(
+      toggled: on,
+      button: true,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 44),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: k.line),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(on ? FxIcons.bellRinging : FxIcons.bell, size: 17, color: colour),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    on ? l10n.notifyOn : l10n.notifyMe,
+                    textAlign: TextAlign.center,
+                    style: FactifyText.sans(13.5, weight: FontWeight.w600, color: colour),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The three steps every check goes through, listed and not ticked off: shown
+/// when the server does not report which one it is on.
+class _StepsCard extends StatelessWidget {
+  const _StepsCard({required this.labels});
+
+  final List<String> labels;
+
+  @override
+  Widget build(BuildContext context) {
+    final k = FactifyTokens.of(context);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
+      decoration: BoxDecoration(
+        color: k.sf,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: k.line),
+      ),
+      child: Column(
+        children: [
+          for (final (index, label) in labels.indexed)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  Container(
+                    width: 24,
+                    height: 24,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(color: k.accS, shape: BoxShape.circle),
+                    child: Text(
+                      '${index + 1}',
+                      style: FactifyText.sans(11.5, weight: FontWeight.w700, color: k.acc),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(label, style: FactifyText.sans(13.5, color: k.ink)),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );

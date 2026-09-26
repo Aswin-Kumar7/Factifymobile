@@ -1537,4 +1537,72 @@ class AppLocalizationsEn extends AppLocalizations {
   String compConflict(int supports, int contradicts) {
     return '$supports supporting, $contradicts contradicting';
   }
+
+  @override
+  String stepOf(int step, int total) {
+    return 'Step $step of $total';
+  }
+
+  @override
+  String sourcesRead(int read, int total) {
+    return '$read of $total read';
+  }
+
+  @override
+  String get sourcesWaiting => 'Sources appear here as they are opened';
+
+  @override
+  String get sourceReading => 'Reading…';
+
+  @override
+  String get sourceEvidence => 'Evidence found';
+
+  @override
+  String get sourceNotRelevant => 'Not relevant';
+
+  @override
+  String get evidenceCollected => 'Evidence collected';
+
+  @override
+  String evidenceNote(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count sources address this claim',
+      one: '1 source addresses this claim',
+      zero: 'Nothing yet, still reading',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get notifyMe => 'Notify me when ready';
+
+  @override
+  String get notifyOn => 'We\'ll notify you when it\'s ready';
+
+  @override
+  String get notifyDenied =>
+      'Notifications are off for Factify. Turn them on in your phone\'s settings to be told.';
+
+  @override
+  String get notifyReadyTitle => 'Your check is ready';
+
+  @override
+  String get notifyReadyChannel => 'Finished checks';
+
+  @override
+  String get notifyWorkingTitle => 'Checking…';
+
+  @override
+  String get notifyWorkingBody => 'We\'ll tell you when the answer is ready.';
+
+  @override
+  String get notifyWorkingChannel => 'Checks in progress';
+
+  @override
+  String get notifyOpenResult => 'Open result';
+
+  @override
+  String get nothingToCheckShort => 'Nothing to check';
 }

@@ -1534,4 +1534,72 @@ class AppLocalizationsHi extends AppLocalizations {
   String compConflict(int supports, int contradicts) {
     return '$supports समर्थन में, $contradicts विरोध में';
   }
+
+  @override
+  String stepOf(int step, int total) {
+    return '$total में से चरण $step';
+  }
+
+  @override
+  String sourcesRead(int read, int total) {
+    return '$total में से $read पढ़े';
+  }
+
+  @override
+  String get sourcesWaiting => 'स्रोत खुलते ही यहाँ दिखेंगे';
+
+  @override
+  String get sourceReading => 'पढ़ रहे हैं…';
+
+  @override
+  String get sourceEvidence => 'सबूत मिला';
+
+  @override
+  String get sourceNotRelevant => 'काम का नहीं';
+
+  @override
+  String get evidenceCollected => 'जुटाए गए सबूत';
+
+  @override
+  String evidenceNote(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count स्रोत इस दावे पर बात करते हैं',
+      one: '1 स्रोत इस दावे पर बात करता है',
+      zero: 'अभी कुछ नहीं, पढ़ना जारी है',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get notifyMe => 'तैयार होने पर मुझे बताएँ';
+
+  @override
+  String get notifyOn => 'तैयार होते ही हम आपको बताएँगे';
+
+  @override
+  String get notifyDenied =>
+      'Factify की सूचनाएँ बंद हैं। बताए जाने के लिए इन्हें फ़ोन की सेटिंग में चालू करें।';
+
+  @override
+  String get notifyReadyTitle => 'आपकी जाँच तैयार है';
+
+  @override
+  String get notifyReadyChannel => 'पूरी हुई जाँचें';
+
+  @override
+  String get notifyWorkingTitle => 'जाँच हो रही है…';
+
+  @override
+  String get notifyWorkingBody => 'जवाब तैयार होते ही हम आपको बताएँगे।';
+
+  @override
+  String get notifyWorkingChannel => 'चल रही जाँचें';
+
+  @override
+  String get notifyOpenResult => 'नतीजा खोलें';
+
+  @override
+  String get nothingToCheckShort => 'जाँचने को कुछ नहीं';
 }

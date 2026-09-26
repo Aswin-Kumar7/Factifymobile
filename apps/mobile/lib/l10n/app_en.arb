@@ -919,5 +919,50 @@
         "type": "int"
       }
     }
-  }
+  },
+  "stepOf": "Step {step} of {total}",
+  "@stepOf": {
+    "placeholders": {
+      "step": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "sourcesRead": "{read} of {total} read",
+  "@sourcesRead": {
+    "placeholders": {
+      "read": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "sourcesWaiting": "Sources appear here as they are opened",
+  "sourceReading": "Reading…",
+  "sourceEvidence": "Evidence found",
+  "sourceNotRelevant": "Not relevant",
+  "evidenceCollected": "Evidence collected",
+  "evidenceNote": "{count, plural, =0{Nothing yet, still reading} =1{1 source addresses this claim} other{{count} sources address this claim}}",
+  "@evidenceNote": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "notifyMe": "Notify me when ready",
+  "notifyOn": "We'll notify you when it's ready",
+  "notifyDenied": "Notifications are off for Factify. Turn them on in your phone's settings to be told.",
+  "notifyReadyTitle": "Your check is ready",
+  "notifyReadyChannel": "Finished checks",
+  "notifyWorkingTitle": "Checking…",
+  "notifyWorkingBody": "We'll tell you when the answer is ready.",
+  "notifyWorkingChannel": "Checks in progress",
+  "notifyOpenResult": "Open result",
+  "nothingToCheckShort": "Nothing to check"
 }

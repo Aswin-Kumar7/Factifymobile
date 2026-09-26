@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!--
-        INTERNET is the only permission, and it has to be declared.
+        INTERNET is the one permission every check needs, and it has to be declared.
 
         This comment used to say INTERNET "is granted implicitly". It is not: it is
         a normal permission, granted automatically only when it is declared here.
@@ -14,8 +14,16 @@
         which grants access to exactly one file without READ_MEDIA or
         READ_EXTERNAL_STORAGE. Asking for the whole gallery to check one image is a
         trade no verification tool has earned.
+
+        The rest serve "Notify me when ready", and only when someone turns it on:
+        POST_NOTIFICATIONS is asked for at that moment (Android 13 and later), and
+        the foreground service keeps a check running while they are back in their
+        chat - a data transfer that ends when the answer arrives.
     -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <application
         android:label="Factify"
@@ -94,6 +102,13 @@
                 <data android:scheme="factify" android:host="auth-callback" />
             </intent-filter>
         </activity>
+
+        <!-- Keeps a check running while its answer is waited for (see above). -->
+        <service
+            android:name="com.dexterous.flutterlocalnotifications.ForegroundService"
+            android:exported="false"
+            android:stopWithTask="false"
+            android:foregroundServiceType="dataSync" />
 
         <meta-data
             android:name="flutterEmbedding"

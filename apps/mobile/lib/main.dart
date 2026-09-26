@@ -19,6 +19,9 @@ import 'auth/auth_service.dart';
 import 'history/history_store.dart';
 import 'l10n/app_localizations.dart';
 import 'l10n/language_preference.dart';
+import 'notify/notify_preference.dart';
+import 'notify/ready_notifier.dart';
+import 'screens/history_screen.dart';
 import 'screens/main_shell.dart';
 import 'screens/splash_screen.dart';
 import 'theme/theme.dart';
@@ -30,7 +33,16 @@ Future<void> main() async {
   // of English first.
   final language = await LanguagePreference.load();
   final themeMode = await ThemeModePreference.load();
-  runApp(FactifyApp(language: language, themeMode: themeMode));
+  final notifyByDefault = await NotifyPreference.load();
+  final notifier = await LocalReadyNotifier.start();
+  runApp(
+    FactifyApp(
+      language: language,
+      themeMode: themeMode,
+      notifier: notifier,
+      notifyByDefault: notifyByDefault,
+    ),
+  );
 }
 
 class FactifyApp extends StatefulWidget {
@@ -41,6 +53,8 @@ class FactifyApp extends StatefulWidget {
     this.client,
     this.auth,
     this.history,
+    this.notifier,
+    this.notifyByDefault,
     bool? showIntro,
   }) : showIntro = showIntro ?? client == null;
 
@@ -58,6 +72,10 @@ class FactifyApp extends StatefulWidget {
 
   /// Supplied by tests; kept on the phone otherwise.
   final HistoryStore? history;
+
+  /// "Your check is ready". Tests leave it out and are notified of nothing.
+  final ReadyNotifier? notifier;
+  final NotifyPreference? notifyByDefault;
 
   /// The splash and the welcome. On for the app; a test that supplies a client
   /// starts in the app itself unless it asks for them.
@@ -85,7 +103,12 @@ class _FactifyAppState extends State<FactifyApp> {
     language: widget.language,
     history: _history,
     themeMode: widget.themeMode ?? ThemeModePreference.inMemory(ThemeMode.light),
+    notifier: widget.notifier,
+    notifyByDefault: widget.notifyByDefault,
   );
+
+  final _navigator = GlobalKey<NavigatorState>();
+  StreamSubscription<ReadyTap>? _taps;
 
   @override
   void initState() {
@@ -95,10 +118,22 @@ class _FactifyAppState extends State<FactifyApp> {
     if (widget.auth == null) unawaited(_auth.start());
     // Without the splash (tests), nothing else would load the saved history.
     if (!widget.showIntro) unawaited(_history.load());
+    _taps = _services.notifier.taps.listen((tap) => unawaited(_open(tap)));
+  }
+
+  /// A tapped "your check is ready": the result, from History, where the finished
+  /// check was kept. Waits for History to load when the tap is what opened the app.
+  Future<void> _open(ReadyTap tap) async {
+    await _history.load();
+    final record = _history.records.where((r) => r.id == tap.recordId).firstOrNull;
+    final context = _navigator.currentContext;
+    if (record == null || context == null || !context.mounted) return;
+    openHistoryRecord(context, _services, record, openShare: tap.share);
   }
 
   @override
   void dispose() {
+    unawaited(_taps?.cancel());
     if (widget.auth == null) _auth.dispose();
     if (widget.client == null) _client.close();
     super.dispose();
@@ -110,6 +145,7 @@ class _FactifyAppState extends State<FactifyApp> {
       listenable: Listenable.merge([widget.language, _services.themeMode]),
       builder: (context, _) => MaterialApp(
         title: 'Factify',
+        navigatorKey: _navigator,
         debugShowCheckedModeBanner: false,
         // Both built from the v5 tokens (lib/theme/tokens.dart): dark mode is the
         // same layout with the other colour set, never an automatic inversion.

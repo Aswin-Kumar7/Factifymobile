@@ -19,6 +19,7 @@ from app.api import accounts, health, verify
 from app.config import Settings, get_settings
 from app.observability import RequestContextMiddleware, configure
 from app.orchestration.deep import DeepChecks
+from app.orchestration.progress import progress_bus
 
 logger = logging.getLogger("factify.main")
 
@@ -91,6 +92,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     # Deep checks run in the background; the app polls them by case id.
     app.state.deep_checks = DeepChecks()
+    # What a watched check is doing, for the Checking screen (contract 1.3).
+    redis_url = settings.progress_redis_url
+    app.state.progress_bus = progress_bus(redis_url.get_secret_value() if redis_url else None)
 
     # Outermost: every log line and every response — including error responses —
     # carries the request identifier.

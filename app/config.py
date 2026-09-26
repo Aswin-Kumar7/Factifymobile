@@ -226,6 +226,12 @@ class Settings(BaseSettings):
     # it looks like tamper-evidence without being any.
     receipt_signing_key: SecretStr | None = None
 
+    # Where a check's progress events travel between instances (the v5 Checking
+    # screen). Unset keeps them in this process, which is right for one instance;
+    # with several, a stream can land on another than the check, and a Redis URL
+    # (`redis://...`, with the optional `redis` package installed) carries them.
+    progress_redis_url: SecretStr | None = None
+
     models: ModelSettings = ModelSettings()
     limits: LimitSettings = LimitSettings()
     auth: AuthSettings = AuthSettings()

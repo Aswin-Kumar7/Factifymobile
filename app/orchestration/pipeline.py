@@ -48,6 +48,7 @@ from app.domain.publishers import registrable_domain
 from app.governor.governor import ProviderUnavailable, Skip
 from app.intake.normalizer import NormalisedIntake
 from app.observability.logging import event
+from app.orchestration.progress import addresses_claim, current_progress
 from app.sources.base import (
     NORMAL,
     SourceCandidate,
@@ -675,6 +676,10 @@ class Orchestrator:
         cap = MAX_FALLBACK_CLAIMS if depth is NORMAL else depth.claims
         may_fall_back = set(ranked[:cap])
 
+        watching = current_progress.get()
+        if watching is not None:
+            await watching.step("search")
+
         # Progress, for a check someone is watching: one tick per finished claim.
         report = claim_progress.get()
         finished = 0
@@ -894,6 +899,10 @@ class Orchestrator:
         times for one claim is a bug whatever else runs, and its repeated id is what
         crashed the evidence screen.
         """
+        watching = current_progress.get()
+        if watching is not None:
+            await watching.step("compare")
+
         if self._verification is None:
             unique, _ = dedupe(evidence)
             return unique, None
@@ -903,6 +912,11 @@ class Orchestrator:
         if not verified.checked:
             skipped.append(
                 SkippedCheck(check="source_verification", reason="model provider unavailable")
+            )
+        if watching is not None:
+            await watching.verified(
+                claim.id,
+                [item.citation_url for item in verified.evidence if addresses_claim(item)],
             )
         return verified.evidence, verified.explanation
 
@@ -1090,16 +1104,31 @@ class Orchestrator:
         self, resolver: SourceResolver, claim: Claim, candidate: SourceCandidate
     ) -> Evidence | None:
         """Fetch one candidate and turn it into evidence, or into nothing."""
-        async with self._semaphore:
-            snapshot = await resolver.snapshot(candidate)
+        watching = current_progress.get()
+        if watching is not None:
+            await watching.source_started(candidate.url, candidate.publisher)
+        found: Evidence | None = None
+        try:
+            async with self._semaphore:
+                snapshot = await resolver.snapshot(candidate)
 
-        if snapshot is None:
-            return None
+            if snapshot is None:
+                return None
 
-        relation = await resolver.relate(claim, snapshot)
-        return build_evidence(
-            resolver=resolver, claim_id=claim.id, snapshot=snapshot, relation=relation
-        )
+            relation = await resolver.relate(claim, snapshot)
+            found = build_evidence(
+                resolver=resolver, claim_id=claim.id, snapshot=snapshot, relation=relation
+            )
+            return found
+        finally:
+            # Also when the read is abandoned at the deadline, so the screen never
+            # shows a source as still being read after the check has moved on.
+            if watching is not None:
+                await watching.source_done(
+                    candidate.url,
+                    claim_id=claim.id,
+                    found=found is not None and addresses_claim(found),
+                )
 
     async def probe_provider(self, provider: str) -> str | None:
         """Ask the governor whether a provider may be used, without using it.

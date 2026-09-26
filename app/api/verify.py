@@ -13,16 +13,19 @@ deployment denies every trigger rather than accepting anonymous ones.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Annotated, Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pypdf.errors import PdfReadError
 
 from app.api.accounts import charge, check_cost, require_credit, signed_in
@@ -63,12 +66,15 @@ from app.intake.normalizer import (
 )
 from app.knowledge.registry import authenticate_trigger
 from app.observability.logging import event
+from app.observability.middleware import REQUEST_ID_HEADER
 from app.orchestration.deep import DeepChecks
 from app.orchestration.pipeline import SkippedCheck, VerificationResult, claim_progress
+from app.orchestration.progress import CheckProgress, current_progress, valid_key
 from app.orchestration.review import HumanLabel
 from app.orchestration.summary import case_summary
 from app.security.fetcher import FetchResult
 from app.sources.base import DEEP, current_depth
+from app.sources.outlets import outlet_name
 from app.sources.verification import page_key
 from app.verdict.technique import technique_for
 
@@ -364,6 +370,61 @@ async def cached_full_response(
     )
 
 
+def _followed_by(request: Request) -> str | None:
+    """The id the app follows this check by: the `X-Request-ID` it sent, if any.
+
+    The same id the server logs the request under, so the stream and the logs of one
+    check line up. Only a UUID is listened on; an id the server made up for itself
+    is not, because nobody is following it.
+    """
+    sent = (request.headers.get(REQUEST_ID_HEADER) or "").strip()
+    return sent if valid_key(sent) else None
+
+
+def _echo(response: VerifyResponse, key: str | None) -> VerifyResponse:
+    return response if key is None else response.model_copy(update={"request_id": key})
+
+
+# What a refused check is called on the progress stream; the HTTP answer says the rest.
+_ERROR_CODES = {
+    401: "signed_out",
+    402: "no_credit",
+    413: "too_large",
+    422: "invalid_input",
+    429: "rate_limited",
+    503: "unavailable",
+}
+
+
+@asynccontextmanager
+async def _watched(request: Request, key: str | None) -> AsyncIterator[CheckProgress | None]:
+    """Publish what the check does while it runs, when the app is following it.
+
+    Every stream ends: with `done` from the caller, or here with `error` when the check
+    is refused or fails, so the Checking screen is never left waiting on silence.
+    """
+    bus = getattr(request.app.state, "progress_bus", None)
+    if key is None or bus is None:
+        yield None
+        return
+    watching = CheckProgress(bus, key, names=outlet_name)
+    token = current_progress.set(watching)
+    try:
+        await watching.step("read")
+        yield watching
+    except HTTPException as refused:
+        await watching.error(_ERROR_CODES.get(refused.status_code, "failed"))
+        raise
+    except asyncio.CancelledError:
+        await watching.error("cancelled")
+        raise
+    except Exception:
+        await watching.error("failed")
+        raise
+    finally:
+        current_progress.reset(token)
+
+
 async def with_receipt(request: Request, response: VerifyResponse) -> VerifyResponse:
     """The result with its receipt inline, checked now (contract 1.3).
 
@@ -493,19 +554,24 @@ async def verify(payload: VerifyRequest, request: Request) -> VerifyResponse | J
     # and extracting its claims takes ten to twenty seconds, and starting the clock
     # after that let a four-claim link run to 68 seconds against an app that waits 75.
     arrived = time.perf_counter()
-
-    # Who is asking, and whether they may: decided here, from the credit ledger.
-    user = await signed_in(request)
     deep = payload.mode == "deep"
-    cost = check_cost(request, deep=deep)
-    await require_credit(request, user, cost)
+    key = _followed_by(request)
 
-    if deep:
-        return _start_deep(payload, request, user, cost)
+    # A deep check is followed by its case id, from the 202; see `_start_deep`.
+    async with _watched(request, None if deep else key) as watching:
+        # Who is asking, and whether they may: decided here, from the credit ledger.
+        user = await signed_in(request)
+        cost = check_cost(request, deep=deep)
+        await require_credit(request, user, cost)
 
-    response = await with_receipt(request, await _checked(payload, request, arrived))
-    await charge(request, user, cost, deep=deep)
-    return response
+        if deep:
+            return _start_deep(payload, request, user, cost)
+
+        response = await with_receipt(request, await _checked(payload, request, arrived))
+        await charge(request, user, cost, deep=deep)
+        if watching is not None:
+            await watching.done(response.case_id)
+    return _echo(response, key)
 
 
 def _start_deep(payload: VerifyRequest, request: Request, user: Any, cost: int) -> JSONResponse:
@@ -520,16 +586,19 @@ def _start_deep(payload: VerifyRequest, request: Request, user: Any, cost: int) 
 
     async def work(progress: Any) -> VerifyResponse:
         depth = current_depth.set(DEEP)
-        watching = claim_progress.set(progress)
+        counting = claim_progress.set(progress)
         try:
-            response = await with_receipt(
-                request,
-                await _checked(payload, request, time.perf_counter(), case_id=case_id),
-            )
+            async with _watched(request, str(case_id)) as watching:
+                response = await with_receipt(
+                    request,
+                    await _checked(payload, request, time.perf_counter(), case_id=case_id),
+                )
+                await charge(request, user, cost, deep=True)
+                if watching is not None:
+                    await watching.done(str(case_id))
         finally:
-            claim_progress.reset(watching)
+            claim_progress.reset(counting)
             current_depth.reset(depth)
-        await charge(request, user, cost, deep=True)
         return response
 
     runs.start(str(case_id), work)
@@ -694,6 +763,95 @@ async def get_case(case_id: UUID, request: Request) -> VerifyResponse | JSONResp
     return await with_receipt(request, stored)
 
 
+# How long one stream stays open: past a deep check's three minutes.
+_STREAM_SECONDS = 300.0
+# A comment line this often keeps proxies from closing a quiet stream.
+_HEARTBEAT_SECONDS = 15.0
+
+
+def _sse(*lines: str) -> str:
+    """One Server-Sent Events message: its lines, then the blank line that ends it."""
+    return "".join(f"{line}\n" for line in lines) + "\n"
+
+
+def _progress_bus(request: Request, key: str) -> Any:
+    bus = getattr(request.app.state, "progress_bus", None)
+    if bus is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="unavailable")
+    if not valid_key(key):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such check")
+    return bus
+
+
+@router.get(
+    "/cases/{key}/events",
+    summary="Follow a check as it runs (Server-Sent Events)",
+    response_class=StreamingResponse,
+)
+async def case_events(key: str, request: Request) -> StreamingResponse:
+    """What a check is doing, as it does it: steps, sources, the evidence count.
+
+    `key` is the `X-Request-ID` the app sent with a check, or a deep check's case id.
+    The stream may be opened before the check starts; everything already published is
+    replayed first, and a reconnect with `Last-Event-ID` resumes after that event. It
+    ends with `done` or `error`. Nothing in it is about the content being checked -
+    see `app/orchestration/progress.py`.
+    """
+    bus = _progress_bus(request, key)
+    try:
+        resume = int(request.headers.get("last-event-id") or 0)
+    except ValueError:
+        resume = 0
+
+    async def stream() -> AsyncIterator[str]:
+        # Read by a separate task into a queue, so a heartbeat can be written while
+        # waiting without cancelling the reader mid-event.
+        queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+
+        async def pump() -> None:
+            try:
+                async for item in bus.subscribe(key):
+                    await queue.put(item)
+            finally:
+                await queue.put(None)
+
+        reader = asyncio.create_task(pump())
+        ends = time.monotonic() + _STREAM_SECONDS
+        try:
+            yield _sse("retry: 2000")
+            while time.monotonic() < ends:
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=_HEARTBEAT_SECONDS)
+                except TimeoutError:
+                    yield _sse(": waiting")
+                    continue
+                if item is None:
+                    break
+                if item["seq"] <= resume:
+                    continue
+                data = json.dumps(item, separators=(",", ":"))
+                yield _sse(f"id: {item['seq']}", f"event: {item['type']}", f"data: {data}")
+        finally:
+            reader.cancel()
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get("/cases/{key}/progress", summary="The events of a check so far (polling)")
+async def case_progress(key: str, request: Request, after: int = 0) -> dict[str, Any]:
+    """The same events as `/events`, for a client that cannot hold a stream open.
+
+    Ask again with `after` set to the last `seq` seen; `finished` says the check ended.
+    """
+    bus = _progress_bus(request, key)
+    events, finished = await bus.since(key, after)
+    return {"events": events, "finished": finished}
+
+
 @router.post(
     "/verify/file",
     summary="Verify an uploaded image, PDF or video",
@@ -717,14 +875,24 @@ async def verify_file(
     the request open would end in a gateway timeout, which tells the client nothing
     it can act on — a case id it can poll does.
     """
-    user = await signed_in(request)
-    cost = check_cost(request, deep=False)
-    await require_credit(request, user, cost)
+    key = _followed_by(request)
+    async with _watched(request, key) as watching:
+        user = await signed_in(request)
+        cost = check_cost(request, deep=False)
+        await require_credit(request, user, cost)
 
-    response = await _checked_file(request, file, consent_to_process_media, recheck)
-    if isinstance(response, VerifyResponse):
-        response = await with_receipt(request, response)
-    await charge(request, user, cost, deep=False)
+        response = await _checked_file(request, file, consent_to_process_media, recheck)
+        if isinstance(response, VerifyResponse):
+            response = _echo(await with_receipt(request, response), key)
+        await charge(request, user, cost, deep=False)
+        if watching is not None:
+            # A video is answered with a case id to poll, which is where it ends too.
+            case_id = (
+                response.case_id
+                if isinstance(response, VerifyResponse)
+                else json.loads(bytes(response.body))["case_id"]
+            )
+            await watching.done(case_id)
     return response
 
 

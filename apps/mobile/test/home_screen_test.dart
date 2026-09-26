@@ -304,9 +304,13 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(seconds: 3));
       await tester.pump();
+      expect(find.text('STEP 1 OF 3'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 2));
 
       expect(sent.single['mode'], 'deep');
       expect(find.text('1 of 3 claims checked'), findsOneWidget);
+      // This test server reports no progress events, so a few seconds in the page
+      // stops expecting them and names the check instead of a step.
       expect(find.text('Deep check…'), findsOneWidget);
 
       await tester.pump(const Duration(seconds: 3));

@@ -25,6 +25,20 @@ Added for the v5 app.
   against the stored evidence as the result was sent, so the seal shows without a
   second call. `null` when no receipt was issued. `receipt_url` and
   `GET /v1/receipts/{id}` are unchanged.
+- **Progress events.** `GET /v1/cases/{key}/events` (Server-Sent Events) and
+  `GET /v1/cases/{key}/progress?after=n` (polling) report a check as it runs:
+  `step {step: read|search|compare}`, `source_started {publisher, domain, initials}`,
+  `source_done {publisher, domain, outcome: evidence|not_relevant}`,
+  `evidence_count {n}`, then `done {case_id}` or `error {code}`. Every event has a
+  `seq`; a reconnect with `Last-Event-ID` resumes after it. `key` is the
+  `X-Request-ID` (a UUID) the app sent with `/v1/verify` or `/v1/verify/file`, so it
+  can listen before the answer returns, or a deep check's case id from its 202.
+  A source counted as evidence and then thrown out by the source check is sent again
+  as `not_relevant`, so the final count is the count of cited sources. Events carry
+  no submitted content, claim or page address, and are forgotten ten minutes after
+  the check ends. Setting `FACTIFY_PROGRESS_REDIS_URL` carries them between
+  instances (needs the optional `redis` package).
+- **`request_id`** on the result: the `X-Request-ID` the app sent, echoed.
 
 ## 1.2
 

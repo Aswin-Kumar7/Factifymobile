@@ -36,6 +36,7 @@ class ResultScreen extends StatefulWidget {
     String? summary,
     Uint8List? thumbnail,
     this.justChecked = false,
+    this.openShare = false,
     super.key,
   }) : submission = submission,
        kind = kind ?? submission?.kind ?? SubmissionKind.text,
@@ -56,6 +57,9 @@ class ResultScreen extends StatefulWidget {
   /// A result reopened from History checks its receipt again: the seal says the
   /// evidence is unchanged, and that is only true of the moment it was looked at.
   final bool justChecked;
+
+  /// Opened from a notification's "Share correction": the share sheet opens at once.
+  final bool openShare;
 
   @override
   State<ResultScreen> createState() => _ResultScreenState();
@@ -79,7 +83,10 @@ class _ResultScreenState extends State<ResultScreen> {
   void initState() {
     super.initState();
     // A pulse as the verdict appears (v5 accessibility): felt, not only seen.
-    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(HapticFeedback.mediumImpact()));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(HapticFeedback.mediumImpact());
+      if (widget.openShare && mounted) _share();
+    });
     final inline = _verdict.receipt;
     final receiptUrl = _verdict.receiptUrl;
     if (widget.justChecked && inline != null) {

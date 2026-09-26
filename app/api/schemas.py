@@ -46,8 +46,9 @@ from app.domain.enums import (
 # 1.2 adds `image_reading`: what was read from an uploaded picture. Additive too.
 # 1.3 adds, per claim, `input_anchor` (where the claim sits in the submitted text) and
 # `technique` (how a false or misleading claim misleads), and on the result an inline
-# `receipt`, so the seal shows without a second call. Additive: a 1.2 client ignores
-# all three. See docs/contract-changelog.md.
+# `receipt`, so the seal shows without a second call; and progress events for a check
+# the app follows by `request_id`. Additive: a 1.2 client ignores all of it. See
+# docs/contract-changelog.md.
 CONTRACT_VERSION = "1.3"
 
 
@@ -365,6 +366,9 @@ class VerifyResponse(BaseModel):
     receipt_url: str | None = None
     # The receipt itself, checked as the result was sent. None when none was issued.
     receipt: ReceiptSummaryResponse | None = None
+    # The `X-Request-ID` the app sent, when it sent one: the id it follows this
+    # check's progress by, at `/v1/cases/{request_id}/events` (1.3).
+    request_id: str | None = None
     retrieved_at: datetime
     from_cache: bool = False
     elapsed_ms: int = 0

@@ -987,7 +987,7 @@ class _RecentRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            FxVerdictPill(verdict: verdict, label: ActionStyle.word(verdict, l10n)),
+            FxVerdictPill(verdict: verdict, label: ActionStyle.label(record.verdict, l10n)),
           ],
         ),
       ),

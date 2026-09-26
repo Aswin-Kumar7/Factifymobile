@@ -21,7 +21,12 @@ import '../widgets/ui/ui.dart';
 import 'result_screen.dart';
 
 /// Opens a kept check's answer. Shared with Check's "Recent" list.
-void openHistoryRecord(BuildContext context, AppServices services, HistoryRecord record) {
+void openHistoryRecord(
+  BuildContext context,
+  AppServices services,
+  HistoryRecord record, {
+  bool openShare = false,
+}) {
   final text = record.text;
   final submission = text == null
       ? null
@@ -38,6 +43,7 @@ void openHistoryRecord(BuildContext context, AppServices services, HistoryRecord
           kind: record.kind,
           summary: record.summary,
           thumbnail: record.thumbnail,
+          openShare: openShare,
         ),
       ),
     ),
@@ -652,8 +658,8 @@ class _HistoryRow extends StatelessWidget {
                   children: [
                     FxVerdictPill(
                       verdict: verdict,
-                      label: ActionStyle.word(verdict, l10n),
-                      icon: ActionStyle.iconFor(verdict),
+                      label: ActionStyle.label(record.verdict, l10n),
+                      icon: ActionStyle.labelIcon(record.verdict),
                     ),
                     Text(
                       '${DateFormat.Hm(locale).format(record.checkedAt.toLocal())} · '

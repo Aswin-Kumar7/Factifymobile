@@ -13,6 +13,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import '../models/account.dart';
+import 'check_events.dart';
 import '../models/verdict.dart';
 
 /// Where the API lives. Supplied at build time, never hard-coded to a secret:
@@ -96,9 +97,11 @@ class ApiFailure implements Exception {
 
 class FactifyClient {
   FactifyClient({http.Client? httpClient, this.baseUrl = apiBaseUrl})
-    : _http = httpClient ?? http.Client();
+    : _http = httpClient ?? http.Client(),
+      _ownsHttp = httpClient == null;
 
   final http.Client _http;
+  final bool _ownsHttp;
 
   /// The connection this client uses, shared with sign-in so there is one pool.
   http.Client get httpClient => _http;
@@ -133,19 +136,39 @@ class FactifyClient {
   ///
   /// [recheck] is "Check again": the server skips its stored verdict and checks
   /// from scratch, because the stored one is what the person is asking to replace.
-  Future<Verdict> verifyText(String text, {String? language, bool recheck = false}) =>
-      _verify({'text': text, 'language': ?language, if (recheck) 'recheck': true});
+  ///
+  /// [requestId] is the id the Checking screen follows this check's progress by
+  /// (lib/api/check_events.dart). Sent as `X-Request-ID`, which the server also logs
+  /// the request under.
+  Future<Verdict> verifyText(
+    String text, {
+    String? language,
+    bool recheck = false,
+    String? requestId,
+  }) => _verify({
+    'text': text,
+    'language': ?language,
+    if (recheck) 'recheck': true,
+  }, requestId: requestId);
 
-  Future<Verdict> verifyUrl(String url, {String? language, bool recheck = false}) =>
-      _verify({'url': url, 'language': ?language, if (recheck) 'recheck': true});
+  Future<Verdict> verifyUrl(
+    String url, {
+    String? language,
+    bool recheck = false,
+    String? requestId,
+  }) => _verify({
+    'url': url,
+    'language': ?language,
+    if (recheck) 'recheck': true,
+  }, requestId: requestId);
 
-  Future<Verdict> _verify(Map<String, dynamic> body) async {
+  Future<Verdict> _verify(Map<String, dynamic> body, {String? requestId}) async {
     final auth = await _signedIn();
     final response = await _send(
       () => _http
           .post(
             Uri.parse('$baseUrl/v1/verify'),
-            headers: {'content-type': 'application/json', ...auth},
+            headers: {'content-type': 'application/json', ...auth, 'x-request-id': ?requestId},
             body: jsonEncode(body),
           )
           .timeout(_timeout),
@@ -170,6 +193,7 @@ class FactifyClient {
     bool consentToProcessMedia = false,
     String? language,
     bool recheck = false,
+    String? requestId,
     void Function(int sent, int total)? onProgress,
   }) => _guard(() async {
     final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/v1/verify/file'))
@@ -178,6 +202,7 @@ class FactifyClient {
     if (language != null) request.fields['language'] = language;
     if (recheck) request.fields['recheck'] = 'true';
     request.headers.addAll(await _signedIn());
+    if (requestId != null) request.headers['x-request-id'] = requestId;
 
     final streamed = await _http.send(_CountedUpload(request, onProgress)).timeout(_timeout);
     final response = await http.Response.fromStream(streamed).timeout(_timeout);
@@ -330,6 +355,12 @@ class FactifyClient {
     }
   }
 
+  /// What a check is doing while it runs, from the id it was sent with (1.3). Read
+  /// over its own connection, so leaving the check can close it; a test's client
+  /// is borrowed instead, so the test answers these requests like any other.
+  Stream<CheckEvent> follow(String key) =>
+      followCheck(baseUrl, key, connect: _ownsHttp ? http.Client.new : () => _Borrowed(_http));
+
   Future<http.Response> _send(Future<http.Response> Function() call) async {
     final response = await _guard(call);
     _raiseFor(response);
@@ -379,18 +410,8 @@ class FactifyClient {
       413 => ApiFailure(FailureKind.tooLarge, statusCode: code, detail: detail),
       401 => ApiFailure(FailureKind.signedOut, statusCode: code, detail: detail),
       402 => ApiFailure(FailureKind.outOfCredits, statusCode: code, detail: detail),
-      429 => ApiFailure(
-        FailureKind.dailyLimit,
-        retryable: true,
-        statusCode: code,
-        detail: detail,
-      ),
-      503 => ApiFailure(
-        FailureKind.unavailable,
-        retryable: true,
-        statusCode: code,
-        detail: detail,
-      ),
+      429 => ApiFailure(FailureKind.dailyLimit, retryable: true, statusCode: code, detail: detail),
+      503 => ApiFailure(FailureKind.unavailable, retryable: true, statusCode: code, detail: detail),
       _ => ApiFailure(
         FailureKind.generic,
         retryable: code >= 500,
@@ -434,6 +455,19 @@ class VerifyFileOutcome {
   final String? pendingCaseId;
 
   bool get isPending => pendingCaseId != null;
+}
+
+/// Someone else's client, used without closing it.
+class _Borrowed extends http.BaseClient {
+  _Borrowed(this._inner);
+
+  final http.Client _inner;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) => _inner.send(request);
+
+  @override
+  void close() {}
 }
 
 /// A multipart upload whose body is counted as the connection takes it.

@@ -256,7 +256,7 @@ class TestAdditiveOnly:
     def test_every_1_2_field_is_kept_and_the_new_ones_are_optional(self) -> None:
         for model, old, new in (
             (ClaimResponse, _CLAIM_1_2, {"input_anchor", "technique"}),
-            (VerifyResponse, _RESULT_1_2, {"receipt"}),
+            (VerifyResponse, _RESULT_1_2, {"receipt", "request_id"}),
         ):
             fields = model.model_fields
             assert set(fields) == old | new
@@ -276,13 +276,14 @@ class TestAdditiveOnly:
         assert wire["claims"][0]["technique"] == "MISATTRIBUTED_QUOTE"
 
         # What a 1.2 client keeps: everything but the three new keys.
-        old = {key: value for key, value in wire.items() if key != "receipt"}
+        old = {k: v for k, v in wire.items() if k not in {"receipt", "request_id"}}
         old["claims"] = [
             {k: v for k, v in c.items() if k not in {"input_anchor", "technique"}}
             for c in wire["claims"]
         ]
         reread = VerifyResponse.model_validate(old).model_dump(mode="json")
         assert reread.pop("receipt") is None
+        assert reread.pop("request_id") is None
         for item in reread["claims"]:
             assert item.pop("input_anchor") is None
             assert item.pop("technique") is None

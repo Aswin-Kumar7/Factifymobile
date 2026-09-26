@@ -2281,6 +2281,114 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{supports} supporting, {contradicts} contradicting'**
   String compConflict(int supports, int contradicts);
+
+  /// No description provided for @stepOf.
+  ///
+  /// In en, this message translates to:
+  /// **'Step {step} of {total}'**
+  String stepOf(int step, int total);
+
+  /// No description provided for @sourcesRead.
+  ///
+  /// In en, this message translates to:
+  /// **'{read} of {total} read'**
+  String sourcesRead(int read, int total);
+
+  /// No description provided for @sourcesWaiting.
+  ///
+  /// In en, this message translates to:
+  /// **'Sources appear here as they are opened'**
+  String get sourcesWaiting;
+
+  /// No description provided for @sourceReading.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading…'**
+  String get sourceReading;
+
+  /// No description provided for @sourceEvidence.
+  ///
+  /// In en, this message translates to:
+  /// **'Evidence found'**
+  String get sourceEvidence;
+
+  /// No description provided for @sourceNotRelevant.
+  ///
+  /// In en, this message translates to:
+  /// **'Not relevant'**
+  String get sourceNotRelevant;
+
+  /// No description provided for @evidenceCollected.
+  ///
+  /// In en, this message translates to:
+  /// **'Evidence collected'**
+  String get evidenceCollected;
+
+  /// No description provided for @evidenceNote.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{Nothing yet, still reading} =1{1 source addresses this claim} other{{count} sources address this claim}}'**
+  String evidenceNote(int count);
+
+  /// No description provided for @notifyMe.
+  ///
+  /// In en, this message translates to:
+  /// **'Notify me when ready'**
+  String get notifyMe;
+
+  /// No description provided for @notifyOn.
+  ///
+  /// In en, this message translates to:
+  /// **'We\'ll notify you when it\'s ready'**
+  String get notifyOn;
+
+  /// No description provided for @notifyDenied.
+  ///
+  /// In en, this message translates to:
+  /// **'Notifications are off for Factify. Turn them on in your phone\'s settings to be told.'**
+  String get notifyDenied;
+
+  /// No description provided for @notifyReadyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Your check is ready'**
+  String get notifyReadyTitle;
+
+  /// No description provided for @notifyReadyChannel.
+  ///
+  /// In en, this message translates to:
+  /// **'Finished checks'**
+  String get notifyReadyChannel;
+
+  /// No description provided for @notifyWorkingTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking…'**
+  String get notifyWorkingTitle;
+
+  /// No description provided for @notifyWorkingBody.
+  ///
+  /// In en, this message translates to:
+  /// **'We\'ll tell you when the answer is ready.'**
+  String get notifyWorkingBody;
+
+  /// No description provided for @notifyWorkingChannel.
+  ///
+  /// In en, this message translates to:
+  /// **'Checks in progress'**
+  String get notifyWorkingChannel;
+
+  /// No description provided for @notifyOpenResult.
+  ///
+  /// In en, this message translates to:
+  /// **'Open result'**
+  String get notifyOpenResult;
+
+  /// No description provided for @nothingToCheckShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing to check'**
+  String get nothingToCheckShort;
 }
 
 class _AppLocalizationsDelegate

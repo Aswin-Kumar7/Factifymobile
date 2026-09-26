@@ -137,6 +137,16 @@ class ActionStyle {
     };
   }
 
+  /// The label for a kept check: its verdict's word, or "Nothing to check" when the
+  /// result found nothing to check - which its own page says, and a History row
+  /// calling it "Unconfirmed" contradicted.
+  static String label(Verdict verdict, AppLocalizations l10n) =>
+      verdict.nothingToCheck ? l10n.nothingToCheckShort : word(verdict.factVerdict, l10n);
+
+  /// The icon to go with [label].
+  static IconData labelIcon(Verdict verdict) =>
+      verdict.nothingToCheck ? FxIcons.info : iconFor(verdict.factVerdict);
+
   /// The one word for a verdict: True, False, Misleading, Unconfirmed.
   static String word(FactVerdict verdict, AppLocalizations l10n) => switch (verdict) {
     FactVerdict.trueClaim => l10n.headlineSafeToShare,
