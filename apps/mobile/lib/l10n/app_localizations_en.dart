@@ -725,4 +725,128 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get incompleteNote =>
       'Some sources couldn\'t be checked in time, so this answer may be incomplete.';
+
+  @override
+  String get account => 'Account';
+
+  @override
+  String get signIn => 'Sign in';
+
+  @override
+  String get signInTitle => 'Sign in to Factify';
+
+  @override
+  String get signInBody =>
+      'Keep your profile and credits on any phone. We never keep a record of what you check.';
+
+  @override
+  String get emailLabel => 'Email';
+
+  @override
+  String get sendCode => 'Email me a code';
+
+  @override
+  String codeSentTo(String email) {
+    return 'We sent a 6-digit code to $email.';
+  }
+
+  @override
+  String get codeLabel => '6-digit code';
+
+  @override
+  String get verifyCode => 'Sign in';
+
+  @override
+  String get useDifferentEmail => 'Use a different email';
+
+  @override
+  String get orDivider => 'or';
+
+  @override
+  String get continueWithGoogle => 'Continue with Google';
+
+  @override
+  String get signInUnavailable =>
+      'Sign-in isn\'t switched on for this server yet. You can keep checking without an account.';
+
+  @override
+  String get signOut => 'Sign out';
+
+  @override
+  String get creditsTitle => 'Credits';
+
+  @override
+  String creditsLeft(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count credits left',
+      one: '1 credit left',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String creditsUsed(int count) {
+    return '$count used';
+  }
+
+  @override
+  String creditCosts(int check, int deep) {
+    return 'A check costs $check · a deep check costs $deep';
+  }
+
+  @override
+  String checksSoFar(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count checks so far',
+      one: '1 check so far',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String memberSince(DateTime date) {
+    final intl.DateFormat dateDateFormat = intl.DateFormat.yMMMd(localeName);
+    final String dateString = dateDateFormat.format(date);
+
+    return 'Member since $dateString';
+  }
+
+  @override
+  String get planBeta => 'Free · beta, no limits yet';
+
+  @override
+  String get editName => 'Edit name';
+
+  @override
+  String get nameLabel => 'Name';
+
+  @override
+  String get save => 'Save';
+
+  @override
+  String get cancel => 'Cancel';
+
+  @override
+  String get failureSignedOut =>
+      'Your sign-in has ended. Sign in again from your account.';
+
+  @override
+  String get failureOutOfCredits => 'You\'re out of credits for now.';
+
+  @override
+  String get authWrongCode =>
+      'That code didn\'t work. Check the email and try again.';
+
+  @override
+  String get authNetwork => 'Couldn\'t reach sign-in. Check your connection.';
+
+  @override
+  String get authTooMany => 'Too many tries. Wait a minute and try again.';
+
+  @override
+  String get authGeneric => 'Sign-in didn\'t work. Try again.';
 }

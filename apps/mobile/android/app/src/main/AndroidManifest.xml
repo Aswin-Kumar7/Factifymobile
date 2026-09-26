@@ -82,6 +82,17 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="image/*" />
             </intent-filter>
+
+            <!--
+                Sign-in return. Google sign-in finishes in the browser, and Supabase
+                sends the person back here with their session: factify://auth-callback.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="factify" android:host="auth-callback" />
+            </intent-filter>
         </activity>
 
         <meta-data

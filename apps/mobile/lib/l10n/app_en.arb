@@ -449,5 +449,82 @@
       }
     }
   },
-  "incompleteNote": "Some sources couldn't be checked in time, so this answer may be incomplete."
+  "incompleteNote": "Some sources couldn't be checked in time, so this answer may be incomplete.",
+  "account": "Account",
+  "signIn": "Sign in",
+  "signInTitle": "Sign in to Factify",
+  "signInBody": "Keep your profile and credits on any phone. We never keep a record of what you check.",
+  "emailLabel": "Email",
+  "sendCode": "Email me a code",
+  "codeSentTo": "We sent a 6-digit code to {email}.",
+  "@codeSentTo": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "codeLabel": "6-digit code",
+  "verifyCode": "Sign in",
+  "useDifferentEmail": "Use a different email",
+  "orDivider": "or",
+  "continueWithGoogle": "Continue with Google",
+  "signInUnavailable": "Sign-in isn't switched on for this server yet. You can keep checking without an account.",
+  "signOut": "Sign out",
+  "creditsTitle": "Credits",
+  "creditsLeft": "{count, plural, =1{1 credit left} other{{count} credits left}}",
+  "@creditsLeft": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "creditsUsed": "{count} used",
+  "@creditsUsed": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "creditCosts": "A check costs {check} · a deep check costs {deep}",
+  "@creditCosts": {
+    "placeholders": {
+      "check": {
+        "type": "int"
+      },
+      "deep": {
+        "type": "int"
+      }
+    }
+  },
+  "checksSoFar": "{count, plural, =1{1 check so far} other{{count} checks so far}}",
+  "@checksSoFar": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "memberSince": "Member since {date}",
+  "@memberSince": {
+    "placeholders": {
+      "date": {
+        "type": "DateTime",
+        "format": "yMMMd"
+      }
+    }
+  },
+  "planBeta": "Free · beta, no limits yet",
+  "editName": "Edit name",
+  "nameLabel": "Name",
+  "save": "Save",
+  "cancel": "Cancel",
+  "failureSignedOut": "Your sign-in has ended. Sign in again from your account.",
+  "failureOutOfCredits": "You're out of credits for now.",
+  "authWrongCode": "That code didn't work. Check the email and try again.",
+  "authNetwork": "Couldn't reach sign-in. Check your connection.",
+  "authTooMany": "Too many tries. Wait a minute and try again.",
+  "authGeneric": "Sign-in didn't work. Try again."
 }

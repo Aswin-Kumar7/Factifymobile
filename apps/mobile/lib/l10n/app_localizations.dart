@@ -1099,6 +1099,192 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Some sources couldn\'t be checked in time, so this answer may be incomplete.'**
   String get incompleteNote;
+
+  /// No description provided for @account.
+  ///
+  /// In en, this message translates to:
+  /// **'Account'**
+  String get account;
+
+  /// No description provided for @signIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in'**
+  String get signIn;
+
+  /// No description provided for @signInTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in to Factify'**
+  String get signInTitle;
+
+  /// No description provided for @signInBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep your profile and credits on any phone. We never keep a record of what you check.'**
+  String get signInBody;
+
+  /// No description provided for @emailLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Email'**
+  String get emailLabel;
+
+  /// No description provided for @sendCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Email me a code'**
+  String get sendCode;
+
+  /// No description provided for @codeSentTo.
+  ///
+  /// In en, this message translates to:
+  /// **'We sent a 6-digit code to {email}.'**
+  String codeSentTo(String email);
+
+  /// No description provided for @codeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'6-digit code'**
+  String get codeLabel;
+
+  /// No description provided for @verifyCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in'**
+  String get verifyCode;
+
+  /// No description provided for @useDifferentEmail.
+  ///
+  /// In en, this message translates to:
+  /// **'Use a different email'**
+  String get useDifferentEmail;
+
+  /// No description provided for @orDivider.
+  ///
+  /// In en, this message translates to:
+  /// **'or'**
+  String get orDivider;
+
+  /// No description provided for @continueWithGoogle.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue with Google'**
+  String get continueWithGoogle;
+
+  /// No description provided for @signInUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign-in isn\'t switched on for this server yet. You can keep checking without an account.'**
+  String get signInUnavailable;
+
+  /// No description provided for @signOut.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign out'**
+  String get signOut;
+
+  /// No description provided for @creditsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Credits'**
+  String get creditsTitle;
+
+  /// No description provided for @creditsLeft.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 credit left} other{{count} credits left}}'**
+  String creditsLeft(int count);
+
+  /// No description provided for @creditsUsed.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} used'**
+  String creditsUsed(int count);
+
+  /// No description provided for @creditCosts.
+  ///
+  /// In en, this message translates to:
+  /// **'A check costs {check} · a deep check costs {deep}'**
+  String creditCosts(int check, int deep);
+
+  /// No description provided for @checksSoFar.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 check so far} other{{count} checks so far}}'**
+  String checksSoFar(int count);
+
+  /// No description provided for @memberSince.
+  ///
+  /// In en, this message translates to:
+  /// **'Member since {date}'**
+  String memberSince(DateTime date);
+
+  /// No description provided for @planBeta.
+  ///
+  /// In en, this message translates to:
+  /// **'Free · beta, no limits yet'**
+  String get planBeta;
+
+  /// No description provided for @editName.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit name'**
+  String get editName;
+
+  /// No description provided for @nameLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get nameLabel;
+
+  /// No description provided for @save.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get save;
+
+  /// No description provided for @cancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get cancel;
+
+  /// No description provided for @failureSignedOut.
+  ///
+  /// In en, this message translates to:
+  /// **'Your sign-in has ended. Sign in again from your account.'**
+  String get failureSignedOut;
+
+  /// No description provided for @failureOutOfCredits.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re out of credits for now.'**
+  String get failureOutOfCredits;
+
+  /// No description provided for @authWrongCode.
+  ///
+  /// In en, this message translates to:
+  /// **'That code didn\'t work. Check the email and try again.'**
+  String get authWrongCode;
+
+  /// No description provided for @authNetwork.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t reach sign-in. Check your connection.'**
+  String get authNetwork;
+
+  /// No description provided for @authTooMany.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many tries. Wait a minute and try again.'**
+  String get authTooMany;
+
+  /// No description provided for @authGeneric.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign-in didn\'t work. Try again.'**
+  String get authGeneric;
 }
 
 class _AppLocalizationsDelegate

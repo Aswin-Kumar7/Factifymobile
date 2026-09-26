@@ -45,6 +45,14 @@ class MainActivity : FlutterActivity() {
      */
     private var pendingShare: Map<String, String?>? = null
 
+    /**
+     * Sign-in links: Google sign-in finishes in the browser, and Supabase sends the
+     * person back to factify://auth-callback with their session in the link. Held
+     * like a share until Dart asks, for the same reason.
+     */
+    private var authChannel: MethodChannel? = null
+    private var pendingAuthLink: String? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -61,16 +69,34 @@ class MainActivity : FlutterActivity() {
                 }
             }
         }
+
+        authChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, AUTH_CHANNEL).apply {
+            setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getInitialAuthLink" -> {
+                        result.success(pendingAuthLink)
+                        pendingAuthLink = null
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         pendingShare = parse(intent)
+        pendingAuthLink = authLink(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+
+        authLink(intent)?.let { link ->
+            if (authChannel != null) authChannel?.invokeMethod("onAuthLink", link) else pendingAuthLink = link
+            return
+        }
 
         val share = parse(intent) ?: return
         // The engine is already running here, so push rather than park it.
@@ -147,7 +173,16 @@ class MainActivity : FlutterActivity() {
         null
     }
 
+    /** The sign-in link this intent carries, or null. Only factify://auth-callback. */
+    private fun authLink(intent: Intent?): String? {
+        val data = intent?.data ?: return null
+        if (intent.action != Intent.ACTION_VIEW) return null
+        if (data.scheme != "factify" || data.host != "auth-callback") return null
+        return data.toString()
+    }
+
     private companion object {
+        const val AUTH_CHANNEL = "factify/auth"
         const val CHANNEL = "factify/share"
     }
 }

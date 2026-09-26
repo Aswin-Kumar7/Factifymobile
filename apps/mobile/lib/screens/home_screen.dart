@@ -22,6 +22,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../api/client.dart';
 import '../api/share_intake.dart';
+import '../auth/auth_service.dart';
 import '../l10n/app_localizations.dart';
 import '../l10n/language_preference.dart';
 import '../l10n/phrases.dart';
@@ -34,6 +35,7 @@ import '../widgets/intake_bar.dart';
 import '../widgets/language_menu.dart';
 import '../widgets/submission_card.dart';
 import '../widgets/verdict_card.dart';
+import 'account_screen.dart';
 import 'evidence_screen.dart';
 
 /// Largest image read into memory for the preview thumbnail. See
@@ -48,10 +50,13 @@ const int _thumbnailBytesLimit = 2 * 1024 * 1024;
 typedef _Phrase = String Function(AppLocalizations l10n);
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.client, required this.language});
+  const HomeScreen({super.key, required this.client, required this.language, this.auth});
 
   final FactifyClient client;
   final LanguagePreference language;
+
+  /// Sign-in and the account; the account button opens it.
+  final AuthService? auth;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -224,6 +229,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   /// Keep a finished result where the user can get back to it.
   void _finish(Verdict verdict) {
+    // The check cost a credit; show the balance the server now holds.
+    unawaited(widget.auth?.refreshAccount());
     final submission = _submission;
     setState(() {
       _verdict = verdict;
@@ -516,6 +523,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ],
         ),
         actions: [
+          if (widget.auth != null)
+            AccountAvatar(
+              auth: widget.auth!,
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => AccountScreen(auth: widget.auth!)),
+              ),
+            ),
           LanguageMenu(preference: widget.language),
           const SizedBox(width: 8),
           _StatusDot(ready: _serviceReady, onTap: _probeService),

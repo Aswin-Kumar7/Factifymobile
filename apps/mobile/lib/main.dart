@@ -5,12 +5,16 @@
 /// because a key shipped in an APK is a key extracted from that APK.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'api/client.dart';
 import 'l10n/app_localizations.dart';
 import 'l10n/language_preference.dart';
 import 'screens/home_screen.dart';
+import 'auth/auth_links.dart';
+import 'auth/auth_service.dart';
 import 'theme/colors.dart';
 
 Future<void> main() async {
@@ -22,12 +26,16 @@ Future<void> main() async {
 }
 
 class FactifyApp extends StatefulWidget {
-  const FactifyApp({super.key, required this.language, this.client});
+  const FactifyApp({super.key, required this.language, this.client, this.auth});
 
   final LanguagePreference language;
 
   /// Supplied by tests. The app otherwise builds, and closes, its own.
   final FactifyClient? client;
+
+  /// Supplied by tests. The app otherwise builds its own, and a test that supplies
+  /// only a client gets one that never touches the phone's storage.
+  final AuthService? auth;
 
   @override
   State<FactifyApp> createState() => _FactifyAppState();
@@ -35,9 +43,25 @@ class FactifyApp extends StatefulWidget {
 
 class _FactifyAppState extends State<FactifyApp> {
   late final FactifyClient _client = widget.client ?? FactifyClient();
+  late final AuthService _auth =
+      widget.auth ??
+      AuthService(
+        client: _client,
+        links: widget.client == null ? AuthLinks() : null,
+        persist: widget.client == null,
+      );
+
+  @override
+  void initState() {
+    super.initState();
+    // Checks carry the signed-in person's token, so the server can record credits.
+    _client.tokenProvider = _auth.accessToken;
+    if (widget.auth == null) unawaited(_auth.start());
+  }
 
   @override
   void dispose() {
+    if (widget.auth == null) _auth.dispose();
     if (widget.client == null) _client.close();
     super.dispose();
   }
@@ -65,7 +89,7 @@ class _FactifyAppState extends State<FactifyApp> {
         supportedLocales: AppLocalizations.supportedLocales,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         localeListResolutionCallback: _resolveLocale,
-        home: HomeScreen(client: _client, language: widget.language),
+        home: HomeScreen(client: _client, language: widget.language, auth: _auth),
       ),
     );
   }

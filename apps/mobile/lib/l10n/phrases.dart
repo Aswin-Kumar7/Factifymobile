@@ -24,6 +24,8 @@ extension Phrases on AppLocalizations {
     FailureKind.tooLarge => failureTooLarge,
     FailureKind.dailyLimit => failureDailyLimit,
     FailureKind.unavailable => failureUnavailable,
+    FailureKind.signedOut => failureSignedOut,
+    FailureKind.outOfCredits => failureOutOfCredits,
     FailureKind.generic => failureGeneric,
   };
 

@@ -12,6 +12,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+import '../models/account.dart';
 import '../models/verdict.dart';
 
 /// Where the API lives. Supplied at build time, never hard-coded to a secret:
@@ -60,6 +61,12 @@ enum FailureKind {
   /// 503: the service is up but cannot verify.
   unavailable,
 
+  /// 401: the sign-in session has ended; the person must sign in again.
+  signedOut,
+
+  /// 402: the server says this person has no credits left for this check.
+  outOfCredits,
+
   /// Anything else.
   generic,
 }
@@ -94,6 +101,16 @@ class FactifyClient {
   final http.Client _http;
   final String baseUrl;
 
+  /// The signed-in person's access token, when there is one (see
+  /// lib/auth/auth_service.dart). Sent with checks and account calls so the server
+  /// can record and decide credits; the app decides nothing about them itself.
+  Future<String?> Function()? tokenProvider;
+
+  Future<Map<String, String>> _signedIn() async {
+    final token = await tokenProvider?.call();
+    return token == null ? const {} : {'authorization': 'Bearer $token'};
+  }
+
   /// How long to wait before deciding the server is not coming back.
   ///
   /// This said "the server targets 3-8 seconds" and allowed 45, which was true
@@ -120,11 +137,12 @@ class FactifyClient {
       _verify({'url': url, 'language': ?language, if (recheck) 'recheck': true});
 
   Future<Verdict> _verify(Map<String, dynamic> body) async {
+    final auth = await _signedIn();
     final response = await _send(
       () => _http
           .post(
             Uri.parse('$baseUrl/v1/verify'),
-            headers: const {'content-type': 'application/json'},
+            headers: {'content-type': 'application/json', ...auth},
             body: jsonEncode(body),
           )
           .timeout(_timeout),
@@ -156,6 +174,7 @@ class FactifyClient {
       ..fields['consent_to_process_media'] = consentToProcessMedia.toString();
     if (language != null) request.fields['language'] = language;
     if (recheck) request.fields['recheck'] = 'true';
+    request.headers.addAll(await _signedIn());
 
     final streamed = await _http.send(_CountedUpload(request, onProgress)).timeout(_timeout);
     final response = await http.Response.fromStream(streamed).timeout(_timeout);
@@ -169,6 +188,39 @@ class FactifyClient {
   });
 
   /// Retrieve a case previously computed, for polling an accepted video.
+  /// How to sign in, from the server. Public values only.
+  Future<AuthConfig> authConfig() async {
+    final response = await _send(
+      () => _http.get(Uri.parse('$baseUrl/v1/auth/config')).timeout(const Duration(seconds: 15)),
+    );
+    return AuthConfig.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  /// The signed-in person's profile and credits.
+  Future<Account> me() async {
+    final auth = await _signedIn();
+    final response = await _send(
+      () => _http
+          .get(Uri.parse('$baseUrl/v1/me'), headers: auth)
+          .timeout(const Duration(seconds: 20)),
+    );
+    return Account.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  Future<Account> rename(String name) async {
+    final auth = await _signedIn();
+    final response = await _send(
+      () => _http
+          .patch(
+            Uri.parse('$baseUrl/v1/me'),
+            headers: {'content-type': 'application/json', ...auth},
+            body: jsonEncode({'name': name}),
+          )
+          .timeout(const Duration(seconds: 20)),
+    );
+    return Account.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
   Future<Verdict?> getCase(String caseId) => _guard(() async {
     final response = await _http.get(Uri.parse('$baseUrl/v1/cases/$caseId')).timeout(_timeout);
     if (response.statusCode == 404) return null;
@@ -279,6 +331,8 @@ class FactifyClient {
     throw switch (code) {
       400 || 422 => ApiFailure(FailureKind.invalidInput, statusCode: code, detail: detail),
       413 => ApiFailure(FailureKind.tooLarge, statusCode: code, detail: detail),
+      401 => ApiFailure(FailureKind.signedOut, statusCode: code, detail: detail),
+      402 => ApiFailure(FailureKind.outOfCredits, statusCode: code, detail: detail),
       429 => ApiFailure(
         FailureKind.dailyLimit,
         retryable: true,
