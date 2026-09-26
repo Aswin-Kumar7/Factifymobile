@@ -1495,6 +1495,38 @@ class TestEveryClaimSaysWhetherItWasSearched:
         assert list(statuses.values()).count("searched") == MAX_FALLBACK_CLAIMS
         assert list(statuses.values()).count("not_searched") == 1
 
+    @pytest.mark.anyio
+    async def test_a_search_that_could_not_run_is_not_a_search_that_found_nothing(
+        self,
+    ) -> None:
+        """With the search plan used up (HTTP 432 on every query), a true tweet about
+        the Rs 2000 notes read "We searched official sources ... found nothing ...
+        treat it as likely false". Not one page had been searched."""
+        from app.domain.enums import CoverageExpectation
+        from app.governor.governor import ProviderUnavailable, SkipReason
+
+        class _Down(self._Search):
+            async def candidates(self, claim: Any) -> list[Any]:
+                raise ProviderUnavailable("web_search", SkipReason.PROVIDER_ERROR)
+
+        orchestrator = Orchestrator(
+            cache=NullCache(),  # type: ignore[arg-type]
+            governor=RecordingGovernor(),  # type: ignore[arg-type]
+            resolvers=[_Down()],  # type: ignore[list-item]
+            extractor_version="test",
+        )
+        national = claim(
+            importance=Importance.HEADLINE, coverage_expectation=CoverageExpectation.HIGH
+        )
+        intake = normalise_text("The RBI announced the Rs 2000 notes are being withdrawn.")
+
+        result = await orchestrator.verify(intake, case_id=uuid4(), claims=[national])
+
+        (outcome,) = result.claims
+        assert outcome.search == "unavailable"
+        assert outcome.explanation is None
+        assert any(gap.check == "web_search" for gap in result.skipped)
+
 
 class TestAnUnreportedNationalClaimIsSaidPlainly:
     """A forward saying the Prime Minister had announced Rs 5,000 a month for every

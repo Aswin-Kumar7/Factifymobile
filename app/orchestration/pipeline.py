@@ -212,7 +212,8 @@ class ClaimOutcome:
     # source check. None when no check ran.
     explanation: str | None = None
     # Whether the open web was searched for this claim: "searched", "not_searched"
-    # (below the per-check cap) or "timed_out". An unconfirmed claim that was never
+    # (below the per-check cap), "timed_out", or "unavailable" (the search provider
+    # could not be reached or refused every query). An unconfirmed claim that was never
     # searched said "we couldn't find reliable sources" all the same.
     search: str = "searched"
     # How many candidate pages were read for it, whatever they turned out to say.
@@ -795,10 +796,21 @@ class Orchestrator:
         skipped.extend(scratch)
         skipped.extend(mine)
 
+        # A search that could not run is not a search that found nothing. With the
+        # Tavily plan used up (HTTP 432 on every query), a true tweet about the Rs 2000
+        # notes read "We searched official sources and reliable news outlets and found
+        # nothing reporting this... treat it as likely false" - not one page had been
+        # searched.
+        search_names = {getattr(r, "name", type(r).__name__) for r in fallback}
+        search_failed = searched and any(
+            gap.check in search_names and "deadline" not in gap.reason for gap in mine
+        )
         if fallback and not searched and not allow_fallback:
             search = "not_searched"
         elif any("deadline" in gap.reason for gap in mine):
             search = "timed_out"
+        elif search_failed:
+            search = "unavailable"
         else:
             search = "searched"
 
