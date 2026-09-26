@@ -347,6 +347,25 @@ class ReceiptReader:
             evidence_count=len(evidence),
         )
 
+        return self._payload(receipt, outcome)
+
+    async def for_case(self, case_id: UUID) -> dict[str, Any] | None:
+        """The case's latest receipt, checked now. `None` if none was issued.
+
+        What a result carries inline (contract 1.3), so the app shows the seal
+        without asking for the receipt separately. Checked on every read, as
+        `verify` is, for the same reason.
+        """
+        from app.db.repositories import ReceiptRepository
+
+        async with self._database.connection() as conn:
+            row = await ReceiptRepository(conn).latest_for_case(case_id)
+        if row is None:
+            return None
+        return await self.verify(str(row["id"]))
+
+    @staticmethod
+    def _payload(receipt: Receipt, outcome: Verification) -> dict[str, Any]:
         return {
             "receipt_id": receipt.id,
             "case_id": str(receipt.case_id),

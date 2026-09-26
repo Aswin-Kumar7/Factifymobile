@@ -36,6 +36,7 @@ from app.domain.enums import (
     Severity,
     SourceRisk,
     SyntheticSignal,
+    Technique,
     Tier,
     Verdict,
 )
@@ -43,7 +44,11 @@ from app.domain.enums import (
 # 1.1 adds verdict, confidence, summary, per-claim confidence and explanation, and
 # per-source credibility. Additive: every 1.0 field is still present and unchanged.
 # 1.2 adds `image_reading`: what was read from an uploaded picture. Additive too.
-CONTRACT_VERSION = "1.2"
+# 1.3 adds, per claim, `input_anchor` (where the claim sits in the submitted text) and
+# `technique` (how a false or misleading claim misleads), and on the result an inline
+# `receipt`, so the seal shows without a second call. Additive: a 1.2 client ignores
+# all three. See docs/contract-changelog.md.
+CONTRACT_VERSION = "1.3"
 
 
 # ------------------------------------------------------------------------ requests
@@ -223,6 +228,13 @@ class ClaimResponse(BaseModel):
     # cases stored before this was recorded.
     search: str | None = None
     sources_looked_at: int | None = None
+    # Where the claim sits in what was submitted, so the app underlines the words
+    # themselves. Offsets are into the submitted text for text; for a link or a file,
+    # into the text read from it. None when the claim was not located (1.3).
+    input_anchor: InputAnchorResponse | None = None
+    # How a false or misleading claim misleads, for the lesson the app shows beside it.
+    # Only ever on a CONTRADICTED or MISLEADING_CONTEXT claim (1.3).
+    technique: Technique | None = None
 
     @model_validator(mode="after")
     def _decisive_status_carries_citations(self) -> Self:
@@ -230,6 +242,20 @@ class ClaimResponse(BaseModel):
             raise ValueError(
                 f"claim {self.id} reports {self.status} with no evidence; a decisive "
                 "status without a citation is the one thing this API must never emit"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _technique_only_on_a_refuted_claim(self) -> Self:
+        # A technique describes how something misleads. Named on a supported or
+        # unconfirmed claim it would call a true or undecided claim a manipulation.
+        if self.technique is not None and self.status not in (
+            ClaimStatus.CONTRADICTED,
+            ClaimStatus.MISLEADING_CONTEXT,
+        ):
+            raise ValueError(
+                f"claim {self.id} is {self.status}; a technique is named only for a "
+                "contradicted or misleading claim"
             )
         return self
 
@@ -287,6 +313,20 @@ class ImageReadingResponse(BaseModel):
     language: str | None = None
 
 
+class ReceiptSummaryResponse(BaseModel):
+    """The receipt behind a result, checked when the result was sent (1.3).
+
+    Enough for the seal: the id, whether it verified against the evidence stored now,
+    and when it was issued. `/v1/receipts/{id}` still gives the whole receipt.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    receipt_id: str
+    verified: bool
+    issued_at: datetime
+
+
 class VerifyResponse(BaseModel):
     """The full result.
 
@@ -323,6 +363,8 @@ class VerifyResponse(BaseModel):
     image_reading: ImageReadingResponse | None = None
 
     receipt_url: str | None = None
+    # The receipt itself, checked as the result was sent. None when none was issued.
+    receipt: ReceiptSummaryResponse | None = None
     retrieved_at: datetime
     from_cache: bool = False
     elapsed_ms: int = 0
@@ -427,6 +469,27 @@ def evidence_to_response(item: Any) -> EvidenceResponse:
         observed_at=item.observed_at,
         credibility=(item.credibility.value if getattr(item, "credibility", None) else None),
     )
+
+
+def claim_anchor_response(anchor: Any) -> InputAnchorResponse | None:
+    """Where a claim sits in the submission, or None when it was never located.
+
+    Takes a domain `ClaimAnchor` or a stored `claim_anchor` row. An anchor that only
+    names a paragraph gives the app nothing to underline, so it is not sent.
+    """
+
+    def read(name: str) -> Any:
+        return anchor.get(name) if isinstance(anchor, dict) else getattr(anchor, name, None)
+
+    located = InputAnchorResponse(
+        char_start=read("char_start"),
+        char_end=read("char_end"),
+        page_number=read("page_number"),
+        frame_start_ms=read("frame_start_ms"),
+    )
+    if located == InputAnchorResponse():
+        return None
+    return located
 
 
 def advisory_to_response(item: Any) -> AdvisoryResponse:

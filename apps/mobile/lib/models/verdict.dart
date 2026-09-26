@@ -1,4 +1,4 @@
-/// Wire models for the Factify contract (M41), contract_version 1.1.
+/// Wire models for the Factify contract (M41), contract_version 1.3 (read back to 1.0).
 ///
 /// Mirrors app/api/schemas.py field for field. Two properties of the server
 /// contract are load-bearing and are preserved deliberately:
@@ -511,6 +511,7 @@ class Verdict {
     required this.elapsedMs,
     this.completenessNote,
     this.receiptUrl,
+    this.receipt,
     this.recurrence,
     this.mediaProvenance,
     this.sourceRisk = 'UNKNOWN',
@@ -544,6 +545,10 @@ class Verdict {
   final int elapsedMs;
   final String? completenessNote;
   final String? receiptUrl;
+
+  /// The receipt, checked by the server as it sent this result (contract 1.3). Null
+  /// from older servers and when no receipt was issued.
+  final ReceiptSummary? receipt;
   final Recurrence? recurrence;
   final MediaProvenance? mediaProvenance;
   final String sourceRisk;
@@ -590,6 +595,7 @@ class Verdict {
     elapsedMs: json['elapsed_ms'] as int? ?? 0,
     completenessNote: json['completeness_note'] as String?,
     receiptUrl: json['receipt_url'] as String?,
+    receipt: ReceiptSummary.tryParse(json['receipt']),
     recurrence: json['recurrence'] == null
         ? null
         : Recurrence.fromJson((json['recurrence'] as Map).cast<String, dynamic>()),
@@ -633,6 +639,28 @@ class Verdict {
   /// The news search could not be reached for some claim, so the answer rests on
   /// less than a check normally reads.
   bool get searchUnavailable => claims.any((c) => c.search == 'unavailable');
+}
+
+/// The receipt a result carries inline (contract 1.3): enough for the seal.
+class ReceiptSummary {
+  const ReceiptSummary({required this.receiptId, required this.verified, this.issuedAt});
+
+  final String receiptId;
+
+  /// Whether it verified against the stored evidence when the result was sent.
+  final bool verified;
+  final DateTime? issuedAt;
+
+  static ReceiptSummary? tryParse(Object? json) {
+    if (json is! Map) return null;
+    final id = json['receipt_id'];
+    if (id is! String || id.isEmpty) return null;
+    return ReceiptSummary(
+      receiptId: id,
+      verified: json['verified'] == true,
+      issuedAt: DateTime.tryParse(json['issued_at'] as String? ?? ''),
+    );
+  }
 }
 
 /// A tamper-evident receipt for a verdict, and the result of checking it (M42).

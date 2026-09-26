@@ -31,13 +31,14 @@ from app.db.repositories import (
     SourceRepository,
     VerdictRepository,
 )
-from app.domain.enums import Action, ClaimStatus, Importance
+from app.domain.enums import Action, ClaimStatus, ClaimType, Direction, EvidenceKind, Importance
 from app.domain.evidence import Evidence
 from app.observability.logging import event
 from app.orchestration.pipeline import ClaimOutcome, VerificationResult
 from app.orchestration.receipt import ReceiptSigner, evidence_from_rows
 from app.orchestration.summary import case_summary
 from app.verdict.engine import case_confidence, verdict_for
+from app.verdict.technique import technique_for
 
 logger = logging.getLogger("factify.ledger")
 
@@ -269,6 +270,7 @@ class CaseReader:
             SourceAnchorResponse,
             StrengthResponse,
             VerifyResponse,
+            claim_anchor_response,
         )
 
         async with self._database.connection() as conn:
@@ -296,6 +298,7 @@ class CaseReader:
                 strength = row_verdict["strength_json"] or {}
 
                 evidence_rows = await EvidenceRepository(conn).for_claim(claim_id)
+                anchors = await ClaimRepository(conn).anchors(claim_id)
                 claims.append(
                     ClaimResponse(
                         id=str(claim_id),
@@ -374,6 +377,17 @@ class CaseReader:
                         explanation=strength.get("explanation"),
                         search=strength.get("search"),
                         sources_looked_at=strength.get("looked_at"),
+                        input_anchor=claim_anchor_response(anchors[0]) if anchors else None,
+                        # Named from what is stored, by the same rule as a fresh
+                        # result: a label on the decision, not a re-decision.
+                        technique=technique_for(
+                            ClaimStatus(str(row_verdict["status"])),
+                            ClaimType(str(row["claim_type"])),
+                            (
+                                (EvidenceKind(str(e["kind"])), Direction(str(e["direction"])))
+                                for e in evidence_rows
+                            ),
+                        ),
                     )
                 )
 

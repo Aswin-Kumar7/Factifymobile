@@ -33,6 +33,7 @@ from app.api.schemas import (
     EvidenceResponse,
     ImageReadingResponse,
     ReceiptResponse,
+    ReceiptSummaryResponse,
     ReviewItemResponse,
     ReviewLabelRequest,
     SkippedCheckResponse,
@@ -40,6 +41,7 @@ from app.api.schemas import (
     VerifyRequest,
     VerifyResponse,
     advisory_to_response,
+    claim_anchor_response,
     evidence_to_response,
 )
 from app.domain.claim import Claim
@@ -68,6 +70,7 @@ from app.orchestration.summary import case_summary
 from app.security.fetcher import FetchResult
 from app.sources.base import DEEP, current_depth
 from app.sources.verification import page_key
+from app.verdict.technique import technique_for
 
 logger = logging.getLogger("factify.api.verify")
 
@@ -361,6 +364,36 @@ async def cached_full_response(
     )
 
 
+async def with_receipt(request: Request, response: VerifyResponse) -> VerifyResponse:
+    """The result with its receipt inline, checked now (contract 1.3).
+
+    The app showed the seal only after a second call for the receipt; carrying it here
+    saves that call. A receipt that cannot be read leaves the result as it is: the
+    receipt attests to the answer, and failing to attach it is no reason to hold the
+    answer back.
+    """
+    receipts = getattr(request.app.state, "receipt_reader", None)
+    if receipts is None or response.receipt is not None:
+        return response
+    try:
+        payload = await receipts.for_case(UUID(response.case_id))
+    except Exception:
+        logger.exception("receipt could not be read; the result is sent without it")
+        return response
+    if payload is None:
+        return response
+    return response.model_copy(
+        update={
+            "receipt": ReceiptSummaryResponse(
+                receipt_id=payload["receipt_id"],
+                verified=payload["verified"],
+                issued_at=payload["issued_at"],
+            ),
+            "receipt_url": response.receipt_url or f"/v1/receipts/{payload['receipt_id']}",
+        }
+    )
+
+
 def to_response(result: VerificationResult, *, receipt_url: str | None = None) -> VerifyResponse:
     """Project a pipeline result onto the wire contract.
 
@@ -401,6 +434,12 @@ def to_response(result: VerificationResult, *, receipt_url: str | None = None) -
             explanation=outcome.explanation,
             search=outcome.search,
             sources_looked_at=outcome.looked_at,
+            input_anchor=claim_anchor_response(outcome.claim.anchor),
+            technique=technique_for(
+                outcome.decision.status,
+                outcome.claim.claim_type,
+                ((item.kind, item.direction) for item in outcome.evidence),
+            ),
         )
         for outcome in result.claims
     )
@@ -464,7 +503,7 @@ async def verify(payload: VerifyRequest, request: Request) -> VerifyResponse | J
     if deep:
         return _start_deep(payload, request, user, cost)
 
-    response = await _checked(payload, request, arrived)
+    response = await with_receipt(request, await _checked(payload, request, arrived))
     await charge(request, user, cost, deep=deep)
     return response
 
@@ -483,7 +522,10 @@ def _start_deep(payload: VerifyRequest, request: Request, user: Any, cost: int) 
         depth = current_depth.set(DEEP)
         watching = claim_progress.set(progress)
         try:
-            response = await _checked(payload, request, time.perf_counter(), case_id=case_id)
+            response = await with_receipt(
+                request,
+                await _checked(payload, request, time.perf_counter(), case_id=case_id),
+            )
         finally:
             claim_progress.reset(watching)
             current_depth.reset(depth)
@@ -649,7 +691,7 @@ async def get_case(case_id: UUID, request: Request) -> VerifyResponse | JSONResp
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="the stored case could not be read in the current contract",
         )
-    return stored
+    return await with_receipt(request, stored)
 
 
 @router.post(
@@ -680,6 +722,8 @@ async def verify_file(
     await require_credit(request, user, cost)
 
     response = await _checked_file(request, file, consent_to_process_media, recheck)
+    if isinstance(response, VerifyResponse):
+        response = await with_receipt(request, response)
     await charge(request, user, cost, deep=False)
     return response
 

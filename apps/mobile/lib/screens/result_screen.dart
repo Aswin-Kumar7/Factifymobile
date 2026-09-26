@@ -35,6 +35,7 @@ class ResultScreen extends StatefulWidget {
     SubmissionKind? kind,
     String? summary,
     Uint8List? thumbnail,
+    this.justChecked = false,
     super.key,
   }) : submission = submission,
        kind = kind ?? submission?.kind ?? SubmissionKind.text,
@@ -50,6 +51,11 @@ class ResultScreen extends StatefulWidget {
   final SubmissionKind kind;
   final String summary;
   final Uint8List? thumbnail;
+
+  /// The verdict arrived just now, so the receipt it carries was checked just now.
+  /// A result reopened from History checks its receipt again: the seal says the
+  /// evidence is unchanged, and that is only true of the moment it was looked at.
+  final bool justChecked;
 
   @override
   State<ResultScreen> createState() => _ResultScreenState();
@@ -74,8 +80,12 @@ class _ResultScreenState extends State<ResultScreen> {
     super.initState();
     // A pulse as the verdict appears (v5 accessibility): felt, not only seen.
     WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(HapticFeedback.mediumImpact()));
+    final inline = _verdict.receipt;
     final receiptUrl = _verdict.receiptUrl;
-    if (receiptUrl != null) {
+    if (widget.justChecked && inline != null) {
+      _receipt = inline.verified ? ReceiptState.verified : ReceiptState.failed;
+      _receiptId = shortReceiptId(inline.receiptId);
+    } else if (receiptUrl != null) {
       _receipt = ReceiptState.checking;
       unawaited(_checkReceipt(receiptUrl));
     }

@@ -47,8 +47,18 @@ List<ClaimSpan> locateClaims(String text, List<Claim> claims, {bool useAnchors =
   if (start == null || end == null || start < 0 || end > text.length || start >= end) {
     return null;
   }
+  // Offsets into some other text - an older server's, or a copy tidied since - land
+  // on words the claim does not contain. Those are not underlined.
+  final claimWords = _words(claim.text);
+  if (!_words(text.substring(start, end)).any(claimWords.contains)) return null;
   return (start, end);
 }
+
+// Letters with their combining marks, so a Hindi word is not cut at each vowel sign.
+final _word = RegExp(r'[\p{L}\p{M}\p{N}]{3,}', unicode: true);
+
+Set<String> _words(String value) =>
+    _word.allMatches(value.toLowerCase()).map((m) => m.group(0)!).toSet();
 
 String _plain(String value) =>
     value.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').replaceAll(RegExp(r'[.!?।]+$'), '').trim();

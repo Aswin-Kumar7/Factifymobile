@@ -72,6 +72,32 @@ def fold(text: str) -> str:
     return " ".join(text.lower().translate(_TYPOGRAPHY).split())
 
 
+def fold_with_positions(text: str) -> tuple[str, list[int]]:
+    """`fold(text)`, and for each of its characters the index it came from in `text`.
+
+    Folding flattens whitespace, so a position found in folded text is not a position
+    in the original once a line break or a double space has passed. The positions
+    carry a match back to the characters the person actually sent - which is what a
+    claim's location in their message has to point at.
+    """
+    chars: list[str] = []
+    origin: list[int] = []
+    pending_space = False
+    for index, raw in enumerate(text):
+        folded = raw.lower().translate(_TYPOGRAPHY)
+        for ch in folded:
+            if ch.isspace():
+                pending_space = bool(chars)
+                continue
+            if pending_space:
+                chars.append(" ")
+                origin.append(index)
+                pending_space = False
+            chars.append(ch)
+            origin.append(index)
+    return "".join(chars), origin
+
+
 def unquoted(folded: str) -> str:
     """Folded text without quotation or blockquote marks, whitespace flattened again.
 

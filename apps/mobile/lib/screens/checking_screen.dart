@@ -108,8 +108,12 @@ class _CheckingScreenState extends State<CheckingScreen> {
         Navigator.of(context).pushReplacement(
           PageRouteBuilder<void>(
             transitionDuration: const Duration(milliseconds: 350),
-            pageBuilder: (_, _, _) =>
-                ResultScreen(services: _services, verdict: verdict, submission: widget.submission),
+            pageBuilder: (_, _, _) => ResultScreen(
+              services: _services,
+              verdict: verdict,
+              submission: widget.submission,
+              justChecked: true,
+            ),
             transitionsBuilder: (_, animation, _, child) => FadeTransition(
               opacity: animation,
               child: SlideTransition(

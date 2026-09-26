@@ -62,21 +62,27 @@ Map<String, dynamic> _claim(
   ],
 };
 
-Verdict _verdict(String action, List<Map<String, dynamic>> claims, {int? confidence}) =>
-    Verdict.fromJson({
-      'case_id': 'case-1',
-      'contract_version': '1.3',
-      'action': action,
-      'action_reason': 'r',
-      'rule_version': 'v',
-      'claims': claims,
-      'advisories': <Object>[],
-      'skipped': <Object>[],
-      'retrieved_at': '2026-09-26T10:42:00Z',
-      'from_cache': false,
-      'elapsed_ms': 10,
-      'confidence': ?confidence,
-    });
+Verdict _verdict(
+  String action,
+  List<Map<String, dynamic>> claims, {
+  int? confidence,
+  Map<String, dynamic>? receipt,
+}) => Verdict.fromJson({
+  'case_id': 'case-1',
+  'contract_version': '1.3',
+  'action': action,
+  'action_reason': 'r',
+  'rule_version': 'v',
+  'claims': claims,
+  'advisories': <Object>[],
+  'skipped': <Object>[],
+  'retrieved_at': '2026-09-26T10:42:00Z',
+  'from_cache': false,
+  'elapsed_ms': 10,
+  'confidence': ?confidence,
+  'receipt_url': ?(receipt == null ? null : '/v1/receipts/${receipt['receipt_id']}'),
+  'receipt': ?receipt,
+});
 
 Future<void> _show(WidgetTester tester, Widget child) async {
   tester.view.physicalSize = const Size(1080, 2340);
@@ -109,12 +115,32 @@ void main() {
         'Govt to pay Rs 5,000 a month to every woman from 1 July. Register now at the link.';
 
     test("the server's anchor wins", () {
+      // Worded too differently for the app to find on its own.
       final verdict = _verdict('DO_NOT_SHARE', [
-        _claim('Something worded differently', anchor: {'char_start': 0, 'char_end': 42}),
+        _claim(
+          'The government will pay Rs 5,000 monthly to every woman',
+          anchor: {'char_start': 0, 'char_end': 43},
+        ),
       ]);
       final spans = locateClaims(text, verdict.claims);
-      expect(spans.single.start, 0);
-      expect(spans.single.end, 42);
+      expect(text.substring(spans.single.start, spans.single.end), startsWith('Govt to pay'));
+      expect(spans.single.end, 43);
+    });
+
+    test("an anchor that lands on none of the claim's words is not used", () {
+      final verdict = _verdict('DO_NOT_SHARE', [
+        _claim('Register now at the link.', anchor: {'char_start': 0, 'char_end': 20}),
+      ]);
+      final span = locateClaims(text, verdict.claims).single;
+      expect(text.substring(span.start, span.end), 'Register now at the link');
+    });
+
+    test('a Hindi anchor is checked word by word, vowel signs and all', () {
+      const hindi = 'सरकार हर महिला को पाँच हज़ार रुपये देगी। अभी पंजीकरण करें।';
+      final verdict = _verdict('DO_NOT_SHARE', [
+        _claim('सरकार महिलाओं को पैसे देगी', anchor: {'char_start': 0, 'char_end': 39}),
+      ]);
+      expect(locateClaims(hindi, verdict.claims).single.end, 39);
     });
 
     test('without one, the claim is found word for word, or by its longest run', () {
@@ -164,6 +190,67 @@ void main() {
     expect(find.text('Why unconfirmed?'), findsOneWidget);
     expect(find.textContaining('%'), findsNothing);
     expect(find.textContaining('not the same as false'), findsOneWidget);
+  });
+
+  group('the receipt', () {
+    const receipt = {
+      'receipt_id': 'rcpt_44e09b1f',
+      'verified': true,
+      'issued_at': '2026-09-27T10:00:00Z',
+    };
+
+    testWidgets('a fresh result shows the receipt it carries, with no second call', (tester) async {
+      await _show(
+        tester,
+        ResultScreen(
+          services: _services(),
+          verdict: _verdict(
+            'DO_NOT_SHARE',
+            [_claim('A claim.', confidence: 90)],
+            confidence: 90,
+            receipt: receipt,
+          ),
+          submission: Submission.text('A claim.'),
+          justChecked: true,
+        ),
+      );
+      await tester.scrollUntilVisible(
+        find.text('Receipt verified'),
+        300,
+        scrollable: find
+            .byWidgetPredicate((w) => w is Scrollable && w.axisDirection == AxisDirection.down)
+            .first,
+      );
+
+      expect(find.text('Receipt verified'), findsOneWidget);
+      expect(find.textContaining('44E0-9B1'), findsOneWidget);
+      expect(find.text('Checking the receipt'), findsNothing);
+    });
+
+    testWidgets('a result reopened later checks its receipt again', (tester) async {
+      await _show(
+        tester,
+        ResultScreen(
+          services: _services(),
+          verdict: _verdict(
+            'DO_NOT_SHARE',
+            [_claim('A claim.', confidence: 90)],
+            confidence: 90,
+            receipt: receipt,
+          ),
+          submission: Submission.text('A claim.'),
+        ),
+      );
+
+      // Asked of the server again, which the test host cannot reach: no seal is
+      // claimed from the stored copy.
+      expect(find.text('Receipt verified'), findsNothing);
+    });
+
+    test('an older server without the field reads as no inline receipt', () {
+      expect(_verdict('DO_NOT_SHARE', [_claim('A claim.')]).receipt, isNull);
+      expect(ReceiptSummary.tryParse({'verified': true}), isNull);
+    });
   });
 
   group('the bottom bar offers one thing to do next', () {

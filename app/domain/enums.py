@@ -36,6 +36,20 @@ _DECISIVE_STATUSES = frozenset(
 )
 
 
+class Technique(StrEnum):
+    """How a false or misleading claim misleads — the lesson shown beside it.
+
+    A label derived from what was already decided (`app.verdict.technique`), never an
+    input to the decision.
+    """
+
+    RECYCLED_MEDIA = "RECYCLED_MEDIA"
+    MISSING_CONTEXT = "MISSING_CONTEXT"
+    MISATTRIBUTED_QUOTE = "MISATTRIBUTED_QUOTE"
+    TWISTED_NUMBER = "TWISTED_NUMBER"
+    WRONG_IDENTITY = "WRONG_IDENTITY"
+
+
 class MediaProvenance(StrEnum):
     """What is known about a media object's origin — not whether a claim is true."""
 

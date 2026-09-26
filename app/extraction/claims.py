@@ -23,7 +23,7 @@ from typing import Any, Protocol
 from app.cache.service import CacheService
 from app.domain.claim import Claim, ClaimAnchor
 from app.domain.enums import Importance
-from app.domain.typography import fold
+from app.domain.typography import fold, fold_with_positions
 from app.extraction.llm import EXTRACTOR_VERSION, ExtractionOutcome, ProposedClaim
 from app.observability.logging import event
 
@@ -75,14 +75,26 @@ def _normalise(text: str) -> str:
 
 
 def _locate(claim_text: str, source: str) -> tuple[int, int] | None:
-    """Find the claim in the source, returning character offsets.
+    """Find the claim in the source, returning character offsets in `source` itself.
 
     Exact match first, then a longest-run fallback for the common case where the
     model tidied punctuation. If neither finds it, the claim does not correspond to
     the document and is not stored.
+
+    The search runs in folded text, whose whitespace is flattened; the offsets are
+    carried back to the source's own characters, so a claim's location points at
+    what the person sent - the app underlines it there - not at a tidied copy.
     """
-    haystack = _normalise(source)
-    needle = _normalise(claim_text)
+    haystack, origin = fold_with_positions(source)
+    found = _locate_folded(_normalise(claim_text), haystack)
+    if found is None:
+        return None
+    start, end = found
+    return origin[start], origin[end - 1] + 1
+
+
+def _locate_folded(needle: str, haystack: str) -> tuple[int, int] | None:
+    """The claim's offsets in the folded source, or None."""
 
     if not needle:
         return None
