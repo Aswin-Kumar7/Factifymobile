@@ -45,6 +45,31 @@ current_check: ContextVar[str] = ContextVar("current_check", default="")
 
 
 @dataclass(frozen=True, slots=True)
+class SearchDepth:
+    """How hard one check looks: the normal check, or the deep one a person asked for.
+
+    Set for the length of a check like `current_check`, and read where each limit
+    applies — the orchestrator for claims and time, the web-search resolver for
+    queries and pages — so a deep check changes how much is done, never how it is
+    judged.
+    """
+
+    name: str
+    claims: int  # claims searched on the open web
+    queries: int  # search queries per claim
+    pages: int  # pages read per claim
+    seconds: float  # the check's time budget
+
+
+NORMAL = SearchDepth("normal", claims=5, queries=4, pages=6, seconds=55.0)
+# About two and a half times the searching of a normal check, for three credits; long
+# enough that it runs in the background while the app shows its progress.
+DEEP = SearchDepth("deep", claims=10, queries=5, pages=10, seconds=180.0)
+
+current_depth: ContextVar[SearchDepth] = ContextVar("current_depth", default=NORMAL)
+
+
+@dataclass(frozen=True, slots=True)
 class SourceCandidate:
     """Something that might answer a claim. Not yet fetched, not yet evidence."""
 

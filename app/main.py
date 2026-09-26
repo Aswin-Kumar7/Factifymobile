@@ -18,6 +18,7 @@ from app import __version__
 from app.api import accounts, health, verify
 from app.config import Settings, get_settings
 from app.observability import RequestContextMiddleware, configure
+from app.orchestration.deep import DeepChecks
 
 logger = logging.getLogger("factify.main")
 
@@ -88,6 +89,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     app.state.settings = settings
+    # Deep checks run in the background; the app polls them by case id.
+    app.state.deep_checks = DeepChecks()
 
     # Outermost: every log line and every response — including error responses —
     # carries the request identifier.

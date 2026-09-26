@@ -25,12 +25,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Callable
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Protocol
 from uuid import UUID
 
-from app.cache.keys import CacheKeyParts
+from app.cache.keys import DEFAULT_POLICY_PROFILE, CacheKeyParts
 from app.cache.service import CachedVerdict
 from app.domain.claim import Claim
 from app.domain.enums import Action, ClaimStatus, Direction, Importance, SourceRisk
@@ -38,7 +40,14 @@ from app.domain.evidence import Advisory, Evidence
 from app.governor.governor import ProviderUnavailable, Skip
 from app.intake.normalizer import NormalisedIntake
 from app.observability.logging import event
-from app.sources.base import SourceCandidate, SourceResolver, build_evidence, current_check
+from app.sources.base import (
+    NORMAL,
+    SourceCandidate,
+    SourceResolver,
+    build_evidence,
+    current_check,
+    current_depth,
+)
 from app.sources.corpus import CorroborationSignal
 from app.sources.reasoning import REASONER_VERSION
 from app.sources.verification import SourceVerification, dedupe, page_key
@@ -168,6 +177,12 @@ class SkippedCheck:
 
     def describe(self) -> str:
         return f"{self.check} was not checked: {self.reason}"
+
+
+# Called as each claim finishes (done, total), for a check someone is watching.
+claim_progress: ContextVar[Callable[[int, int], None] | None] = ContextVar(
+    "claim_progress", default=None
+)
 
 
 @dataclass(slots=True)
@@ -318,6 +333,13 @@ class Orchestrator:
             # the canonicalised address, so two people sharing the same article with
             # different tracking parameters hit one entry instead of two.
             content_hash=intake.cache_identity,
+            # A deep check is stored apart: a normal answer must never be served to
+            # someone who asked (and paid) for a deep one, nor the reverse.
+            policy_profile=(
+                DEFAULT_POLICY_PROFILE
+                if current_depth.get() is NORMAL
+                else current_depth.get().name
+            ),
             rule_version=RULE_VERSION,
             extractor_version=self._extractor_version,
             language=intake.language.language.value,
@@ -407,7 +429,9 @@ class Orchestrator:
         # source with a model measures 31 seconds; word overlap measures
         # milliseconds. One deadline for both would either cut every reasoned answer
         # off mid-call or let every lexical one dawdle.
-        deadline = started + (REASONING_TARGET_SECONDS if self._reads_sources else TARGET_SECONDS)
+        depth = current_depth.get()
+        reading = REASONING_TARGET_SECONDS if depth is NORMAL else depth.seconds
+        deadline = started + (reading if self._reads_sources else TARGET_SECONDS)
 
         check = current_check.set(str(case_id))
         try:
@@ -582,19 +606,32 @@ class Orchestrator:
             range(len(claims)),
             key=lambda index: _IMPORTANCE_ORDER.get(claims[index].importance, unranked),
         )
-        may_fall_back = set(ranked[:MAX_FALLBACK_CLAIMS])
+        depth = current_depth.get()
+        cap = MAX_FALLBACK_CLAIMS if depth is NORMAL else depth.claims
+        may_fall_back = set(ranked[:cap])
+
+        # Progress, for a check someone is watching: one tick per finished claim.
+        report = claim_progress.get()
+        finished = 0
+        if report is not None:
+            report(0, len(claims))
+
+        async def _counted(index: int, claim: Claim) -> ClaimOutcome:
+            nonlocal finished
+            outcome = await self._resolve_claim(
+                claim,
+                skipped=skipped,
+                deadline=deadline,
+                allow_fallback=index in may_fall_back,
+                own_pages=own_pages,
+            )
+            finished += 1
+            if report is not None:
+                report(finished, len(claims))
+            return outcome
 
         results = await asyncio.gather(
-            *(
-                self._resolve_claim(
-                    claim,
-                    skipped=skipped,
-                    deadline=deadline,
-                    allow_fallback=index in may_fall_back,
-                    own_pages=own_pages,
-                )
-                for index, claim in enumerate(claims)
-            )
+            *(_counted(index, claim) for index, claim in enumerate(claims))
         )
         return list(results)
 

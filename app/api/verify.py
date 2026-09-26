@@ -54,10 +54,12 @@ from app.intake.normalizer import (
 )
 from app.knowledge.registry import authenticate_trigger
 from app.observability.logging import event
-from app.orchestration.pipeline import SkippedCheck, VerificationResult
+from app.orchestration.deep import DeepChecks
+from app.orchestration.pipeline import SkippedCheck, VerificationResult, claim_progress
 from app.orchestration.review import HumanLabel
 from app.orchestration.summary import case_summary
 from app.security.fetcher import FetchResult
+from app.sources.base import DEEP, current_depth
 from app.sources.verification import page_key
 
 logger = logging.getLogger("factify.api.verify")
@@ -428,7 +430,7 @@ def to_response(result: VerificationResult, *, receipt_url: str | None = None) -
     response_model=VerifyResponse,
     summary="Verify a URL or a block of text",
 )
-async def verify(payload: VerifyRequest, request: Request) -> VerifyResponse:
+async def verify(payload: VerifyRequest, request: Request) -> VerifyResponse | JSONResponse:
     """Run one synchronous verification.
 
     Targets 3-8 seconds. Video does not come through here — it cannot finish inside
@@ -448,16 +450,53 @@ async def verify(payload: VerifyRequest, request: Request) -> VerifyResponse:
 
     # Who is asking, and whether they may: decided here, from the credit ledger.
     user = await signed_in(request)
-    deep = False
+    deep = payload.mode == "deep"
     cost = check_cost(request, deep=deep)
     await require_credit(request, user, cost)
+
+    if deep:
+        return _start_deep(payload, request, user, cost)
 
     response = await _checked(payload, request, arrived)
     await charge(request, user, cost, deep=deep)
     return response
 
 
-async def _checked(payload: VerifyRequest, request: Request, arrived: float) -> VerifyResponse:
+def _start_deep(payload: VerifyRequest, request: Request, user: Any, cost: int) -> JSONResponse:
+    """Start a deep check in the background and answer with its case id at once.
+
+    The same check as a normal one, run with the deep profile (`DEEP`): more claims,
+    queries and pages, and three minutes instead of fifty-five seconds. Charged only
+    when it finishes with an answer.
+    """
+    runs: DeepChecks = request.app.state.deep_checks
+    case_id = uuid4()
+
+    async def work(progress: Any) -> VerifyResponse:
+        depth = current_depth.set(DEEP)
+        watching = claim_progress.set(progress)
+        try:
+            response = await _checked(payload, request, time.perf_counter(), case_id=case_id)
+        finally:
+            claim_progress.reset(watching)
+            current_depth.reset(depth)
+        await charge(request, user, cost, deep=True)
+        return response
+
+    runs.start(str(case_id), work)
+    accepted = AcceptedResponse(
+        case_id=str(case_id),
+        poll_url=f"/v1/cases/{case_id}",
+        estimated_seconds=int(DEEP.seconds * 2 / 3),
+    )
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED, content=accepted.model_dump(mode="json")
+    )
+
+
+async def _checked(
+    payload: VerifyRequest, request: Request, arrived: float, *, case_id: UUID | None = None
+) -> VerifyResponse:
     """The check itself; `verify` above decides who may run it and records the cost."""
     orchestrator = get_orchestrator(request)
 
@@ -472,7 +511,7 @@ async def _checked(payload: VerifyRequest, request: Request, arrived: float) -> 
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(rejected)
         ) from rejected
 
-    case_id = uuid4()
+    case_id = case_id or uuid4()
 
     # A repeat is answered before anything is spent on it. Extraction is a metered
     # model call — and for a link, a page fetch as well — and it used to run first,
@@ -569,7 +608,28 @@ async def _checked(payload: VerifyRequest, request: Request, arrived: float) -> 
     response_model=VerifyResponse,
     summary="Retrieve a previously computed case",
 )
-async def get_case(case_id: UUID, request: Request) -> VerifyResponse:
+async def get_case(case_id: UUID, request: Request) -> VerifyResponse | JSONResponse:
+    # A deep check still running answers with its progress, and a finished one with
+    # its result, before the ledger is asked: a deep check that was served from the
+    # cache is stored under the original case, not this one.
+    runs: DeepChecks | None = getattr(request.app.state, "deep_checks", None)
+    run = runs.get(str(case_id)) if runs is not None else None
+    if run is not None and runs is not None:
+        if run.status == "running":
+            return JSONResponse(
+                status_code=status.HTTP_202_ACCEPTED,
+                content={
+                    "case_id": str(case_id),
+                    "status": "processing",
+                    "claims_done": run.claims_done,
+                    "claims_total": run.claims_total,
+                    "elapsed_seconds": runs.elapsed(run),
+                },
+            )
+        if run.status == "failed":
+            return JSONResponse(status_code=run.error_status, content={"detail": run.error_detail})
+        return run.response  # type: ignore[no-any-return]
+
     cases = getattr(request.app.state, "case_reader", None)
     if cases is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="unavailable")

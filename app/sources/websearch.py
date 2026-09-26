@@ -42,10 +42,12 @@ from app.governor.governor import ProviderUnavailable, Skip, SkipReason
 from app.observability.logging import event
 from app.security.fetcher import FetchResult, SecureFetcher
 from app.sources.base import (
+    NORMAL,
     SourceCandidate,
     SourceRelation,
     SourceSnapshot,
     current_check,
+    current_depth,
     insufficient,
     locate_excerpt,
 )
@@ -278,6 +280,10 @@ class WebSearchResolver:
             # and those need opposite responses.
             dropped_hosts=sorted(set(dropped_hosts)),
         )
+        # A deep check reads further down the list; a normal one keeps its own limit.
+        depth = current_depth.get()
+        limit = self._max_results if depth is NORMAL else depth.pages
+
         # Which pages get the read slots. Search rank alone gave them to whatever the
         # provider ranked first: on "CJP threatens 'Jantar Mantar 2.0' if CEC Gyanesh
         # Kumar does not resign" — a story PTI, The Hindu and the Times of India all
@@ -287,7 +293,7 @@ class WebSearchResolver:
         # first; search order is kept within each group, and the rest still fill any
         # slot left over.
         shortlist.sort(key=lambda c: 0 if self._credibility.is_prominent(c.url) else 1)
-        return shortlist[: self._max_results]
+        return shortlist[:limit]
 
     async def snapshot(self, candidate: SourceCandidate) -> SourceSnapshot | None:
         """Read the page — ours first, the vendor's second, the snippet last.
@@ -617,6 +623,9 @@ class WebSearchResolver:
 
         claim_text = _comparable(claim.text)
 
+        depth = current_depth.get()
+        max_queries = _MAX_QUERIES if depth is NORMAL else depth.queries
+
         queries = [claim.text]
         for raw in claim.search_phrases:
             phrase = " ".join(raw.split())
@@ -627,7 +636,7 @@ class WebSearchResolver:
             if len(phrase) < 8 or _comparable(phrase) == claim_text:
                 continue
             queries.append(phrase)
-            if len(queries) >= _MAX_QUERIES - 1:
+            if len(queries) >= max_queries - 1:
                 break
 
         # Last, and always: a debunk is written about the claim, and says so.
