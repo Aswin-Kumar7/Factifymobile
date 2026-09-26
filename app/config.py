@@ -20,6 +20,7 @@ from __future__ import annotations
 from enum import StrEnum
 from functools import lru_cache
 from typing import Any, Self
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, PostgresDsn, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -143,6 +144,28 @@ class ModelSettings(BaseModel):
     image_embedding: str = ""
 
 
+class AuthSettings(BaseModel):
+    """Sign-in (Supabase Auth) and the per-person credit book.
+
+    `anon_key` is Supabase's public client key: made to ship in apps, so the app is
+    handed it by `/v1/auth/config`. Kept in `.env` all the same, beside the rest of
+    the project's configuration rather than in git. `supabase_url` defaults to the
+    project the database belongs to.
+    """
+
+    model_config = {"frozen": True}
+
+    supabase_url: str | None = None
+    anon_key: SecretStr | None = None
+    # Whether a check needs a signed-in person. Off until the app ships sign-in.
+    required: bool = False
+    signup_credits: int = Field(default=100, ge=0)
+    check_cost: int = Field(default=1, ge=0)
+    deep_check_cost: int = Field(default=3, ge=0)
+    # Off until plans exist: usage is recorded, nothing is refused.
+    enforce_credits: bool = False
+
+
 class LimitSettings(BaseModel):
     """Resource ceilings enforced before any decode or parse (M10)."""
 
@@ -194,6 +217,7 @@ class Settings(BaseSettings):
 
     models: ModelSettings = ModelSettings()
     limits: LimitSettings = LimitSettings()
+    auth: AuthSettings = AuthSettings()
 
     # Optional providers. Every default is off, and no default enables anything
     # metered — an accidental deploy must cost nothing and reach for nothing.
@@ -279,6 +303,23 @@ class Settings(BaseSettings):
                 for name, provider in self.providers.items()
             },
         }
+
+
+def supabase_url_for(settings: Settings) -> str | None:
+    """The Supabase project URL: configured, or read off the database's own address.
+
+    A Supabase pooler connection's user is `postgres.<project-ref>`, and the project
+    answers at `https://<project-ref>.supabase.co`.
+    """
+    if settings.auth.supabase_url:
+        return settings.auth.supabase_url.rstrip("/")
+    if settings.database_url is None:
+        return None
+    parts = urlsplit(str(settings.database_url))
+    user, host = parts.username or "", parts.hostname or ""
+    if host.endswith(".supabase.com") and user.startswith("postgres."):
+        return f"https://{user.split('.', 1)[1]}.supabase.co"
+    return None
 
 
 @lru_cache(maxsize=1)

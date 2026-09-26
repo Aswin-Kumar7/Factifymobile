@@ -26,7 +26,8 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from app.config import Settings
+from app.accounts import CreditBook, SupabaseIdentity
+from app.config import Settings, supabase_url_for
 from app.db.pool import Database
 from app.domain.claim import Claim
 from app.domain.enums import SourceRisk
@@ -38,7 +39,12 @@ from app.extraction.llm import LLMExtractor
 from app.extraction.model_wire import WireFormat
 from app.intake.normalizer import NormalisedIntake
 from app.observability.logging import event
-from app.orchestration.adapters import PoolCacheService, PoolGovernor, PoolReviewQueue
+from app.orchestration.adapters import (
+    PoolAccountStore,
+    PoolCacheService,
+    PoolGovernor,
+    PoolReviewQueue,
+)
 from app.orchestration.ledger import CaseReader, Ledger
 from app.orchestration.media import MediaVerification
 from app.orchestration.pipeline import Orchestrator, SkippedCheck, VerificationResult
@@ -342,8 +348,20 @@ async def build(settings: Settings) -> dict[str, Any]:
         ),
     )
 
+    anon_key = settings.auth.anon_key.get_secret_value() if settings.auth.anon_key else None
+    project = supabase_url_for(settings)
     state: dict[str, Any] = {
         "database": database,
+        # Sign-in is checked with Supabase itself; absent until the project's public
+        # key is configured, and until then every check is anonymous.
+        "identity": (
+            SupabaseIdentity(url=project, anon_key=anon_key) if project and anon_key else None
+        ),
+        "credits": CreditBook(
+            PoolAccountStore(database),
+            signup_credits=settings.auth.signup_credits,
+            enforce=settings.auth.enforce_credits,
+        ),
         "embedder": embedder,
         # Reused to read a submitted link: a URL carries no text of its own, so the
         # verify path fetches the page and runs it through the same web reader (M16)

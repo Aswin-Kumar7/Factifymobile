@@ -24,6 +24,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile, status
 from fastapi.responses import JSONResponse
 
+from app.api.accounts import charge, check_cost, require_credit, signed_in
 from app.api.schemas import (
     AcceptedResponse,
     ClaimResponse,
@@ -444,6 +445,20 @@ async def verify(payload: VerifyRequest, request: Request) -> VerifyResponse:
     # and extracting its claims takes ten to twenty seconds, and starting the clock
     # after that let a four-claim link run to 68 seconds against an app that waits 75.
     arrived = time.perf_counter()
+
+    # Who is asking, and whether they may: decided here, from the credit ledger.
+    user = await signed_in(request)
+    deep = False
+    cost = check_cost(request, deep=deep)
+    await require_credit(request, user, cost)
+
+    response = await _checked(payload, request, arrived)
+    await charge(request, user, cost, deep=deep)
+    return response
+
+
+async def _checked(payload: VerifyRequest, request: Request, arrived: float) -> VerifyResponse:
+    """The check itself; `verify` above decides who may run it and records the cost."""
     orchestrator = get_orchestrator(request)
 
     try:
@@ -593,6 +608,19 @@ async def verify_file(
     the request open would end in a gateway timeout, which tells the client nothing
     it can act on — a case id it can poll does.
     """
+    user = await signed_in(request)
+    cost = check_cost(request, deep=False)
+    await require_credit(request, user, cost)
+
+    response = await _checked_file(request, file, consent_to_process_media, recheck)
+    await charge(request, user, cost, deep=False)
+    return response
+
+
+async def _checked_file(
+    request: Request, file: UploadFile, consent_to_process_media: bool, recheck: bool
+) -> VerifyResponse | JSONResponse:
+    """The upload check itself; `verify_file` above meters it."""
     orchestrator = get_orchestrator(request)
     settings = request.app.state.settings
 

@@ -31,6 +31,7 @@ from app.cache.keys import CacheKeyParts
 from app.cache.service import CachedVerdict, CacheService
 from app.config import ProviderSettings
 from app.db.pool import Database
+from app.db.repositories import AccountRepository
 from app.governor.governor import Governor, ProviderUnavailable, Skip, SkipReason, pace
 from app.security.ratelimit import SlidingWindowLimiter
 
@@ -152,3 +153,34 @@ class PoolReviewQueue:
             return await ReviewRepository(conn).enqueue(
                 case_id=case_id, reason=ReviewReason.USER_REPORTED.value, machine_status=None
             )
+
+
+class PoolAccountStore:
+    """Accounts and the credit ledger, one short-lived connection per operation."""
+
+    def __init__(self, database: Database) -> None:
+        self._database = database
+
+    async def upsert(self, user: Any) -> bool:
+        async with self._database.connection() as conn:
+            return await AccountRepository(conn).upsert(
+                user_id=user.id, email=user.email, name=user.name, avatar_url=user.avatar_url
+            )
+
+    async def record(self, user_id: str, delta: int, reason: str, request_key: str) -> bool:
+        async with self._database.connection() as conn:
+            return await AccountRepository(conn).record(
+                user_id=user_id, delta=delta, reason=reason, request_key=request_key
+            )
+
+    async def totals(self, user_id: str) -> tuple[int, int, int]:
+        async with self._database.connection() as conn:
+            return await AccountRepository(conn).totals(user_id=user_id)
+
+    async def profile(self, user_id: str) -> dict[str, object] | None:
+        async with self._database.connection() as conn:
+            return await AccountRepository(conn).profile(user_id=user_id)
+
+    async def set_name(self, user_id: str, name: str) -> None:
+        async with self._database.connection() as conn:
+            await AccountRepository(conn).set_name(user_id=user_id, name=name)

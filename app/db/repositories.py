@@ -1132,3 +1132,71 @@ class ReceiptRepository(_Repository):
             "SELECT * FROM receipt WHERE case_id = %s ORDER BY issued_at DESC LIMIT 1",
             (case_id,),
         )
+
+
+class AccountRepository(_Repository):
+    """People and their credit ledger (0003_accounts).
+
+    The ledger holds no case ids and no content — only that a charge happened, its
+    size and when. See the migration's header for why.
+    """
+
+    async def upsert(
+        self, *, user_id: str, email: str, name: str | None, avatar_url: str | None
+    ) -> bool:
+        """Create or refresh a person. True when this call created them.
+
+        A name the person set in the app is kept over the one their sign-in provider
+        reports; a new photo from the provider replaces the old one.
+        """
+        row = await self._one(
+            """
+            INSERT INTO app_user (id, email, display_name, avatar_url)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (id) DO UPDATE
+               SET email = EXCLUDED.email,
+                   display_name = COALESCE(app_user.display_name, EXCLUDED.display_name),
+                   avatar_url = COALESCE(EXCLUDED.avatar_url, app_user.avatar_url),
+                   last_seen_at = now()
+            RETURNING (xmax = 0) AS created
+            """,
+            (UUID(user_id), email, name, avatar_url),
+        )
+        return bool(row and row["created"])
+
+    async def record(self, *, user_id: str, delta: int, reason: str, request_key: str) -> bool:
+        """Add one ledger entry. False when this request key was already recorded."""
+        row = await self._one(
+            """
+            INSERT INTO credit_ledger (user_id, delta, reason, request_key)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (user_id, request_key) DO NOTHING
+            RETURNING id
+            """,
+            (UUID(user_id), delta, reason, request_key),
+        )
+        return row is not None
+
+    async def totals(self, *, user_id: str) -> tuple[int, int, int]:
+        """(balance, credits used, checks paid for)."""
+        row = await self._one(
+            """
+            SELECT COALESCE(SUM(delta), 0)                          AS balance,
+                   COALESCE(-SUM(delta) FILTER (WHERE delta < 0), 0) AS used,
+                   COUNT(*) FILTER (WHERE delta < 0)                 AS checks
+              FROM credit_ledger
+             WHERE user_id = %s
+            """,
+            (UUID(user_id),),
+        )
+        if row is None:
+            return 0, 0, 0
+        return int(row["balance"]), int(row["used"]), int(row["checks"])
+
+    async def profile(self, *, user_id: str) -> Row | None:
+        return await self._one("SELECT * FROM app_user WHERE id = %s", (UUID(user_id),))
+
+    async def set_name(self, *, user_id: str, name: str) -> None:
+        await self._execute(
+            "UPDATE app_user SET display_name = %s WHERE id = %s", (name, UUID(user_id))
+        )

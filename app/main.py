@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app import __version__
-from app.api import health, verify
+from app.api import accounts, health, verify
 from app.config import Settings, get_settings
 from app.observability import RequestContextMiddleware, configure
 
@@ -95,6 +95,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(verify.router)
+    app.include_router(accounts.router)
 
     # Excluded from the published schema and authenticated with a shared secret. It
     # is included last so it cannot shadow a public route by accident.
