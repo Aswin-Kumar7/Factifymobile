@@ -48,6 +48,10 @@ class WireFormat(StrEnum):
     OPENAI = "openai"
 
 
+# A document sent in place of a picture (`build_call`'s `image`).
+PDF_MIME = "application/pdf"
+
+
 def build_call(
     *,
     fmt: WireFormat,
@@ -65,8 +69,8 @@ def build_call(
     """Assemble one JSON-returning completion as ``(url, headers, body)``.
 
     `image` is ``(bytes, mime type)``: a picture sent beside the user text, for a
-    model that reads images. It travels in the user position too, which is where
-    untrusted content belongs.
+    model that reads images - or a PDF (`PDF_MIME`), which it reads page by page. It
+    travels in the user position too, which is where untrusted content belongs.
 
     The external text always travels in the user position — a `contents` part for
     Gemini, a `user` message for OpenAI — never spliced into the system instruction.
@@ -114,7 +118,20 @@ def build_call(
         f"{json.dumps(response_schema)}"
     )
     user_content: str | list[dict[str, Any]] = user_block
-    if image is not None:
+    if image is not None and image[1] == PDF_MIME:
+        # A PDF goes as a file, which the provider reads page by page as a person
+        # sees it - the way to read a Hindi PDF whose own text layer is scrambled.
+        user_content = [
+            {"type": "text", "text": user_block},
+            {
+                "type": "file",
+                "file": {
+                    "filename": "document.pdf",
+                    "file_data": f"data:{PDF_MIME};base64,{_base64(image[0])}",
+                },
+            },
+        ]
+    elif image is not None:
         user_content = [
             {"type": "text", "text": user_block},
             {

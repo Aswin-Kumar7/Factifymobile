@@ -14,9 +14,10 @@ images and sending those to OCR instead.
 from __future__ import annotations
 
 import io
+import re
 from dataclasses import dataclass, field
 
-from pypdf import PdfReader
+from pypdf import PdfReader, PdfWriter
 from pypdf.errors import PdfReadError
 
 # Anything longer is a document nobody forwards on WhatsApp, and a decompression
@@ -74,6 +75,44 @@ class ExtractedPdf:
     @property
     def is_usable(self) -> bool:
         return bool(self.text.strip()) or bool(self.embedded_images)
+
+    @property
+    def text_is_broken(self) -> bool:
+        """True when the text layer is there but its Hindi came out scrambled."""
+        return broken_script(self.text)
+
+
+# A Devanagari vowel sign, virama, nukta or nasal mark can never begin a word: each
+# belongs to the letter before it. A text layer full of words that begin with one was
+# stored in the order the glyphs are drawn - "ि" is drawn before the letter it follows -
+# and its joined letters mapped to nothing: "विज्ञान" came out as "िव ान", and every
+# claim taken from such text was thrown away as not found in the document.
+_ORPHAN_SIGN = re.compile(r"(?:^|[\s(\[\"'])[\u0900-\u0903\u093A-\u094F\u0962\u0963]")
+_DEVANAGARI_WORD = re.compile(r"[\u0900-\u097F]+")
+
+
+def broken_script(text: str) -> bool:
+    """Whether a PDF's Hindi text layer is too scrambled to take claims from."""
+    words = len(_DEVANAGARI_WORD.findall(text))
+    if words < 5:
+        return False
+    return len(_ORPHAN_SIGN.findall(text)) >= max(2, words // 25)
+
+
+def first_pages(data: bytes, count: int) -> bytes:
+    """The same PDF cut to its first `count` pages, to be read without paying for
+    the rest. The document itself when it is no longer than that."""
+    reader = PdfReader(io.BytesIO(data), strict=False)
+    if reader.is_encrypted:
+        reader.decrypt("")
+    if len(reader.pages) <= count:
+        return data
+    writer = PdfWriter()
+    for page in reader.pages[:count]:
+        writer.add_page(page)
+    buffer = io.BytesIO()
+    writer.write(buffer)
+    return buffer.getvalue()
 
 
 def extract(

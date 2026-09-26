@@ -23,6 +23,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile, status
 from fastapi.responses import JSONResponse
+from pypdf.errors import PdfReadError
 
 from app.api.accounts import charge, check_cost, require_credit, signed_in
 from app.api.schemas import (
@@ -44,8 +45,9 @@ from app.api.schemas import (
 from app.domain.claim import Claim
 from app.extraction.claims import ExtractedClaims
 from app.extraction.language import detect
+from app.extraction.model_wire import PDF_MIME
 from app.extraction.ocr import OcrOutcome
-from app.extraction.pdf import PdfRejected
+from app.extraction.pdf import PdfRejected, first_pages
 from app.extraction.pdf import extract as extract_pdf
 from app.extraction.web import extract as extract_article
 from app.extraction.web import headline_and_summary
@@ -854,8 +856,25 @@ async def _read_document(
         except PdfRejected as rejected:
             notes.append(SkippedCheck(check="document_text", reason=rejected.reason))
             return "", None, notes
-        if not pdf.needs_ocr:
+        if not pdf.needs_ocr and not pdf.text_is_broken:
             return pdf.text[:_MAX_ARTICLE_CHARS], None, notes
+
+        # Scanned, or typed with its Hindi scrambled in the text layer ("विज्ञान" as
+        # "िव ान"): the pages are read as a person sees them - the document itself, cut
+        # to its first pages, in one call.
+        if reader is not None:
+            whole = await _read_pages(reader, primary.data, page_count=pdf.page_count)
+            if whole is not None:
+                read, gaps = whole
+                notes.extend(gaps)
+                return read.text[:_MAX_ARTICLE_CHARS], read, notes
+        if not pdf.needs_ocr:
+            notes.append(
+                SkippedCheck(
+                    check="document_text", reason="the document's text is scrambled and unreadable"
+                )
+            )
+            return "", None, notes
 
         first: OcrOutcome | None = None
         pages: list[str] = []
@@ -875,6 +894,38 @@ async def _read_document(
         return "\n\n".join(pages)[:_MAX_ARTICLE_CHARS], first, notes
 
     return "", None, notes
+
+
+async def _read_pages(
+    reader: Any, data: bytes, *, page_count: int
+) -> tuple[OcrOutcome, list[SkippedCheck]] | None:
+    """A PDF's first pages read by the model as a document, or None when that did not
+    produce any text (the caller then falls back to what it has)."""
+    try:
+        pages = await asyncio.to_thread(first_pages, data, _SCANNED_PAGES_READ)
+    except (PdfReadError, ValueError, KeyError, OSError):
+        return None
+    read: OcrOutcome = await reader.transcribe(pages, mime_type=PDF_MIME)
+    if not read.has_text:
+        return None
+    gaps: list[SkippedCheck] = []
+    if page_count > _SCANNED_PAGES_READ:
+        gaps.append(
+            SkippedCheck(
+                check="document_text",
+                reason=f"read the first {_SCANNED_PAGES_READ} of {page_count} pages",
+            )
+        )
+    if read.cut_off:
+        gaps.append(
+            SkippedCheck(
+                check="document_text",
+                reason=(
+                    "the document holds more text than is read at once; only its start was checked"
+                ),
+            )
+        )
+    return read, gaps
 
 
 async def _extract_from_document(
