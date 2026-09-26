@@ -16,6 +16,7 @@ it would have to also make the text it invented appear in the document.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -96,7 +97,102 @@ def _locate(claim_text: str, source: str) -> tuple[int, int] | None:
             if found != -1 and length / len(words) >= _ANCHOR_MATCH_THRESHOLD:
                 return found, found + len(fragment)
 
-    return None
+    return _locate_by_coverage(needle, haystack)
+
+
+# Words that carry no fact of their own, so a claim is matched on the ones that do.
+_FUNCTION_WORDS = frozenset(
+    """a an the is are was were be been being has have had do does did will would shall
+    should can could may might must and or but nor so yet of in on at to for from by with
+    about as into onto over under after before during than that this these those which
+    who whom whose what when where why how it its their there they them he she his her
+    him we our you your i me my not no also just only very more most such both each
+    said says say according""".split()
+)
+_MONTHS = {
+    "january": "jan", "february": "feb", "march": "mar", "april": "apr", "june": "jun",
+    "july": "jul", "august": "aug", "september": "sep", "sept": "sep", "october": "oct",
+    "november": "nov", "december": "dec",
+}  # fmt: skip
+_SUFFIXES = ("ing", "ed", "es", "s")
+
+# Share of a claim's fact-bearing words that one short stretch of the source must hold,
+# with every number among them.
+_COVERAGE_THRESHOLD = 0.8
+_YEAR = re.compile(r"(19|20)\d\d")
+
+
+def _fact_words(text: str) -> list[str]:
+    """The fact-bearing words of folded text: no function words, months abbreviated,
+    and a plain suffix trimmed, so "arrested" matches "arrests" and "January" "Jan"."""
+    words: list[str] = []
+    for raw in text.split():
+        word = raw.strip(".,;:!?()[]\"'")
+        if not word or word in _FUNCTION_WORDS:
+            continue
+        word = _MONTHS.get(word, word)
+        if not word.isdigit() and len(word) > 4:
+            for suffix in _SUFFIXES:
+                if word.endswith(suffix):
+                    word = word[: -len(suffix)]
+                    break
+        words.append(word)
+    return words
+
+
+def _locate_by_coverage(needle: str, haystack: str) -> tuple[int, int] | None:
+    """The shortest stretch of the source holding the claim's facts, or None.
+
+    A claim extracted from a list is rewritten as a sentence, and no run of its words
+    survives. On a page listing "Barack Obama / Arrested Jan 29, facing tribunal for
+    High Treason.", the claim "Barack Obama was arrested on January 29 and is facing a
+    tribunal for High Treason" matched four of fifteen words in a row and was
+    discarded — as were all seven claims on the page, faithful every one.
+
+    So the facts are matched rather than the wording: 80% of the claim's fact-bearing
+    words, and every number, within a stretch of the source not much longer than the
+    claim. A year is the one number allowed to come from elsewhere on the page — a
+    list dated February 2025 says "Feb 3", and the claim rightly says "February 3,
+    2025" — but it must still be on the page. An invented claim fails, because the
+    facts it invents are not there; a claim assembled from words scattered across the
+    page fails, because the stretch is bounded.
+    """
+    wanted = _fact_words(needle)
+    if len(wanted) < 3:
+        return None
+    distinct = set(wanted)
+    years = {word for word in distinct if _YEAR.fullmatch(word)}
+    if any(year not in haystack for year in years):
+        return None
+    numbers = {word for word in distinct - years if any(ch.isdigit() for ch in word)}
+    need = max(len(numbers), int(len(distinct) * _COVERAGE_THRESHOLD + 0.999))
+
+    # The source as fact-bearing words, each with where it sits in the folded text.
+    positions: list[tuple[str, int, int]] = []
+    cursor = 0
+    for raw in haystack.split():
+        start = haystack.find(raw, cursor)
+        cursor = start + len(raw)
+        words = _fact_words(raw)
+        if words:
+            positions.append((words[0], start, cursor))
+
+    span = max(12, 3 * len(distinct))
+    best: tuple[int, int] | None = None
+    for first in range(len(positions)):
+        if positions[first][0] not in distinct:
+            continue
+        seen: set[str] = set()
+        for last in range(first, min(len(positions), first + span)):
+            word = positions[last][0]
+            if word in distinct:
+                seen.add(word)
+            if len(seen | years) >= need and numbers <= seen:
+                candidate = (positions[first][1], positions[last][2])
+                if best is None or candidate[1] - candidate[0] < best[1] - best[0]:
+                    best = candidate
+                break
+    return best
 
 
 def _to_claim(

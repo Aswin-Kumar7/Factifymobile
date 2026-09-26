@@ -90,6 +90,7 @@
   "failureUnreadableFile": "That file could not be read from this phone.",
   "failureBadReply": "Factify sent a reply this app could not read.",
   "failureInvalidInput": "That input could not be read.",
+  "failureLinkUnchecked": "We couldn't find anything to check on that page. Some sites block automatic reading, so copy the article's text and paste it here instead.",
   "failureTooLarge": "That file is too large to check.",
   "failureDailyLimit": "Factify is at its daily limit. Please try again tomorrow.",
   "failureUnavailable": "Verification is not available right now.",

@@ -10,6 +10,7 @@ import 'dart:convert';
 import 'package:factify_mobile/api/client.dart';
 import 'package:factify_mobile/l10n/language_preference.dart';
 import 'package:factify_mobile/main.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -113,5 +114,40 @@ void main() {
 
     expect(find.text(offer), findsNothing);
     expect(clipboard.read, isFalse);
+  });
+
+  testWidgets('a link the server could not check says so, not "Unconfirmed"', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 2.625;
+    addTearDown(tester.view.reset);
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      _FakeClipboard(hasText: false).handle,
+    );
+    addTearDown(() => messenger.setMockMethodCallHandler(SystemChannels.platform, null));
+
+    final client = FactifyClient(
+      baseUrl: 'http://factify.test',
+      httpClient: MockClient((request) async {
+        if (request.url.path == '/readyz') {
+          return http.Response('{"ready": true, "missing": []}', 200);
+        }
+        return http.Response(
+          '{"detail": "no checkable claims were found on the page. Nothing was checked."}',
+          422,
+        );
+      }),
+    );
+    await tester.pumpWidget(FactifyApp(language: LanguagePreference.inMemory(), client: client));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'https://www.reuters.com/world/x');
+    await tester.pump();
+    await tester.tap(find.text('Check this'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining("couldn't find anything to check on that page"), findsOneWidget);
+    expect(find.text('Unconfirmed'), findsNothing);
   });
 }

@@ -69,11 +69,15 @@ TARGET_SECONDS = 8.0
 # here did not make the system fast — it made every reasoned verification abstain
 # with "deadline exceeded" while the model was still mid-sentence.
 #
-# 40 stays inside the mobile client's own 45 second timeout, which is the real
-# ceiling: past that the server is computing an answer nobody is waiting for.
+# The mobile client's timeout is the real ceiling: past it the server is computing
+# an answer nobody is waiting for. It was 45 seconds and this was 40; the client now
+# waits 75, and 40 had become the reason links were never checked. A link spends
+# 12-25 seconds being read and having its claims extracted before checking starts,
+# and on The Hindu's report the reads were cancelled at 34 seconds with every claim
+# unchecked. 55 leaves checking its time and still answers well inside the 75.
 # Requests that exceed `TARGET_SECONDS` are still reported as over target — the
 # promise is not quietly rewritten, it is measured against honestly.
-REASONING_TARGET_SECONDS = 40.0
+REASONING_TARGET_SECONDS = 55.0
 
 # Kept back from the reading deadline for the source check that follows it. Reading
 # used to run to the deadline itself, leaving the check no time at all — so it timed

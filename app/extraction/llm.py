@@ -41,7 +41,7 @@ PROVIDER = "llm"
 
 # Bumped whenever the prompt or the schema changes, because either changes what the
 # same document extracts to — and the extraction cache is keyed on it.
-EXTRACTOR_VERSION = "2026.09.7"
+EXTRACTOR_VERSION = "2026.09.8"
 
 MAX_CLAIMS_PER_DOCUMENT = 7
 

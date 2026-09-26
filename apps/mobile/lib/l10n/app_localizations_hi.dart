@@ -208,6 +208,10 @@ class AppLocalizationsHi extends AppLocalizations {
   String get failureInvalidInput => 'वह इनपुट पढ़ा नहीं जा सका।';
 
   @override
+  String get failureLinkUnchecked =>
+      'उस पेज पर जाँचने लायक कुछ नहीं मिला। कुछ साइटें अपने-आप पढ़ने से रोकती हैं, इसलिए लेख का टेक्स्ट कॉपी करके यहाँ चिपकाएँ।';
+
+  @override
   String get failureTooLarge => 'वह फ़ाइल जाँचने के लिए बहुत बड़ी है।';
 
   @override

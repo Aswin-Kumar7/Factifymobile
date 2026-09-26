@@ -59,6 +59,11 @@ logger = logging.getLogger("factify.composition")
 # twenty is not going to. One shared timeout meant every dead source burned the
 # model's budget — measured in the audit, where fetch timeouts outlasted verification.
 SOURCE_TIMEOUT_SECONDS = 20.0
+
+# A link the person submitted gets less patience than a source, because it has a
+# second reader behind it and the person is waiting. The Hindu took 15 seconds to
+# fail our fetch — a third of the request's budget — before the vendor read it in 1.5.
+LINK_TIMEOUT_SECONDS = 8.0
 MODEL_TIMEOUT_SECONDS = 90.0
 
 
@@ -340,7 +345,7 @@ async def build(settings: Settings) -> dict[str, Any]:
         # verify path fetches the page and runs it through the same web reader (M16)
         # that reads retrieved sources. Shared with the corpus resolver rather than a
         # second client, so one connection pool serves both.
-        "url_reader": source_fetcher,
+        "url_reader": SecureFetcher(timeout_seconds=LINK_TIMEOUT_SECONDS),
         # The same resolver the pipeline uses, so a submitted link can fall through
         # to the vendor's extract when the publisher will not serve us — the second
         # rung of the ladder a retrieved source already climbs.

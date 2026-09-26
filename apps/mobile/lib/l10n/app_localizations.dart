@@ -422,6 +422,12 @@ abstract class AppLocalizations {
   /// **'That input could not be read.'**
   String get failureInvalidInput;
 
+  /// No description provided for @failureLinkUnchecked.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t find anything to check on that page. Some sites block automatic reading, so copy the article\'s text and paste it here instead.'**
+  String get failureLinkUnchecked;
+
   /// No description provided for @failureTooLarge.
   ///
   /// In en, this message translates to:

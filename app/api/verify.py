@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from datetime import UTC, datetime
 from typing import Annotated, Any
@@ -95,6 +96,17 @@ async def extract_claims_for(request: Request, intake: NormalisedIntake) -> Extr
     text = intake.primary.text or ""
     language = intake.language.language.value
 
+    # A forward that carries a link: "Must read! https://..." The message was checked
+    # and the article it points at was never opened, so the substance of most shared
+    # news went unread. The article is read and checked alongside the message, which
+    # keeps whatever the message itself claims.
+    if intake.input_type is InputType.TEXT:
+        link = _first_link(text)
+        if link is not None:
+            article = await _read_linked_article(request, link)
+            if article:
+                text = f"{text}\n\n{article}"
+
     if not text.strip() and intake.input_type is InputType.URL:
         # A submitted link carries no text of its own — normalisation is local and
         # deliberately does not fetch. Read the page here, the same way a retrieved
@@ -119,9 +131,39 @@ async def extract_claims_for(request: Request, intake: NormalisedIntake) -> Extr
     )
 
 
+# A link inside a message: with a scheme, or starting "www." as people type them.
+_LINK_IN_TEXT = re.compile(r"(?:https?://|www\.)[^\s<>\"'()]+", re.IGNORECASE)
+
+
+def _first_link(text: str) -> str | None:
+    """The first followable link in a message, or None.
+
+    Trailing punctuation is the sentence's, not the link's. A link that normalisation
+    would refuse — localhost, a bare scheme — is ignored rather than read.
+    """
+    match = _LINK_IN_TEXT.search(text)
+    if match is None:
+        return None
+    link = match.group(0).rstrip(".,;:!?'\"")
+    if link.lower().startswith("www."):
+        link = f"https://{link}"
+    try:
+        return normalise_url(link).primary.source_url
+    except IntakeRejected:
+        return None
+
+
 # Longest article body sent to extraction. A news story fits well within this; a
 # very long reference page is truncated to its opening, where the headline claims sit.
 _MAX_ARTICLE_CHARS = 6000
+
+# Below this, what our own fetch got is a bot wall, a consent page or a paywall stub,
+# not the article — the same line the search path draws (`websearch._MIN_ARTICLE_CHARS`).
+# Reuters answered a link with "Please enable JS and disable any ad blocker", 43
+# characters, and that was accepted as the article: nothing was extracted, the vendor
+# reader that returns the full 6,000-character story was never asked, and the app
+# showed "Unconfirmed" for a report an hour old.
+_MIN_LINK_ARTICLE_CHARS = 600
 
 
 async def _read_linked_article(request: Request, url: str) -> str | None:
@@ -138,15 +180,17 @@ async def _read_linked_article(request: Request, url: str) -> str | None:
 
     body: str | None = None
     title: str | None = None
+    route = "fetched"
 
     result = await reader.fetch(url, provider="url_intake")
     if isinstance(result, FetchResult):
         content_type = (result.content_type or "").lower()
         if content_type and "html" not in content_type and "xml" not in content_type:
+            _log_link_read(url, route="not html", title=None, body="", total=0)
             return None
 
         article = extract_article(result.text, url=url)
-        if article.is_usable:
+        if article.is_usable and len((article.body or "").strip()) >= _MIN_LINK_ARTICLE_CHARS:
             body, title = article.body, article.title
 
     if body is None:
@@ -160,7 +204,9 @@ async def _read_linked_article(request: Request, url: str) -> str | None:
         # than the blocked door. The search path already pays a vendor to read pages
         # that refuse us; a link the user typed deserves the same attempt.
         body = await _vendor_read(request, url)
+        route = "vendor extract"
         if not body:
+            _log_link_read(url, route="unreadable", title=None, body="", total=0)
             return None
 
     # Title and body together: the headline carries the primary claim, the body the
@@ -169,9 +215,28 @@ async def _read_linked_article(request: Request, url: str) -> str | None:
     # sit near the top, while a long page (a Wikipedia article runs to tens of
     # thousands of characters) would push one extraction call past the model's
     # per-minute token budget and come back 429.
+    total = len(body or "")
     body = (body or "")[:_MAX_ARTICLE_CHARS]
+    _log_link_read(url, route=route, title=title, body=body, total=total)
     parts = [part for part in (title, body) if part and part.strip()]
     return "\n\n".join(parts) if parts else None
+
+
+def _log_link_read(url: str, *, route: str, title: str | None, body: str, total: int) -> None:
+    """What a submitted link actually yielded, so "did it read the article?" has an
+    answer in the log: which rung read it, how much, and how the text begins."""
+    event(
+        logger,
+        "linked page read",
+        module="api.verify",
+        outcome="ok" if body else "degraded",
+        url=url,
+        route=route,
+        title=(title or "")[:160],
+        chars=total,
+        truncated=total > _MAX_ARTICLE_CHARS,
+        opening=" ".join(body.split())[:240],
+    )
 
 
 async def _vendor_read(request: Request, url: str) -> str | None:
@@ -372,11 +437,17 @@ async def verify(payload: VerifyRequest, request: Request) -> VerifyResponse:
     # worldwide: zero bytes, zero claims, and an answer that blamed the record.
     # "We could not read this page" and "we read it and found nothing" are
     # different answers and the caller has to be able to tell them apart.
-    if not extracted.claims and intake.input_type is InputType.URL and extracted.reason:
+    #
+    # Nor is a link with no claims to check. It used to pass through when extraction
+    # ran cleanly and found nothing, and a verification of zero claims came back
+    # "Unconfirmed" — on a Reuters bot wall and on a page whose every claim failed
+    # its anchor. Unconfirmed means sources were looked for; here none were.
+    if not extracted.claims and intake.input_type is InputType.URL:
+        reason = extracted.reason or "no checkable claims were found on the page"
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
-                f"{extracted.reason}. Nothing was checked. Try pasting the text of "
+                f"{reason}. Nothing was checked. Try pasting the text of "
                 "the page instead of the link."
             ),
         )

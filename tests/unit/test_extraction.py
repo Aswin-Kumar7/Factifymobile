@@ -380,3 +380,135 @@ class TestVendorMarkdownIsReadAsText:
         )
         assert verify_quote(quote, self.PAGE) is None
         assert verify_quote(quote, web_module.plain_text(self.PAGE)) is not None
+
+
+class TestReadingASubmittedLink:
+    """What a link yields: the article, or the vendor's read of it when we get a wall."""
+
+    ARTICLE = (
+        "UNITED NATIONS, Sept 26 (Reuters) - World leaders left the United Nations on "
+        "Friday after a week of speeches, meetings and hallway diplomacy. "
+    ) * 8
+
+    @staticmethod
+    def _request(page_html: str, vendor_text: str) -> tuple[object, list[str]]:
+        from datetime import UTC, datetime
+        from types import SimpleNamespace
+
+        from app.security.fetcher import FetchResult
+
+        asked: list[str] = []
+
+        class _Reader:
+            async def fetch(self, url: str, *, provider: str = "web") -> object:
+                return FetchResult(
+                    url=url,
+                    final_url=url,
+                    status_code=200,
+                    content_type="text/html",
+                    body=page_html.encode(),
+                    byte_count=len(page_html),
+                    fetched_at=datetime.now(UTC),
+                )
+
+        class _Resolver:
+            async def _vendor_extract(self, url: str) -> str:
+                asked.append(url)
+                return vendor_text
+
+        state = SimpleNamespace(url_reader=_Reader(), web_search_resolver=_Resolver())
+        return SimpleNamespace(app=SimpleNamespace(state=state)), asked
+
+    @pytest.mark.anyio
+    async def test_a_bot_wall_is_not_taken_for_the_article(self) -> None:
+        """Reuters answered "Please enable JS and disable any ad blocker" - 43 characters."""
+        from app.api.verify import _read_linked_article
+
+        wall = (
+            "<html><head><title>reuters.com</title></head><body>"
+            "<p>Please enable JS and disable any ad blocker</p></body></html>"
+        )
+        request, asked = self._request(wall, vendor_text=self.ARTICLE)
+
+        text = await _read_linked_article(request, "https://www.reuters.com/world/x")  # type: ignore[arg-type]
+
+        assert asked == ["https://www.reuters.com/world/x"]
+        assert text is not None
+        assert "UNITED NATIONS, Sept 26 (Reuters)" in text
+        assert "enable JS" not in text
+
+    @pytest.mark.anyio
+    async def test_an_article_we_can_read_is_not_sent_to_the_vendor(self) -> None:
+        from app.api.verify import _read_linked_article
+
+        page = f"<html><body><article><p>{self.ARTICLE}</p></article></body></html>"
+        request, asked = self._request(page, vendor_text="should not be used")
+
+        text = await _read_linked_article(request, "https://example.org/story")  # type: ignore[arg-type]
+
+        assert asked == []
+        assert text is not None and "hallway diplomacy" in text
+
+    def test_a_link_with_nothing_checked_is_not_answered_unconfirmed(self) -> None:
+        """Zero claims used to verify as "Unconfirmed" - as if sources had been sought."""
+        from typing import Any
+
+        from fastapi.testclient import TestClient
+
+        from app.extraction.claims import ExtractedClaims
+        from app.main import create_app
+
+        class _Orchestrator:
+            async def cached(self, *args: Any, **kwargs: Any) -> None:
+                return None
+
+            async def verify(self, *args: Any, **kwargs: Any) -> Any:
+                raise AssertionError("nothing to check must not be verified")
+
+        class _NothingFound:
+            async def extract(self, *args: Any, **kwargs: Any) -> ExtractedClaims:
+                return ExtractedClaims()
+
+        async def _page(request: Any, url: str) -> str:
+            return "A page with nothing in it to check."
+
+        import app.api.verify as verify_module
+
+        app = create_app()
+        app.state.orchestrator = _Orchestrator()
+        app.state.claim_pipeline = _NothingFound()
+        original = verify_module._read_linked_article
+        verify_module._read_linked_article = _page  # type: ignore[assignment]
+        try:
+            response = TestClient(app).post("/v1/verify", json={"url": "https://example.org/x"})
+        finally:
+            verify_module._read_linked_article = original  # type: ignore[assignment]
+
+        assert response.status_code == 422
+        assert "Nothing was checked" in response.json()["detail"]
+
+
+class TestALinkInsideAMessage:
+    """ "Must read! https://..." is a forward carrying an article, and the article is read."""
+
+    @pytest.mark.parametrize(
+        ("message", "link"),
+        [
+            (
+                "Must read!! https://www.reuters.com/world/x-2026-09-26/. Share",
+                "https://www.reuters.com/world/x-2026-09-26",
+            ),
+            ("see www.thehindu.com/news/a.ece", "https://www.thehindu.com/news/a.ece"),
+            ("Two: https://a.org/1 and https://b.org/2", "https://a.org/1"),
+        ],
+    )
+    def test_the_first_followable_link_is_found(self, message: str, link: str) -> None:
+        from app.api.verify import _first_link
+
+        assert _first_link(message) == link
+
+    @pytest.mark.parametrize("message", ["no link here", "https://localhost/admin is bad"])
+    def test_no_link_or_an_unfollowable_one_is_ignored(self, message: str) -> None:
+        from app.api.verify import _first_link
+
+        assert _first_link(message) is None

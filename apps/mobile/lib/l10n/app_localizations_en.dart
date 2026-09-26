@@ -211,6 +211,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get failureInvalidInput => 'That input could not be read.';
 
   @override
+  String get failureLinkUnchecked =>
+      'We couldn\'t find anything to check on that page. Some sites block automatic reading, so copy the article\'s text and paste it here instead.';
+
+  @override
   String get failureTooLarge => 'That file is too large to check.';
 
   @override

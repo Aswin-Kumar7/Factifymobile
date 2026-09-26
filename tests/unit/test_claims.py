@@ -239,3 +239,48 @@ class TestProposalSchema:
                     "importance": "MAIN_THESIS",
                 }
             )
+
+
+class TestAClaimRewordedFromAListStillAnchors:
+    """A list item rewritten as a sentence keeps its anchor; an invented fact does not.
+
+    Every claim on a page that listed "Barack Obama / Arrested Jan 29, facing tribunal
+    for High Treason." was discarded: faithful, but no run of its words survived.
+    """
+
+    PAGE = (
+        "Mass Arrests Confirmed\nPublished February 5, 2025\n"
+        "Barack Obama\nArrested Jan 29, facing tribunal for High Treason.\n"
+        "Hillary Clinton\nDetained late Jan; trial started Feb 2, sentencing imminent.\n"
+        "George Soros\nCaptured Feb 3, tribunal outcome: Execution\n"
+        "Mark Zuckerberg\nArrested Feb 1, charged with mass surveillance crimes."
+    )
+
+    @pytest.mark.parametrize(
+        "claim_text",
+        [
+            "Barack Obama was arrested on January 29 and is facing a tribunal for High Treason.",
+            "Hillary Clinton was detained in late January 2025; her trial started on "
+            "February 2, with sentencing imminent.",
+            "George Soros was captured on February 3, 2025, and the tribunal outcome was "
+            "execution.",
+        ],
+    )
+    def test_a_faithful_rewording_is_kept(self, claim_text: str) -> None:
+        from app.extraction.claims import _locate
+
+        assert _locate(claim_text, self.PAGE) is not None
+
+    @pytest.mark.parametrize(
+        "claim_text",
+        [
+            "Barack Obama was arrested on January 30 for High Treason.",  # wrong day
+            "Bill Gates was arrested for tax fraud in Seattle.",  # not on the page
+            "Hillary Clinton was captured and executed for mass surveillance crimes.",  # mixed
+            "George Soros was captured on February 3, 2019.",  # wrong year
+        ],
+    )
+    def test_an_invented_or_mixed_fact_is_not(self, claim_text: str) -> None:
+        from app.extraction.claims import _locate
+
+        assert _locate(claim_text, self.PAGE) is None

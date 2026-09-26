@@ -250,7 +250,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           : await widget.client.verifyText(value, language: language);
       if (mounted) _finish(verdict);
     } on ApiFailure catch (failure) {
-      if (mounted) _fail(failure);
+      if (!mounted) return;
+      // A link the server refused is a page it could not read or found nothing to
+      // check on. "That input could not be read" said neither, and before the
+      // server refused them these came back as "Unconfirmed", as though sources
+      // had been looked for.
+      if (looksLikeUrl && failure.kind == FailureKind.invalidInput) {
+        setState(() {
+          _error = (l10n) => l10n.failureLinkUnchecked;
+          _errorRetryable = false;
+        });
+      } else {
+        _fail(failure);
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
