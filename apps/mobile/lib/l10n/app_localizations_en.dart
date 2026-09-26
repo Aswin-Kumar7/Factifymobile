@@ -80,6 +80,29 @@ class AppLocalizationsEn extends AppLocalizations {
   String get working => 'Looking for sources that address this';
 
   @override
+  String get checkAgain => 'Check again';
+
+  @override
+  String get checkingTitle => 'Checking…';
+
+  @override
+  String get stepReading => 'Read what you shared';
+
+  @override
+  String get stepSearching => 'Search trusted news and fact-checkers';
+
+  @override
+  String get stepComparing => 'Compare each source with the claim';
+
+  @override
+  String get usuallyTakes => 'A check usually takes 20–50 seconds.';
+
+  @override
+  String elapsedSeconds(int seconds) {
+    return '${seconds}s';
+  }
+
+  @override
   String get videoAcceptedTitle => 'Video accepted';
 
   @override

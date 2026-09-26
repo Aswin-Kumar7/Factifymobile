@@ -1360,3 +1360,46 @@ class TestOneSlowPageDoesNotLoseTheRest:
         assert skip == "1 of 3 sources not read before the deadline"
         # Abandoned, not left running past the request that asked for it.
         assert cancelled == ["hangs"]
+
+
+class TestASubmittedPageIsNotItsOwnEvidence:
+    """A Times of India report was the only "source" for its own headline claim."""
+
+    def test_the_submitted_page_is_removed_however_the_address_is_written(self) -> None:
+        from app.orchestration.pipeline import _not_own
+        from app.sources.verification import page_key
+
+        own = frozenset({page_key("https://timesofindia.indiatimes.com/sports/x/134497880.cms")})
+        itself = evidence(
+            citation_url="http://www.timesofindia.indiatimes.com/sports/x/134497880.cms/"
+        )
+        other = evidence(citation_url="https://www.thehindu.com/sport/y.ece")
+
+        assert _not_own([itself, other], own) == [other]
+
+    def test_nothing_is_removed_when_nothing_was_submitted(self) -> None:
+        from app.orchestration.pipeline import _not_own
+
+        items = [evidence(citation_url="https://a.com/1")]
+
+        assert _not_own(items, frozenset()) == items
+
+
+class TestCheckAgainIsAFreshCheck:
+    """ "Check again" replaces the stored answer; serving it back would do nothing."""
+
+    @pytest.mark.anyio
+    async def test_a_fresh_check_skips_the_stored_verdict(self) -> None:
+        orchestrator = Orchestrator(
+            cache=HittingCache({"action": "SEND_TO_REVIEW"}),  # type: ignore[arg-type]
+            governor=RecordingGovernor(),  # type: ignore[arg-type]
+            resolvers=[],
+            extractor_version="test",
+        )
+        intake = normalise_text("The government announced a relief scheme on Friday.")
+
+        stored = await orchestrator.verify(intake, case_id=uuid4(), claims=[])
+        fresh = await orchestrator.verify(intake, case_id=uuid4(), claims=[], fresh=True)
+
+        assert stored.from_cache
+        assert not fresh.from_cache

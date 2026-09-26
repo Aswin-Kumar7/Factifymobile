@@ -110,11 +110,14 @@ class FactifyClient {
 
   /// [language] is the interface language, so the verdict can be phrased in the
   /// language it will be read in (PLAN 1.7.6).
-  Future<Verdict> verifyText(String text, {String? language}) =>
-      _verify({'text': text, 'language': ?language});
+  ///
+  /// [recheck] is "Check again": the server skips its stored verdict and checks
+  /// from scratch, because the stored one is what the person is asking to replace.
+  Future<Verdict> verifyText(String text, {String? language, bool recheck = false}) =>
+      _verify({'text': text, 'language': ?language, if (recheck) 'recheck': true});
 
-  Future<Verdict> verifyUrl(String url, {String? language}) =>
-      _verify({'url': url, 'language': ?language});
+  Future<Verdict> verifyUrl(String url, {String? language, bool recheck = false}) =>
+      _verify({'url': url, 'language': ?language, if (recheck) 'recheck': true});
 
   Future<Verdict> _verify(Map<String, dynamic> body) async {
     final response = await _send(
@@ -145,12 +148,14 @@ class FactifyClient {
     File file, {
     bool consentToProcessMedia = false,
     String? language,
+    bool recheck = false,
     void Function(int sent, int total)? onProgress,
   }) => _guard(() async {
     final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/v1/verify/file'))
       ..files.add(await http.MultipartFile.fromPath('file', file.path))
       ..fields['consent_to_process_media'] = consentToProcessMedia.toString();
     if (language != null) request.fields['language'] = language;
+    if (recheck) request.fields['recheck'] = 'true';
 
     final streamed = await _http.send(_CountedUpload(request, onProgress)).timeout(_timeout);
     final response = await http.Response.fromStream(streamed).timeout(_timeout);

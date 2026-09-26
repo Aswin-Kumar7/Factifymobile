@@ -63,6 +63,8 @@ class VerifyRequest(BaseModel):
     language: str | None = None
     mode: str = Field(default="fast", pattern="^(fast|deep)$")
     consent_to_process_media: bool = False
+    # "Check again": skip the stored verdict and check from scratch.
+    recheck: bool = False
 
     @model_validator(mode="after")
     def _exactly_one_input(self) -> Self:

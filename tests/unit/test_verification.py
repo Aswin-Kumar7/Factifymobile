@@ -6,6 +6,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+import pytest
+
 from app.domain import Credibility, Direction, EvidenceKind
 from app.sources.reasoning import SourceCheck, SourceReading
 from app.sources.verification import SourceVerification, dedupe, page_key
@@ -49,6 +51,21 @@ class TestOneCitationPerPage:
         assert page_key("https://www.fullfact.org/online/coronavirus-5G/") == page_key(
             "http://fullfact.org/online/coronavirus-5G?utm_source=x#top"
         )
+
+    @pytest.mark.parametrize(
+        "copy",
+        [
+            "https://www.thehindu.com/news/national/story/article71502791.ece/amp/",
+            "https://m.thehindu.com/news/national/story/article71502791.ece",
+            "https://amp.thehindu.com/news/national/story/article71502791.ece",
+            "https://www.thehindu.com/amp/news/national/story/article71502791.ece",
+        ],
+    )
+    def test_mobile_and_amp_copies_are_the_same_page(self, copy: str) -> None:
+        """The AMP copy of a submitted article was cited as evidence for it."""
+        original = "https://www.thehindu.com/news/national/story/article71502791.ece"
+
+        assert page_key(copy) == page_key(original)
 
     def test_a_query_that_names_the_page_keeps_pages_apart(self) -> None:
         """Every PIB release is PressReleasePage.aspx?PRID=..., one page per id."""

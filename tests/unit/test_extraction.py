@@ -434,8 +434,9 @@ class TestReadingASubmittedLink:
 
         assert asked == ["https://www.reuters.com/world/x"]
         assert text is not None
-        assert "UNITED NATIONS, Sept 26 (Reuters)" in text
-        assert "enable JS" not in text
+        assert "UNITED NATIONS, Sept 26 (Reuters)" in text.text
+        assert "enable JS" not in text.text
+        assert text.partial is None
 
     @pytest.mark.anyio
     async def test_an_article_we_can_read_is_not_sent_to_the_vendor(self) -> None:
@@ -447,7 +448,7 @@ class TestReadingASubmittedLink:
         text = await _read_linked_article(request, "https://example.org/story")  # type: ignore[arg-type]
 
         assert asked == []
-        assert text is not None and "hallway diplomacy" in text
+        assert text is not None and "hallway diplomacy" in text.text
 
     def test_a_link_with_nothing_checked_is_not_answered_unconfirmed(self) -> None:
         """Zero claims used to verify as "Unconfirmed" - as if sources had been sought."""
@@ -469,8 +470,8 @@ class TestReadingASubmittedLink:
             async def extract(self, *args: Any, **kwargs: Any) -> ExtractedClaims:
                 return ExtractedClaims()
 
-        async def _page(request: Any, url: str) -> str:
-            return "A page with nothing in it to check."
+        async def _page(request: Any, url: str) -> Any:
+            return verify_module.LinkedPage("A page with nothing in it to check.")
 
         import app.api.verify as verify_module
 
@@ -512,3 +513,40 @@ class TestALinkInsideAMessage:
         from app.api.verify import _first_link
 
         assert _first_link(message) is None
+
+
+class TestAPageNobodyCanReadIsCheckedOnItsHeadline:
+    """The headline and summary a publisher shows anyone, when the article is closed."""
+
+    PAYWALLED = (
+        "<html><head><title>Premium | Example Times</title>"
+        '<meta property="og:title" content="State to raise minimum wage by 12% from April">'
+        '<meta property="og:description" content="The state cabinet on Friday approved a '
+        '12% rise in the minimum wage for unskilled workers, effective April 1.">'
+        "</head><body><p>Subscribe to read.</p></body></html>"
+    )
+
+    def test_the_published_headline_and_summary_are_read(self) -> None:
+        headline, summary = web_module.headline_and_summary(self.PAYWALLED)
+
+        assert headline == "State to raise minimum wage by 12% from April"
+        assert summary is not None and "effective April 1" in summary
+
+    def test_a_bare_site_name_is_not_a_summary(self) -> None:
+        """Reuters' wall page had a title, "reuters.com", and nothing else."""
+        wall = "<html><head><title>reuters.com</title></head><body>Enable JS</body></html>"
+
+        assert web_module.headline_and_summary(wall) == (None, None)
+
+    @pytest.mark.anyio
+    async def test_the_link_reader_falls_back_to_them_and_says_so(self) -> None:
+        from app.api.verify import _read_linked_article
+
+        request, asked = TestReadingASubmittedLink._request(self.PAYWALLED, vendor_text="")
+
+        page = await _read_linked_article(request, "https://example.org/wage")  # type: ignore[arg-type]
+
+        assert asked == ["https://example.org/wage"]
+        assert page is not None
+        assert "12% rise in the minimum wage" in page.text
+        assert page.partial is not None and "headline and summary" in page.partial

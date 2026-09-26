@@ -12,10 +12,13 @@ import '../l10n/app_localizations.dart';
 import '../models/submission.dart';
 
 class SubmissionCard extends StatelessWidget {
-  const SubmissionCard({required this.submission, this.onClear, super.key});
+  const SubmissionCard({required this.submission, this.onRecheck, super.key});
 
   final Submission submission;
-  final VoidCallback? onClear;
+
+  /// Checks the same submission again, fresh. Null while a check is running, or
+  /// before there is an answer to replace. (Clearing is the input box's own ✕.)
+  final VoidCallback? onRecheck;
 
   @override
   Widget build(BuildContext context) {
@@ -23,62 +26,78 @@ class SubmissionCard extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final thumbnail = submission.thumbnail;
 
+    final body = Padding(
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (thumbnail != null)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.memory(
+                thumbnail,
+                width: 64,
+                height: 64,
+                fit: BoxFit.cover,
+                // A thumbnail that fails to decode must not take the verdict
+                // down with it.
+                errorBuilder: (_, _, _) => _KindBadge(kind: submission.kind),
+              ),
+            )
+          else
+            _KindBadge(kind: submission.kind),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  // One whole sentence per kind rather than "Checking this" plus
+                  // a noun: Hindi puts the verb last and agrees it with the
+                  // noun's gender, which a spliced-in word cannot do.
+                  l10n.checkingSubmission(submission.kind.name),
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  submission.summary,
+                  style: theme.textTheme.bodyMedium,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+
+    final recheck = onRecheck;
+    if (recheck == null) {
+      return Card(margin: EdgeInsets.zero, clipBehavior: Clip.antiAlias, child: body);
+    }
     return Card(
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (thumbnail != null)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.memory(
-                  thumbnail,
-                  width: 64,
-                  height: 64,
-                  fit: BoxFit.cover,
-                  // A thumbnail that fails to decode must not take the verdict
-                  // down with it.
-                  errorBuilder: (_, _, _) => _KindBadge(kind: submission.kind),
-                ),
-              )
-            else
-              _KindBadge(kind: submission.kind),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    // One whole sentence per kind rather than "Checking this" plus
-                    // a noun: Hindi puts the verb last and agrees it with the
-                    // noun's gender, which a spliced-in word cannot do.
-                    l10n.checkingSubmission(submission.kind.name),
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    submission.summary,
-                    style: theme.textTheme.bodyMedium,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          body,
+          const Divider(height: 1),
+          Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: TextButton.icon(
+                onPressed: recheck,
+                icon: const Icon(Icons.refresh_rounded, size: 18),
+                label: Text(l10n.checkAgain),
               ),
             ),
-            if (onClear != null)
-              IconButton(
-                onPressed: onClear,
-                icon: const Icon(Icons.close),
-                tooltip: l10n.clear,
-                visualDensity: VisualDensity.compact,
-              ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

@@ -218,6 +218,48 @@ abstract class AppLocalizations {
   /// **'Looking for sources that address this'**
   String get working;
 
+  /// No description provided for @checkAgain.
+  ///
+  /// In en, this message translates to:
+  /// **'Check again'**
+  String get checkAgain;
+
+  /// No description provided for @checkingTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking…'**
+  String get checkingTitle;
+
+  /// No description provided for @stepReading.
+  ///
+  /// In en, this message translates to:
+  /// **'Read what you shared'**
+  String get stepReading;
+
+  /// No description provided for @stepSearching.
+  ///
+  /// In en, this message translates to:
+  /// **'Search trusted news and fact-checkers'**
+  String get stepSearching;
+
+  /// No description provided for @stepComparing.
+  ///
+  /// In en, this message translates to:
+  /// **'Compare each source with the claim'**
+  String get stepComparing;
+
+  /// No description provided for @usuallyTakes.
+  ///
+  /// In en, this message translates to:
+  /// **'A check usually takes 20–50 seconds.'**
+  String get usuallyTakes;
+
+  /// No description provided for @elapsedSeconds.
+  ///
+  /// In en, this message translates to:
+  /// **'{seconds}s'**
+  String elapsedSeconds(int seconds);
+
   /// No description provided for @videoAcceptedTitle.
   ///
   /// In en, this message translates to:

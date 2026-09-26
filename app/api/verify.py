@@ -16,6 +16,7 @@ import asyncio
 import logging
 import re
 import time
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Annotated, Any
 from uuid import UUID, uuid4
@@ -41,6 +42,7 @@ from app.api.schemas import (
 from app.extraction.claims import ExtractedClaims
 from app.extraction.language import detect
 from app.extraction.web import extract as extract_article
+from app.extraction.web import headline_and_summary
 from app.intake.normalizer import (
     InputType,
     IntakeRejected,
@@ -55,6 +57,7 @@ from app.orchestration.pipeline import SkippedCheck, VerificationResult
 from app.orchestration.review import HumanLabel
 from app.orchestration.summary import case_summary
 from app.security.fetcher import FetchResult
+from app.sources.verification import page_key
 
 logger = logging.getLogger("factify.api.verify")
 
@@ -100,22 +103,25 @@ async def extract_claims_for(request: Request, intake: NormalisedIntake) -> Extr
     # and the article it points at was never opened, so the substance of most shared
     # news went unread. The article is read and checked alongside the message, which
     # keeps whatever the message itself claims.
+    partial: str | None = None
     if intake.input_type is InputType.TEXT:
         link = _first_link(text)
         if link is not None:
-            article = await _read_linked_article(request, link)
-            if article:
-                text = f"{text}\n\n{article}"
+            page = await _read_linked_article(request, link)
+            if page is not None:
+                text = f"{text}\n\n{page.text}"
+                partial = page.partial
 
     if not text.strip() and intake.input_type is InputType.URL:
         # A submitted link carries no text of its own — normalisation is local and
         # deliberately does not fetch. Read the page here, the same way a retrieved
         # source is read (M16), so "check this link" checks the article instead of
         # abstaining on an empty body. This was the gap that made every URL a no-op.
-        article = await _read_linked_article(request, intake.primary.source_url or "")
-        if article is None:
+        page = await _read_linked_article(request, intake.primary.source_url or "")
+        if page is None:
             return ExtractedClaims(reason="the linked page could not be read")
-        text = article
+        text = page.text
+        partial = page.partial
         # The article's own language, detected on its body — not the URL's, which
         # was detected on an empty string and is always the default.
         language = detect(text).language.value
@@ -123,12 +129,15 @@ async def extract_claims_for(request: Request, intake: NormalisedIntake) -> Extr
     if not text.strip():
         return ExtractedClaims(reason="no readable text in this submission")
 
-    return await pipeline.extract(  # type: ignore[no-any-return]
+    extracted: ExtractedClaims = await pipeline.extract(
         text,
         content_hash=intake.primary.sha256,
         input_kind=intake.input_type.value,
         language=language,
     )
+    if partial and extracted.claims:
+        extracted = replace(extracted, partial_source=partial)
+    return extracted
 
 
 # A link inside a message: with a scheme, or starting "www." as people type them.
@@ -166,7 +175,16 @@ _MAX_ARTICLE_CHARS = 6000
 _MIN_LINK_ARTICLE_CHARS = 600
 
 
-async def _read_linked_article(request: Request, url: str) -> str | None:
+@dataclass(frozen=True, slots=True)
+class LinkedPage:
+    """What a submitted link yielded: its text, and what was missing from it."""
+
+    text: str
+    # Why this is less than the article, when it is: said in the response.
+    partial: str | None = None
+
+
+async def _read_linked_article(request: Request, url: str) -> LinkedPage | None:
     """Fetch a submitted link and return its readable article text, or None.
 
     Only HTML is read here: a PDF or image shared as a link is a file, and the file
@@ -181,6 +199,8 @@ async def _read_linked_article(request: Request, url: str) -> str | None:
     body: str | None = None
     title: str | None = None
     route = "fetched"
+    html: str | None = None
+    partial: str | None = None
 
     result = await reader.fetch(url, provider="url_intake")
     if isinstance(result, FetchResult):
@@ -189,7 +209,8 @@ async def _read_linked_article(request: Request, url: str) -> str | None:
             _log_link_read(url, route="not html", title=None, body="", total=0)
             return None
 
-        article = extract_article(result.text, url=url)
+        html = result.text
+        article = extract_article(html, url=url)
         if article.is_usable and len((article.body or "").strip()) >= _MIN_LINK_ARTICLE_CHARS:
             body, title = article.body, article.title
 
@@ -205,9 +226,24 @@ async def _read_linked_article(request: Request, url: str) -> str | None:
         # that refuse us; a link the user typed deserves the same attempt.
         body = await _vendor_read(request, url)
         route = "vendor extract"
+
+    if not body:
+        # Third rung: what the publisher shows anyone about the page — the headline
+        # and summary in its head, for search engines and link previews — and failing
+        # that, what the search index holds for this exact address. Never the article
+        # behind a paywall; the headline and summary are usually its main claim, and
+        # checking that beats telling the person nothing could be read.
+        title, body = headline_and_summary(html) if html else (None, None)
+        route = "page headline and summary"
+        if not body:
+            listed = await _search_listing(request, url)
+            if listed is not None:
+                title, body = listed
+                route = "search listing"
         if not body:
             _log_link_read(url, route="unreadable", title=None, body="", total=0)
             return None
+        partial = "only the page's headline and summary could be read, not the full article"
 
     # Title and body together: the headline carries the primary claim, the body the
     # rest, so even a one-paragraph story yields something to check. The body is
@@ -219,7 +255,19 @@ async def _read_linked_article(request: Request, url: str) -> str | None:
     body = (body or "")[:_MAX_ARTICLE_CHARS]
     _log_link_read(url, route=route, title=title, body=body, total=total)
     parts = [part for part in (title, body) if part and part.strip()]
-    return "\n\n".join(parts) if parts else None
+    return LinkedPage("\n\n".join(parts), partial) if parts else None
+
+
+async def _search_listing(request: Request, url: str) -> tuple[str | None, str] | None:
+    """The search index's title and summary for this exact page, or None."""
+    resolver = getattr(request.app.state, "web_search_resolver", None)
+    listing = getattr(resolver, "listing", None)
+    if listing is None:
+        return None
+    try:
+        return await listing(url)  # type: ignore[no-any-return]
+    except Exception:
+        return None
 
 
 def _log_link_read(url: str, *, route: str, title: str | None, body: str, total: int) -> None:
@@ -412,8 +460,11 @@ async def verify(payload: VerifyRequest, request: Request) -> VerifyResponse:
     # A repeat is answered before anything is spent on it. Extraction is a metered
     # model call — and for a link, a page fetch as well — and it used to run first,
     # so every repeat of a viral message paid for a fresh extraction only to be
-    # served the stored verdict afterwards.
-    hit = await orchestrator.cached(intake, case_id=case_id)  # type: ignore[attr-defined]
+    # served the stored verdict afterwards. "Check again" asks for exactly that
+    # stored verdict to be replaced, so it skips the probe.
+    hit = (
+        None if payload.recheck else await orchestrator.cached(intake, case_id=case_id)  # type: ignore[attr-defined]
+    )
     if hit is not None:
         event(
             logger,
@@ -452,8 +503,23 @@ async def verify(payload: VerifyRequest, request: Request) -> VerifyResponse:
             ),
         )
 
+    # The pages the person submitted, which can never be evidence for themselves.
+    own_pages: set[str] = set()
+    if intake.primary.source_url:
+        own_pages.add(page_key(intake.primary.source_url))
+    embedded = (
+        _first_link(intake.primary.text or "") if intake.input_type is InputType.TEXT else None
+    )
+    if embedded is not None:
+        own_pages.add(page_key(embedded))
+
     result = await orchestrator.verify(  # type: ignore[attr-defined]
-        intake, case_id=case_id, claims=list(extracted.claims), started_at=arrived
+        intake,
+        case_id=case_id,
+        claims=list(extracted.claims),
+        started_at=arrived,
+        fresh=payload.recheck,
+        own_pages=frozenset(own_pages),
     )
 
     cached = await cached_full_response(request, result)
@@ -465,6 +531,8 @@ async def verify(payload: VerifyRequest, request: Request) -> VerifyResponse:
     # than presenting "nothing to check" as "nothing wrong".
     if extracted.reason:
         result.skipped.append(SkippedCheck(check="claim_extraction", reason=extracted.reason))
+    if extracted.partial_source:
+        result.skipped.append(SkippedCheck(check="linked_page", reason=extracted.partial_source))
 
     event(
         logger,
@@ -515,6 +583,7 @@ async def verify_file(
     request: Request,
     file: Annotated[UploadFile, File()],
     consent_to_process_media: Annotated[bool, Form()] = False,
+    recheck: Annotated[bool, Form()] = False,
 ) -> VerifyResponse | JSONResponse:
     """Images and PDFs resolve synchronously; video returns 202.
 
@@ -564,12 +633,17 @@ async def verify_file(
         )
 
     # Probed before media preparation (hashing, embedding, OCR), for the same reason
-    # the text path probes before extraction: a repeat should cost nothing.
-    hit = await orchestrator.cached(intake, case_id=case_id)  # type: ignore[attr-defined]
+    # the text path probes before extraction: a repeat should cost nothing. "Check
+    # again" is the exception, as it is there.
+    hit = (
+        None if recheck else await orchestrator.cached(intake, case_id=case_id)  # type: ignore[attr-defined]
+    )
     if hit is not None:
         return await cached_full_response(request, hit) or to_response(hit)
 
-    result = await orchestrator.verify(intake, case_id=case_id, claims=[])  # type: ignore[attr-defined]
+    result = await orchestrator.verify(  # type: ignore[attr-defined]
+        intake, case_id=case_id, claims=[], fresh=recheck
+    )
 
     cached = await cached_full_response(request, result)
     if cached is not None:

@@ -114,6 +114,8 @@ class ServedOrchestrator:
         advisories: list[Advisory] | None = None,
         source_risk: SourceRisk = SourceRisk.UNKNOWN,
         started_at: float | None = None,
+        fresh: bool = False,
+        own_pages: frozenset[str] = frozenset(),
     ) -> VerificationResult:
         # An image arrives with no claims, because there is no text to extract them
         # from. Without this the resolvers had nothing to run against and every
@@ -138,6 +140,8 @@ class ServedOrchestrator:
             advisories=advisories,
             source_risk=source_risk,
             started_at=started_at,
+            fresh=fresh,
+            own_pages=own_pages,
         )
 
         # Written after the verdict exists and never allowed to change it. A cached

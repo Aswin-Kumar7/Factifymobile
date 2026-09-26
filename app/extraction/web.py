@@ -118,6 +118,46 @@ def _flatten(node: object) -> list[dict[str, object]]:
     return []
 
 
+def headline_and_summary(html: str) -> tuple[str | None, str | None]:
+    """The headline and summary a page publishes about itself, or (None, None).
+
+    For a page whose article text nobody could read: a paywall, a script-only
+    shell. Publishers put these in the page head for search engines and link
+    previews, in the open, so reading them is reading what the publisher chose to
+    show anyone. A schema.org `articleBody`, when a page includes one, is used
+    whole. Nothing here gets past a paywall; it reads what is outside it.
+    """
+    metadata = parse_structured_metadata(html)
+    body = _text_of(metadata.get("articleBody"))
+    headline = _text_of(metadata.get("headline"))
+    summary = body if body and len(body) >= 600 else _text_of(metadata.get("description"))
+
+    try:
+        doc = lxml_html.fromstring(html)
+    except (ValueError, lxml_html.etree.ParserError):
+        doc = None
+    if doc is not None:
+
+        def meta(*names: str) -> str | None:
+            for name in names:
+                found = doc.xpath(f'//meta[@property="{name}" or @name="{name}"]/@content')
+                if found and str(found[0]).strip():
+                    return " ".join(str(found[0]).split())
+            return None
+
+        headline = headline or meta("og:title", "twitter:title")
+        summary = summary or meta("og:description", "twitter:description", "description")
+        if headline is None:
+            titles = doc.xpath("//title/text()")
+            headline = " ".join(str(titles[0]).split()) if titles else None
+
+    # A title alone is a site name as often as a headline ("reuters.com"); a summary
+    # is what makes this worth checking.
+    if not summary or len(summary) < 60:
+        return None, None
+    return headline, summary
+
+
 def parse_structured_metadata(html: str) -> dict[str, object]:
     """Read schema.org article metadata, if the publisher emitted any."""
     for block in _JSON_LD.findall(html):

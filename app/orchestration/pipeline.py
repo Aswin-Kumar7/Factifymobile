@@ -41,7 +41,7 @@ from app.observability.logging import event
 from app.sources.base import SourceCandidate, SourceResolver, build_evidence
 from app.sources.corpus import CorroborationSignal
 from app.sources.reasoning import REASONER_VERSION
-from app.sources.verification import SourceVerification, dedupe
+from app.sources.verification import SourceVerification, dedupe, page_key
 from app.verdict.engine import (
     RULE_VERSION,
     CaseDecision,
@@ -230,6 +230,20 @@ class VerificationResult:
         return "Not everything could be checked. " + " ".join(s.describe() for s in self.skipped)
 
 
+def _not_own(evidence: list[Evidence], own_pages: frozenset[str]) -> list[Evidence]:
+    """The evidence, less anything from the pages the person submitted.
+
+    A submitted article cannot confirm itself. Searching for the claims of a Times of
+    India kabaddi report found that same report, and it stood as the headline claim's
+    only supporting source — the article, quoted back as evidence that the article is
+    right. For a fabricated page that search can reach, the same loop would support
+    every claim it makes.
+    """
+    if not own_pages:
+        return evidence
+    return [item for item in evidence if page_key(item.citation_url) not in own_pages]
+
+
 class Orchestrator:
     """Runs the fixed order. The only place that order is expressed."""
 
@@ -341,8 +355,16 @@ class Orchestrator:
         advisories: list[Advisory] | None = None,
         source_risk: SourceRisk = SourceRisk.UNKNOWN,
         started_at: float | None = None,
+        fresh: bool = False,
+        own_pages: frozenset[str] = frozenset(),
     ) -> VerificationResult:
         """Run one verification end to end.
+
+        `fresh` skips the stored verdict: a person pressed "Check again", and the
+        answer from an hour ago is exactly what they are asking to replace.
+
+        `own_pages` are the pages the person submitted — a link, or a link inside a
+        message. They are never evidence for their own claims (see `_not_own`).
 
         `started_at` is when the request arrived, when the caller knows it. The budget
         is the person's wait, and extraction happened before this was called.
@@ -357,9 +379,13 @@ class Orchestrator:
         # Cache probe, before the governor and before any provider. A repeat costs
         # nothing external; the M13 gate asserts exactly this.
         cache_key = self._cache_key(intake)
-        cached = await self._cache.get_verdict(cache_key)
+        cached = None if fresh else await self._cache.get_verdict(cache_key)
         if cached is not None:
             return self._from_cache(cached, case_id=case_id, intake=intake, started=started)
+
+        own = set(own_pages)
+        if intake.primary.source_url:
+            own.add(page_key(intake.primary.source_url))
 
         # The budget becomes a deadline here, not a wish. It was declared and
         # measured but never enforced, and real requests ran to 90 seconds — past
@@ -372,7 +398,9 @@ class Orchestrator:
         # off mid-call or let every lexical one dawdle.
         deadline = started + (REASONING_TARGET_SECONDS if self._reads_sources else TARGET_SECONDS)
 
-        outcomes = await self._resolve_all(claims, skipped=skipped, deadline=deadline)
+        outcomes = await self._resolve_all(
+            claims, skipped=skipped, deadline=deadline, own_pages=frozenset(own)
+        )
 
         case_decision = roll_up(
             [(outcome.claim, outcome.decision) for outcome in outcomes], source_risk=source_risk
@@ -519,6 +547,7 @@ class Orchestrator:
         *,
         skipped: list[SkippedCheck],
         deadline: float | None = None,
+        own_pages: frozenset[str] = frozenset(),
     ) -> list[ClaimOutcome]:
         """Resolve every claim, bounded by the concurrency ceiling.
 
@@ -543,6 +572,7 @@ class Orchestrator:
                     skipped=skipped,
                     deadline=deadline,
                     allow_fallback=index in may_fall_back,
+                    own_pages=own_pages,
                 )
                 for index, claim in enumerate(claims)
             )
@@ -556,6 +586,7 @@ class Orchestrator:
         skipped: list[SkippedCheck],
         deadline: float | None = None,
         allow_fallback: bool = True,
+        own_pages: frozenset[str] = frozenset(),
     ) -> ClaimOutcome:
         """Gather evidence for one claim, then decide on it.
 
@@ -606,6 +637,8 @@ class Orchestrator:
                 reason="already decisive" if allow_fallback else "claim below the fallback cap",
             )
 
+        evidence = _not_own(evidence, own_pages)
+
         # Every source is verified against the claim before anything decides on it:
         # one citation per page, only sources that take a side, and a second opinion
         # on whether each is about this claim at all. See `app/sources/verification.py`.
@@ -622,6 +655,7 @@ class Orchestrator:
                 evidence.extend(
                     await self._run_stage(fallback, claim, skipped=skipped, deadline=deadline)
                 )
+                evidence = _not_own(evidence, own_pages)
                 evidence, explanation = await self._verify_sources(
                     claim, evidence, skipped=skipped, deadline=deadline
                 )

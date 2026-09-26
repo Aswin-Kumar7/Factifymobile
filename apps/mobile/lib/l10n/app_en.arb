@@ -28,6 +28,20 @@
   "emptyTitle": "Nothing checked yet",
   "emptyBody": "Share a forward straight into Factify, paste it above, or check a picture. Every verdict comes with the sources behind it — and when there are none, it says so.",
   "working": "Looking for sources that address this",
+  "checkAgain": "Check again",
+  "checkingTitle": "Checking…",
+  "stepReading": "Read what you shared",
+  "stepSearching": "Search trusted news and fact-checkers",
+  "stepComparing": "Compare each source with the claim",
+  "usuallyTakes": "A check usually takes 20–50 seconds.",
+  "elapsedSeconds": "{seconds}s",
+  "@elapsedSeconds": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
   "videoAcceptedTitle": "Video accepted",
   "videoAcceptedBody": "Longer than a request can stay open. Checking now.",
   "retry": "Retry",

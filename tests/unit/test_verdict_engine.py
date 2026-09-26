@@ -661,6 +661,24 @@ class TestAMinorDetailDoesNotSinkTheCase:
         assert outcome.action is Action.SAFE_TO_SHARE
         assert "minor detail" in outcome.reason
 
+    def test_an_unconfirmed_high_severity_detail_does_not_outvote_the_article(self) -> None:
+        """A Hindu analysis: three claims confirmed by NDTV, The Hindu and TOI, one
+        background sentence ("a dharna a month earlier") with no coverage, rated HIGH
+        by the extractor as most political claims are. It came back Unconfirmed."""
+        aside = claim(
+            claim_id="cl_2", importance=Importance.SUPPORTING_DETAIL, severity=Severity.HIGH
+        )
+
+        outcome = roll_up(
+            [
+                (claim(independent_origin_count=2, document_count=2), self._supported()),
+                (aside, self._unverified()),
+            ]
+        )
+
+        assert outcome.action is Action.SAFE_TO_SHARE
+        assert "could not be checked" in outcome.reason
+
     def test_an_unverified_thesis_still_abstains(self) -> None:
         """The bar is not lowered for the claims that carry the document."""
         outcome = roll_up(

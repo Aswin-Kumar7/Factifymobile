@@ -34,7 +34,7 @@ from app.domain.publishers import publishers_of
 
 # Stamped on every verdict. A cached verdict produced under older rules is therefore
 # identifiable, and the cache can refuse to serve it (M13).
-RULE_VERSION = "2026.09.13"
+RULE_VERSION = "2026.09.26.1"
 
 # Default number of genuinely independent origins required before corroboration can
 # support a claim. Tenant-configurable later; never below two, because one origin is
@@ -540,6 +540,14 @@ def case_confidence(verdict: Verdict, claims: list[tuple[ClaimStatus, int | None
     return max(scores) if scores else None
 
 
+def _blocks_clearance(claim: Claim) -> bool:
+    """Whether this claim, left unconfirmed, keeps the case from being called true."""
+    return (
+        claim.importance in {Importance.HEADLINE, Importance.MAIN_THESIS}
+        or claim.severity is Severity.CRITICAL
+    )
+
+
 def _roll_up_action(
     decisions: list[tuple[Claim, Decision]],
     *,
@@ -631,10 +639,23 @@ def _roll_up_action(
     # contradiction anywhere still wins, and at least one claim must be positively
     # supported — silence about everything is not a clearance. What changes is that a
     # background detail nobody could confirm no longer outvotes the thesis.
+    #
+    # Which unconfirmed claims block a clearance is narrower than `is_material`.
+    # That also counts any claim rated HIGH severity, and the extractor rates most
+    # political and public-safety claims HIGH wherever they sit. A Hindu analysis of
+    # Rahul Gandhi's campaigning had three claims confirmed by NDTV, The Hindu, the
+    # Times of India and others, and came back Unconfirmed because a background
+    # sentence — a dharna "a month earlier" — found no coverage. The article's own
+    # claims were true; one aside nobody had written about outvoted all of them.
+    #
+    # So a clearance needs the headline and the main claims supported, and anything
+    # CRITICAL — a health danger, a safety instruction. A HIGH-severity detail that is
+    # *contradicted* still sinks the case above; one that is merely unconfirmed is
+    # reported as unchecked, not treated as a strike against what was confirmed.
     supported = [decision for _, decision in decisions if decision.status is ClaimStatus.SUPPORTED]
-    unchecked = [claim for claim, _ in unverified if not claim.is_material]
+    unchecked = [claim for claim, _ in unverified if not _blocks_clearance(claim)]
 
-    if supported and not any(claim.is_material for claim, _ in unverified):
+    if supported and not any(_blocks_clearance(claim) for claim, _ in unverified):
         return CaseDecision(
             action=Action.SAFE_TO_SHARE,
             rule_id="rollup.material_supported" if unchecked else "rollup.all_supported",

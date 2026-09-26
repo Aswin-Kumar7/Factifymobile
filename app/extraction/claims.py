@@ -57,6 +57,9 @@ class ExtractedClaims:
     reason: str | None = None
     discarded: tuple[str, ...] = ()
     injection_findings: tuple[str, ...] = ()
+    # Set when the claims came from less than the whole source: a linked page whose
+    # article could not be read, checked on its published headline and summary.
+    partial_source: str | None = None
 
     @property
     def succeeded(self) -> bool:

@@ -96,6 +96,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// collapsed both into a dead end.
   Future<void> Function()? _lastRun;
 
+  /// "Check again": the same submission, checked fresh rather than served from the
+  /// server's store. Separate from [_lastRun], which retries a failed request as
+  /// it was.
+  Future<void> Function()? _recheckRun;
+
   /// The interface language, sent with every check so the verdict can come back
   /// in the language it will be read in (PLAN 1.7.6). The phone's language unless
   /// the reader picked another from the language menu.
@@ -233,10 +238,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     unawaited(_probeService());
   }
 
-  Future<void> _verify(String raw) async {
+  Future<void> _verify(String raw, {bool recheck = false}) async {
     final value = raw.trim();
     if (value.isEmpty) return;
     _lastRun = () => _verify(raw);
+    _recheckRun = () => _verify(raw, recheck: true);
     final language = _language;
 
     // A bare URL and a block of text are different endpoints on the server, so
@@ -246,8 +252,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     try {
       final verdict = looksLikeUrl
-          ? await widget.client.verifyUrl(value, language: language)
-          : await widget.client.verifyText(value, language: language);
+          ? await widget.client.verifyUrl(value, language: language, recheck: recheck)
+          : await widget.client.verifyText(value, language: language, recheck: recheck);
       if (mounted) _finish(verdict);
     } on ApiFailure catch (failure) {
       if (!mounted) return;
@@ -268,10 +274,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _verifyFile(File file, {Submission? submission}) async {
+  Future<void> _verifyFile(File file, {Submission? submission, bool recheck = false}) async {
     _lastRun = () => _verifyFile(file, submission: submission);
     final language = _language;
-    _beginRun(submission ?? await _describe(file));
+    final described = submission ?? await _describe(file);
+    _recheckRun = () => _verifyFile(file, submission: described, recheck: true);
+    _beginRun(described);
 
     try {
       // Consent is implied by choosing the file: the person picked this image
@@ -280,6 +288,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         file,
         consentToProcessMedia: true,
         language: language,
+        recheck: recheck,
         onProgress: _showUploadProgress,
       );
       if (!mounted) return;
@@ -565,13 +574,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         if (submission != null) ...[
           SubmissionCard(
             submission: submission,
-            onClear: _busy
-                ? null
-                : () => setState(() {
-                    _submission = null;
-                    _verdict = null;
-                    _error = null;
-                  }),
+            onRecheck: !_busy && (verdict != null || error != null) && _recheckRun != null
+                ? () => unawaited(_recheckRun!())
+                : null,
           ),
           const SizedBox(height: 12),
         ],
@@ -795,33 +800,154 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-/// Work in progress: a measured upload first, then the search for sources.
+/// Work in progress: a measured upload, then a check whose length is unknown.
 ///
-/// The bar is determinate only while there is something to measure. Once the file
-/// is sent, how long the server takes is unknown, and a bar that pretended to
-/// know would be a small fabrication.
-class _Working extends StatelessWidget {
+/// What it shows is only what is true. An upload has a real percentage, so it gets
+/// a real bar. The check itself reports no progress, so there is no bar pretending
+/// to know how far along it is: a counter of the seconds actually spent, the steps
+/// every check goes through (listed, not ticked off), and how long one usually
+/// takes, so a forty-second wait reads as normal rather than stuck.
+class _Working extends StatefulWidget {
   const _Working({this.uploadProgress});
 
   final double? uploadProgress;
 
   @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    final progress = uploadProgress;
-    final uploading = progress != null && progress < 1;
+  State<_Working> createState() => _WorkingState();
+}
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 20),
-      child: Column(
-        children: [
-          LinearProgressIndicator(value: uploading ? progress : null),
-          const SizedBox(height: 12),
-          Text(
-            uploading ? l10n.uploading((progress * 100).round()) : l10n.working,
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ],
+class _WorkingState extends State<_Working> {
+  final Stopwatch _clock = Stopwatch()..start();
+  late final Timer _tick = Timer.periodic(const Duration(seconds: 1), (_) {
+    if (mounted) setState(() {});
+  });
+
+  @override
+  void initState() {
+    super.initState();
+    _tick; // started with the card, stopped with it
+  }
+
+  @override
+  void dispose() {
+    _tick.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
+    final progress = widget.uploadProgress;
+    final uploading = progress != null && progress < 1;
+    final muted = theme.textTheme.bodySmall?.copyWith(color: FactifyColors.inkMuted);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      const SizedBox(
+                        width: 44,
+                        height: 44,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 3,
+                          color: FactifyColors.emerald,
+                          backgroundColor: FactifyColors.emeraldTint,
+                        ),
+                      ),
+                      Icon(
+                        uploading ? Icons.upload_rounded : Icons.travel_explore_rounded,
+                        size: 20,
+                        color: FactifyColors.emeraldDark,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        l10n.checkingTitle,
+                        style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        uploading ? l10n.uploading((progress * 100).round()) : l10n.working,
+                        style: muted,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  l10n.elapsedSeconds(_clock.elapsed.inSeconds),
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: FactifyColors.inkMuted,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ],
+            ),
+            if (uploading) ...[
+              const SizedBox(height: 14),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 6,
+                  color: FactifyColors.emerald,
+                  backgroundColor: FactifyColors.emeraldTint,
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            for (final (index, step) in [
+              l10n.stepReading,
+              l10n.stepSearching,
+              l10n.stepComparing,
+            ].indexed)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 22,
+                      height: 22,
+                      alignment: Alignment.center,
+                      decoration: const BoxDecoration(
+                        color: FactifyColors.emeraldTint,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        '${index + 1}',
+                        style: const TextStyle(
+                          color: FactifyColors.emeraldDeep,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text(step, style: theme.textTheme.bodyMedium)),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 4),
+            Text(l10n.usuallyTakes, style: muted),
+          ],
+        ),
       ),
     );
   }

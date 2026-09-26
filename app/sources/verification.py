@@ -104,8 +104,15 @@ def page_key(url: str) -> str:
     so two different releases would have been merged into one citation.
     """
     parts = urlsplit(url.strip())
-    host = (parts.hostname or "").lower().removeprefix("www.")
+    host = (parts.hostname or "").lower()
+    # The mobile and AMP copies of an article are the article. The Hindu's AMP copy
+    # (".../article71502791.ece/amp/") was cited as evidence for the article it copies.
+    for prefix in ("www.", "m.", "amp."):
+        host = host.removeprefix(prefix)
     path = parts.path.rstrip("/") or "/"
+    path = path.removesuffix("/amp").removeprefix("/amp/") or "/"
+    if not path.startswith("/"):
+        path = f"/{path}"
     query = "&".join(
         sorted(
             pair

@@ -29,6 +29,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 from datetime import UTC, datetime
 from time import monotonic
 from typing import Any
@@ -400,6 +401,46 @@ class WebSearchResolver:
             reused=reused,
             url=url,
         )
+
+    async def listing(self, url: str) -> tuple[str | None, str] | None:
+        """The search engine's own title and summary for one page, or None.
+
+        The last rung for a link nobody can read and whose page gave us nothing either:
+        the headline and description the search index holds for that exact address.
+        Found by searching the address's own words within its own site, then matching
+        the address — a result for a different page is never used.
+        """
+        if self._provider != "tavily" or not self._api_key:
+            return None
+        parts = urlsplit(url)
+        words = " ".join(
+            w for w in re.split(r"[^A-Za-z0-9]+", parts.path) if len(w) > 2 and not w.isdigit()
+        )
+        if not parts.hostname or not words:
+            return None
+        result = await self._fetcher.post_json(
+            self._endpoint,
+            {
+                "query": words[:300],
+                "max_results": 5,
+                "search_depth": "basic",
+                "include_domains": [parts.hostname.removeprefix("www.")],
+            },
+            provider=PROVIDER,
+            headers={"authorization": f"Bearer {self._api_key}"},
+        )
+        if not isinstance(result, FetchResult):
+            return None
+        try:
+            rows = json.loads(result.text).get("results", [])
+        except json.JSONDecodeError:
+            return None
+        wanted = page_key(url)
+        for row in rows:
+            content = " ".join(str(row.get("content") or "").split())
+            if page_key(str(row.get("url") or "")) == wanted and len(content) >= 60:
+                return row.get("title"), content
+        return None
 
     async def _vendor_extract(self, url: str) -> str:
         """Ask the search provider for the text of one page we could not read.

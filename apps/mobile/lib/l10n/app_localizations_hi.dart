@@ -79,6 +79,29 @@ class AppLocalizationsHi extends AppLocalizations {
   String get working => 'इस बारे में स्रोत खोजे जा रहे हैं';
 
   @override
+  String get checkAgain => 'फिर से जाँचें';
+
+  @override
+  String get checkingTitle => 'जाँच हो रही है…';
+
+  @override
+  String get stepReading => 'आपने जो भेजा उसे पढ़ना';
+
+  @override
+  String get stepSearching => 'भरोसेमंद समाचार और फ़ैक्ट-चेकर खोजना';
+
+  @override
+  String get stepComparing => 'हर स्रोत को दावे से मिलाना';
+
+  @override
+  String get usuallyTakes => 'एक जाँच में आम तौर पर 20–50 सेकंड लगते हैं।';
+
+  @override
+  String elapsedSeconds(int seconds) {
+    return '$seconds से.';
+  }
+
+  @override
   String get videoAcceptedTitle => 'वीडियो स्वीकार किया गया';
 
   @override
