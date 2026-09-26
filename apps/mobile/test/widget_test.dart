@@ -528,17 +528,17 @@ void main() {
 
       await tester.pumpWidget(FactifyApp(language: LanguagePreference.inMemory(), client: client));
       await tester.pumpAndSettle();
-      expect(find.text('Is it true?'), findsOneWidget);
+      expect(find.text('What would you like to check?'), findsOneWidget);
 
       await tester.tap(find.byType(LanguageMenu));
       await tester.pumpAndSettle();
       await tester.tap(find.text('हिन्दी'));
       await tester.pumpAndSettle();
-      expect(find.text('क्या यह सच है?'), findsOneWidget);
+      expect(find.text('आप क्या जाँचना चाहते हैं?'), findsOneWidget);
 
       await tester.enterText(find.byType(TextField), 'The scheme was cancelled on Friday.');
       await tester.pump();
-      await tester.tap(find.text('इसे जाँचें'));
+      await tester.tap(find.text('अभी जाँचें'));
       await tester.pumpAndSettle();
 
       expect(sent.single['language'], 'hi');
@@ -558,12 +558,12 @@ void main() {
       tester.platformDispatcher.localesTestValue = const [Locale('hi', 'IN')];
       await tester.pumpWidget(FactifyApp(language: LanguagePreference.inMemory(), client: client));
       await tester.pumpAndSettle();
-      expect(find.text('क्या यह सच है?'), findsOneWidget);
+      expect(find.text('आप क्या जाँचना चाहते हैं?'), findsOneWidget);
 
       // A phone in a language Factify has no strings for gets English.
       tester.platformDispatcher.localesTestValue = const [Locale('ta', 'IN')];
       await tester.pumpAndSettle();
-      expect(find.text('Is it true?'), findsOneWidget);
+      expect(find.text('What would you like to check?'), findsOneWidget);
     });
 
     testWidgets('the result, the evidence and the correction lay out at phone width, in both '

@@ -46,8 +46,8 @@ dependencies:
   image_picker: ^1.1.2
   url_launcher: ^6.3.1
   intl: ^0.20.2
-  # Holds one value: the interface language someone chose (see
-  # lib/l10n/language_preference.dart). What was checked is never written to disk.
+  # The interface language, the sign-in session and the history of checks, all on
+  # this phone only (the history can be cleared from the profile screen).
   shared_preferences: ^2.5.5
   # Sends the correction card back through the system share sheet (M44, PLAN
   # 1.7.5). Brings its own FileProvider, so the manifest grants nothing new.

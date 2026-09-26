@@ -9,12 +9,17 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'api/client.dart';
-import 'l10n/app_localizations.dart';
-import 'l10n/language_preference.dart';
-import 'screens/home_screen.dart';
+import 'app_services.dart';
 import 'auth/auth_links.dart';
 import 'auth/auth_service.dart';
+import 'history/history_store.dart';
+import 'l10n/app_localizations.dart';
+import 'l10n/language_preference.dart';
+import 'screens/main_shell.dart';
+import 'screens/splash_screen.dart';
 import 'theme/colors.dart';
 
 Future<void> main() async {
@@ -26,7 +31,14 @@ Future<void> main() async {
 }
 
 class FactifyApp extends StatefulWidget {
-  const FactifyApp({super.key, required this.language, this.client, this.auth});
+  const FactifyApp({
+    super.key,
+    required this.language,
+    this.client,
+    this.auth,
+    this.history,
+    bool? showIntro,
+  }) : showIntro = showIntro ?? client == null;
 
   final LanguagePreference language;
 
@@ -36,6 +48,13 @@ class FactifyApp extends StatefulWidget {
   /// Supplied by tests. The app otherwise builds its own, and a test that supplies
   /// only a client gets one that never touches the phone's storage.
   final AuthService? auth;
+
+  /// Supplied by tests; kept on the phone otherwise.
+  final HistoryStore? history;
+
+  /// The splash and the welcome. On for the app; a test that supplies a client
+  /// starts in the app itself unless it asks for them.
+  final bool showIntro;
 
   @override
   State<FactifyApp> createState() => _FactifyAppState();
@@ -50,6 +69,15 @@ class _FactifyAppState extends State<FactifyApp> {
         links: widget.client == null ? AuthLinks() : null,
         persist: widget.client == null,
       );
+  late final HistoryStore _history =
+      widget.history ??
+      HistoryStore(store: widget.client == null ? SharedPreferencesAsync() : null);
+  late final AppServices _services = AppServices(
+    client: _client,
+    auth: _auth,
+    language: widget.language,
+    history: _history,
+  );
 
   @override
   void initState() {
@@ -57,6 +85,8 @@ class _FactifyAppState extends State<FactifyApp> {
     // Checks carry the signed-in person's token, so the server can record credits.
     _client.tokenProvider = _auth.accessToken;
     if (widget.auth == null) unawaited(_auth.start());
+    // Without the splash (tests), nothing else would load the saved history.
+    if (!widget.showIntro) unawaited(_history.load());
   }
 
   @override
@@ -89,7 +119,7 @@ class _FactifyAppState extends State<FactifyApp> {
         supportedLocales: AppLocalizations.supportedLocales,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         localeListResolutionCallback: _resolveLocale,
-        home: HomeScreen(client: _client, language: widget.language, auth: _auth),
+        home: widget.showIntro ? SplashScreen(services: _services) : MainShell(services: _services),
       ),
     );
   }
@@ -115,32 +145,27 @@ Locale _resolveLocale(List<Locale>? preferred, Iterable<Locale> supported) {
 /// compete with exactly the signal that has to read at a glance. Emerald marks what
 /// can be tapped; slate carries the text; the page is white.
 ThemeData _theme() {
-  final scheme = ColorScheme.fromSeed(
-    seedColor: FactifyColors.emerald,
-    brightness: Brightness.light,
-  ).copyWith(
-    primary: FactifyColors.emerald,
-    onPrimary: Colors.white,
-    primaryContainer: FactifyColors.emeraldSoft,
-    onPrimaryContainer: FactifyColors.emeraldDeep,
-    secondary: FactifyColors.emeraldDark,
-    surface: Colors.white,
-    onSurface: FactifyColors.ink,
-    onSurfaceVariant: FactifyColors.inkMuted,
-    outline: FactifyColors.line,
-    outlineVariant: FactifyColors.line,
-    surfaceContainerLowest: Colors.white,
-    surfaceContainerLow: FactifyColors.ground,
-    surfaceContainer: FactifyColors.ground,
-    surfaceContainerHigh: const Color(0xFFF1F5F9),
-    surfaceContainerHighest: const Color(0xFFF1F5F9),
-  );
+  final scheme =
+      ColorScheme.fromSeed(seedColor: FactifyColors.emerald, brightness: Brightness.light).copyWith(
+        primary: FactifyColors.emerald,
+        onPrimary: Colors.white,
+        primaryContainer: FactifyColors.emeraldSoft,
+        onPrimaryContainer: FactifyColors.emeraldDeep,
+        secondary: FactifyColors.emeraldDark,
+        surface: Colors.white,
+        onSurface: FactifyColors.ink,
+        onSurfaceVariant: FactifyColors.inkMuted,
+        outline: FactifyColors.line,
+        outlineVariant: FactifyColors.line,
+        surfaceContainerLowest: Colors.white,
+        surfaceContainerLow: FactifyColors.ground,
+        surfaceContainer: FactifyColors.ground,
+        surfaceContainerHigh: const Color(0xFFF1F5F9),
+        surfaceContainerHighest: const Color(0xFFF1F5F9),
+      );
 
   final base = ThemeData(colorScheme: scheme, useMaterial3: true);
-  final text = base.textTheme.apply(
-    bodyColor: FactifyColors.ink,
-    displayColor: FactifyColors.ink,
-  );
+  final text = base.textTheme.apply(bodyColor: FactifyColors.ink, displayColor: FactifyColors.ink);
 
   return base.copyWith(
     scaffoldBackgroundColor: Colors.white,

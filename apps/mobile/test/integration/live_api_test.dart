@@ -11,8 +11,16 @@ library;
 import 'package:factify_mobile/api/client.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'test_account.dart';
+
 void main() {
   final client = FactifyClient(baseUrl: 'http://127.0.0.1:8000');
+
+  // Every check needs an account.
+  setUpAll(() async {
+    final token = await signUpForTests('http://127.0.0.1:8000');
+    client.tokenProvider = () async => token;
+  });
 
   test('the service is reachable', () async {
     expect(await client.healthy(), isTrue);

@@ -455,21 +455,9 @@
   "signInTitle": "Sign in to Factify",
   "signInBody": "Keep your profile and credits on any phone. We never keep a record of what you check.",
   "emailLabel": "Email",
-  "sendCode": "Email me a code",
-  "codeSentTo": "We sent a 6-digit code to {email}.",
-  "@codeSentTo": {
-    "placeholders": {
-      "email": {
-        "type": "String"
-      }
-    }
-  },
-  "codeLabel": "6-digit code",
-  "verifyCode": "Sign in",
-  "useDifferentEmail": "Use a different email",
   "orDivider": "or",
   "continueWithGoogle": "Continue with Google",
-  "signInUnavailable": "Sign-in isn't switched on for this server yet. You can keep checking without an account.",
+  "signInUnavailable": "Sign-in can't be reached right now. Check your connection and try again.",
   "signOut": "Sign out",
   "creditsTitle": "Credits",
   "creditsLeft": "{count, plural, =1{1 credit left} other{{count} credits left}}",
@@ -523,7 +511,6 @@
   "cancel": "Cancel",
   "failureSignedOut": "Your sign-in has ended. Sign in again from your account.",
   "failureOutOfCredits": "You're out of credits for now.",
-  "authWrongCode": "That code didn't work. Check the email and try again.",
   "authNetwork": "Couldn't reach sign-in. Check your connection.",
   "authTooMany": "Too many tries. Wait a minute and try again.",
   "authGeneric": "Sign-in didn't work. Try again.",
@@ -563,5 +550,129 @@
   "imageTextLabel": "Text in the picture",
   "imageNoText": "We found no text in this picture, so we checked the picture itself.",
   "imageShowAllText": "Show all the text",
-  "imageShowLessText": "Show less"
+  "imageShowLessText": "Show less",
+  "splashTagline": "Check before you share",
+  "welcomeTitle": "Know what's true before you share it",
+  "welcomeBody": "Factify checks news, forwards, pictures and documents against reliable sources, and shows you every source it used.",
+  "welcomePointSources": "Every answer comes with its sources",
+  "welcomePointInputs": "Text, links, pictures and PDFs",
+  "welcomePointLanguages": "In English and Hindi",
+  "welcomeSignInTitle": "Create your account",
+  "welcomeSignInBody": "An account is needed to check. Sign up or sign in with your email and a password, or with Google.",
+  "tabHome": "Home",
+  "tabHistory": "History",
+  "tabProfile": "Profile",
+  "homeGreeting": "Hi, {name}",
+  "@homeGreeting": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "homeGreetingGuest": "Hi there",
+  "homeTitle": "What would you like to check?",
+  "inputTypeText": "Text or link",
+  "inputTypeImage": "Image",
+  "inputTypePdf": "PDF",
+  "inputTextHint": "Paste a message, a claim or a news link",
+  "inputLinkDetected": "Link found. We'll read the page and check it.",
+  "inputLocked": "Remove what you've added to switch to another type.",
+  "removeInput": "Remove",
+  "pasteButton": "Paste",
+  "pickImageTitle": "Add a picture",
+  "pickImageBody": "A screenshot, a WhatsApp forward or a photo. We read the text in it and check it.",
+  "pickPdfTitle": "Add a PDF",
+  "pickPdfBody": "A circular, a notice or any document. We read it and check what it claims.",
+  "choosePdf": "Choose a PDF",
+  "notAPdf": "That file isn't a PDF. Choose a PDF, or switch to Image.",
+  "checkNow": "Check now",
+  "checkingOf": "Checking",
+  "checkingCancel": "Stop waiting",
+  "checkingFailedTitle": "The check didn't finish",
+  "backToHome": "Back to home",
+  "resultTitle": "Result",
+  "newCheck": "New check",
+  "historyEmptyTitle": "No checks yet",
+  "historyEmptyBody": "Everything you check is listed here, with its sources, so you can come back to it.",
+  "historyToday": "Today",
+  "historyYesterday": "Yesterday",
+  "historyClear": "Clear history",
+  "historyClearConfirm": "Delete every saved check from this phone?",
+  "historyDelete": "Delete",
+  "historyFilterAll": "All",
+  "historyStoredNote": "Saved only on this phone. Nothing you check is kept on our servers.",
+  "historySources": "{count, plural, =0{No sources} =1{1 source} other{{count} sources}}",
+  "@historySources": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "profileTitle": "Profile",
+  "guestTitle": "You're not signed in",
+  "guestBody": "Sign in to check news and keep your credits.",
+  "signInOrCreate": "Sign in or create an account",
+  "signedInWith": "{method, select, google{Signed in with Google} other{Signed in with email}}",
+  "@signedInWith": {
+    "placeholders": {
+      "method": {
+        "type": "String"
+      }
+    }
+  },
+  "profileDetails": "Account details",
+  "profileEmail": "Email",
+  "profileName": "Name",
+  "profilePlan": "Plan",
+  "profileJoined": "Member since",
+  "settingsTitle": "Settings",
+  "settingLanguage": "Language",
+  "settingHistory": "Saved checks",
+  "settingHistoryCount": "{count, plural, =0{None saved} =1{1 check on this phone} other{{count} checks on this phone}}",
+  "@settingHistoryCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aboutTitle": "About Factify",
+  "aboutBody": "Factify checks what you share against reliable sources and always shows them. When the sources don't settle it, it says Unconfirmed rather than guess.",
+  "serviceStatus": "Service",
+  "done": "Done",
+  "modeSignIn": "Sign in",
+  "modeCreateAccount": "Create account",
+  "welcomeBackTitle": "Welcome back",
+  "welcomeBackBody": "Sign in with your email and password, or with Google.",
+  "passwordLabel": "Password",
+  "confirmPasswordLabel": "Confirm password",
+  "passwordHint": "At least {min} characters",
+  "@passwordHint": {
+    "placeholders": {
+      "min": {
+        "type": "int"
+      }
+    }
+  },
+  "showPassword": "Show password",
+  "hidePassword": "Hide password",
+  "passwordsDontMatch": "The passwords don't match.",
+  "createAccountButton": "Create account",
+  "signInButton": "Sign in",
+  "authInvalidEmail": "That doesn't look like an email address.",
+  "authWeakPassword": "Use a password of at least {min} characters.",
+  "@authWeakPassword": {
+    "placeholders": {
+      "min": {
+        "type": "int"
+      }
+    }
+  },
+  "authEmailTaken": "There's already an account with this email. Sign in instead.",
+  "authWrongCredentials": "That email and password don't match an account.",
+  "authUseGoogle": "This account was made with Google. Use Continue with Google.",
+  "authGoogleFailed": "Google sign-in didn't finish. Try again.",
+  "authGoogleUnavailable": "Google sign-in isn't set up on this server yet. Use your email and a password."
 }

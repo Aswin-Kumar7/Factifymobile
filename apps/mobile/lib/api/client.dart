@@ -99,6 +99,9 @@ class FactifyClient {
     : _http = httpClient ?? http.Client();
 
   final http.Client _http;
+
+  /// The connection this client uses, shared with sign-in so there is one pool.
+  http.Client get httpClient => _http;
   final String baseUrl;
 
   /// The signed-in person's access token, when there is one (see

@@ -23,6 +23,8 @@ import 'package:factify_mobile/api/client.dart';
 import 'package:factify_mobile/models/verdict.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'test_account.dart';
+
 const String _base = String.fromEnvironment('FACTIFY_API', defaultValue: 'http://127.0.0.1:8000');
 
 /// Timings, printed together at the end so the run reads as one table.
@@ -116,6 +118,11 @@ void main() {
 
   setUpAll(() async {
     reachable = await client.healthy();
+    if (reachable) {
+      // Every check needs an account.
+      final token = await signUpForTests(_base);
+      client.tokenProvider = () async => token;
+    }
     if (!reachable) {
       // ignore: avoid_print
       print('SKIPPING: no Factify API at $_base. Start it, or pass --dart-define=FACTIFY_API=...');

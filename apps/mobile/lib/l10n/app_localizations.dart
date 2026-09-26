@@ -1130,36 +1130,6 @@ abstract class AppLocalizations {
   /// **'Email'**
   String get emailLabel;
 
-  /// No description provided for @sendCode.
-  ///
-  /// In en, this message translates to:
-  /// **'Email me a code'**
-  String get sendCode;
-
-  /// No description provided for @codeSentTo.
-  ///
-  /// In en, this message translates to:
-  /// **'We sent a 6-digit code to {email}.'**
-  String codeSentTo(String email);
-
-  /// No description provided for @codeLabel.
-  ///
-  /// In en, this message translates to:
-  /// **'6-digit code'**
-  String get codeLabel;
-
-  /// No description provided for @verifyCode.
-  ///
-  /// In en, this message translates to:
-  /// **'Sign in'**
-  String get verifyCode;
-
-  /// No description provided for @useDifferentEmail.
-  ///
-  /// In en, this message translates to:
-  /// **'Use a different email'**
-  String get useDifferentEmail;
-
   /// No description provided for @orDivider.
   ///
   /// In en, this message translates to:
@@ -1175,7 +1145,7 @@ abstract class AppLocalizations {
   /// No description provided for @signInUnavailable.
   ///
   /// In en, this message translates to:
-  /// **'Sign-in isn\'t switched on for this server yet. You can keep checking without an account.'**
+  /// **'Sign-in can\'t be reached right now. Check your connection and try again.'**
   String get signInUnavailable;
 
   /// No description provided for @signOut.
@@ -1261,12 +1231,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'You\'re out of credits for now.'**
   String get failureOutOfCredits;
-
-  /// No description provided for @authWrongCode.
-  ///
-  /// In en, this message translates to:
-  /// **'That code didn\'t work. Check the email and try again.'**
-  String get authWrongCode;
 
   /// No description provided for @authNetwork.
   ///
@@ -1363,6 +1327,498 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Show less'**
   String get imageShowLessText;
+
+  /// No description provided for @splashTagline.
+  ///
+  /// In en, this message translates to:
+  /// **'Check before you share'**
+  String get splashTagline;
+
+  /// No description provided for @welcomeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Know what\'s true before you share it'**
+  String get welcomeTitle;
+
+  /// No description provided for @welcomeBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Factify checks news, forwards, pictures and documents against reliable sources, and shows you every source it used.'**
+  String get welcomeBody;
+
+  /// No description provided for @welcomePointSources.
+  ///
+  /// In en, this message translates to:
+  /// **'Every answer comes with its sources'**
+  String get welcomePointSources;
+
+  /// No description provided for @welcomePointInputs.
+  ///
+  /// In en, this message translates to:
+  /// **'Text, links, pictures and PDFs'**
+  String get welcomePointInputs;
+
+  /// No description provided for @welcomePointLanguages.
+  ///
+  /// In en, this message translates to:
+  /// **'In English and Hindi'**
+  String get welcomePointLanguages;
+
+  /// No description provided for @welcomeSignInTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Create your account'**
+  String get welcomeSignInTitle;
+
+  /// No description provided for @welcomeSignInBody.
+  ///
+  /// In en, this message translates to:
+  /// **'An account is needed to check. Sign up or sign in with your email and a password, or with Google.'**
+  String get welcomeSignInBody;
+
+  /// No description provided for @tabHome.
+  ///
+  /// In en, this message translates to:
+  /// **'Home'**
+  String get tabHome;
+
+  /// No description provided for @tabHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'History'**
+  String get tabHistory;
+
+  /// No description provided for @tabProfile.
+  ///
+  /// In en, this message translates to:
+  /// **'Profile'**
+  String get tabProfile;
+
+  /// No description provided for @homeGreeting.
+  ///
+  /// In en, this message translates to:
+  /// **'Hi, {name}'**
+  String homeGreeting(String name);
+
+  /// No description provided for @homeGreetingGuest.
+  ///
+  /// In en, this message translates to:
+  /// **'Hi there'**
+  String get homeGreetingGuest;
+
+  /// No description provided for @homeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'What would you like to check?'**
+  String get homeTitle;
+
+  /// No description provided for @inputTypeText.
+  ///
+  /// In en, this message translates to:
+  /// **'Text or link'**
+  String get inputTypeText;
+
+  /// No description provided for @inputTypeImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Image'**
+  String get inputTypeImage;
+
+  /// No description provided for @inputTypePdf.
+  ///
+  /// In en, this message translates to:
+  /// **'PDF'**
+  String get inputTypePdf;
+
+  /// No description provided for @inputTextHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste a message, a claim or a news link'**
+  String get inputTextHint;
+
+  /// No description provided for @inputLinkDetected.
+  ///
+  /// In en, this message translates to:
+  /// **'Link found. We\'ll read the page and check it.'**
+  String get inputLinkDetected;
+
+  /// No description provided for @inputLocked.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove what you\'ve added to switch to another type.'**
+  String get inputLocked;
+
+  /// No description provided for @removeInput.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove'**
+  String get removeInput;
+
+  /// No description provided for @pasteButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste'**
+  String get pasteButton;
+
+  /// No description provided for @pickImageTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a picture'**
+  String get pickImageTitle;
+
+  /// No description provided for @pickImageBody.
+  ///
+  /// In en, this message translates to:
+  /// **'A screenshot, a WhatsApp forward or a photo. We read the text in it and check it.'**
+  String get pickImageBody;
+
+  /// No description provided for @pickPdfTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a PDF'**
+  String get pickPdfTitle;
+
+  /// No description provided for @pickPdfBody.
+  ///
+  /// In en, this message translates to:
+  /// **'A circular, a notice or any document. We read it and check what it claims.'**
+  String get pickPdfBody;
+
+  /// No description provided for @choosePdf.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a PDF'**
+  String get choosePdf;
+
+  /// No description provided for @notAPdf.
+  ///
+  /// In en, this message translates to:
+  /// **'That file isn\'t a PDF. Choose a PDF, or switch to Image.'**
+  String get notAPdf;
+
+  /// No description provided for @checkNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Check now'**
+  String get checkNow;
+
+  /// No description provided for @checkingOf.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking'**
+  String get checkingOf;
+
+  /// No description provided for @checkingCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop waiting'**
+  String get checkingCancel;
+
+  /// No description provided for @checkingFailedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'The check didn\'t finish'**
+  String get checkingFailedTitle;
+
+  /// No description provided for @backToHome.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to home'**
+  String get backToHome;
+
+  /// No description provided for @resultTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Result'**
+  String get resultTitle;
+
+  /// No description provided for @newCheck.
+  ///
+  /// In en, this message translates to:
+  /// **'New check'**
+  String get newCheck;
+
+  /// No description provided for @historyEmptyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No checks yet'**
+  String get historyEmptyTitle;
+
+  /// No description provided for @historyEmptyBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Everything you check is listed here, with its sources, so you can come back to it.'**
+  String get historyEmptyBody;
+
+  /// No description provided for @historyToday.
+  ///
+  /// In en, this message translates to:
+  /// **'Today'**
+  String get historyToday;
+
+  /// No description provided for @historyYesterday.
+  ///
+  /// In en, this message translates to:
+  /// **'Yesterday'**
+  String get historyYesterday;
+
+  /// No description provided for @historyClear.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear history'**
+  String get historyClear;
+
+  /// No description provided for @historyClearConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete every saved check from this phone?'**
+  String get historyClearConfirm;
+
+  /// No description provided for @historyDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get historyDelete;
+
+  /// No description provided for @historyFilterAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get historyFilterAll;
+
+  /// No description provided for @historyStoredNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved only on this phone. Nothing you check is kept on our servers.'**
+  String get historyStoredNote;
+
+  /// No description provided for @historySources.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No sources} =1{1 source} other{{count} sources}}'**
+  String historySources(int count);
+
+  /// No description provided for @profileTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Profile'**
+  String get profileTitle;
+
+  /// No description provided for @guestTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re not signed in'**
+  String get guestTitle;
+
+  /// No description provided for @guestBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in to check news and keep your credits.'**
+  String get guestBody;
+
+  /// No description provided for @signInOrCreate.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in or create an account'**
+  String get signInOrCreate;
+
+  /// No description provided for @signedInWith.
+  ///
+  /// In en, this message translates to:
+  /// **'{method, select, google{Signed in with Google} other{Signed in with email}}'**
+  String signedInWith(String method);
+
+  /// No description provided for @profileDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Account details'**
+  String get profileDetails;
+
+  /// No description provided for @profileEmail.
+  ///
+  /// In en, this message translates to:
+  /// **'Email'**
+  String get profileEmail;
+
+  /// No description provided for @profileName.
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get profileName;
+
+  /// No description provided for @profilePlan.
+  ///
+  /// In en, this message translates to:
+  /// **'Plan'**
+  String get profilePlan;
+
+  /// No description provided for @profileJoined.
+  ///
+  /// In en, this message translates to:
+  /// **'Member since'**
+  String get profileJoined;
+
+  /// No description provided for @settingsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings'**
+  String get settingsTitle;
+
+  /// No description provided for @settingLanguage.
+  ///
+  /// In en, this message translates to:
+  /// **'Language'**
+  String get settingLanguage;
+
+  /// No description provided for @settingHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved checks'**
+  String get settingHistory;
+
+  /// No description provided for @settingHistoryCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{None saved} =1{1 check on this phone} other{{count} checks on this phone}}'**
+  String settingHistoryCount(int count);
+
+  /// No description provided for @aboutTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'About Factify'**
+  String get aboutTitle;
+
+  /// No description provided for @aboutBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Factify checks what you share against reliable sources and always shows them. When the sources don\'t settle it, it says Unconfirmed rather than guess.'**
+  String get aboutBody;
+
+  /// No description provided for @serviceStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Service'**
+  String get serviceStatus;
+
+  /// No description provided for @done.
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get done;
+
+  /// No description provided for @modeSignIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in'**
+  String get modeSignIn;
+
+  /// No description provided for @modeCreateAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Create account'**
+  String get modeCreateAccount;
+
+  /// No description provided for @welcomeBackTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Welcome back'**
+  String get welcomeBackTitle;
+
+  /// No description provided for @welcomeBackBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in with your email and password, or with Google.'**
+  String get welcomeBackBody;
+
+  /// No description provided for @passwordLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Password'**
+  String get passwordLabel;
+
+  /// No description provided for @confirmPasswordLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm password'**
+  String get confirmPasswordLabel;
+
+  /// No description provided for @passwordHint.
+  ///
+  /// In en, this message translates to:
+  /// **'At least {min} characters'**
+  String passwordHint(int min);
+
+  /// No description provided for @showPassword.
+  ///
+  /// In en, this message translates to:
+  /// **'Show password'**
+  String get showPassword;
+
+  /// No description provided for @hidePassword.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide password'**
+  String get hidePassword;
+
+  /// No description provided for @passwordsDontMatch.
+  ///
+  /// In en, this message translates to:
+  /// **'The passwords don\'t match.'**
+  String get passwordsDontMatch;
+
+  /// No description provided for @createAccountButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Create account'**
+  String get createAccountButton;
+
+  /// No description provided for @signInButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in'**
+  String get signInButton;
+
+  /// No description provided for @authInvalidEmail.
+  ///
+  /// In en, this message translates to:
+  /// **'That doesn\'t look like an email address.'**
+  String get authInvalidEmail;
+
+  /// No description provided for @authWeakPassword.
+  ///
+  /// In en, this message translates to:
+  /// **'Use a password of at least {min} characters.'**
+  String authWeakPassword(int min);
+
+  /// No description provided for @authEmailTaken.
+  ///
+  /// In en, this message translates to:
+  /// **'There\'s already an account with this email. Sign in instead.'**
+  String get authEmailTaken;
+
+  /// No description provided for @authWrongCredentials.
+  ///
+  /// In en, this message translates to:
+  /// **'That email and password don\'t match an account.'**
+  String get authWrongCredentials;
+
+  /// No description provided for @authUseGoogle.
+  ///
+  /// In en, this message translates to:
+  /// **'This account was made with Google. Use Continue with Google.'**
+  String get authUseGoogle;
+
+  /// No description provided for @authGoogleFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Google sign-in didn\'t finish. Try again.'**
+  String get authGoogleFailed;
+
+  /// No description provided for @authGoogleUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Google sign-in isn\'t set up on this server yet. Use your email and a password.'**
+  String get authGoogleUnavailable;
 }
 
 class _AppLocalizationsDelegate

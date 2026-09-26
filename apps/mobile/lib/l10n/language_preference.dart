@@ -5,9 +5,8 @@
 /// launches, because a Hindi reader on an English-language phone, a common setup,
 /// would otherwise have to switch it back every time.
 ///
-/// This is the one thing the app writes to disk. What was checked stays in memory
-/// for the session and nowhere else (see `history_strip.dart`); which language the
-/// menus are in says nothing about what anyone was suspicious of.
+/// Kept on the phone beside the sign-in session and the history of checks (see
+/// `history/history_store.dart`), which the person can clear from their profile.
 library;
 
 import 'package:flutter/widgets.dart';

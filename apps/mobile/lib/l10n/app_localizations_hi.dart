@@ -741,23 +741,6 @@ class AppLocalizationsHi extends AppLocalizations {
   String get emailLabel => 'ईमेल';
 
   @override
-  String get sendCode => 'मुझे कोड ईमेल करें';
-
-  @override
-  String codeSentTo(String email) {
-    return 'हमने $email पर 6 अंकों का कोड भेजा है।';
-  }
-
-  @override
-  String get codeLabel => '6 अंकों का कोड';
-
-  @override
-  String get verifyCode => 'साइन इन';
-
-  @override
-  String get useDifferentEmail => 'दूसरा ईमेल इस्तेमाल करें';
-
-  @override
   String get orDivider => 'या';
 
   @override
@@ -765,7 +748,7 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get signInUnavailable =>
-      'इस सर्वर पर अभी साइन-इन चालू नहीं है। आप बिना खाते के जाँच करते रह सकते हैं।';
+      'अभी साइन-इन तक नहीं पहुँचा जा सकता। अपना कनेक्शन जाँचें और फिर कोशिश करें।';
 
   @override
   String get signOut => 'साइन आउट';
@@ -836,10 +819,6 @@ class AppLocalizationsHi extends AppLocalizations {
   String get failureOutOfCredits => 'अभी आपके क्रेडिट खत्म हो गए हैं।';
 
   @override
-  String get authWrongCode =>
-      'वह कोड काम नहीं किया। ईमेल देखें और फिर कोशिश करें।';
-
-  @override
   String get authNetwork => 'साइन-इन तक नहीं पहुँच सके। अपना कनेक्शन जाँचें।';
 
   @override
@@ -905,4 +884,295 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get imageShowLessText => 'कम दिखाएँ';
+
+  @override
+  String get splashTagline => 'साझा करने से पहले जाँचें';
+
+  @override
+  String get welcomeTitle => 'साझा करने से पहले जानें कि सच क्या है';
+
+  @override
+  String get welcomeBody =>
+      'Factify समाचार, फ़ॉरवर्ड, तस्वीरें और दस्तावेज़ भरोसेमंद स्रोतों से जाँचता है, और इस्तेमाल किया गया हर स्रोत दिखाता है।';
+
+  @override
+  String get welcomePointSources => 'हर जवाब के साथ उसके स्रोत';
+
+  @override
+  String get welcomePointInputs => 'पाठ, लिंक, तस्वीरें और PDF';
+
+  @override
+  String get welcomePointLanguages => 'अंग्रेज़ी और हिंदी में';
+
+  @override
+  String get welcomeSignInTitle => 'अपना खाता बनाएँ';
+
+  @override
+  String get welcomeSignInBody =>
+      'जाँच के लिए खाता ज़रूरी है। अपने ईमेल और पासवर्ड से, या Google से साइन अप या साइन इन करें।';
+
+  @override
+  String get tabHome => 'होम';
+
+  @override
+  String get tabHistory => 'इतिहास';
+
+  @override
+  String get tabProfile => 'प्रोफ़ाइल';
+
+  @override
+  String homeGreeting(String name) {
+    return 'नमस्ते, $name';
+  }
+
+  @override
+  String get homeGreetingGuest => 'नमस्ते';
+
+  @override
+  String get homeTitle => 'आप क्या जाँचना चाहते हैं?';
+
+  @override
+  String get inputTypeText => 'पाठ या लिंक';
+
+  @override
+  String get inputTypeImage => 'तस्वीर';
+
+  @override
+  String get inputTypePdf => 'PDF फ़ाइल';
+
+  @override
+  String get inputTextHint => 'कोई संदेश, दावा या समाचार लिंक चिपकाएँ';
+
+  @override
+  String get inputLinkDetected => 'लिंक मिला। हम पेज पढ़कर उसकी जाँच करेंगे।';
+
+  @override
+  String get inputLocked =>
+      'दूसरा प्रकार चुनने के लिए पहले जोड़ी गई चीज़ हटाएँ।';
+
+  @override
+  String get removeInput => 'हटाएँ';
+
+  @override
+  String get pasteButton => 'चिपकाएँ';
+
+  @override
+  String get pickImageTitle => 'तस्वीर जोड़ें';
+
+  @override
+  String get pickImageBody =>
+      'स्क्रीनशॉट, व्हाट्सऐप फ़ॉरवर्ड या फ़ोटो। हम इसमें लिखा पाठ पढ़कर उसकी जाँच करते हैं।';
+
+  @override
+  String get pickPdfTitle => 'PDF जोड़ें';
+
+  @override
+  String get pickPdfBody =>
+      'कोई परिपत्र, सूचना या दस्तावेज़। हम इसे पढ़कर इसके दावों की जाँच करते हैं।';
+
+  @override
+  String get choosePdf => 'PDF चुनें';
+
+  @override
+  String get notAPdf => 'यह फ़ाइल PDF नहीं है। PDF चुनें, या तस्वीर पर जाएँ।';
+
+  @override
+  String get checkNow => 'अभी जाँचें';
+
+  @override
+  String get checkingOf => 'जाँच हो रही है';
+
+  @override
+  String get checkingCancel => 'इंतज़ार बंद करें';
+
+  @override
+  String get checkingFailedTitle => 'जाँच पूरी नहीं हुई';
+
+  @override
+  String get backToHome => 'होम पर लौटें';
+
+  @override
+  String get resultTitle => 'नतीजा';
+
+  @override
+  String get newCheck => 'नई जाँच';
+
+  @override
+  String get historyEmptyTitle => 'अभी कोई जाँच नहीं';
+
+  @override
+  String get historyEmptyBody =>
+      'आप जो भी जाँचते हैं वह अपने स्रोतों के साथ यहाँ दिखता है, ताकि आप उस पर लौट सकें।';
+
+  @override
+  String get historyToday => 'आज';
+
+  @override
+  String get historyYesterday => 'कल';
+
+  @override
+  String get historyClear => 'इतिहास मिटाएँ';
+
+  @override
+  String get historyClearConfirm => 'इस फ़ोन से सभी सहेजी गई जाँचें मिटा दें?';
+
+  @override
+  String get historyDelete => 'मिटाएँ';
+
+  @override
+  String get historyFilterAll => 'सभी';
+
+  @override
+  String get historyStoredNote =>
+      'सिर्फ़ इसी फ़ोन पर सहेजा गया। आपकी जाँच हमारे सर्वर पर नहीं रखी जाती।';
+
+  @override
+  String historySources(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count स्रोत',
+      one: '1 स्रोत',
+      zero: 'कोई स्रोत नहीं',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get profileTitle => 'प्रोफ़ाइल';
+
+  @override
+  String get guestTitle => 'आप साइन इन नहीं हैं';
+
+  @override
+  String get guestBody =>
+      'समाचार जाँचने और अपने क्रेडिट रखने के लिए साइन इन करें।';
+
+  @override
+  String get signInOrCreate => 'साइन इन करें या खाता बनाएँ';
+
+  @override
+  String signedInWith(String method) {
+    String _temp0 = intl.Intl.selectLogic(method, {
+      'google': 'Google से साइन इन',
+      'other': 'ईमेल से साइन इन',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String get profileDetails => 'खाते की जानकारी';
+
+  @override
+  String get profileEmail => 'ईमेल';
+
+  @override
+  String get profileName => 'नाम';
+
+  @override
+  String get profilePlan => 'प्लान';
+
+  @override
+  String get profileJoined => 'सदस्य बने';
+
+  @override
+  String get settingsTitle => 'सेटिंग्स';
+
+  @override
+  String get settingLanguage => 'भाषा';
+
+  @override
+  String get settingHistory => 'सहेजी गई जाँचें';
+
+  @override
+  String settingHistoryCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'इस फ़ोन पर $count जाँचें',
+      one: 'इस फ़ोन पर 1 जाँच',
+      zero: 'कुछ सहेजा नहीं गया',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get aboutTitle => 'Factify के बारे में';
+
+  @override
+  String get aboutBody =>
+      'Factify आपकी साझा की गई चीज़ों को भरोसेमंद स्रोतों से जाँचता है और हमेशा उन्हें दिखाता है। जब स्रोतों से बात तय न हो, तो वह अंदाज़ा लगाने के बजाय अपुष्ट कहता है।';
+
+  @override
+  String get serviceStatus => 'सेवा';
+
+  @override
+  String get done => 'हो गया';
+
+  @override
+  String get modeSignIn => 'साइन इन';
+
+  @override
+  String get modeCreateAccount => 'खाता बनाएँ';
+
+  @override
+  String get welcomeBackTitle => 'फिर से स्वागत है';
+
+  @override
+  String get welcomeBackBody =>
+      'अपने ईमेल और पासवर्ड से, या Google से साइन इन करें।';
+
+  @override
+  String get passwordLabel => 'पासवर्ड';
+
+  @override
+  String get confirmPasswordLabel => 'पासवर्ड दोबारा लिखें';
+
+  @override
+  String passwordHint(int min) {
+    return 'कम से कम $min अक्षर';
+  }
+
+  @override
+  String get showPassword => 'पासवर्ड दिखाएँ';
+
+  @override
+  String get hidePassword => 'पासवर्ड छिपाएँ';
+
+  @override
+  String get passwordsDontMatch => 'दोनों पासवर्ड एक जैसे नहीं हैं।';
+
+  @override
+  String get createAccountButton => 'खाता बनाएँ';
+
+  @override
+  String get signInButton => 'साइन इन करें';
+
+  @override
+  String get authInvalidEmail => 'यह ईमेल पता सही नहीं लगता।';
+
+  @override
+  String authWeakPassword(int min) {
+    return 'कम से कम $min अक्षरों का पासवर्ड रखें।';
+  }
+
+  @override
+  String get authEmailTaken =>
+      'इस ईमेल से पहले से एक खाता है। इसके बजाय साइन इन करें।';
+
+  @override
+  String get authWrongCredentials =>
+      'यह ईमेल और पासवर्ड किसी खाते से मेल नहीं खाते।';
+
+  @override
+  String get authUseGoogle =>
+      'यह खाता Google से बनाया गया था। Google से जारी रखें चुनें।';
+
+  @override
+  String get authGoogleFailed =>
+      'Google साइन-इन पूरा नहीं हुआ। फिर से कोशिश करें।';
+
+  @override
+  String get authGoogleUnavailable =>
+      'इस सर्वर पर Google साइन-इन अभी चालू नहीं है। अपने ईमेल और पासवर्ड का उपयोग करें।';
 }

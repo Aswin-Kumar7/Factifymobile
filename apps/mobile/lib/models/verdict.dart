@@ -497,6 +497,7 @@ class Verdict {
     this.mediaProvenance,
     this.sourceRisk = 'UNKNOWN',
     this.imageReading,
+    this.raw = const {},
   });
 
   final String caseId;
@@ -531,6 +532,10 @@ class Verdict {
 
   /// For an uploaded picture: what was read in it. Null for text and links.
   final ImageReading? imageReading;
+
+  /// The response exactly as the server sent it, so a check kept in history on this
+  /// phone is shown again from the same data, citations and all.
+  final Map<String, dynamic> raw;
 
   factory Verdict.fromJson(Map<String, dynamic> json) {
     final action = VerdictAction.parse(json['action'] as String);
@@ -568,6 +573,7 @@ class Verdict {
     imageReading: json['image_reading'] == null
         ? null
         : ImageReading.fromJson((json['image_reading'] as Map).cast<String, dynamic>()),
+    raw: json,
   );
 
   List<Evidence> get allEvidence => [for (final c in claims) ...c.evidence];

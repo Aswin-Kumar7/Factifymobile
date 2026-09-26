@@ -29,7 +29,7 @@ class Submission {
   /// [thumbnail] is read once at pick time rather than re-read on every rebuild:
   /// the picked file lives in a cache directory the system may clear, and a
   /// preview that vanishes mid-session looks like a bug in the verdict.
-  factory Submission.image(File file, Uint8List thumbnail) => Submission._(
+  factory Submission.image(File file, Uint8List? thumbnail) => Submission._(
     kind: SubmissionKind.image,
     file: file,
     thumbnail: thumbnail,
@@ -55,6 +55,9 @@ class Submission {
       final flat = value.replaceAll(RegExp(r'\s+'), ' ').trim();
       return flat.length <= 90 ? flat : '${flat.substring(0, 88)}…';
     }
-    return file?.uri.pathSegments.last ?? '';
+    // A shared file is copied under "share-<time>-<name>" (MainActivity); the name
+    // is what the person would recognise.
+    final name = file?.uri.pathSegments.last ?? '';
+    return name.replaceFirst(RegExp(r'^share-\d+-'), '');
   }
 }

@@ -4,32 +4,32 @@
 /// the app shows the balance it is given and never decides whether a check may run.
 library;
 
+/// How this server signs people in. All of it is public by design.
 class AuthConfig {
   const AuthConfig({
     required this.enabled,
-    this.supabaseUrl,
-    this.anonKey,
     this.required = false,
     this.providers = const [],
+    this.minPasswordLength = 8,
   });
 
-  /// Sign-in is off: the server has no Supabase project key configured.
+  /// Before the server has answered, or when it cannot be reached.
   static const AuthConfig off = AuthConfig(enabled: false);
 
   final bool enabled;
-  final String? supabaseUrl;
 
-  /// Supabase's public client key, made to ship in apps.
-  final String? anonKey;
+  /// Whether a check needs an account. The server decides, and enforces it.
   final bool required;
+
+  /// "password", and "google" once Google sign-in is set up on the server.
   final List<String> providers;
+  final int minPasswordLength;
 
   factory AuthConfig.fromJson(Map<String, dynamic> json) => AuthConfig(
     enabled: json['enabled'] as bool? ?? false,
-    supabaseUrl: json['supabase_url'] as String?,
-    anonKey: json['anon_key'] as String?,
     required: json['required'] as bool? ?? false,
     providers: ((json['providers'] as List?) ?? const []).map((e) => e as String).toList(),
+    minPasswordLength: (json['min_password_length'] as num?)?.toInt() ?? 8,
   );
 }
 

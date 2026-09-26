@@ -33,7 +33,7 @@ class AccountScreen extends StatelessWidget {
               return _Profile(auth: auth, account: account);
             }
             if (auth.signedIn) return const Center(child: CircularProgressIndicator());
-            return _SignIn(auth: auth);
+            return SignInPanel(auth: auth);
           },
         ),
       ),
@@ -41,30 +41,82 @@ class AccountScreen extends StatelessWidget {
   }
 }
 
-class _SignIn extends StatefulWidget {
-  const _SignIn({required this.auth});
+/// Sign in, or create an account: an email and a password, or Google. Used by the
+/// welcome screen and the account screen alike; [showHeader] is off where the page
+/// has its own heading.
+class SignInPanel extends StatefulWidget {
+  const SignInPanel({
+    required this.auth,
+    this.showHeader = true,
+    this.padded = true,
+    this.startInCreate = true,
+    this.onModeChanged,
+    super.key,
+  });
 
   final AuthService auth;
+  final bool showHeader;
+  final bool padded;
+
+  /// Whether the form opens on "Create account" rather than "Sign in".
+  final bool startInCreate;
+
+  /// Told when the person switches between signing in and creating an account.
+  final ValueChanged<bool>? onModeChanged;
 
   @override
-  State<_SignIn> createState() => _SignInState();
+  State<SignInPanel> createState() => _SignInState();
 }
 
-class _SignInState extends State<_SignIn> {
+class _SignInState extends State<SignInPanel> {
+  final TextEditingController _name = TextEditingController();
   final TextEditingController _email = TextEditingController();
-  final TextEditingController _code = TextEditingController();
-  bool _codeSent = false;
+  final TextEditingController _password = TextEditingController();
+  final TextEditingController _confirm = TextEditingController();
+
+  /// "Next" on the password goes here, not to the show-password button beside it.
+  final FocusNode _confirmFocus = FocusNode();
+  late bool _creating = widget.startInCreate;
+  bool _hidden = true;
   bool _busy = false;
   AuthProblem? _problem;
+  bool _mismatch = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.auth.addListener(_onAuth);
+  }
 
   @override
   void dispose() {
+    widget.auth.removeListener(_onAuth);
+    _name.dispose();
     _email.dispose();
-    _code.dispose();
+    _password.dispose();
+    _confirm.dispose();
+    _confirmFocus.dispose();
     super.dispose();
   }
 
+  /// A Google sign-in that came back failed says so here.
+  void _onAuth() {
+    final problem = widget.auth.lastLinkProblem;
+    if (mounted && problem != null && problem != _problem) setState(() => _problem = problem);
+  }
+
+  void _setMode(bool creating) {
+    if (creating == _creating) return;
+    setState(() {
+      _creating = creating;
+      _problem = null;
+      _mismatch = false;
+    });
+    widget.onModeChanged?.call(creating);
+  }
+
   Future<void> _run(Future<void> Function() step) async {
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _busy = true;
       _problem = null;
@@ -78,96 +130,203 @@ class _SignInState extends State<_SignIn> {
     }
   }
 
+  void _submit() {
+    final auth = widget.auth;
+    if (_creating) {
+      if (_password.text != _confirm.text) {
+        setState(() => _mismatch = true);
+        return;
+      }
+      setState(() => _mismatch = false);
+      unawaited(
+        _run(() => auth.register(email: _email.text, password: _password.text, name: _name.text)),
+      );
+    } else {
+      unawaited(_run(() => auth.signIn(email: _email.text, password: _password.text)));
+    }
+  }
+
+  String _describe(AppLocalizations l10n, AuthProblem problem) => switch (problem) {
+    AuthProblem.invalidEmail => l10n.authInvalidEmail,
+    AuthProblem.weakPassword => l10n.authWeakPassword(widget.auth.minPasswordLength),
+    AuthProblem.emailTaken => l10n.authEmailTaken,
+    AuthProblem.wrongCredentials => l10n.authWrongCredentials,
+    AuthProblem.useGoogle => l10n.authUseGoogle,
+    AuthProblem.googleFailed => l10n.authGoogleFailed,
+    AuthProblem.googleUnavailable => l10n.authGoogleUnavailable,
+    AuthProblem.tooMany => l10n.authTooMany,
+    AuthProblem.network => l10n.authNetwork,
+    AuthProblem.unavailable => l10n.signInUnavailable,
+    AuthProblem.generic => l10n.authGeneric,
+  };
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
     final auth = widget.auth;
     final problem = _problem;
+    final ready =
+        _email.text.trim().isNotEmpty &&
+        _password.text.isNotEmpty &&
+        (!_creating || _confirm.text.isNotEmpty);
+
+    InputDecoration field(String label, {IconData? icon, Widget? suffix, String? helper}) =>
+        InputDecoration(
+          labelText: label,
+          helperText: helper,
+          prefixIcon: icon == null ? null : Icon(icon),
+          suffixIcon: suffix,
+        );
+
+    final visibility = IconButton(
+      tooltip: _hidden ? l10n.showPassword : l10n.hidePassword,
+      onPressed: () => setState(() => _hidden = !_hidden),
+      icon: Icon(_hidden ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+    );
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+      shrinkWrap: !widget.padded,
+      physics: widget.padded ? null : const NeverScrollableScrollPhysics(),
+      padding: widget.padded ? const EdgeInsets.fromLTRB(20, 12, 20, 28) : EdgeInsets.zero,
       children: [
-        const Center(child: _Mark()),
-        const SizedBox(height: 16),
-        Text(
-          l10n.signInTitle,
-          textAlign: TextAlign.center,
-          style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          l10n.signInBody,
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodyMedium?.copyWith(color: FactifyColors.inkMuted),
-        ),
-        const SizedBox(height: 24),
-        if (!auth.available)
-          _Note(text: l10n.signInUnavailable)
-        else ...[
-          TextField(
-            controller: _email,
-            enabled: !_codeSent && !_busy,
-            keyboardType: TextInputType.emailAddress,
-            autofillHints: const [AutofillHints.email],
-            decoration: InputDecoration(
-              labelText: l10n.emailLabel,
-              border: const OutlineInputBorder(),
+        if (widget.showHeader) ...[
+          const Center(child: _Mark()),
+          const SizedBox(height: 16),
+          Text(
+            l10n.signInTitle,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            l10n.signInBody,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(color: FactifyColors.inkMuted),
+          ),
+          const SizedBox(height: 24),
+        ],
+        if (!auth.available) ...[
+          _Note(text: l10n.signInUnavailable),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _busy ? null : () => _run(auth.reloadConfig),
+            icon: const Icon(Icons.refresh_rounded),
+            label: Text(l10n.retry),
+          ),
+        ] else ...[
+          SegmentedButton<bool>(
+            segments: [
+              ButtonSegment(value: true, label: Text(l10n.modeCreateAccount)),
+              ButtonSegment(value: false, label: Text(l10n.modeSignIn)),
+            ],
+            selected: {_creating},
+            showSelectedIcon: false,
+            onSelectionChanged: _busy ? null : (value) => _setMode(value.first),
+          ),
+          const SizedBox(height: 16),
+          AutofillGroup(
+            child: Column(
+              children: [
+                if (_creating) ...[
+                  TextField(
+                    controller: _name,
+                    enabled: !_busy,
+                    textCapitalization: TextCapitalization.words,
+                    textInputAction: TextInputAction.next,
+                    autofillHints: const [AutofillHints.name],
+                    decoration: field(l10n.nameLabel, icon: Icons.person_outline_rounded),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                TextField(
+                  controller: _email,
+                  enabled: !_busy,
+                  keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.email],
+                  onChanged: (_) => setState(() {}),
+                  decoration: field(l10n.emailLabel, icon: Icons.mail_outline_rounded),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _password,
+                  enabled: !_busy,
+                  obscureText: _hidden,
+                  textInputAction: _creating ? TextInputAction.next : TextInputAction.done,
+                  autofillHints: [
+                    if (_creating) AutofillHints.newPassword else AutofillHints.password,
+                  ],
+                  onChanged: (_) => setState(() {}),
+                  onEditingComplete: _creating ? _confirmFocus.requestFocus : null,
+                  onSubmitted: (_) {
+                    if (!_creating && ready) _submit();
+                  },
+                  decoration: field(
+                    l10n.passwordLabel,
+                    icon: Icons.lock_outline_rounded,
+                    suffix: visibility,
+                    helper: _creating ? l10n.passwordHint(auth.minPasswordLength) : null,
+                  ),
+                ),
+                if (_creating) ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _confirm,
+                    focusNode: _confirmFocus,
+                    enabled: !_busy,
+                    obscureText: _hidden,
+                    textInputAction: TextInputAction.done,
+                    autofillHints: const [AutofillHints.newPassword],
+                    onChanged: (_) => setState(() => _mismatch = false),
+                    onSubmitted: (_) {
+                      if (ready) _submit();
+                    },
+                    decoration: field(
+                      l10n.confirmPasswordLabel,
+                      icon: Icons.lock_outline_rounded,
+                    ).copyWith(errorText: _mismatch ? l10n.passwordsDontMatch : null),
+                  ),
+                ],
+              ],
             ),
           ),
-          const SizedBox(height: 12),
-          if (_codeSent) ...[
-            Text(l10n.codeSentTo(_email.text.trim()), style: theme.textTheme.bodySmall),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _code,
-              enabled: !_busy,
-              keyboardType: TextInputType.number,
-              maxLength: 6,
-              autofillHints: const [AutofillHints.oneTimeCode],
-              decoration: InputDecoration(
-                labelText: l10n.codeLabel,
-                border: const OutlineInputBorder(),
-                counterText: '',
+          if (problem != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.errorContainer,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.error_outline_rounded, color: theme.colorScheme.error, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _describe(l10n, problem),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onErrorContainer,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 12),
-            FilledButton(
-              onPressed: _busy ? null : () => _run(() => auth.verifyCode(_email.text, _code.text)),
-              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
-              child: Text(l10n.verifyCode),
-            ),
-            TextButton(
-              onPressed: _busy
-                  ? null
-                  : () => setState(() {
-                      _codeSent = false;
-                      _code.clear();
-                    }),
-              child: Text(l10n.useDifferentEmail),
-            ),
-          ] else
-            FilledButton(
-              onPressed: _busy
-                  ? null
-                  : () => _run(() async {
-                      await auth.sendCode(_email.text);
-                      if (mounted) setState(() => _codeSent = true);
-                    }),
-              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
-              child: Text(l10n.sendCode),
-            ),
-          if (problem != null) ...[
-            const SizedBox(height: 10),
-            Text(switch (problem) {
-              AuthProblem.wrongCode => l10n.authWrongCode,
-              AuthProblem.network => l10n.authNetwork,
-              AuthProblem.tooMany => l10n.authTooMany,
-              AuthProblem.unavailable => l10n.signInUnavailable,
-              AuthProblem.generic => l10n.authGeneric,
-            }, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error)),
           ],
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
+          FilledButton(
+            onPressed: _busy || !ready ? null : _submit,
+            child: _busy
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white),
+                  )
+                : Text(_creating ? l10n.createAccountButton : l10n.signInButton),
+          ),
+          const SizedBox(height: 18),
           Row(
             children: [
               const Expanded(child: Divider()),
@@ -178,13 +337,21 @@ class _SignInState extends State<_SignIn> {
               const Expanded(child: Divider()),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 18),
           OutlinedButton.icon(
-            onPressed: _busy ? null : () => _run(auth.startGoogle),
+            onPressed: _busy || !auth.googleAvailable ? null : () => _run(auth.startGoogle),
             icon: const _GoogleG(),
             label: Text(l10n.continueWithGoogle),
-            style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+            style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(50)),
           ),
+          if (!auth.googleAvailable) ...[
+            const SizedBox(height: 8),
+            Text(
+              l10n.authGoogleUnavailable,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(color: FactifyColors.inkMuted),
+            ),
+          ],
         ],
       ],
     );
@@ -238,7 +405,7 @@ class _Profile extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
         children: [
-          Center(child: _Avatar(name: account.displayName, size: 72)),
+          Center(child: AvatarCircle(name: account.displayName, size: 72)),
           const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -372,14 +539,15 @@ class AccountAvatar extends StatelessWidget {
         tooltip: AppLocalizations.of(context).account,
         icon: account == null
             ? const Icon(Icons.account_circle_outlined, color: FactifyColors.inkMuted)
-            : _Avatar(name: account.displayName, size: 30),
+            : AvatarCircle(name: account.displayName, size: 30),
       );
     },
   );
 }
 
-class _Avatar extends StatelessWidget {
-  const _Avatar({required this.name, required this.size});
+/// A person's initial in an emerald circle.
+class AvatarCircle extends StatelessWidget {
+  const AvatarCircle({required this.name, required this.size, super.key});
 
   final String name;
   final double size;

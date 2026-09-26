@@ -743,23 +743,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get emailLabel => 'Email';
 
   @override
-  String get sendCode => 'Email me a code';
-
-  @override
-  String codeSentTo(String email) {
-    return 'We sent a 6-digit code to $email.';
-  }
-
-  @override
-  String get codeLabel => '6-digit code';
-
-  @override
-  String get verifyCode => 'Sign in';
-
-  @override
-  String get useDifferentEmail => 'Use a different email';
-
-  @override
   String get orDivider => 'or';
 
   @override
@@ -767,7 +750,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get signInUnavailable =>
-      'Sign-in isn\'t switched on for this server yet. You can keep checking without an account.';
+      'Sign-in can\'t be reached right now. Check your connection and try again.';
 
   @override
   String get signOut => 'Sign out';
@@ -838,10 +821,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get failureOutOfCredits => 'You\'re out of credits for now.';
 
   @override
-  String get authWrongCode =>
-      'That code didn\'t work. Check the email and try again.';
-
-  @override
   String get authNetwork => 'Couldn\'t reach sign-in. Check your connection.';
 
   @override
@@ -907,4 +886,295 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get imageShowLessText => 'Show less';
+
+  @override
+  String get splashTagline => 'Check before you share';
+
+  @override
+  String get welcomeTitle => 'Know what\'s true before you share it';
+
+  @override
+  String get welcomeBody =>
+      'Factify checks news, forwards, pictures and documents against reliable sources, and shows you every source it used.';
+
+  @override
+  String get welcomePointSources => 'Every answer comes with its sources';
+
+  @override
+  String get welcomePointInputs => 'Text, links, pictures and PDFs';
+
+  @override
+  String get welcomePointLanguages => 'In English and Hindi';
+
+  @override
+  String get welcomeSignInTitle => 'Create your account';
+
+  @override
+  String get welcomeSignInBody =>
+      'An account is needed to check. Sign up or sign in with your email and a password, or with Google.';
+
+  @override
+  String get tabHome => 'Home';
+
+  @override
+  String get tabHistory => 'History';
+
+  @override
+  String get tabProfile => 'Profile';
+
+  @override
+  String homeGreeting(String name) {
+    return 'Hi, $name';
+  }
+
+  @override
+  String get homeGreetingGuest => 'Hi there';
+
+  @override
+  String get homeTitle => 'What would you like to check?';
+
+  @override
+  String get inputTypeText => 'Text or link';
+
+  @override
+  String get inputTypeImage => 'Image';
+
+  @override
+  String get inputTypePdf => 'PDF';
+
+  @override
+  String get inputTextHint => 'Paste a message, a claim or a news link';
+
+  @override
+  String get inputLinkDetected =>
+      'Link found. We\'ll read the page and check it.';
+
+  @override
+  String get inputLocked =>
+      'Remove what you\'ve added to switch to another type.';
+
+  @override
+  String get removeInput => 'Remove';
+
+  @override
+  String get pasteButton => 'Paste';
+
+  @override
+  String get pickImageTitle => 'Add a picture';
+
+  @override
+  String get pickImageBody =>
+      'A screenshot, a WhatsApp forward or a photo. We read the text in it and check it.';
+
+  @override
+  String get pickPdfTitle => 'Add a PDF';
+
+  @override
+  String get pickPdfBody =>
+      'A circular, a notice or any document. We read it and check what it claims.';
+
+  @override
+  String get choosePdf => 'Choose a PDF';
+
+  @override
+  String get notAPdf =>
+      'That file isn\'t a PDF. Choose a PDF, or switch to Image.';
+
+  @override
+  String get checkNow => 'Check now';
+
+  @override
+  String get checkingOf => 'Checking';
+
+  @override
+  String get checkingCancel => 'Stop waiting';
+
+  @override
+  String get checkingFailedTitle => 'The check didn\'t finish';
+
+  @override
+  String get backToHome => 'Back to home';
+
+  @override
+  String get resultTitle => 'Result';
+
+  @override
+  String get newCheck => 'New check';
+
+  @override
+  String get historyEmptyTitle => 'No checks yet';
+
+  @override
+  String get historyEmptyBody =>
+      'Everything you check is listed here, with its sources, so you can come back to it.';
+
+  @override
+  String get historyToday => 'Today';
+
+  @override
+  String get historyYesterday => 'Yesterday';
+
+  @override
+  String get historyClear => 'Clear history';
+
+  @override
+  String get historyClearConfirm => 'Delete every saved check from this phone?';
+
+  @override
+  String get historyDelete => 'Delete';
+
+  @override
+  String get historyFilterAll => 'All';
+
+  @override
+  String get historyStoredNote =>
+      'Saved only on this phone. Nothing you check is kept on our servers.';
+
+  @override
+  String historySources(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count sources',
+      one: '1 source',
+      zero: 'No sources',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get profileTitle => 'Profile';
+
+  @override
+  String get guestTitle => 'You\'re not signed in';
+
+  @override
+  String get guestBody => 'Sign in to check news and keep your credits.';
+
+  @override
+  String get signInOrCreate => 'Sign in or create an account';
+
+  @override
+  String signedInWith(String method) {
+    String _temp0 = intl.Intl.selectLogic(method, {
+      'google': 'Signed in with Google',
+      'other': 'Signed in with email',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String get profileDetails => 'Account details';
+
+  @override
+  String get profileEmail => 'Email';
+
+  @override
+  String get profileName => 'Name';
+
+  @override
+  String get profilePlan => 'Plan';
+
+  @override
+  String get profileJoined => 'Member since';
+
+  @override
+  String get settingsTitle => 'Settings';
+
+  @override
+  String get settingLanguage => 'Language';
+
+  @override
+  String get settingHistory => 'Saved checks';
+
+  @override
+  String settingHistoryCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count checks on this phone',
+      one: '1 check on this phone',
+      zero: 'None saved',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get aboutTitle => 'About Factify';
+
+  @override
+  String get aboutBody =>
+      'Factify checks what you share against reliable sources and always shows them. When the sources don\'t settle it, it says Unconfirmed rather than guess.';
+
+  @override
+  String get serviceStatus => 'Service';
+
+  @override
+  String get done => 'Done';
+
+  @override
+  String get modeSignIn => 'Sign in';
+
+  @override
+  String get modeCreateAccount => 'Create account';
+
+  @override
+  String get welcomeBackTitle => 'Welcome back';
+
+  @override
+  String get welcomeBackBody =>
+      'Sign in with your email and password, or with Google.';
+
+  @override
+  String get passwordLabel => 'Password';
+
+  @override
+  String get confirmPasswordLabel => 'Confirm password';
+
+  @override
+  String passwordHint(int min) {
+    return 'At least $min characters';
+  }
+
+  @override
+  String get showPassword => 'Show password';
+
+  @override
+  String get hidePassword => 'Hide password';
+
+  @override
+  String get passwordsDontMatch => 'The passwords don\'t match.';
+
+  @override
+  String get createAccountButton => 'Create account';
+
+  @override
+  String get signInButton => 'Sign in';
+
+  @override
+  String get authInvalidEmail => 'That doesn\'t look like an email address.';
+
+  @override
+  String authWeakPassword(int min) {
+    return 'Use a password of at least $min characters.';
+  }
+
+  @override
+  String get authEmailTaken =>
+      'There\'s already an account with this email. Sign in instead.';
+
+  @override
+  String get authWrongCredentials =>
+      'That email and password don\'t match an account.';
+
+  @override
+  String get authUseGoogle =>
+      'This account was made with Google. Use Continue with Google.';
+
+  @override
+  String get authGoogleFailed => 'Google sign-in didn\'t finish. Try again.';
+
+  @override
+  String get authGoogleUnavailable =>
+      'Google sign-in isn\'t set up on this server yet. Use your email and a password.';
 }

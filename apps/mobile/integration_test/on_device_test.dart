@@ -51,11 +51,49 @@ bool _anyVerdictShown() => const [
   'Unconfirmed',
 ].any((headline) => find.text(headline).evaluate().isNotEmpty);
 
+/// Launch the app and get to Home: past the splash, and through the welcome by
+/// creating a throwaway account the first time (an account is compulsory; the
+/// session is remembered after that).
+Future<void> _start(WidgetTester tester) async {
+  app.main();
+  final home = find.text('What would you like to check?');
+  final welcome = find.text('Create your account');
+  expect(
+    await _waitFor(
+      tester,
+      () => home.evaluate().isNotEmpty || welcome.evaluate().isNotEmpty,
+      budget: const Duration(seconds: 20),
+    ),
+    isTrue,
+    reason: 'the app never got past its splash',
+  );
+  if (welcome.evaluate().isNotEmpty) {
+    final stamp = DateTime.now().microsecondsSinceEpoch;
+    await tester.enterText(find.widgetWithText(TextField, 'Email'), 'device-$stamp@factify.test');
+    await tester.enterText(find.widgetWithText(TextField, 'Password'), 'device-test-$stamp');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Confirm password'),
+      'device-test-$stamp',
+    );
+    await tester.pump();
+    final create = find.widgetWithText(FilledButton, 'Create account');
+    await tester.ensureVisible(create);
+    await tester.pumpAndSettle();
+    await tester.tap(create);
+    expect(
+      await _waitFor(tester, () => home.evaluate().isNotEmpty),
+      isTrue,
+      reason: 'creating an account did not open the app',
+    );
+  }
+  expect(home, findsOneWidget);
+}
+
 Future<void> _submit(WidgetTester tester, String text) async {
   await tester.enterText(find.byType(TextField).first, text);
   await tester.pump();
 
-  final check = find.widgetWithText(FilledButton, 'Check this');
+  final check = find.text('Check now');
   expect(check, findsOneWidget, reason: 'the check button is the only way in');
   await tester.tap(check);
   await tester.pump();
@@ -65,16 +103,14 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('the app starts and offers somewhere to paste a claim', (tester) async {
-    app.main();
-    await tester.pumpAndSettle(const Duration(seconds: 5));
+    await _start(tester);
 
     expect(find.byType(TextField), findsWidgets);
-    expect(find.text('Check this'), findsOneWidget);
+    expect(find.text('Check now'), findsOneWidget);
   });
 
   testWidgets('an English claim is checked and a verdict is rendered', (tester) async {
-    app.main();
-    await tester.pumpAndSettle(const Duration(seconds: 5));
+    await _start(tester);
 
     await _submit(tester, '5G mobile towers spread the coronavirus.');
 
@@ -91,8 +127,7 @@ void main() {
   });
 
   testWidgets('a Hindi claim survives the keyboard, the request and the result', (tester) async {
-    app.main();
-    await tester.pumpAndSettle(const Duration(seconds: 5));
+    await _start(tester);
 
     await _submit(tester, 'गाय का मूत्र पीने से कोरोना वायरस का संक्रमण पूरी तरह ठीक हो जाता है।');
 
@@ -104,8 +139,7 @@ void main() {
   });
 
   testWidgets('a shared link is accepted in the same field as text', (tester) async {
-    app.main();
-    await tester.pumpAndSettle(const Duration(seconds: 5));
+    await _start(tester);
 
     await _submit(tester, 'https://en.wikipedia.org/wiki/Chandrayaan-3');
 
@@ -117,10 +151,11 @@ void main() {
   });
 
   testWidgets('the check button refuses an empty submission', (tester) async {
-    app.main();
-    await tester.pumpAndSettle(const Duration(seconds: 5));
+    await _start(tester);
 
-    final check = tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Check this'));
+    final check = tester.widget<ButtonStyleButton>(
+      find.ancestor(of: find.text('Check now'), matching: find.bySubtype<ButtonStyleButton>()),
+    );
 
     // Disabled rather than accepted-and-rejected: an empty submission has no honest
     // answer, and a 422 explaining that is a worse experience than a button that

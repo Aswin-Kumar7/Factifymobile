@@ -1,8 +1,9 @@
-/// The home screen's clipboard-on-open prompt (PLAN 1.7.2).
+/// Home, the check in progress, the result, and history (the app's main path).
 ///
-/// The rule under test is the privacy half as much as the feature half: the
-/// prompt may say that text is waiting, but the text itself is read only when the
-/// person asks.
+/// The rules under test: one kind of input at a time, removed with its X to switch;
+/// the clipboard is read only when the person asks; a check runs on its own page and
+/// its answer opens on another; and every finished check is kept in history, from
+/// which it opens again exactly as it was shown.
 library;
 
 import 'dart:convert';
@@ -18,7 +19,7 @@ import 'package:http/testing.dart';
 
 Map<String, dynamic> _verdictJson() => {
   'case_id': 'case-1',
-  'contract_version': '1.0',
+  'contract_version': '1.2',
   'action': 'SEND_TO_REVIEW',
   'action_reason': 'Not enough citable evidence to decide.',
   'rule_version': '2026.08.1',
@@ -49,17 +50,23 @@ class _FakeClipboard {
   }
 }
 
-/// Pumps the whole app against a stand-in server and clipboard, and returns the
-/// bodies of the checks it sends.
-Future<List<Map<String, dynamic>>> _pumpApp(WidgetTester tester, _FakeClipboard clipboard) async {
+void _phone(WidgetTester tester, _FakeClipboard clipboard) {
   tester.view.physicalSize = const Size(1080, 2340);
   tester.view.devicePixelRatio = 2.625;
   addTearDown(tester.view.reset);
-
   final messenger = tester.binding.defaultBinaryMessenger;
   messenger.setMockMethodCallHandler(SystemChannels.platform, clipboard.handle);
   addTearDown(() => messenger.setMockMethodCallHandler(SystemChannels.platform, null));
+}
 
+/// Pumps the whole app against a stand-in server and clipboard, and returns the
+/// bodies of the checks it sends.
+Future<List<Map<String, dynamic>>> _pumpApp(
+  WidgetTester tester,
+  _FakeClipboard clipboard, {
+  http.Response Function(http.Request request)? answer,
+}) async {
+  _phone(tester, clipboard);
   final sent = <Map<String, dynamic>>[];
   final client = FactifyClient(
     baseUrl: 'http://factify.test',
@@ -67,8 +74,9 @@ Future<List<Map<String, dynamic>>> _pumpApp(WidgetTester tester, _FakeClipboard 
       if (request.url.path == '/readyz') {
         return http.Response('{"ready": true, "missing": []}', 200);
       }
+      if (request.url.path == '/v1/auth/config') return http.Response('{"enabled": false}', 200);
       sent.add(jsonDecode(request.body) as Map<String, dynamic>);
-      return http.Response(jsonEncode(_verdictJson()), 200);
+      return answer?.call(request) ?? http.Response(jsonEncode(_verdictJson()), 200);
     }),
   );
 
@@ -77,172 +85,316 @@ Future<List<Map<String, dynamic>>> _pumpApp(WidgetTester tester, _FakeClipboard 
   return sent;
 }
 
-void main() {
-  const offer = 'You have text copied. Check it?';
-
-  testWidgets('offers to check copied text, and reads it only when asked', (tester) async {
-    final clipboard = _FakeClipboard(
-      hasText: true,
-      text: 'The minister said the scheme was cancelled.',
-    );
-    final sent = await _pumpApp(tester, clipboard);
-
-    expect(find.text(offer), findsOneWidget);
-    // Offering is not reading: the content stays unread until the tap.
-    expect(clipboard.read, isFalse);
-
-    await tester.tap(find.text('Paste and check'));
-    await tester.pumpAndSettle();
-
-    expect(clipboard.read, isTrue);
-    expect(sent.single['text'], 'The minister said the scheme was cancelled.');
-    expect(find.text(offer), findsNothing);
-  });
-
-  testWidgets('says nothing when nothing is copied', (tester) async {
-    await _pumpApp(tester, _FakeClipboard(hasText: false));
-
-    expect(find.text(offer), findsNothing);
-  });
-
-  testWidgets('can be dismissed without the clipboard being read', (tester) async {
-    final clipboard = _FakeClipboard(hasText: true, text: 'Anything');
-    await _pumpApp(tester, clipboard);
-
-    await tester.tap(find.byTooltip('Not now'));
-    await tester.pumpAndSettle();
-
-    expect(find.text(offer), findsNothing);
-    expect(clipboard.read, isFalse);
-  });
-
-  testWidgets('a link the server could not check says so, not "Unconfirmed"', (tester) async {
-    tester.view.physicalSize = const Size(1080, 2340);
-    tester.view.devicePixelRatio = 2.625;
-    addTearDown(tester.view.reset);
-    final messenger = tester.binding.defaultBinaryMessenger;
-    messenger.setMockMethodCallHandler(
-      SystemChannels.platform,
-      _FakeClipboard(hasText: false).handle,
-    );
-    addTearDown(() => messenger.setMockMethodCallHandler(SystemChannels.platform, null));
-
-    final client = FactifyClient(
-      baseUrl: 'http://factify.test',
-      httpClient: MockClient((request) async {
-        if (request.url.path == '/readyz') {
-          return http.Response('{"ready": true, "missing": []}', 200);
-        }
-        return http.Response(
-          '{"detail": "no checkable claims were found on the page. Nothing was checked."}',
-          422,
-        );
-      }),
-    );
-    await tester.pumpWidget(FactifyApp(language: LanguagePreference.inMemory(), client: client));
-    await tester.pumpAndSettle();
-
-    await tester.enterText(find.byType(TextField), 'https://www.reuters.com/world/x');
-    await tester.pump();
-    await tester.tap(find.text('Check this'));
-    await tester.pumpAndSettle();
-
-    expect(find.textContaining("couldn't find anything to check on that page"), findsOneWidget);
-    expect(find.text('Unconfirmed'), findsNothing);
-  });
-
-  testWidgets('"Check again" re-runs the same check fresh', (tester) async {
-    final sent = await _pumpApp(tester, _FakeClipboard(hasText: false));
-
-    await tester.enterText(find.byType(TextField), 'The minister said the scheme was cancelled.');
-    await tester.pump();
-    await tester.tap(find.text('Check this'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Check again'), findsOneWidget);
-    expect(sent.single.containsKey('recheck'), isFalse);
-    // The message is in the box already; it is not shown a second time below.
-    expect(find.text('Checking this message'), findsNothing);
-
-    await tester.tap(find.text('Check again'));
-    await tester.pumpAndSettle();
-
-    expect(sent, hasLength(2));
-    expect(sent.last['text'], 'The minister said the scheme was cancelled.');
-    expect(sent.last['recheck'], isTrue);
-  });
-
-  testWidgets('editing the box turns "Check again" back into "Check this"', (tester) async {
-    await _pumpApp(tester, _FakeClipboard(hasText: false));
-
-    await tester.enterText(find.byType(TextField), 'The minister said the scheme was cancelled.');
-    await tester.pump();
-    await tester.tap(find.text('Check this'));
-    await tester.pumpAndSettle();
-    expect(find.text('Check again'), findsOneWidget);
-
-    await tester.enterText(find.byType(TextField), 'Something else entirely.');
-    await tester.pump();
-
-    expect(find.text('Check again'), findsNothing);
-    expect(find.text('Check this'), findsOneWidget);
-  });
-
-  testWidgets('a deep check shows the progress the server reports, then the verdict', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(1080, 2340);
-    tester.view.devicePixelRatio = 2.625;
-    addTearDown(tester.view.reset);
-    final messenger = tester.binding.defaultBinaryMessenger;
-    messenger.setMockMethodCallHandler(
-      SystemChannels.platform,
-      _FakeClipboard(hasText: false).handle,
-    );
-    addTearDown(() => messenger.setMockMethodCallHandler(SystemChannels.platform, null));
-
-    final sent = <Map<String, dynamic>>[];
-    var polls = 0;
-    final client = FactifyClient(
-      baseUrl: 'http://factify.test',
-      httpClient: MockClient((request) async {
-        if (request.url.path == '/readyz') {
-          return http.Response('{"ready": true, "missing": []}', 200);
-        }
-        if (request.method == 'POST' && request.url.path == '/v1/verify') {
-          sent.add(jsonDecode(request.body) as Map<String, dynamic>);
-          return http.Response('{"case_id": "deep-1", "poll_url": "/v1/cases/deep-1"}', 202);
-        }
-        if (request.url.path == '/v1/cases/deep-1') {
-          polls += 1;
-          return polls == 1
-              ? http.Response('{"status": "processing", "claims_done": 1, "claims_total": 3}', 202)
-              : http.Response(jsonEncode(_verdictJson()), 200);
-        }
-        return http.Response('{}', 404);
-      }),
-    );
-    await tester.pumpWidget(FactifyApp(language: LanguagePreference.inMemory(), client: client));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Deep check'));
-    await tester.pump();
-    await tester.enterText(find.byType(TextField), 'The minister said the scheme was cancelled.');
-    await tester.pump();
-    await tester.tap(find.text('Check this'));
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 3));
-    await tester.pump();
-
-    expect(sent.single['mode'], 'deep');
-    expect(find.text('1 of 3 claims checked'), findsOneWidget);
-    expect(find.text('Deep check…'), findsOneWidget);
-
-    await tester.pump(const Duration(seconds: 3));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Check again'), findsOneWidget);
-    expect(find.text('Unconfirmed'), findsOneWidget);
-  });
+Future<void> _check(WidgetTester tester, String text) async {
+  await tester.enterText(find.byType(TextField), text);
+  await tester.pump();
+  await tester.tap(find.text('Check now'));
+  await tester.pumpAndSettle();
 }
 
+void main() {
+  const offer = 'You have text copied. Check it?';
+  const claim = 'The minister said the scheme was cancelled.';
+
+  group('the clipboard', () {
+    testWidgets('is offered, and read only when asked', (tester) async {
+      final clipboard = _FakeClipboard(hasText: true, text: claim);
+      final sent = await _pumpApp(tester, clipboard);
+
+      expect(find.text(offer), findsOneWidget);
+      // Offering is not reading: the content stays unread until the tap.
+      expect(clipboard.read, isFalse);
+
+      await tester.tap(find.text('Paste and check'));
+      await tester.pumpAndSettle();
+
+      expect(clipboard.read, isTrue);
+      expect(sent.single['text'], claim);
+      expect(find.text('Result'), findsOneWidget);
+    });
+
+    testWidgets('says nothing when nothing is copied', (tester) async {
+      await _pumpApp(tester, _FakeClipboard(hasText: false));
+
+      expect(find.text(offer), findsNothing);
+    });
+
+    testWidgets('can be dismissed without being read', (tester) async {
+      final clipboard = _FakeClipboard(hasText: true, text: 'Anything');
+      await _pumpApp(tester, clipboard);
+
+      await tester.tap(find.byTooltip('Not now'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(offer), findsNothing);
+      expect(clipboard.read, isFalse);
+    });
+  });
+
+  group('one kind of input at a time', () {
+    testWidgets('once text is added the other kinds are locked, and X unlocks them', (
+      tester,
+    ) async {
+      await _pumpApp(tester, _FakeClipboard(hasText: false));
+
+      await tester.enterText(find.byType(TextField), claim);
+      await tester.pump();
+      await tester.tap(find.text('Image'));
+      await tester.pumpAndSettle();
+
+      // Still on text, and told why.
+      expect(find.byType(TextField), findsOneWidget);
+      expect(find.text("Remove what you've added to switch to another type."), findsOneWidget);
+      expect(find.text('Add a picture'), findsNothing);
+
+      await tester.tap(find.byTooltip('Remove'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Image'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Add a picture'), findsOneWidget);
+      expect(find.text('Gallery'), findsOneWidget);
+      expect(find.byType(TextField), findsNothing);
+    });
+
+    testWidgets('nothing can be checked until something is added', (tester) async {
+      await _pumpApp(tester, _FakeClipboard(hasText: false));
+
+      final button = tester.widget<ButtonStyleButton>(
+        find.ancestor(of: find.text('Check now'), matching: find.bySubtype<ButtonStyleButton>()),
+      );
+      expect(button.onPressed, isNull);
+    });
+
+    testWidgets('a link is recognised as a link', (tester) async {
+      await _pumpApp(tester, _FakeClipboard(hasText: false));
+
+      await tester.enterText(find.byType(TextField), 'https://www.reuters.com/world/x');
+      await tester.pump();
+
+      expect(find.text("Link found. We'll read the page and check it."), findsOneWidget);
+    });
+  });
+
+  group('the check and its result', () {
+    testWidgets('a text check opens the result on its own page', (tester) async {
+      final sent = await _pumpApp(tester, _FakeClipboard(hasText: false));
+
+      await _check(tester, claim);
+
+      expect(sent.single['text'], claim);
+      expect(find.text('Result'), findsOneWidget);
+      expect(find.text('Unconfirmed'), findsOneWidget);
+      expect(find.text(claim), findsOneWidget); // what was checked, above the answer
+    });
+
+    testWidgets('a link the server could not check says so, not "Unconfirmed"', (tester) async {
+      await _pumpApp(
+        tester,
+        _FakeClipboard(hasText: false),
+        answer: (_) => http.Response(
+          '{"detail": "no checkable claims were found on the page. Nothing was checked."}',
+          422,
+        ),
+      );
+
+      await _check(tester, 'https://www.reuters.com/world/x');
+
+      expect(find.text("The check didn't finish"), findsOneWidget);
+      expect(find.textContaining("couldn't find anything to check on that page"), findsOneWidget);
+      expect(find.text('Unconfirmed'), findsNothing);
+
+      await tester.tap(find.text('Back to home'));
+      await tester.pumpAndSettle();
+      // The link is still there to try another way.
+      expect(find.text('https://www.reuters.com/world/x'), findsOneWidget);
+    });
+
+    testWidgets('"Check again" re-runs the same check fresh', (tester) async {
+      final sent = await _pumpApp(tester, _FakeClipboard(hasText: false));
+
+      await _check(tester, claim);
+      expect(sent.single.containsKey('recheck'), isFalse);
+
+      await tester.tap(find.text('Check again'));
+      await tester.pumpAndSettle();
+
+      expect(sent, hasLength(2));
+      expect(sent.last['text'], claim);
+      expect(sent.last['recheck'], isTrue);
+      expect(find.text('Result'), findsOneWidget);
+    });
+
+    testWidgets('"New check" returns to an empty Home', (tester) async {
+      await _pumpApp(tester, _FakeClipboard(hasText: false));
+
+      await _check(tester, claim);
+      await tester.tap(find.text('New check'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('What would you like to check?'), findsOneWidget);
+      expect(find.text(claim), findsNothing);
+    });
+
+    testWidgets('a deep check shows the progress the server reports, then the verdict', (
+      tester,
+    ) async {
+      _phone(tester, _FakeClipboard(hasText: false));
+      final sent = <Map<String, dynamic>>[];
+      var polls = 0;
+      final client = FactifyClient(
+        baseUrl: 'http://factify.test',
+        httpClient: MockClient((request) async {
+          if (request.url.path == '/readyz') {
+            return http.Response('{"ready": true, "missing": []}', 200);
+          }
+          if (request.method == 'POST' && request.url.path == '/v1/verify') {
+            sent.add(jsonDecode(request.body) as Map<String, dynamic>);
+            return http.Response('{"case_id": "deep-1", "poll_url": "/v1/cases/deep-1"}', 202);
+          }
+          if (request.url.path == '/v1/cases/deep-1') {
+            polls += 1;
+            return polls == 1
+                ? http.Response(
+                    '{"status": "processing", "claims_done": 1, "claims_total": 3}',
+                    202,
+                  )
+                : http.Response(jsonEncode(_verdictJson()), 200);
+          }
+          return http.Response('{}', 404);
+        }),
+      );
+      await tester.pumpWidget(FactifyApp(language: LanguagePreference.inMemory(), client: client));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Deep check'));
+      await tester.pump();
+      await tester.enterText(find.byType(TextField), claim);
+      await tester.pump();
+      await tester.tap(find.text('Check now'));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pump();
+
+      expect(sent.single['mode'], 'deep');
+      expect(find.text('1 of 3 claims checked'), findsOneWidget);
+      expect(find.text('Deep check…'), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Result'), findsOneWidget);
+      expect(find.text('Unconfirmed'), findsOneWidget);
+    });
+  });
+
+  group('history', () {
+    testWidgets('a finished check is kept, and opens again as it was shown', (tester) async {
+      await _pumpApp(tester, _FakeClipboard(hasText: false));
+
+      await _check(tester, claim);
+      await tester.tap(find.text('New check'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.history_outlined));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Today'), findsOneWidget);
+      expect(find.text(claim), findsOneWidget);
+      expect(find.textContaining('No sources'), findsOneWidget);
+
+      await tester.tap(find.text(claim));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Result'), findsOneWidget);
+      expect(find.text('Unconfirmed'), findsOneWidget);
+    });
+
+    testWidgets('is empty, and says what it is for, before anything is checked', (tester) async {
+      await _pumpApp(tester, _FakeClipboard(hasText: false));
+
+      await tester.tap(find.byIcon(Icons.history_outlined));
+      await tester.pumpAndSettle();
+
+      expect(find.text('No checks yet'), findsOneWidget);
+    });
+  });
+
+  group('the way in', () {
+    testWidgets('splash, then an account is required, then the app', (tester) async {
+      _phone(tester, _FakeClipboard(hasText: false));
+      final client = FactifyClient(
+        baseUrl: 'http://factify.test',
+        httpClient: MockClient((request) async {
+          switch (request.url.path) {
+            case '/v1/auth/config':
+              return http.Response(
+                '{"enabled": true, "required": true, "providers": ["password"]}',
+                200,
+              );
+            case '/v1/auth/register':
+              return http.Response(
+                jsonEncode({
+                  'access_token': 'fs_session-1',
+                  'expires_at': DateTime.now().add(const Duration(days: 30)).toIso8601String(),
+                  'method': 'password',
+                  'email': 'asha@example.org',
+                }),
+                201,
+              );
+            case '/v1/me':
+              return http.Response(
+                jsonEncode({
+                  'id': 'u-1',
+                  'email': 'asha@example.org',
+                  'name': 'Asha',
+                  'plan': 'free',
+                  'joined_at': '2026-09-26T10:00:00Z',
+                  'credits': {
+                    'balance': 100,
+                    'used': 0,
+                    'checks': 0,
+                    'check_cost': 1,
+                    'deep_check_cost': 3,
+                    'limited': false,
+                  },
+                }),
+                200,
+              );
+          }
+          return http.Response('{"ready": true, "missing": []}', 200);
+        }),
+      );
+
+      await tester.pumpWidget(
+        FactifyApp(language: LanguagePreference.inMemory(), client: client, showIntro: true),
+      );
+      await tester.pump();
+      expect(find.text('Check before you share'), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pumpAndSettle();
+
+      // No way past without an account.
+      expect(find.text('Create your account'), findsOneWidget);
+      expect(find.textContaining('without an account'), findsNothing);
+
+      await tester.enterText(find.widgetWithText(TextField, 'Email'), 'asha@example.org');
+      await tester.enterText(find.widgetWithText(TextField, 'Password'), 'long enough');
+      await tester.enterText(find.widgetWithText(TextField, 'Confirm password'), 'long enough');
+      await tester.pump();
+      final create = find.widgetWithText(FilledButton, 'Create account');
+      await tester.ensureVisible(create);
+      await tester.pumpAndSettle();
+      await tester.tap(create);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Hi, Asha'), findsOneWidget);
+      expect(find.text('What would you like to check?'), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.person_outline_rounded));
+      await tester.pumpAndSettle();
+      expect(find.text('Signed in with email'), findsOneWidget);
+      expect(find.text('100 credits left'), findsOneWidget);
+    });
+  });
+}
