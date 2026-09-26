@@ -558,11 +558,16 @@ class Verdict {
 
   /// The claim the checked thing is mainly about: the headline claim, else the
   /// first. Null when nothing checkable was found.
+  ///
+  /// A picture's MEDIA claim is never it: that sentence is the server's own
+  /// question ("This image has been published before...") and not something the
+  /// picture says, yet it titled a landscape in History and on Home.
   String? get headline {
-    for (final claim in claims) {
+    final said = claims.where((c) => c.claimType != 'MEDIA');
+    for (final claim in said) {
       if (claim.importance == 'HEADLINE') return claim.text;
     }
-    return claims.isEmpty ? null : claims.first.text;
+    return said.isEmpty ? null : said.first.text;
   }
 
   /// The response exactly as the server sent it, so a check kept in history on this

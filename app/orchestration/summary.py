@@ -31,15 +31,18 @@ def case_summary(
 
     For a FALSE verdict that is the refuted claim, for TRUE the supported one, and in
     both cases the most important such claim, so the sentence a person reads is about
-    what the piece actually asserts. UNCONFIRMED falls back to the most important
-    claim that has any explanation at all.
+    what the piece actually asserts. UNCONFIRMED speaks only from a claim that was
+    itself left unconfirmed. When no such claim has an explanation there is no
+    sentence, and the app says what the verdict means in its own words.
+
+    It used to fall back to any claim with an explanation. A TV graphic passing off
+    the 2023 withdrawal of Rs 2000 notes as today's news came back Unconfirmed with
+    the sentence written for its one confirmed claim - "Therefore, the claim ... is
+    true" - under the grey badge, telling the reader the opposite of the answer.
     """
-    deciding = _STATUS_FOR_VERDICT.get(verdict)
+    deciding = _STATUS_FOR_VERDICT.get(verdict, {ClaimStatus.UNVERIFIED})
     ranked = sorted(claims, key=lambda item: _IMPORTANCE_RANK.get(item[1], 4))
     for claim_status, _, explanation in ranked:
-        if explanation and (deciding is None or claim_status in deciding):
-            return explanation
-    for _, _, explanation in ranked:
-        if explanation:
+        if explanation and claim_status in deciding:
             return explanation
     return None

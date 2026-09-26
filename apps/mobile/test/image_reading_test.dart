@@ -120,6 +120,49 @@ void main() {
     );
   });
 
+  testWidgets("the server's own question about a picture is never shown as its text", (
+    tester,
+  ) async {
+    // A landscape with no text: its one claim is the server asking whether the
+    // picture was published before. That sentence was quoted as "Text in the
+    // picture" on the phone (2026-09-27).
+    const question =
+        'This image has been published before, at a date and by a publisher that can be cited.';
+    tester.view.physicalSize = const Size(1080, 4000);
+    tester.view.devicePixelRatio = 2.625;
+    addTearDown(tester.view.reset);
+    final payload = _payload({'text': '', 'description': 'Two green hills.', 'kind': 'OTHER'})
+      ..['action'] = 'SEND_TO_REVIEW'
+      ..['claims'] = [
+        {
+          'id': 'cl_media',
+          'text': question,
+          'claim_type': 'MEDIA',
+          'status': 'UNVERIFIED',
+          'severity': 'LOW',
+          'importance': 'MAIN_THESIS',
+          'reason': 'No earlier copy found.',
+          'strength': {'score': 0.0, 'band': 'none', 'components': <Object>[], 'version': 'v'},
+          'evidence': <Object>[],
+        },
+      ];
+    await tester.pumpWidget(
+      MaterialApp(
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: VerdictCard(verdict: Verdict.fromJson(payload), kind: SubmissionKind.image),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Two green hills.'), findsOneWidget);
+    expect(find.text('Text in the picture'), findsNothing);
+    expect(find.textContaining('published before'), findsNothing);
+  });
+
   testWidgets('in Hindi, the labels are Hindi and the Devanagari text is shown as read', (
     tester,
   ) async {

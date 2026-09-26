@@ -311,3 +311,22 @@ class TestAClaimRewordedFromAListStillAnchors:
         from app.extraction.claims import _locate
 
         assert _locate(claim_text, self.PAGE) is None
+
+
+class TestWhatTheExtractorIsTold:
+    """Rules that came from real misses on the phone (2026-09-27)."""
+
+    def test_a_joke_is_not_a_claim(self) -> None:
+        from app.extraction.llm import _SYSTEM_INSTRUCTION
+
+        # "ME ON MONDAY MORNING" was searched as news and came back unconfirmed.
+        assert "ME ON MONDAY MORNING" in _SYSTEM_INSTRUCTION
+        assert "an empty list is the right answer" in _SYSTEM_INSTRUCTION
+
+    def test_a_forwards_own_point_is_checked_but_never_a_debunks(self) -> None:
+        from app.extraction.llm import _SYSTEM_INSTRUCTION
+
+        # The lemon-water poster was checked only as "doctors said so".
+        assert "names an authority only to lend it weight" in _SYSTEM_INSTRUCTION
+        # ...and the exclusion that keeps a PIB fact-check from being called false.
+        assert "Never do this for a report of a denial, a debunk" in _SYSTEM_INSTRUCTION

@@ -648,6 +648,10 @@ class _WhatWeCheckedState extends State<_WhatWeChecked> {
       // A reading keeps a blank line between the blocks of the picture; shown as a
       // quote, one line apart is enough.
       SubmissionKind.image when fromPicture => reading!.text.replaceAll(_blankLines, '\n'),
+      // A picture with no text has nothing to quote. Its only claim is the server's
+      // own question about it ("This image has been published before...") and was
+      // shown here, labelled as the picture's text, on a landscape with none.
+      SubmissionKind.image => '',
       _ => headline ?? '',
     }.trim();
     const limit = 600;
@@ -710,7 +714,7 @@ class _WhatWeCheckedState extends State<_WhatWeChecked> {
                 style: FactifyText.sans(13, color: k.ink2).copyWith(height: 1.5),
               ),
             ],
-            if (quote.isNotEmpty) ...[
+            if (fromPicture && quote.isNotEmpty) ...[
               const SizedBox(height: 10),
               Text(
                 l10n.textInPicture,

@@ -41,7 +41,7 @@ PROVIDER = "llm"
 
 # Bumped whenever the prompt or the schema changes, because either changes what the
 # same document extracts to — and the extraction cache is keyed on it.
-EXTRACTOR_VERSION = "2026.09.27.1"
+EXTRACTOR_VERSION = "2026.09.27.2"
 
 MAX_CLAIMS_PER_DOCUMENT = 7
 
@@ -139,6 +139,12 @@ _SYSTEM_INSTRUCTION = (
     "Instructions to the reader - 'forward this to all your groups', 'apply now', "
     "'share before it is deleted', 'click the link' - are not claims: never extract "
     "them. "
+    "Nor is a caption, joke, reaction, greeting or slogan that says nothing about the "
+    "world - 'ME ON MONDAY MORNING', 'just 5 more minutes', 'Good morning, have a "
+    "blessed day'. A meme or picture carrying only these has no claims, and an empty "
+    "list is the right answer: a joke checked against the news finds nothing and is "
+    "reported as unconfirmed. A meme that does assert something - a quote put in a "
+    "real person's mouth, a figure, an event - is extracted like any other document. "
     "coverage_expectation: HIGH when the claim, if true, would be reported by the "
     "national press or published by a government - an announcement by the Prime "
     "Minister, a ministry, the RBI or a court, a nationwide scheme, payment, ban or "
@@ -179,6 +185,18 @@ _SYSTEM_INSTRUCTION = (
     "ministry, not an EVENT about a bridge; 'A farmers' union threatens a "
     "nationwide strike if the bill is passed' is an ATTRIBUTION about the union, not "
     "an EVENT about a strike. "
+    "One case runs the other way. When a message asserts something itself and names "
+    "an authority only to lend it weight - 'Doctors at Tata Memorial Hospital confirm "
+    "that drinking hot water with lemon kills cancer cells', 'NASA has said the Earth "
+    "will go dark for six days' - what it asserts is what it wants believed and "
+    "shared. Extract that as its own claim, in the document's own words and typed by "
+    "what it asserts ('drinking hot water with lemon kills cancer cells', an EVENT), "
+    "and make it the HEADLINE; the attribution may follow as a SUPPORTING_DETAIL. "
+    "Checking only whether the authority said it leaves the thing itself unchecked. "
+    "Never do this for a report of a denial, a debunk, a ruling or a dispute - 'the "
+    "ministry has denied reports that...', 'PIB Fact Check says the claim that ... is "
+    "fake': there the reporting is the point, and what was denied is not something "
+    "the document asserts. "
     "search_phrases: two or three short web queries that would find published "
     "sources ADDRESSING this claim, in either direction. The claim's own sentence "
     "is already searched, and on its own it retrieves the topic rather than any "
