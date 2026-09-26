@@ -1326,6 +1326,23 @@ class TestSearchingTheQuestionBehindTheClaim:
 
         assert asked == ["The sky is green.", "sky colour", "The sky is green. fact check"]
 
+    def test_a_claim_in_hindi_asks_for_the_fact_check_in_english(self) -> None:
+        """Searched only in Hindi, word for word, a fake Rs 5,000 student scheme found
+        pension schemes and a WhatsApp explainer - never a fact-checker, because they
+        mostly publish in English."""
+        subject = self._resolver()
+        hindi = "प्रधानमंत्री मोदी ने सभी छात्रों को हर महीने 5000 रुपये देने की घोषणा की।"
+        asked, _ = self._run(
+            subject,
+            claim(
+                text=hindi,
+                search_phrases=("मोदी छात्र 5000 रुपये योजना", "PM Modi Rs 5000 students scheme"),
+            ),
+        )
+
+        assert asked[0] == hindi
+        assert asked[-1] == "PM Modi Rs 5000 students scheme fact check"
+
     def test_one_failing_query_does_not_lose_the_others(self) -> None:
         """A search that could not run is an absence, never a failed verification."""
         subject = self._resolver()
@@ -1853,3 +1870,54 @@ class TestChecksDoNotShareWhatTheyRead:
 
         assert resolver._pages_by_check == {}
         assert resolver._reads_by_check == {}
+
+
+class TestOldNewsIsNotEvidence:
+    """A 2026 forward about exchanging Rs 500 notes was refuted by pages on the 2016
+    demonetisation. The years were in the quotes, in plain digits."""
+
+    def test_a_quote_only_about_earlier_years_is_older_than_the_claim(self) -> None:
+        from app.sources.reasoning import older_than_the_claim
+
+        assert older_than_the_claim(
+            "You can exchange old Rs 500 notes at any bank before 30 September 2026.",
+            "No other person can exchange or deposit old notes after December 30, 2016.",
+            None,
+        )
+
+    def test_a_page_published_before_the_claimed_year_is_older(self) -> None:
+        from app.sources.reasoning import older_than_the_claim
+
+        assert older_than_the_claim(
+            "RBI will ban Rs 500 notes from 1 October 2026.",
+            "The RBI said the notes remain legal tender.",
+            date(2016, 11, 9),
+        )
+
+    def test_a_quote_that_mentions_the_claimed_year_is_left_to_the_reader(self) -> None:
+        from app.sources.reasoning import older_than_the_claim
+
+        assert not older_than_the_claim(
+            "India won the 2026 final.",
+            "India lost the 2018 final but won in 2026.",
+            None,
+        )
+
+    def test_a_claim_with_no_year_is_left_to_the_reader(self) -> None:
+        from app.sources.reasoning import older_than_the_claim
+
+        assert not older_than_the_claim(
+            "RBI has banned Rs 500 notes.", "Notes were demonetised in 2016.", None
+        )
+
+    def test_a_newspapers_fact_check_column_reads_as_a_fact_check(self) -> None:
+        from app.sources.websearch import _reads_as_a_fact_check
+
+        assert _reads_as_a_fact_check(
+            "Factcheck: is Modi government giving 5000 in cash on Independence Day?",
+            "https://www.livehindustan.com/viral-news/factcheck-is-modi-government",
+        )
+        assert _reads_as_a_fact_check("पीआईबी ने दावे को फर्जी बताया", "https://x.in/a")
+        assert not _reads_as_a_fact_check(
+            "India beat Iran to win kabaddi gold", "https://www.thehindu.com/sport/kabaddi"
+        )

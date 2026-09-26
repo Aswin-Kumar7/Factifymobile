@@ -68,7 +68,7 @@ _MAX_QUERIES = 4
 _READ_TTL_SECONDS = 90.0
 
 NAME = "web_search"
-VERSION = "2026.09.26"
+VERSION = "2026.09.26.3"
 PROVIDER = "web_search"
 
 # How many credible sources to read. Each is a metered model call, and corroboration
@@ -92,6 +92,18 @@ _SEARCH_COUNT = 10
 
 class _SearchFailed(Exception):
     """One search call that did not return results: the provider refused or failed."""
+
+
+# A page that presents itself as a fact-check, in its headline or its address.
+_FACT_CHECK_WORDS = re.compile(
+    r"fact[\s_-]?check|webqoof|\bfake\b|\bhoax|\bviral\b|\bmisleading\b|"
+    r"फ़र्ज़ी|फर्जी|फेक|भ्रामक|वायरल|पड़ताल",
+    re.IGNORECASE,
+)
+
+
+def _reads_as_a_fact_check(title: str | None, url: str) -> bool:
+    return bool(_FACT_CHECK_WORDS.search(f"{title or ''} {url}"))
 
 
 class WebSearchResolver:
@@ -601,8 +613,14 @@ class WebSearchResolver:
         # "would that verdict be a verdict on this claim?", the answer is reliable.
         # The fact-check's headline names what it reviewed. `None` is "could not
         # ask", and keeps the finding, as the API path does.
-        if relation is Relation.CONTRADICTS and self._credibility.is_fact_checker(
-            snapshot.final_url or snapshot.url
+        #
+        # Nor only on fact-checkers' own sites: a newspaper's fact-check column is the
+        # same kind of page. Live Hindustan's check that "Rs 5,000 cash on Independence
+        # Day" was fake was counted against a forward promising Rs 5,000 a month to
+        # every student - a different fake, from before.
+        if relation is Relation.CONTRADICTS and (
+            self._credibility.is_fact_checker(snapshot.final_url or snapshot.url)
+            or _reads_as_a_fact_check(snapshot.title, snapshot.final_url or snapshot.url)
         ):
             reviewed = (snapshot.title or "").strip() or best.quote
             if await self._reasoner.same_claim(claim.text, reviewed) is False:
@@ -667,7 +685,15 @@ class WebSearchResolver:
         # Searching the claim alone returned the real government scholarship portals
         # for a scholarship scam PIB had called fake, and not one report of the
         # debunk; asking for the fact-check directly is what finds it.
-        queries.append(f"{claim.text} fact check")
+        #
+        # In English when the claim is not. A Hindi forward promising Rs 5,000 a month
+        # to every student was searched only in Hindi, word for word, and found
+        # pension schemes, a scholarship notice and an explainer on WhatsApp groups -
+        # never a fact-checker, because PIB Fact Check, BOOM and Factly mostly
+        # publish in English. The extractor's English phrase names the same claim.
+        english = next((p for p in queries[1:] if p.isascii()), None)
+        subject = claim.text if claim.text.isascii() or english is None else english
+        queries.append(f"{subject} fact check")
 
         gathered = await asyncio.gather(
             *(self._search(query) for query in queries), return_exceptions=True

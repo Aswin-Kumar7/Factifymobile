@@ -1494,3 +1494,38 @@ class TestEveryClaimSaysWhetherItWasSearched:
         assert sorted(search.asked) == sorted(statuses)[:MAX_FALLBACK_CLAIMS]
         assert list(statuses.values()).count("searched") == MAX_FALLBACK_CLAIMS
         assert list(statuses.values()).count("not_searched") == 1
+
+
+class TestAnUnreportedNationalClaimIsSaidPlainly:
+    """A forward saying the Prime Minister had announced Rs 5,000 a month for every
+    student came back "Unconfirmed" with a generic line. Nothing refutes it, so it is
+    not called false - but the case now says that nothing reports something this big.
+    """
+
+    def _note(self, **overrides: Any) -> str | None:
+        from app.domain.enums import CoverageExpectation
+        from app.orchestration.pipeline import _unreported_note
+
+        fields: dict[str, Any] = {"coverage_expectation": CoverageExpectation.HIGH}
+        evidence_items = overrides.pop("evidence", [])
+        fields.update(overrides)
+        return _unreported_note(_claim(**fields), evidence_items)
+
+    def test_a_national_claim_nothing_supports_says_so(self) -> None:
+        note = self._note()
+
+        assert note is not None
+        assert "treat it as likely false" in note
+
+    def test_in_hindi_it_is_said_in_hindi(self) -> None:
+        assert "संभवतः झूठा" in (self._note(language="hi") or "")
+
+    def test_a_local_claim_is_not_expected_to_be_reported(self) -> None:
+        from app.domain.enums import CoverageExpectation
+
+        assert self._note(coverage_expectation=CoverageExpectation.LOCAL) is None
+
+    def test_one_supporting_source_is_enough_to_say_nothing(self) -> None:
+        supporting = evidence(direction=Direction.SUPPORTS)
+
+        assert self._note(evidence=[supporting]) is None

@@ -35,7 +35,14 @@ from uuid import UUID
 from app.cache.keys import DEFAULT_POLICY_PROFILE, CacheKeyParts
 from app.cache.service import CachedVerdict
 from app.domain.claim import Claim
-from app.domain.enums import Action, ClaimStatus, Direction, Importance, SourceRisk
+from app.domain.enums import (
+    Action,
+    ClaimStatus,
+    CoverageExpectation,
+    Direction,
+    Importance,
+    SourceRisk,
+)
 from app.domain.evidence import Advisory, Evidence
 from app.domain.publishers import registrable_domain
 from app.governor.governor import ProviderUnavailable, Skip
@@ -262,6 +269,38 @@ class VerificationResult:
         if not self.skipped:
             return None
         return "Not everything could be checked. " + " ".join(s.describe() for s in self.skipped)
+
+
+# What an undecided case says when a claim that would be national news was searched
+# for in full and nothing reliable reports it. A forward saying the Prime Minister
+# had announced Rs 5,000 a month for every student came back "Unconfirmed" with the
+# app's generic line, which reads like "we don't know" about something that - were it
+# true - every newspaper and the government's own sites would carry.
+#
+# Still not FALSE: nothing refutes it, and a verdict of False is only ever shown
+# above the sources that establish it. So it is said, not decided: a fixed sentence,
+# never a model's words, and only when nothing at all supports the claim and the
+# search ran to the end.
+_UNREPORTED = {
+    "en": (
+        "We searched official sources and reliable news outlets and found nothing "
+        "reporting this. Something this big would be widely reported if it were true, "
+        "so treat it as likely false until an official source confirms it."
+    ),
+    "hi": (
+        "हमने आधिकारिक स्रोतों और भरोसेमंद समाचार माध्यमों में खोजा, पर कहीं भी इसकी "
+        "कोई ख़बर नहीं मिली। अगर यह सच होता तो इसकी ख़बर हर जगह होती, इसलिए जब तक कोई "
+        "आधिकारिक स्रोत इसकी पुष्टि न करे, इसे संभवतः झूठा मानें।"
+    ),
+}
+
+
+def _unreported_note(claim: Claim, evidence: list[Evidence]) -> str | None:
+    if claim.coverage_expectation is not CoverageExpectation.HIGH:
+        return None
+    if any(item.direction is Direction.SUPPORTS for item in evidence):
+        return None
+    return _UNREPORTED.get(claim.language or "en", _UNREPORTED["en"])
 
 
 def _not_own(evidence: list[Evidence], own_pages: frozenset[str]) -> list[Evidence]:
@@ -775,7 +814,7 @@ class Orchestrator:
         # rule had correctly declined to call it true. The app says what UNCONFIRMED
         # means in its own words instead.
         if not decision.status.is_decisive:
-            explanation = None
+            explanation = _unreported_note(claim, evidence) if search == "searched" else None
 
         # Strength counts the evidence that *carries* this verdict, which is not
         # always the evidence the decision counted.

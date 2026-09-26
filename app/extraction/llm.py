@@ -41,7 +41,7 @@ PROVIDER = "llm"
 
 # Bumped whenever the prompt or the schema changes, because either changes what the
 # same document extracts to — and the extraction cache is keyed on it.
-EXTRACTOR_VERSION = "2026.09.26.2"
+EXTRACTOR_VERSION = "2026.09.26.3"
 
 MAX_CLAIMS_PER_DOCUMENT = 7
 
@@ -132,6 +132,14 @@ _SYSTEM_INSTRUCTION = (
     "day of the week, a running tally ('its ninth title') - work the same way: leave "
     "them out of a claim unless they are its point, or make them a claim of their "
     "own. "
+    "Instructions to the reader - 'forward this to all your groups', 'apply now', "
+    "'share before it is deleted', 'click the link' - are not claims: never extract "
+    "them. "
+    "coverage_expectation: HIGH when the claim, if true, would be reported by the "
+    "national press or published by a government - an announcement by the Prime "
+    "Minister, a ministry, the RBI or a court, a nationwide scheme, payment, ban or "
+    "holiday; MEDIUM for a state or city matter; LOCAL for a neighbourhood, a school "
+    "or a private person. "
     "Name what a claim is about. Where the document says 'the video', 'the tool', "
     "'the incident' or 'he', use the short name it gives them ('the video of Randhir "
     "Jaiswal'), so the claim cannot be matched to some other video on the web. "
@@ -176,7 +184,9 @@ _SYSTEM_INSTRUCTION = (
     "treatment evidence', 'turmeric milk diabetes fact check'. Keep each under eight "
     "words, use the "
     "claim's own entities and plain nouns, no quotation marks, and never phrase one "
-    "so that it presumes an answer."
+    "so that it presumes an answer. For a claim not written in English, write at "
+    "least one phrase in English: most fact-checks and national reporting are in "
+    "English, and a search in the claim's own words alone does not reach them."
 )
 
 
