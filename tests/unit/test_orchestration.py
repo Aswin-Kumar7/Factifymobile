@@ -940,15 +940,17 @@ class TestTheFallbackStage:
             _claim(claim_id="headline", importance=Importance.HEADLINE),
             _claim(claim_id="detail_2", importance=Importance.SUPPORTING_DETAIL),
             _claim(claim_id="thesis", importance=Importance.MAIN_THESIS),
+            _claim(claim_id="detail_3", importance=Importance.SUPPORTING_DETAIL),
+            _claim(claim_id="background_2", importance=Importance.BACKGROUND),
         ]
 
         await _economy_orchestrator([_fact_check(None), web]).verify(
-            normalise_text("A long article with five claims."), case_id=uuid4(), claims=claims
+            normalise_text("A long article with seven claims."), case_id=uuid4(), claims=claims
         )
 
-        assert len(web.asked) == MAX_FALLBACK_CLAIMS == 3
-        # the top three by importance; the tie between details keeps extraction order
-        assert set(web.asked) == {"headline", "thesis", "detail_1"}
+        assert len(web.asked) == MAX_FALLBACK_CLAIMS == 5
+        # the top five by importance; the tie between details keeps extraction order
+        assert set(web.asked) == {"headline", "thesis", "detail_1", "detail_2", "detail_3"}
 
 
 class TestTheCacheIsAskedFirst:

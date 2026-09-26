@@ -263,7 +263,7 @@ abstract class AppLocalizations {
   /// No description provided for @claimNotSearched.
   ///
   /// In en, this message translates to:
-  /// **'Each check searches its three most important claims, and this wasn\'t one of them.'**
+  /// **'Each check searches its five most important claims, and this wasn\'t one of them.'**
   String get claimNotSearched;
 
   /// No description provided for @claimTimedOut.

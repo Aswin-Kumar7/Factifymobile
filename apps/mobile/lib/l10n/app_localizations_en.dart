@@ -102,7 +102,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get claimNotSearched =>
-      'Each check searches its three most important claims, and this wasn\'t one of them.';
+      'Each check searches its five most important claims, and this wasn\'t one of them.';
 
   @override
   String get claimTimedOut =>

@@ -35,7 +35,7 @@
   "stepComparing": "Compare each source with the claim",
   "usuallyTakes": "A check usually takes 20–50 seconds.",
   "statusNotChecked": "Not checked",
-  "claimNotSearched": "Each check searches its three most important claims, and this wasn't one of them.",
+  "claimNotSearched": "Each check searches its five most important claims, and this wasn't one of them.",
   "claimTimedOut": "We ran out of time before any source for this could be read. Tap Check again.",
   "claimNothingFound": "We searched trusted news and fact-checkers and found nothing that addresses this.",
   "claimNoSources": "We read {count, plural, =1{1 source} other{{count} sources}} and none addressed this directly.",

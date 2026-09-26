@@ -101,7 +101,12 @@ DEFAULT_CONCURRENCY = 6
 # one to three claims and is unaffected; a long article can yield seven, and reading
 # the open web for every supporting detail multiplied the model calls per check
 # several times over for little change in the verdict.
-MAX_FALLBACK_CLAIMS = 3
+#
+# Five, not three: at three, one claim in every four-claim article was never searched
+# and still read "Unconfirmed" — on a Hindu analysis, the one claim that kept the
+# answer from True. Five covers most articles whole, for about ten more seconds and
+# two more searched claims' worth of model calls.
+MAX_FALLBACK_CLAIMS = 5
 
 _IMPORTANCE_ORDER = {
     Importance.HEADLINE: 0,
