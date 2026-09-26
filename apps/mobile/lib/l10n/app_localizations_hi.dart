@@ -868,4 +868,41 @@ class AppLocalizationsHi extends AppLocalizations {
   @override
   String get deepTooSlow =>
       'गहरी जाँच उम्मीद से ज़्यादा समय ले रही है। एक मिनट बाद फिर से जाँचें।';
+
+  @override
+  String get imageReadTitle => 'आपकी तस्वीर में हमने क्या पढ़ा';
+
+  @override
+  String imageKind(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'NEWS_ARTICLE': 'समाचार लेख',
+      'SOCIAL_POST': 'सोशल मीडिया पोस्ट',
+      'CHAT_MESSAGE': 'चैट फ़ॉरवर्ड',
+      'TV_GRAPHIC': 'टीवी समाचार ग्राफ़िक',
+      'POSTER': 'पोस्टर',
+      'DOCUMENT': 'दस्तावेज़',
+      'PHOTO': 'फ़ोटो',
+      'MEME': 'मीम',
+      'other': 'तस्वीर',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String imageFrom(String publisher) {
+    return 'दिखाता है: $publisher';
+  }
+
+  @override
+  String get imageTextLabel => 'तस्वीर में लिखा पाठ';
+
+  @override
+  String get imageNoText =>
+      'इस तस्वीर में हमें कोई पाठ नहीं मिला, इसलिए हमने तस्वीर की ही जाँच की।';
+
+  @override
+  String get imageShowAllText => 'पूरा पाठ दिखाएँ';
+
+  @override
+  String get imageShowLessText => 'कम दिखाएँ';
 }

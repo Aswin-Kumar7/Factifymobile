@@ -1321,6 +1321,48 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The deep check is taking longer than expected. Try Check again in a minute.'**
   String get deepTooSlow;
+
+  /// No description provided for @imageReadTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'What we read in your picture'**
+  String get imageReadTitle;
+
+  /// No description provided for @imageKind.
+  ///
+  /// In en, this message translates to:
+  /// **'{kind, select, NEWS_ARTICLE{News article} SOCIAL_POST{Social media post} CHAT_MESSAGE{Chat forward} TV_GRAPHIC{TV news graphic} POSTER{Poster} DOCUMENT{Document} PHOTO{Photo} MEME{Meme} other{Picture}}'**
+  String imageKind(String kind);
+
+  /// No description provided for @imageFrom.
+  ///
+  /// In en, this message translates to:
+  /// **'Shows: {publisher}'**
+  String imageFrom(String publisher);
+
+  /// No description provided for @imageTextLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Text in the picture'**
+  String get imageTextLabel;
+
+  /// No description provided for @imageNoText.
+  ///
+  /// In en, this message translates to:
+  /// **'We found no text in this picture, so we checked the picture itself.'**
+  String get imageNoText;
+
+  /// No description provided for @imageShowAllText.
+  ///
+  /// In en, this message translates to:
+  /// **'Show all the text'**
+  String get imageShowAllText;
+
+  /// No description provided for @imageShowLessText.
+  ///
+  /// In en, this message translates to:
+  /// **'Show less'**
+  String get imageShowLessText;
 }
 
 class _AppLocalizationsDelegate

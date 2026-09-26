@@ -542,5 +542,26 @@
     }
   },
   "deepUsuallyTakes": "A deep check usually takes 1–3 minutes.",
-  "deepTooSlow": "The deep check is taking longer than expected. Try Check again in a minute."
+  "deepTooSlow": "The deep check is taking longer than expected. Try Check again in a minute.",
+  "imageReadTitle": "What we read in your picture",
+  "imageKind": "{kind, select, NEWS_ARTICLE{News article} SOCIAL_POST{Social media post} CHAT_MESSAGE{Chat forward} TV_GRAPHIC{TV news graphic} POSTER{Poster} DOCUMENT{Document} PHOTO{Photo} MEME{Meme} other{Picture}}",
+  "@imageKind": {
+    "placeholders": {
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
+  "imageFrom": "Shows: {publisher}",
+  "@imageFrom": {
+    "placeholders": {
+      "publisher": {
+        "type": "String"
+      }
+    }
+  },
+  "imageTextLabel": "Text in the picture",
+  "imageNoText": "We found no text in this picture, so we checked the picture itself.",
+  "imageShowAllText": "Show all the text",
+  "imageShowLessText": "Show less"
 }

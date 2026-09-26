@@ -870,4 +870,41 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get deepTooSlow =>
       'The deep check is taking longer than expected. Try Check again in a minute.';
+
+  @override
+  String get imageReadTitle => 'What we read in your picture';
+
+  @override
+  String imageKind(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'NEWS_ARTICLE': 'News article',
+      'SOCIAL_POST': 'Social media post',
+      'CHAT_MESSAGE': 'Chat forward',
+      'TV_GRAPHIC': 'TV news graphic',
+      'POSTER': 'Poster',
+      'DOCUMENT': 'Document',
+      'PHOTO': 'Photo',
+      'MEME': 'Meme',
+      'other': 'Picture',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String imageFrom(String publisher) {
+    return 'Shows: $publisher';
+  }
+
+  @override
+  String get imageTextLabel => 'Text in the picture';
+
+  @override
+  String get imageNoText =>
+      'We found no text in this picture, so we checked the picture itself.';
+
+  @override
+  String get imageShowAllText => 'Show all the text';
+
+  @override
+  String get imageShowLessText => 'Show less';
 }

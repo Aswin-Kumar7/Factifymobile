@@ -440,6 +440,42 @@ class MediaProvenance {
   );
 }
 
+/// What was read from an uploaded picture: its text, and what it shows.
+///
+/// The claims were extracted from [text], so showing it lets a person see exactly
+/// what was checked, and catch a misread before trusting the verdict built on it.
+/// [description] is context, never evidence.
+class ImageReading {
+  const ImageReading({
+    required this.text,
+    this.description,
+    this.kind,
+    this.publisher,
+    this.language,
+  });
+
+  factory ImageReading.fromJson(Map<String, dynamic> json) => ImageReading(
+    text: json['text'] as String? ?? '',
+    description: json['description'] as String?,
+    kind: json['kind'] as String?,
+    publisher: json['publisher'] as String?,
+    language: json['language'] as String?,
+  );
+
+  final String text;
+  final String? description;
+
+  /// NEWS_ARTICLE, SOCIAL_POST, CHAT_MESSAGE, TV_GRAPHIC, POSTER, DOCUMENT, PHOTO,
+  /// MEME or OTHER.
+  final String? kind;
+
+  /// The outlet, channel or account the picture carries, as written on it.
+  final String? publisher;
+  final String? language;
+
+  bool get hasText => text.trim().isNotEmpty;
+}
+
 /// A complete verification result.
 class Verdict {
   const Verdict({
@@ -460,6 +496,7 @@ class Verdict {
     this.recurrence,
     this.mediaProvenance,
     this.sourceRisk = 'UNKNOWN',
+    this.imageReading,
   });
 
   final String caseId;
@@ -491,6 +528,9 @@ class Verdict {
   final Recurrence? recurrence;
   final MediaProvenance? mediaProvenance;
   final String sourceRisk;
+
+  /// For an uploaded picture: what was read in it. Null for text and links.
+  final ImageReading? imageReading;
 
   factory Verdict.fromJson(Map<String, dynamic> json) {
     final action = VerdictAction.parse(json['action'] as String);
@@ -525,6 +565,9 @@ class Verdict {
         ? null
         : MediaProvenance.fromJson((json['media_provenance'] as Map).cast<String, dynamic>()),
     sourceRisk: json['source_risk'] as String? ?? 'UNKNOWN',
+    imageReading: json['image_reading'] == null
+        ? null
+        : ImageReading.fromJson((json['image_reading'] as Map).cast<String, dynamic>()),
   );
 
   List<Evidence> get allEvidence => [for (final c in claims) ...c.evidence];

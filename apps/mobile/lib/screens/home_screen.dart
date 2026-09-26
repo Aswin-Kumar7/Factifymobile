@@ -33,6 +33,7 @@ import '../widgets/correction_sheet.dart';
 import '../widgets/history_strip.dart';
 import '../widgets/intake_bar.dart';
 import '../widgets/language_menu.dart';
+import '../widgets/image_reading_card.dart';
 import '../widgets/submission_card.dart';
 import '../widgets/verdict_card.dart';
 import 'account_screen.dart';
@@ -652,6 +653,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         // it. Text and links are already there, in the box, and were shown twice.
         if (submission != null && submission.isMedia) ...[
           SubmissionCard(submission: submission),
+          const SizedBox(height: 12),
+        ],
+
+        // What was read in the picture, right under it and above the verdict: the
+        // verdict is about this text, so the text comes first.
+        if (verdict?.imageReading case final reading?) ...[
+          ImageReadingCard(reading: reading),
           const SizedBox(height: 12),
         ],
 
