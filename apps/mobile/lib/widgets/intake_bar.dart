@@ -21,8 +21,14 @@ class IntakeBar extends StatelessWidget {
     required this.busy,
     this.recheckFor,
     this.onRecheck,
+    this.deep = false,
+    this.onDeepChanged,
     super.key,
   });
+
+  /// Whether the next check of text or a link is a deep one.
+  final bool deep;
+  final ValueChanged<bool>? onDeepChanged;
 
   final TextEditingController controller;
   final VoidCallback onCheck;
@@ -92,6 +98,21 @@ class IntakeBar extends StatelessWidget {
             );
           },
         ),
+        if (onDeepChanged != null) ...[
+          const SizedBox(height: 4),
+          SwitchListTile.adaptive(
+            value: deep,
+            onChanged: busy ? null : onDeepChanged,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+            dense: true,
+            secondary: Icon(
+              Icons.travel_explore_rounded,
+              color: deep ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
+            ),
+            title: Text(l10n.deepCheck, style: const TextStyle(fontWeight: FontWeight.w700)),
+            subtitle: Text(l10n.deepCheckHint),
+          ),
+        ],
         const SizedBox(height: 12),
         Row(
           children: [
@@ -130,9 +151,7 @@ class _SourceButton extends StatelessWidget {
   Widget build(BuildContext context) => Expanded(
     child: OutlinedButton(
       onPressed: onPressed,
-      style: OutlinedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-      ),
+      style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

@@ -1285,6 +1285,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Sign-in didn\'t work. Try again.'**
   String get authGeneric;
+
+  /// No description provided for @deepCheck.
+  ///
+  /// In en, this message translates to:
+  /// **'Deep check'**
+  String get deepCheck;
+
+  /// No description provided for @deepCheckHint.
+  ///
+  /// In en, this message translates to:
+  /// **'More claims and sources · takes 1–3 minutes'**
+  String get deepCheckHint;
+
+  /// No description provided for @deepChecking.
+  ///
+  /// In en, this message translates to:
+  /// **'Deep check…'**
+  String get deepChecking;
+
+  /// No description provided for @deepProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'{done} of {total} claims checked'**
+  String deepProgress(int done, int total);
+
+  /// No description provided for @deepUsuallyTakes.
+  ///
+  /// In en, this message translates to:
+  /// **'A deep check usually takes 1–3 minutes.'**
+  String get deepUsuallyTakes;
+
+  /// No description provided for @deepTooSlow.
+  ///
+  /// In en, this message translates to:
+  /// **'The deep check is taking longer than expected. Try Check again in a minute.'**
+  String get deepTooSlow;
 }
 
 class _AppLocalizationsDelegate

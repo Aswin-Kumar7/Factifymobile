@@ -188,6 +188,49 @@ class FactifyClient {
   });
 
   /// Retrieve a case previously computed, for polling an accepted video.
+  /// Start a deep check. The server answers at once with a case id and runs the
+  /// check in the background; follow it with [checkOn].
+  Future<String> startDeepCheck({
+    String? text,
+    String? url,
+    String? language,
+    bool recheck = false,
+  }) async {
+    final auth = await _signedIn();
+    final response = await _send(
+      () => _http
+          .post(
+            Uri.parse('$baseUrl/v1/verify'),
+            headers: {'content-type': 'application/json', ...auth},
+            body: jsonEncode({
+              'text': ?text,
+              'url': ?url,
+              'language': ?language,
+              'mode': 'deep',
+              if (recheck) 'recheck': true,
+            }),
+          )
+          .timeout(const Duration(seconds: 30)),
+    );
+    return (jsonDecode(response.body) as Map<String, dynamic>)['case_id'] as String;
+  }
+
+  /// Where a deep check has got to: its progress while it runs, its verdict when
+  /// done. A refusal (such as nothing to check on a page) is raised as a failure.
+  Future<CheckProgress> checkOn(String caseId) async {
+    final response = await _send(
+      () => _http.get(Uri.parse('$baseUrl/v1/cases/$caseId')).timeout(const Duration(seconds: 20)),
+    );
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode == 202) {
+      return CheckProgress(
+        done: (body['claims_done'] as num?)?.toInt() ?? 0,
+        total: (body['claims_total'] as num?)?.toInt() ?? 0,
+      );
+    }
+    return CheckProgress(verdict: Verdict.fromJson(body));
+  }
+
   /// How to sign in, from the server. Public values only.
   Future<AuthConfig> authConfig() async {
     final response = await _send(
@@ -368,6 +411,16 @@ class FactifyClient {
 }
 
 /// Either a finished verdict, or a case id to poll.
+/// A deep check's state: claims done of total while it runs, the verdict when
+/// done. The total is zero until the claims have been read out of the input.
+class CheckProgress {
+  const CheckProgress({this.verdict, this.done = 0, this.total = 0});
+
+  final Verdict? verdict;
+  final int done;
+  final int total;
+}
+
 class VerifyFileOutcome {
   const VerifyFileOutcome._({this.verdict, this.pendingCaseId});
 

@@ -847,4 +847,25 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get authGeneric => 'साइन-इन नहीं हुआ। फिर कोशिश करें।';
+
+  @override
+  String get deepCheck => 'गहरी जाँच';
+
+  @override
+  String get deepCheckHint => 'ज़्यादा दावे और स्रोत · 1–3 मिनट लगते हैं';
+
+  @override
+  String get deepChecking => 'गहरी जाँच…';
+
+  @override
+  String deepProgress(int done, int total) {
+    return '$total में से $done दावे जाँचे गए';
+  }
+
+  @override
+  String get deepUsuallyTakes => 'गहरी जाँच में आम तौर पर 1–3 मिनट लगते हैं।';
+
+  @override
+  String get deepTooSlow =>
+      'गहरी जाँच उम्मीद से ज़्यादा समय ले रही है। एक मिनट बाद फिर से जाँचें।';
 }

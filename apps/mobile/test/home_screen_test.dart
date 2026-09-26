@@ -187,5 +187,62 @@ void main() {
     expect(find.text('Check again'), findsNothing);
     expect(find.text('Check this'), findsOneWidget);
   });
+
+  testWidgets('a deep check shows the progress the server reports, then the verdict', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 2.625;
+    addTearDown(tester.view.reset);
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      _FakeClipboard(hasText: false).handle,
+    );
+    addTearDown(() => messenger.setMockMethodCallHandler(SystemChannels.platform, null));
+
+    final sent = <Map<String, dynamic>>[];
+    var polls = 0;
+    final client = FactifyClient(
+      baseUrl: 'http://factify.test',
+      httpClient: MockClient((request) async {
+        if (request.url.path == '/readyz') {
+          return http.Response('{"ready": true, "missing": []}', 200);
+        }
+        if (request.method == 'POST' && request.url.path == '/v1/verify') {
+          sent.add(jsonDecode(request.body) as Map<String, dynamic>);
+          return http.Response('{"case_id": "deep-1", "poll_url": "/v1/cases/deep-1"}', 202);
+        }
+        if (request.url.path == '/v1/cases/deep-1') {
+          polls += 1;
+          return polls == 1
+              ? http.Response('{"status": "processing", "claims_done": 1, "claims_total": 3}', 202)
+              : http.Response(jsonEncode(_verdictJson()), 200);
+        }
+        return http.Response('{}', 404);
+      }),
+    );
+    await tester.pumpWidget(FactifyApp(language: LanguagePreference.inMemory(), client: client));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Deep check'));
+    await tester.pump();
+    await tester.enterText(find.byType(TextField), 'The minister said the scheme was cancelled.');
+    await tester.pump();
+    await tester.tap(find.text('Check this'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump();
+
+    expect(sent.single['mode'], 'deep');
+    expect(find.text('1 of 3 claims checked'), findsOneWidget);
+    expect(find.text('Deep check…'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Check again'), findsOneWidget);
+    expect(find.text('Unconfirmed'), findsOneWidget);
+  });
 }
 

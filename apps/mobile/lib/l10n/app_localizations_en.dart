@@ -849,4 +849,25 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get authGeneric => 'Sign-in didn\'t work. Try again.';
+
+  @override
+  String get deepCheck => 'Deep check';
+
+  @override
+  String get deepCheckHint => 'More claims and sources · takes 1–3 minutes';
+
+  @override
+  String get deepChecking => 'Deep check…';
+
+  @override
+  String deepProgress(int done, int total) {
+    return '$done of $total claims checked';
+  }
+
+  @override
+  String get deepUsuallyTakes => 'A deep check usually takes 1–3 minutes.';
+
+  @override
+  String get deepTooSlow =>
+      'The deep check is taking longer than expected. Try Check again in a minute.';
 }

@@ -110,6 +110,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// picture or document). Null while a check runs and before the first one.
   String? _checkedText;
 
+  /// Whether text and links are checked deeply. Pictures and documents always get
+  /// the normal check.
+  bool _deep = false;
+
+  /// A running deep check's progress: claims done of total (0 of 0 while its claims
+  /// are still being read out).
+  (int, int)? _deepProgress;
+
   /// The interface language, sent with every check so the verdict can come back
   /// in the language it will be read in (PLAN 1.7.6). The phone's language unless
   /// the reader picked another from the language menu.
@@ -263,10 +271,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _beginRun(looksLikeUrl ? Submission.link(value) : Submission.text(value));
 
     try {
-      final verdict = looksLikeUrl
+      final verdict = _deep
+          ? await _deepCheck(value, looksLikeUrl: looksLikeUrl, recheck: recheck)
+          : looksLikeUrl
           ? await widget.client.verifyUrl(value, language: language, recheck: recheck)
           : await widget.client.verifyText(value, language: language, recheck: recheck);
-      if (mounted) _finish(verdict);
+      if (mounted && verdict != null) _finish(verdict);
     } on ApiFailure catch (failure) {
       if (!mounted) return;
       // A link the server refused is a page it could not read or found nothing to
@@ -288,6 +298,42 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           _checkedText = value;
         });
       }
+    }
+  }
+
+  /// Run a deep check: start it, then follow its progress until the verdict.
+  /// Null when it outlasts the wait, which is said on screen.
+  Future<Verdict?> _deepCheck(
+    String value, {
+    required bool looksLikeUrl,
+    required bool recheck,
+  }) async {
+    final caseId = await widget.client.startDeepCheck(
+      text: looksLikeUrl ? null : value,
+      url: looksLikeUrl ? value : null,
+      language: _language,
+      recheck: recheck,
+    );
+    if (mounted) setState(() => _deepProgress = (0, 0));
+    try {
+      // Up to five minutes: past the server's own three-minute budget, so a check
+      // that finished is always collected.
+      for (var attempt = 0; attempt < 100; attempt++) {
+        await Future<void>.delayed(const Duration(seconds: 3));
+        if (!mounted) return null;
+        final progress = await widget.client.checkOn(caseId);
+        if (progress.verdict != null) return progress.verdict;
+        setState(() => _deepProgress = (progress.done, progress.total));
+      }
+      if (mounted) {
+        setState(() {
+          _error = (l10n) => l10n.deepTooSlow;
+          _errorRetryable = false;
+        });
+      }
+      return null;
+    } finally {
+      if (mounted) setState(() => _deepProgress = null);
     }
   }
 
@@ -526,9 +572,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           if (widget.auth != null)
             AccountAvatar(
               auth: widget.auth!,
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(builder: (_) => AccountScreen(auth: widget.auth!)),
-              ),
+              onTap: () => Navigator.of(
+                context,
+              ).push(MaterialPageRoute<void>(builder: (_) => AccountScreen(auth: widget.auth!))),
             ),
           LanguageMenu(preference: widget.language),
           const SizedBox(width: 8),
@@ -596,6 +642,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           onCheck: () => _verify(_input.text),
           onPick: _pick,
           recheckFor: _busy || (verdict == null && error == null) ? null : _checkedText,
+          deep: _deep,
+          onDeepChanged: (value) => setState(() => _deep = value),
           onRecheck: _recheckRun == null ? null : () => unawaited(_recheckRun!()),
         ),
         const SizedBox(height: 18),
@@ -607,7 +655,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           const SizedBox(height: 12),
         ],
 
-        if (_busy) _Working(uploadProgress: _uploadProgress),
+        if (_busy) _Working(uploadProgress: _uploadProgress, deep: _deepProgress),
         if (_pendingCaseId != null) const _Pending(),
         if (error != null)
           _ErrorNote(
@@ -834,9 +882,13 @@ class _EmptyState extends StatelessWidget {
 /// every check goes through (listed, not ticked off), and how long one usually
 /// takes, so a forty-second wait reads as normal rather than stuck.
 class _Working extends StatefulWidget {
-  const _Working({this.uploadProgress});
+  const _Working({this.uploadProgress, this.deep});
 
   final double? uploadProgress;
+
+  /// A deep check's progress, claims done of total, which the server reports; so
+  /// unlike a normal check this one has a real bar.
+  final (int, int)? deep;
 
   @override
   State<_Working> createState() => _WorkingState();
@@ -866,6 +918,7 @@ class _WorkingState extends State<_Working> {
     final l10n = AppLocalizations.of(context);
     final progress = widget.uploadProgress;
     final uploading = progress != null && progress < 1;
+    final deep = widget.deep;
     final muted = theme.textTheme.bodySmall?.copyWith(color: FactifyColors.inkMuted);
 
     return Card(
@@ -905,12 +958,16 @@ class _WorkingState extends State<_Working> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        l10n.checkingTitle,
+                        widget.deep != null ? l10n.deepChecking : l10n.checkingTitle,
                         style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        uploading ? l10n.uploading((progress * 100).round()) : l10n.working,
+                        uploading
+                            ? l10n.uploading((progress * 100).round())
+                            : deep != null && deep.$2 > 0
+                            ? l10n.deepProgress(deep.$1, deep.$2)
+                            : l10n.working,
                         style: muted,
                       ),
                     ],
@@ -926,6 +983,18 @@ class _WorkingState extends State<_Working> {
                 ),
               ],
             ),
+            if (deep != null && deep.$2 > 0) ...[
+              const SizedBox(height: 14),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  value: deep.$1 / deep.$2,
+                  minHeight: 6,
+                  color: FactifyColors.emerald,
+                  backgroundColor: FactifyColors.emeraldTint,
+                ),
+              ),
+            ],
             if (uploading) ...[
               const SizedBox(height: 14),
               ClipRRect(
@@ -971,7 +1040,7 @@ class _WorkingState extends State<_Working> {
                 ),
               ),
             const SizedBox(height: 4),
-            Text(l10n.usuallyTakes, style: muted),
+            Text(deep != null ? l10n.deepUsuallyTakes : l10n.usuallyTakes, style: muted),
           ],
         ),
       ),
