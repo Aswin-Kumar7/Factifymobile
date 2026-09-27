@@ -213,6 +213,59 @@ void main() {
       ]);
     });
 
+    test('a source keeps what it said, and is marked kept once checked', () {
+      var watch = const CheckWatch();
+      watch = watch.apply(
+        _event(1, {'type': 'source_started', 'domain': 'pib.gov.in', 'title': 'It is fake'}),
+      );
+      watch = watch.apply(
+        _event(2, {
+          'type': 'source_done',
+          'domain': 'pib.gov.in',
+          'outcome': 'evidence',
+          'stance': 'contradicts',
+          'quote': 'No such scheme.',
+        }),
+      );
+      var pib = watch.sources.single;
+      expect(pib.title, 'It is fake');
+      expect(pib.stance, Stance.contradicts);
+      expect(pib.quote, 'No such scheme.');
+      expect(pib.kept, isFalse);
+
+      watch = watch.apply(
+        _event(3, {'type': 'source_checked', 'domain': 'pib.gov.in', 'stance': 'contradicts'}),
+      );
+      pib = watch.sources.single;
+      expect(pib.kept, isTrue);
+      expect(watch.stances, {Stance.contradicts: 1});
+    });
+
+    test('a published fact-check joins the ring only if it speaks to the claim', () {
+      var watch = const CheckWatch();
+      for (final (i, domain) in ['altnews.in', 'factly.in'].indexed) {
+        watch = watch.apply(
+          _event(i + 1, {'type': 'source_started', 'domain': domain, 'via': 'fact_check'}),
+        );
+      }
+      expect(watch.sources, isEmpty);
+      expect(watch.factChecks, hasLength(2));
+
+      watch = watch.apply(
+        _event(3, {'type': 'source_done', 'domain': 'altnews.in', 'outcome': 'not_relevant'}),
+      );
+      watch = watch.apply(
+        _event(4, {
+          'type': 'source_done',
+          'domain': 'factly.in',
+          'outcome': 'evidence',
+          'stance': 'contradicts',
+        }),
+      );
+      expect(watch.sources.map((s) => s.domain), ['factly.in']);
+      expect(watch.factChecks.map((s) => s.domain), ['altnews.in']);
+    });
+
     test('a source taken back after the source check is not evidence', () {
       var watch = const CheckWatch();
       watch = watch.apply(_event(1, {'type': 'source_started', 'domain': 'x.com'}));
@@ -290,34 +343,69 @@ void main() {
         'publisher': 'Press Information Bureau',
         'domain': 'pib.gov.in',
         'initials': 'PIB',
+        'title': 'Rs 500 notes are not being withdrawn',
+        'via': 'page',
       });
       send({
         'type': 'source_started',
         'publisher': 'BOOM',
         'domain': 'boomlive.in',
         'initials': 'BO',
+        'via': 'page',
       });
+      // A published fact-check compared in bulk: counted, not listed.
+      send({
+        'type': 'source_started',
+        'publisher': 'factly.in',
+        'domain': 'factly.in',
+        'initials': 'FA',
+        'via': 'fact_check',
+      });
+      send({'type': 'source_done', 'domain': 'factly.in', 'outcome': 'not_relevant'});
       await tester.pump();
       await tester.pump();
 
       expect(find.text('STEP 2 OF 3'), findsOneWidget);
       expect(find.text('Search trusted news and fact-checkers'), findsOneWidget);
       expect(find.text('Press Information Bureau'), findsOneWidget);
+      // The page's own headline: what this source actually is.
+      expect(find.text('Rs 500 notes are not being withdrawn'), findsOneWidget);
       expect(find.text('Reading…'), findsNWidgets(2));
       expect(find.text('0 of 2 read'), findsOneWidget);
+      expect(find.text('Compared with 1 published fact-check'), findsOneWidget);
+      expect(find.text('factly.in'), findsNothing);
 
-      send({'type': 'source_done', 'domain': 'pib.gov.in', 'outcome': 'evidence'});
+      send({
+        'type': 'source_done',
+        'domain': 'pib.gov.in',
+        'outcome': 'evidence',
+        'stance': 'contradicts',
+        'quote': 'RBI has not announced any withdrawal of Rs 500 notes.',
+      });
       send({'type': 'source_done', 'domain': 'boomlive.in', 'outcome': 'not_relevant'});
-      send({'type': 'evidence_count', 'n': 1});
+      send({'type': 'evidence_count', 'n': 1, 'checked': false});
       send({'type': 'step', 'step': 'compare'});
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
 
+      // What it said, before the source check has confirmed it.
       expect(find.text('STEP 3 OF 3'), findsOneWidget);
-      expect(find.text('Evidence found'), findsOneWidget);
+      expect(find.text('Refutes'), findsWidgets);
       expect(find.text('Not relevant'), findsOneWidget);
       expect(find.text('2 of 2 read'), findsOneWidget);
-      expect(find.text('1 source addresses this claim'), findsOneWidget);
+      expect(find.text('1 source speaks to this claim - checking it next'), findsOneWidget);
+
+      // Held up when checked against the claim.
+      send({
+        'type': 'source_checked',
+        'domain': 'pib.gov.in',
+        'stance': 'contradicts',
+        'quote': 'RBI has not announced any withdrawal of Rs 500 notes.',
+      });
+      send({'type': 'evidence_count', 'n': 1, 'checked': true});
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('1 source held up when checked against the claim'), findsOneWidget);
 
       answer.complete(http.Response(jsonEncode(_verdictJson()), 200));
       await tester.pumpAndSettle();

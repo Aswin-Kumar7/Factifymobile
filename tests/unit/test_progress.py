@@ -140,6 +140,7 @@ class TestOneCheck:
             "publisher": "Alt News",
             "domain": "altnews.in",
             "initials": "AN",
+            "via": "page",
             "seq": 1,
         }
 
@@ -158,14 +159,50 @@ class TestOneCheck:
             await progress.source_done(f"https://{site}/story", claim_id="cl_1", found=True)
 
         # The source check keeps PIB and decides NDTV was about something else.
-        await progress.verified("cl_1", ["https://pib.gov.in/story"])
+        await progress.verified(
+            "cl_1", [("https://pib.gov.in/story", "contradicts", "No such scheme exists.")]
+        )
 
         events, _ = await bus.since(KEY, 0)
-        tail = [(e["type"], e.get("domain"), e.get("outcome"), e.get("n")) for e in events[-2:]]
-        assert tail == [
-            ("source_done", "ndtv.com", "not_relevant", None),
-            ("evidence_count", None, None, 1),
+        tail = [
+            (e["type"], e.get("domain"), e.get("outcome"), e.get("stance"), e.get("n"))
+            for e in events[-3:]
         ]
+        assert tail == [
+            ("source_done", "ndtv.com", "not_relevant", None, None),
+            ("source_checked", "pib.gov.in", None, "contradicts", None),
+            ("evidence_count", None, None, None, 1),
+        ]
+        assert events[-1]["checked"] is True
+
+    async def test_a_source_says_which_way_it_points_and_why(self) -> None:
+        bus = LocalProgressBus()
+        progress = CheckProgress(bus, KEY)
+        await progress.source_started(
+            "https://www.thehindu.com/tn-women-5000",
+            "The Hindu",
+            title="Rs 5,000 credited to 1.31 crore women in Tamil Nadu",
+        )
+        await progress.source_done(
+            "https://www.thehindu.com/tn-women-5000",
+            claim_id="cl_1",
+            found=True,
+            stance="context",
+            quote="Rs 5,000 was credited to the bank accounts of 1.31 crore women today.",
+        )
+        events, _ = await bus.since(KEY, 0)
+        started, done = events[0], events[1]
+        assert started["title"] == "Rs 5,000 credited to 1.31 crore women in Tamil Nadu"
+        assert started["via"] == "page"
+        assert done["stance"] == "context"
+        assert done["quote"].startswith("Rs 5,000 was credited")
+
+    async def test_a_published_fact_check_compared_is_said_to_be_one(self) -> None:
+        bus = LocalProgressBus()
+        progress = CheckProgress(bus, KEY)
+        await progress.source_started("https://www.altnews.in/x", "Alt News", via="fact_check")
+        events, _ = await bus.since(KEY, 0)
+        assert events[0]["via"] == "fact_check"
 
     async def test_nothing_that_was_checked_is_in_an_event(self) -> None:
         bus = LocalProgressBus()
@@ -174,9 +211,12 @@ class TestOneCheck:
         await progress.step("read")
         await progress.source_started(f"https://www.thehindu.com{secret}", "The Hindu")
         await progress.source_done(f"https://www.thehindu.com{secret}", claim_id="cl_1", found=True)
-        await progress.verified("cl_1", [f"https://www.thehindu.com{secret}"])
+        await progress.verified("cl_1", [(f"https://www.thehindu.com{secret}", "supports", "")])
         await progress.done("case-1")
 
+        # The page's address can spell out what was checked, so it is never sent:
+        # only its site. (Its headline and the quoted sentence are public text of the
+        # cited page, as the result itself shows them; they travel only when given.)
         wire = json.dumps((await bus.since(KEY, 0))[0])
         assert "rbi" not in wire and "notes" not in wire and "2026" not in wire
         assert "thehindu.com" in wire and "The Hindu" in wire
@@ -297,7 +337,7 @@ class TestThePipelineReports:
         for domain in started:
             at = {e["type"]: i for i, e in enumerate(events) if e.get("domain") == domain}
             assert at["source_started"] < at["source_done"]
-        assert {"type": "evidence_count", "n": 1} in [
+        assert {"type": "evidence_count", "n": 1, "checked": False} in [
             {k: v for k, v in e.items() if k != "seq"} for e in events
         ]
 

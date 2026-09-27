@@ -2065,4 +2065,42 @@ class AppLocalizationsHi extends AppLocalizations {
   String mediaVisualMatch(String publisher, int percent) {
     return '$publisher · $percent% दृश्य मिलान';
   }
+
+  @override
+  String sourcesFactChecks(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count प्रकाशित फ़ैक्ट-चेक से मिलान किया',
+      one: '1 प्रकाशित फ़ैक्ट-चेक से मिलान किया',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get sourceSetAside => 'अलग रखा';
+
+  @override
+  String evidenceFoundSoFar(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count स्रोत इस दावे पर बात करते हैं - आगे इनकी जाँच होगी',
+      one: '1 स्रोत इस दावे पर बात करता है - आगे इसकी जाँच होगी',
+      zero: 'अभी कुछ नहीं, पढ़ना जारी है',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String evidenceHeldUp(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'दावे से मिलाने पर $count स्रोत टिके',
+      one: 'दावे से मिलाने पर 1 स्रोत टिका',
+      zero: 'दावे से मिलाने पर कोई स्रोत नहीं टिका',
+    );
+    return '$_temp0';
+  }
 }

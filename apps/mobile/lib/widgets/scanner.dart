@@ -1,12 +1,19 @@
-/// The Checking screen's scanner (v5, 176px): sources being searched and evidence
-/// being collected.
+/// The Checking screen's scanner (v5, 176px): this check's sources, and what they
+/// said.
 ///
 /// Searching goes out, evidence comes in. A soft pulse leaves the magnifier at the
-/// centre, and a comet runs round the ring: the search. The sources the server
-/// reports opening take their place on the ring, in the order it opened them - with
-/// a turning arc while each is read, filled when it had something to say about the
-/// claim, faded when it did not. Every source that gives evidence sends a dot into
-/// the centre, and the centre counts what has been collected.
+/// centre, and a comet runs round the ring: the search. The pages the server reports
+/// opening take their place on the ring, in the order it opened them, and each shows
+/// what it said - in the result's own colours: green where it supports the claim,
+/// red where it refutes it, amber where it adds context. While a page is read it has
+/// a turning arc; once read it is outlined in its colour, because the source check
+/// has not yet said whether it is really about this claim; when the check keeps it,
+/// it fills in and a dot carries it into the centre, which counts what the answer
+/// will cite. A page set aside fades. So two checks never look alike: each ring is
+/// that check's own sources and findings.
+///
+/// Published fact-checks compared in bulk are not on the ring (the screen counts
+/// them); one that speaks to the claim joins it like any page.
 ///
 /// Nothing on the ring is invented: before the server names a source, the ring is
 /// empty. (An earlier version drew ten empty placeholder dots; in dark mode they read
@@ -21,17 +28,22 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../checks/check_job.dart';
+import '../models/verdict.dart';
 import '../theme/icons.dart';
 import '../theme/tokens.dart';
+import 'action_style.dart';
 
 class Scanner extends StatefulWidget {
-  const Scanner({required this.sources, this.collected, super.key});
+  const Scanner({required this.sources, this.collected, this.checked = false, super.key});
 
   /// In the order they were opened; the first ten are shown.
   final List<WatchedSource> sources;
 
   /// The evidence count as the server keeps it; counted from [sources] if absent.
   final int? collected;
+
+  /// The source check has run: the count is what the answer cites.
+  final bool checked;
 
   static const double size = 176;
   static const int slots = 10;
@@ -83,6 +95,7 @@ class _ScannerState extends State<Scanner> with SingleTickerProviderStateMixin {
     final shown = widget.sources.take(Scanner.slots).toList();
     final collected =
         widget.collected ?? shown.where((s) => s.state == SourceState.evidence).length;
+    Color colour(WatchedSource s) => stanceColour(s.stance, k);
 
     return Semantics(
       container: true,
@@ -99,19 +112,19 @@ class _ScannerState extends State<Scanner> with SingleTickerProviderStateMixin {
                 ),
               ),
             ),
-            // A dot flies in from every source that gave evidence, once.
+            // A dot flies in, in its colour, from every source the check keeps.
             for (final (i, source) in shown.indexed)
-              if (source.state == SourceState.evidence && !_still)
+              if (source.state == SourceState.evidence && source.kept && !_still)
                 _Arrival(
                   key: ValueKey('arrival-${source.domain}'),
                   from: _at(i),
                   to: const Offset(centre, centre),
-                  colour: k.acc,
+                  colour: colour(source),
                 ),
             Positioned(
               left: centre - core / 2,
               top: centre - core / 2,
-              child: _Core(collected: collected, size: core),
+              child: _Core(collected: collected, checked: widget.checked, size: core),
             ),
             for (final (i, source) in shown.indexed)
               _Slot(
@@ -128,11 +141,13 @@ class _ScannerState extends State<Scanner> with SingleTickerProviderStateMixin {
   }
 }
 
-/// The magnifier, and once evidence is in, how much has been collected.
+/// The magnifier, and once evidence is in, how much has been collected: outlined
+/// while the sources are still to be checked, filled once they have been.
 class _Core extends StatelessWidget {
-  const _Core({required this.collected, required this.size});
+  const _Core({required this.collected, required this.checked, required this.size});
 
   final int collected;
+  final bool checked;
   final double size;
 
   @override
@@ -177,7 +192,7 @@ class _Core extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 6),
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: k.bg,
+                    color: checked ? k.acc : k.bg,
                     borderRadius: BorderRadius.circular(11),
                     border: Border.all(color: k.acc, width: 1.5),
                   ),
@@ -188,7 +203,7 @@ class _Core extends StatelessWidget {
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
                       height: 1,
-                      color: k.acc,
+                      color: checked ? k.onAcc : k.acc,
                     ),
                   ),
                 ),
@@ -224,6 +239,10 @@ class _Slot extends StatelessWidget {
     final found = state == SourceState.evidence;
     final reading = state == SourceState.reading;
     final idle = state == SourceState.notRelevant;
+    // Kept by the source check: filled. Read and speaking to the claim but not yet
+    // checked: outlined, in the colour of what it said.
+    final filled = found && source.kept;
+    final tone = found ? stanceColour(source.stance, k) : k.acc;
 
     final chip = AnimatedContainer(
       duration: const Duration(milliseconds: 300),
@@ -231,9 +250,11 @@ class _Slot extends StatelessWidget {
       height: dot,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: found ? k.acc : k.sf,
+        color: filled ? tone : k.sf,
         shape: BoxShape.circle,
-        border: found ? null : Border.all(color: reading ? k.acc : k.line),
+        border: filled
+            ? null
+            : Border.all(color: found ? tone : (reading ? k.acc : k.line), width: found ? 2 : 1),
       ),
       child: Text(
         source.initials,
@@ -244,7 +265,11 @@ class _Slot extends StatelessWidget {
           fontSize: 8,
           fontWeight: FontWeight.w700,
           height: 1,
-          color: found ? k.onAcc : (idle ? k.ink3 : k.ink2),
+          color: filled
+              ? (k.isDark ? k.bg : Colors.white)
+              : found
+              ? tone
+              : (idle ? k.ink3 : k.ink2),
         ),
       ),
     );
@@ -435,3 +460,12 @@ class _Search extends CustomPainter {
   @override
   bool shouldRepaint(_Search old) => old.tokens != tokens;
 }
+
+/// A source's colour for what it said: the result's own verdict colours, so green
+/// always means "supports", red "refutes" and amber "adds context".
+Color stanceColour(Stance? stance, FactifyTokens k) => switch (stance) {
+  Stance.supports => ActionStyle.colours(FactVerdict.trueClaim, k).$1,
+  Stance.contradicts => ActionStyle.colours(FactVerdict.falseClaim, k).$1,
+  Stance.context => ActionStyle.colours(FactVerdict.misleading, k).$1,
+  null => k.acc,
+};

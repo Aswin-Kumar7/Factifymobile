@@ -2068,4 +2068,42 @@ class AppLocalizationsEn extends AppLocalizations {
   String mediaVisualMatch(String publisher, int percent) {
     return '$publisher · $percent% visual match';
   }
+
+  @override
+  String sourcesFactChecks(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Compared with $count published fact-checks',
+      one: 'Compared with 1 published fact-check',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get sourceSetAside => 'Set aside';
+
+  @override
+  String evidenceFoundSoFar(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count sources speak to this claim - checking them next',
+      one: '1 source speaks to this claim - checking it next',
+      zero: 'Nothing yet, still reading',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String evidenceHeldUp(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count sources held up when checked against the claim',
+      one: '1 source held up when checked against the claim',
+      zero: 'None held up when checked against the claim',
+    );
+    return '$_temp0';
+  }
 }

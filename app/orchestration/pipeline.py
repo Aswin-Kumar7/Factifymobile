@@ -40,6 +40,7 @@ from app.domain.enums import (
     ClaimStatus,
     CoverageExpectation,
     Direction,
+    EvidenceKind,
     Importance,
     SourceRisk,
 )
@@ -48,7 +49,7 @@ from app.domain.publishers import registrable_domain
 from app.governor.governor import ProviderUnavailable, Skip
 from app.intake.normalizer import NormalisedIntake
 from app.observability.logging import event
-from app.orchestration.progress import addresses_claim, current_progress
+from app.orchestration.progress import addresses_claim, current_progress, stance_of
 from app.sources.base import (
     NORMAL,
     SourceCandidate,
@@ -916,7 +917,11 @@ class Orchestrator:
         if watching is not None:
             await watching.verified(
                 claim.id,
-                [item.citation_url for item in verified.evidence if addresses_claim(item)],
+                [
+                    (item.citation_url, stance_of(item) or "context", item.source_excerpt)
+                    for item in verified.evidence
+                    if addresses_claim(item)
+                ],
             )
         return verified.evidence, verified.explanation
 
@@ -1106,7 +1111,12 @@ class Orchestrator:
         """Fetch one candidate and turn it into evidence, or into nothing."""
         watching = current_progress.get()
         if watching is not None:
-            await watching.source_started(candidate.url, candidate.publisher)
+            await watching.source_started(
+                candidate.url,
+                candidate.publisher,
+                title=candidate.title,
+                via="fact_check" if resolver.kind is EvidenceKind.FACT_CHECK else "page",
+            )
         found: Evidence | None = None
         try:
             async with self._semaphore:
@@ -1124,10 +1134,13 @@ class Orchestrator:
             # Also when the read is abandoned at the deadline, so the screen never
             # shows a source as still being read after the check has moved on.
             if watching is not None:
+                spoke = found is not None and addresses_claim(found)
                 await watching.source_done(
                     candidate.url,
                     claim_id=claim.id,
-                    found=found is not None and addresses_claim(found),
+                    found=spoke,
+                    stance=stance_of(found) if spoke else None,
+                    quote=found.source_excerpt if spoke and found is not None else None,
                 )
 
     async def probe_provider(self, provider: str) -> str | None:

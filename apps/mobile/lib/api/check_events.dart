@@ -30,6 +30,11 @@ class CheckEvent {
     this.count,
     this.caseId,
     this.code,
+    this.title,
+    this.via,
+    this.stance,
+    this.quote,
+    this.checked = false,
   });
 
   factory CheckEvent.fromJson(Map<String, dynamic> json) => CheckEvent(
@@ -43,6 +48,11 @@ class CheckEvent {
     count: (json['n'] as num?)?.toInt(),
     caseId: json['case_id'] as String?,
     code: json['code'] as String?,
+    title: json['title'] as String?,
+    via: json['via'] as String?,
+    stance: json['stance'] as String?,
+    quote: json['quote'] as String?,
+    checked: json['checked'] as bool? ?? false,
   );
 
   final int seq;
@@ -61,6 +71,21 @@ class CheckEvent {
   final int? count;
   final String? caseId;
   final String? code;
+
+  /// The page's own headline, when the search gave one.
+  final String? title;
+
+  /// "page" for an article read, "fact_check" for a published fact-check compared.
+  final String? via;
+
+  /// Which way it points: supports, contradicts or context.
+  final String? stance;
+
+  /// The sentence it was read for.
+  final String? quote;
+
+  /// Said after the source check: the count, or a source set aside, is final.
+  final bool checked;
 
   bool get isFinal => type == 'done' || type == 'error';
 }

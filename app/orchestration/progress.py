@@ -254,7 +254,12 @@ class CheckProgress:
         self._publisher: dict[str, str] = {}
         # Domains with evidence, per claim, before and after the source check.
         self._found: dict[str, set[str]] = {}
+        # What each site said, when it said anything: its stance and a short quote.
+        self._said: dict[str, tuple[str, str]] = {}
+        # Whether the source check has run for any claim yet.
+        self._checked = False
         self._shown = 0
+        self._shown_checked = False
         self._lock = asyncio.Lock()
 
     async def _send(self, event: dict[str, Any]) -> None:
@@ -277,7 +282,17 @@ class CheckProgress:
         named = publisher or (self._names(domain) if self._names else None)
         return named or domain
 
-    async def source_started(self, url: str, publisher: str | None = None) -> None:
+    async def source_started(
+        self,
+        url: str,
+        publisher: str | None = None,
+        *,
+        title: str | None = None,
+        via: str = "page",
+    ) -> None:
+        """A source opened. `via` is "page" for a page read from the web or our own
+        stored articles, "fact_check" for a published fact-check compared with the
+        claim - many of those are compared at once and few are about this claim."""
         domain = _domain(url)
         if not domain:
             return
@@ -287,16 +302,30 @@ class CheckProgress:
             label = self._publisher.setdefault(domain, self._label(domain, publisher))
             again = not first and self._reading[domain] == 1
         if first or again:
-            await self._send(
-                {
-                    "type": "source_started",
-                    "publisher": label,
-                    "domain": domain,
-                    "initials": initials(label),
-                }
-            )
+            event: dict[str, Any] = {
+                "type": "source_started",
+                "publisher": label,
+                "domain": domain,
+                "initials": initials(label),
+                "via": via,
+            }
+            headline = _short(title, 140)
+            if headline:
+                event["title"] = headline
+            await self._send(event)
 
-    async def source_done(self, url: str, *, claim_id: str, found: bool) -> None:
+    async def source_done(
+        self,
+        url: str,
+        *,
+        claim_id: str,
+        found: bool,
+        stance: str | None = None,
+        quote: str | None = None,
+    ) -> None:
+        """A source read. When it spoke to the claim, which way (supports, contradicts
+        or context) and the sentence it was read for - before the source check, which
+        may still set it aside."""
         domain = _domain(url)
         if not domain:
             return
@@ -305,25 +334,38 @@ class CheckProgress:
             self._reading[domain] = left
             if found:
                 self._found.setdefault(claim_id, set()).add(domain)
+                if stance:
+                    self._said[domain] = (stance, _short(quote, 160) or "")
             if left:
                 return
             outcome = "evidence" if self._has_evidence(domain) else "not_relevant"
+            said = self._said.get(domain) if outcome == "evidence" else None
             count = self._count()
-        await self._send(
-            {
-                "type": "source_done",
-                "publisher": self._publisher.get(domain, domain),
-                "domain": domain,
-                "outcome": outcome,
-            }
-        )
+        event: dict[str, Any] = {
+            "type": "source_done",
+            "publisher": self._publisher.get(domain, domain),
+            "domain": domain,
+            "outcome": outcome,
+        }
+        if said:
+            event["stance"], event["quote"] = said
+        await self._send(event)
         await self._count_changed(count)
 
-    async def verified(self, claim_id: str, citation_urls: list[str]) -> None:
-        """The sources the source check kept for a claim; any it dropped are taken back."""
+    async def verified(self, claim_id: str, kept: list[tuple[str, str, str]]) -> None:
+        """The sources the source check kept for a claim, as (url, stance, quote): each
+        is confirmed with the stance it holds after the check, and any it dropped is
+        taken back."""
         async with self._lock:
             before = {d for ids in self._found.values() for d in ids}
-            self._found[claim_id] = {_domain(url) for url in citation_urls if _domain(url)}
+            confirmed: dict[str, tuple[str, str]] = {}
+            for url, stance, quote in kept:
+                domain = _domain(url)
+                if domain and domain not in confirmed:
+                    confirmed[domain] = (stance, _short(quote, 160) or "")
+            self._found[claim_id] = set(confirmed)
+            self._said.update(confirmed)
+            self._checked = True
             after = {d for ids in self._found.values() for d in ids}
             dropped = sorted(before - after)
             count = self._count()
@@ -334,6 +376,17 @@ class CheckProgress:
                     "publisher": self._publisher.get(domain, domain),
                     "domain": domain,
                     "outcome": "not_relevant",
+                    "checked": True,
+                }
+            )
+        for domain, (stance, quote) in confirmed.items():
+            await self._send(
+                {
+                    "type": "source_checked",
+                    "publisher": self._publisher.get(domain, domain),
+                    "domain": domain,
+                    "stance": stance,
+                    "quote": quote,
                 }
             )
         await self._count_changed(count)
@@ -351,13 +404,37 @@ class CheckProgress:
         return len({d for found in self._found.values() for d in found})
 
     async def _count_changed(self, count: int) -> None:
-        if count == self._shown:
+        # Sent again once the check has run, even at the same number: "4 found" and
+        # "4 held up" are different things to say.
+        if count == self._shown and self._checked == self._shown_checked:
             return
         self._shown = count
-        await self._send({"type": "evidence_count", "n": count})
+        self._shown_checked = self._checked
+        await self._send({"type": "evidence_count", "n": count, "checked": self._checked})
 
 
 _ADDRESSES = frozenset({Direction.SUPPORTS, Direction.CONTRADICTS, Direction.CONTEXTUALIZES})
+
+_STANCE = {
+    Direction.SUPPORTS: "supports",
+    Direction.CONTRADICTS: "contradicts",
+    Direction.CONTEXTUALIZES: "context",
+}
+
+
+def stance_of(item: Any) -> str | None:
+    """Which way a piece of evidence points, as the screen names it."""
+    return _STANCE.get(getattr(item, "direction", None))  # type: ignore[arg-type]
+
+
+def _short(text: str | None, limit: int) -> str | None:
+    """One line of page text, cut at a word: it is shown, never interpreted."""
+    if not text:
+        return None
+    line = " ".join(str(text).split())
+    if len(line) <= limit:
+        return line
+    return line[:limit].rsplit(" ", 1)[0].rstrip(",;:") + "…"
 
 
 def addresses_claim(item: Any) -> bool:

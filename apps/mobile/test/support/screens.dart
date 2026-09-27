@@ -319,26 +319,46 @@ CheckJob Function(String) mid(AppServices services, StreamController<CheckEvent>
       follow: (_) => events.stream,
     );
 
-/// The Checking screen's events for "step 2, four sources open, one found".
+/// The Checking screen's events for "step 2, four pages open, one read as refuting
+/// the claim and one not about it, two published fact-checks compared".
 void sendMidCheck(StreamController<CheckEvent> events) {
   var seq = 0;
-  void send(Map<String, dynamic> json) => events.add(CheckEvent.fromJson({...json, 'seq': ++seq}));
+  void send(Map<String, dynamic> json) =>
+      events.add(CheckEvent.fromJson({...json, 'seq': ++seq}));
   send({'type': 'step', 'step': 'search'});
-  for (final (initials, publisher, domain) in [
-    ('PIB', 'PIB Fact Check', 'pib.gov.in'),
-    ('AN', 'Alt News', 'altnews.in'),
-    ('BO', 'BOOM', 'boomlive.in'),
-    ('TH', 'The Hindu', 'thehindu.com'),
+  for (final (initials, publisher, domain, title) in [
+    ('PIB', 'PIB Fact Check', 'pib.gov.in', 'Claim of Rs 5,000 a month for every woman is fake'),
+    ('AN', 'Alt News', 'altnews.in', 'Old scheme video shared with a false caption'),
+    ('BO', 'BOOM', 'boomlive.in', 'No, the government is not paying every woman'),
+    ('TH', 'The Hindu', 'thehindu.com', 'Tamil Nadu credits Rs 5,000 to 1.31 crore women'),
   ]) {
     send({
       'type': 'source_started',
       'publisher': publisher,
       'domain': domain,
       'initials': initials,
+      'title': title,
+      'via': 'page',
     });
   }
-  send({'type': 'source_done', 'domain': 'pib.gov.in', 'outcome': 'evidence'});
-  // The server counts after every source it finishes (progress.py, _count_changed).
-  send({'type': 'evidence_count', 'n': 1});
+  for (final domain in ['factly.in', 'newschecker.in']) {
+    send({
+      'type': 'source_started',
+      'publisher': domain,
+      'domain': domain,
+      'initials': 'FC',
+      'via': 'fact_check',
+    });
+    send({'type': 'source_done', 'domain': domain, 'outcome': 'not_relevant'});
+  }
+  send({
+    'type': 'source_done',
+    'domain': 'pib.gov.in',
+    'outcome': 'evidence',
+    'stance': 'contradicts',
+    'quote': 'No such scheme has been announced by the Government of India.',
+  });
   send({'type': 'source_done', 'domain': 'altnews.in', 'outcome': 'not_relevant'});
+  // The server counts after every source it finishes (progress.py, _count_changed).
+  send({'type': 'evidence_count', 'n': 1, 'checked': false});
 }

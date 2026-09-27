@@ -390,7 +390,11 @@ class _Working extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Center(
-            child: Scanner(sources: watch.sources, collected: watch.evidence),
+            child: Scanner(
+              sources: watch.sources,
+              collected: watch.evidence,
+              checked: watch.checked,
+            ),
           ),
           const SizedBox(height: 16),
           if (silent) ...[
@@ -518,6 +522,7 @@ class _SourcesCard extends StatelessWidget {
     final k = FactifyTokens.of(context);
     final l10n = AppLocalizations.of(context);
     final recent = watch.recent;
+    final compared = watch.factChecks.length;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
@@ -526,6 +531,7 @@ class _SourcesCard extends StatelessWidget {
         border: Border.all(color: k.line),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SizedBox(
             height: 40,
@@ -545,38 +551,70 @@ class _SourcesCard extends StatelessWidget {
               ],
             ),
           ),
-          if (recent.isEmpty)
-            _Row(initials: '·', name: l10n.sourcesWaiting, state: null, muted: true)
+          if (recent.isEmpty && compared == 0)
+            _Row(source: null, waiting: l10n.sourcesWaiting, checked: watch.checked)
           else
-            for (final source in recent)
-              _Row(initials: source.initials, name: source.publisher, state: source.state),
+            for (final source in recent) _Row(source: source, checked: watch.checked),
+          // Published fact-checks compared in bulk: said once, as a count.
+          if (compared > 0)
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(
+                border: Border(top: BorderSide(color: k.line)),
+              ),
+              child: Row(
+                children: [
+                  Icon(FxIcons.receipt, size: 15, color: k.ink3),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      l10n.sourcesFactChecks(compared),
+                      style: FactifyText.sans(12, color: k.ink3),
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
   }
 }
 
+/// One source: who, the page's headline, and what it said.
 class _Row extends StatelessWidget {
-  const _Row({required this.initials, required this.name, required this.state, this.muted = false});
+  const _Row({required this.source, required this.checked, this.waiting});
 
-  final String initials;
-  final String name;
-  final SourceState? state;
-  final bool muted;
+  final WatchedSource? source;
+  final bool checked;
+  final String? waiting;
 
   @override
   Widget build(BuildContext context) {
     final k = FactifyTokens.of(context);
     final l10n = AppLocalizations.of(context);
+    final source = this.source;
+    final state = source?.state;
     final found = state == SourceState.evidence;
+    final kept = found && (source?.kept ?? false);
+    final tone = found ? stanceColour(source?.stance, k) : k.ink3;
+    final stance = source?.stance;
     final (label, colour) = switch (state) {
       SourceState.reading => (l10n.sourceReading, k.ink2),
-      SourceState.evidence => (l10n.sourceEvidence, k.acc),
+      SourceState.evidence =>
+        stance == null ? (l10n.sourceEvidence, k.acc) : (l10n.directionShort(stance.wire), tone),
+      // Read as speaking to the claim, then set aside by the source check.
+      SourceState.notRelevant when checked && (source?.stance != null) => (
+        l10n.sourceSetAside,
+        k.ink3,
+      ),
       SourceState.notRelevant => (l10n.sourceNotRelevant, k.ink3),
       null => ('', k.ink3),
     };
+    final title = source?.title;
     return Container(
-      height: 44,
+      constraints: const BoxConstraints(minHeight: 44),
+      padding: const EdgeInsets.symmetric(vertical: 7),
       decoration: BoxDecoration(
         border: Border(top: BorderSide(color: k.line)),
       ),
@@ -588,29 +626,43 @@ class _Row extends StatelessWidget {
             height: 28,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: found ? k.acc : k.sf2,
+              color: kept ? tone : k.sf2,
               borderRadius: BorderRadius.circular(9),
+              border: found && !kept ? Border.all(color: tone, width: 1.5) : null,
             ),
             child: Text(
-              initials,
+              source?.initials ?? '·',
               style: FactifyText.sans(
                 8.5,
                 weight: FontWeight.w700,
-                color: found ? k.onAcc : (muted ? k.ink3 : k.ink2),
+                color: kept ? (k.isDark ? k.bg : Colors.white) : (found ? tone : k.ink2),
               ),
             ),
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: FactifyText.sans(
-                13.5,
-                weight: muted ? FontWeight.w400 : FontWeight.w500,
-                color: muted ? k.ink3 : k.ink,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  source?.publisher ?? waiting ?? '',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: FactifyText.sans(
+                    13.5,
+                    weight: source == null ? FontWeight.w400 : FontWeight.w500,
+                    color: source == null ? k.ink3 : k.ink,
+                  ),
+                ),
+                // The page's own headline: what this source actually is.
+                if (title != null && title.isNotEmpty)
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: FactifyText.sans(11.5, color: k.ink3),
+                  ),
+              ],
             ),
           ),
           if (state != null) ...[
@@ -621,7 +673,11 @@ class _Row extends StatelessWidget {
                 child: CircularProgressIndicator(strokeWidth: 1.5, color: k.acc),
               )
             else
-              Icon(found ? FxIcons.check : FxIcons.minus, size: 15, color: colour),
+              Icon(
+                kept ? FxIcons.check : (found ? FxIcons.eye : FxIcons.minus),
+                size: 15,
+                color: colour,
+              ),
             const SizedBox(width: 5),
             Text(
               label,
@@ -645,6 +701,7 @@ class _EvidenceStrip extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final found = watch.found.take(4).toList();
     final count = watch.evidence;
+    final stances = watch.stances;
     return Semantics(
       liveRegion: true,
       child: Container(
@@ -661,7 +718,29 @@ class _EvidenceStrip extends StatelessWidget {
                     style: FactifyText.sans(12.5, weight: FontWeight.w600, color: k.acc),
                   ),
                   const SizedBox(height: 2),
-                  Text(l10n.evidenceNote(count), style: FactifyText.sans(12, color: k.ink2)),
+                  Text(
+                    watch.checked ? l10n.evidenceHeldUp(count) : l10n.evidenceFoundSoFar(count),
+                    style: FactifyText.sans(12, color: k.ink2),
+                  ),
+                  // Which way they point, in the result's colours.
+                  if (stances.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 10,
+                      children: [
+                        for (final stance in Stance.values)
+                          if ((stances[stance] ?? 0) > 0)
+                            Text(
+                              '${stances[stance]} ${l10n.directionShort(stance.wire)}',
+                              style: FactifyText.sans(
+                                11.5,
+                                weight: FontWeight.w600,
+                                color: stanceColour(stance, k),
+                              ),
+                            ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -678,14 +757,25 @@ class _EvidenceStrip extends StatelessWidget {
                           width: 28,
                           height: 28,
                           alignment: Alignment.center,
+                          // Filled once the source check keeps it; outlined until then,
+                          // as on the ring.
                           decoration: BoxDecoration(
-                            color: k.acc,
+                            color: found[i].kept ? stanceColour(found[i].stance, k) : k.bg,
                             shape: BoxShape.circle,
-                            border: Border.all(color: k.bg, width: 2),
+                            border: Border.all(
+                              color: found[i].kept ? k.bg : stanceColour(found[i].stance, k),
+                              width: 2,
+                            ),
                           ),
                           child: Text(
                             found[i].initials,
-                            style: FactifyText.sans(8.5, weight: FontWeight.w700, color: k.onAcc),
+                            style: FactifyText.sans(
+                              8.5,
+                              weight: FontWeight.w700,
+                              color: found[i].kept
+                                  ? (k.isDark ? k.bg : Colors.white)
+                                  : stanceColour(found[i].stance, k),
+                            ),
                           ),
                         ),
                       ),

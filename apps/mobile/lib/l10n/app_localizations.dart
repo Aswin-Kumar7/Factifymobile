@@ -3085,6 +3085,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{publisher} · {percent}% visual match'**
   String mediaVisualMatch(String publisher, int percent);
+
+  /// Fact-checks already published elsewhere, compared with the claim in bulk.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Compared with 1 published fact-check} other{Compared with {count} published fact-checks}}'**
+  String sourcesFactChecks(int count);
+
+  /// A source read as speaking to the claim, then found by the source check to be about something else.
+  ///
+  /// In en, this message translates to:
+  /// **'Set aside'**
+  String get sourceSetAside;
+
+  /// No description provided for @evidenceFoundSoFar.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{Nothing yet, still reading} =1{1 source speaks to this claim - checking it next} other{{count} sources speak to this claim - checking them next}}'**
+  String evidenceFoundSoFar(int count);
+
+  /// No description provided for @evidenceHeldUp.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{None held up when checked against the claim} =1{1 source held up when checked against the claim} other{{count} sources held up when checked against the claim}}'**
+  String evidenceHeldUp(int count);
 }
 
 class _AppLocalizationsDelegate

@@ -24,7 +24,29 @@ import '../models/verdict.dart';
 
 enum SourceState { reading, evidence, notRelevant }
 
-/// A source the check has opened, as the screen shows it.
+/// Which way a source points: the words the server uses.
+enum Stance {
+  supports,
+  contradicts,
+  context;
+
+  static Stance? parse(String? raw) => switch (raw) {
+    'supports' => Stance.supports,
+    'contradicts' => Stance.contradicts,
+    'context' => Stance.context,
+    _ => null,
+  };
+
+  /// As the result names it ("Supports", "Refutes", "Context").
+  String get wire => switch (this) {
+    Stance.supports => 'supports',
+    Stance.contradicts => 'contradicts',
+    Stance.context => 'context',
+  };
+}
+
+/// A source the check has opened, as the screen shows it: what the server reported
+/// about it and nothing more.
 @immutable
 class WatchedSource {
   const WatchedSource({
@@ -32,6 +54,10 @@ class WatchedSource {
     required this.domain,
     required this.initials,
     required this.state,
+    this.title,
+    this.stance,
+    this.quote,
+    this.kept = false,
   });
 
   final String publisher;
@@ -39,8 +65,31 @@ class WatchedSource {
   final String initials;
   final SourceState state;
 
-  WatchedSource withState(SourceState next) =>
-      WatchedSource(publisher: publisher, domain: domain, initials: initials, state: next);
+  /// The page's headline, when known.
+  final String? title;
+
+  /// Which way it points, once read and found to speak to the claim.
+  final Stance? stance;
+
+  /// The sentence it was read for.
+  final String? quote;
+
+  /// It held up when checked against the claim: it is in the answer.
+  final bool kept;
+
+  WatchedSource copyWith({SourceState? state, Stance? stance, String? quote, bool? kept}) =>
+      WatchedSource(
+        publisher: publisher,
+        domain: domain,
+        initials: initials,
+        state: state ?? this.state,
+        title: title,
+        stance: stance ?? this.stance,
+        quote: quote ?? this.quote,
+        kept: kept ?? this.kept,
+      );
+
+  WatchedSource withState(SourceState next) => copyWith(state: next);
 }
 
 /// Where a check has got to. Everything in it was reported; nothing is estimated.
@@ -54,7 +103,16 @@ class CheckWatch {
     this.upload,
     this.claimsDone = 0,
     this.claimsTotal = 0,
+    this.factChecks = const [],
+    this.checked = false,
   });
+
+  /// Published fact-checks compared with the claim. Many are compared at once and
+  /// few are about it, so they are counted, not put on the ring - unless one is.
+  final List<WatchedSource> factChecks;
+
+  /// The source check has run: what is left is what the answer cites.
+  final bool checked;
 
   /// 0 read, 1 search, 2 compare; -1 before the server has said.
   final int step;
@@ -84,6 +142,16 @@ class CheckWatch {
 
   List<WatchedSource> get found => sources.where((s) => s.state == SourceState.evidence).toList();
 
+  /// How many of the found sources point each way.
+  Map<Stance, int> get stances {
+    final counts = <Stance, int>{};
+    for (final s in found) {
+      final stance = s.stance;
+      if (stance != null) counts[stance] = (counts[stance] ?? 0) + 1;
+    }
+    return counts;
+  }
+
   CheckWatch copyWith({
     int? step,
     List<WatchedSource>? sources,
@@ -93,6 +161,8 @@ class CheckWatch {
     bool clearUpload = false,
     int? claimsDone,
     int? claimsTotal,
+    List<WatchedSource>? factChecks,
+    bool? checked,
   }) => CheckWatch(
     step: step ?? this.step,
     sources: sources ?? this.sources,
@@ -101,6 +171,8 @@ class CheckWatch {
     upload: clearUpload ? null : upload ?? this.upload,
     claimsDone: claimsDone ?? this.claimsDone,
     claimsTotal: claimsTotal ?? this.claimsTotal,
+    factChecks: factChecks ?? this.factChecks,
+    checked: checked ?? this.checked,
   );
 
   static const _steps = ['read', 'search', 'compare'];
@@ -119,7 +191,18 @@ class CheckWatch {
           domain: domain,
           initials: event.initials ?? '',
           state: SourceState.reading,
+          title: event.title,
         );
+        if (event.via == 'fact_check') {
+          final known = factChecks.indexWhere((s) => s.domain == domain);
+          return copyWith(
+            heard: true,
+            step: step < 1 ? 1 : step,
+            factChecks: known < 0
+                ? [...factChecks, started]
+                : [for (final s in factChecks) s.domain == domain ? started : s],
+          );
+        }
         final known = sources.indexWhere((s) => s.domain == domain);
         return copyWith(
           heard: true,
@@ -130,12 +213,59 @@ class CheckWatch {
         );
       case 'source_done':
         final state = event.outcome == 'evidence' ? SourceState.evidence : SourceState.notRelevant;
+        WatchedSource done(WatchedSource s) => s.copyWith(
+          state: state,
+          stance: Stance.parse(event.stance),
+          quote: event.quote,
+          // Set aside by the source check: no longer in the answer.
+          kept: state == SourceState.evidence && s.kept,
+        );
+        // A fact-check that speaks to the claim is a source like any other: it
+        // joins the ring. One that does not stays a count.
+        final compared = factChecks.where((s) => s.domain == event.domain).firstOrNull;
+        if (compared != null && state == SourceState.evidence) {
+          return copyWith(
+            heard: true,
+            factChecks: [
+              for (final s in factChecks)
+                if (s.domain != event.domain) s,
+            ],
+            sources: [...sources, done(compared)],
+          );
+        }
         return copyWith(
           heard: true,
-          sources: [for (final s in sources) s.domain == event.domain ? s.withState(state) : s],
+          factChecks: [for (final s in factChecks) s.domain == event.domain ? done(s) : s],
+          sources: [for (final s in sources) s.domain == event.domain ? done(s) : s],
+        );
+      case 'source_checked':
+        // Held up against the claim, with the stance it holds after the check.
+        final compared = factChecks.where((s) => s.domain == event.domain).firstOrNull;
+        WatchedSource kept(WatchedSource s) => s.copyWith(
+          state: SourceState.evidence,
+          stance: Stance.parse(event.stance),
+          quote: event.quote,
+          kept: true,
+        );
+        return copyWith(
+          heard: true,
+          factChecks: compared == null
+              ? factChecks
+              : [
+                  for (final s in factChecks)
+                    if (s.domain != event.domain) s,
+                ],
+          sources: [
+            for (final s in sources) s.domain == event.domain ? kept(s) : s,
+            if (compared != null) kept(compared),
+          ],
         );
       case 'evidence_count':
-        return copyWith(heard: true, evidence: event.count ?? evidence);
+        return copyWith(
+          heard: true,
+          evidence: event.count ?? evidence,
+          checked: checked || event.checked,
+        );
       default:
         return copyWith(heard: true);
     }

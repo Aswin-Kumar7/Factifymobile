@@ -1302,5 +1302,34 @@
         "type": "int"
       }
     }
+  },
+  "sourcesFactChecks": "{count, plural, =1{Compared with 1 published fact-check} other{Compared with {count} published fact-checks}}",
+  "@sourcesFactChecks": {
+    "description": "Fact-checks already published elsewhere, compared with the claim in bulk.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "sourceSetAside": "Set aside",
+  "@sourceSetAside": {
+    "description": "A source read as speaking to the claim, then found by the source check to be about something else."
+  },
+  "evidenceFoundSoFar": "{count, plural, =0{Nothing yet, still reading} =1{1 source speaks to this claim - checking it next} other{{count} sources speak to this claim - checking them next}}",
+  "@evidenceFoundSoFar": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "evidenceHeldUp": "{count, plural, =0{None held up when checked against the claim} =1{1 source held up when checked against the claim} other{{count} sources held up when checked against the claim}}",
+  "@evidenceHeldUp": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   }
 }
