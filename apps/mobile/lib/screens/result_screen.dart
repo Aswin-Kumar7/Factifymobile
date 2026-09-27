@@ -26,6 +26,7 @@ import '../widgets/verdict_card.dart';
 import '../widgets/why_sheet.dart';
 import 'checking_screen.dart';
 import 'evidence_screen.dart';
+import 'source_reader_screen.dart';
 
 class ResultScreen extends StatefulWidget {
   ResultScreen({
@@ -151,11 +152,16 @@ class _ResultScreenState extends State<ResultScreen> {
     if (uri != null) unawaited(launchUrl(uri, mode: LaunchMode.externalApplication));
   }
 
-  Future<void> _openSource(Evidence evidence) async {
-    final uri = Uri.tryParse(evidence.citationUrl);
-    if (uri == null) return;
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
-  }
+  /// A cited source, read in the app around the passage the result quoted.
+  Future<void> _openSource(Evidence evidence) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => SourceReaderScreen(
+        services: widget.services,
+        caseId: _verdict.caseId,
+        evidence: evidence,
+      ),
+    ),
+  );
 
   /// Flag this verdict for human review: a real request, confirmed only once the
   /// server has queued it.

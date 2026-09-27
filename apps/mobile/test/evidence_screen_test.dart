@@ -27,6 +27,8 @@ Map<String, dynamic> _evidence({
   String url = 'https://factchecker.example/1',
   String? publisher = 'Factchecker',
   String? observedAt = '2026-06-02T00:00:00Z',
+  // The page's own date - what the timeline shows. `observedAt` is our fetch.
+  String? publishedOn = '2026-06-02',
   Map<String, dynamic>? inputAnchor,
 }) => {
   'id': id,
@@ -43,6 +45,7 @@ Map<String, dynamic> _evidence({
   'match_quality': 'STRONG',
   'publisher': publisher,
   'observed_at': observedAt,
+  'published_on': publishedOn,
   'input_anchor': inputAnchor,
 };
 
@@ -174,14 +177,15 @@ void main() {
         claims: [
           _claim(
             evidence: [
-              _evidence(id: 'a', observedAt: '2026-06-02T00:00:00Z'),
+              _evidence(id: 'a', publishedOn: '2026-06-02'),
               _evidence(
                 id: 'b',
                 url: 'https://www.news.example/story',
                 publisher: null,
-                observedAt: '2023-05-28T00:00:00Z',
+                publishedOn: '2023-05-28',
               ),
-              _evidence(id: 'c', observedAt: null),
+              // Fetched, like every source, but carrying no date of its own.
+              _evidence(id: 'c', publishedOn: null),
             ],
           ),
         ],

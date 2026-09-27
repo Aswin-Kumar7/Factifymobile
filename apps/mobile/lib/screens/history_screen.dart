@@ -555,10 +555,13 @@ class _WeekCard extends StatelessWidget {
       for (final v in WeekSummary.order)
         if (verdicts.contains(v)) (v, verdicts.where((x) => x == v).length),
     ];
+    // Every block its minimum first, then the rest shared by count, so the column
+    // always sums to the chart. Clamping each share up to the minimum afterwards
+    // overflowed the chart on a day of 22 checks with a single Misleading among them.
+    const least = 6.0;
     final room = _chartHeight - (groups.length - 1) * _gap;
-    return [
-      for (final (v, n) in groups.reversed) (v, (room * n / verdicts.length).clamp(6.0, room)),
-    ];
+    final spare = (room - least * groups.length).clamp(0.0, room);
+    return [for (final (v, n) in groups.reversed) (v, least + spare * n / verdicts.length)];
   }
 }
 

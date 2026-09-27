@@ -13,6 +13,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import '../models/account.dart';
+import '../models/source_view.dart';
 import 'check_events.dart';
 import '../models/verdict.dart';
 
@@ -299,6 +300,18 @@ class FactifyClient {
     if (response.statusCode == 404 || response.statusCode == 202) return null;
     _raiseFor(response);
     return Verdict.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  });
+
+  /// A cited passage in its article, for the source reader. [url] finds the
+  /// citation by its page when [evidenceId] is a fresh result's own id rather than
+  /// the stored one.
+  Future<SourceView> source(String caseId, String evidenceId, {String? url}) => _guard(() async {
+    final uri = Uri.parse(
+      '$baseUrl/v1/cases/$caseId/sources/${Uri.encodeComponent(evidenceId)}',
+    ).replace(queryParameters: url == null ? null : {'url': url});
+    final response = await _http.get(uri).timeout(const Duration(seconds: 30));
+    _raiseFor(response);
+    return SourceView.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   });
 
   /// Flag a verdict for human review. Returns the queue confirmation.

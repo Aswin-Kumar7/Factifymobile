@@ -20,7 +20,7 @@ what was skipped and why, when the evidence was retrieved, and the receipt link.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -154,6 +154,11 @@ class EvidenceResponse(BaseModel):
     # HIGH, MEDIUM or LOW, from the curated publisher list. Absent on a source that
     # predates the relevance check.
     credibility: str | None = None
+    # When the page itself says it was published, and its headline, when known (1.3).
+    # A source card showed `observed_at`, the day we read it, as if it were the date
+    # of an article two years older.
+    published_on: date | None = None
+    title: str | None = None
 
 
 class AdvisoryResponse(BaseModel):
@@ -397,6 +402,45 @@ class MediaReportResponse(BaseModel):
     frames: int | None = None
 
 
+class QuoteLocationResponse(BaseModel):
+    """Where the quoted sentence sits in the paragraphs returned."""
+
+    model_config = ConfigDict(frozen=True)
+
+    text: str
+    paragraph_index: int | None = None
+    char_start: int | None = None
+    char_end: int | None = None
+
+
+class SourceReaderResponse(BaseModel):
+    """A cited passage in its article: the paragraph and its neighbours (1.3).
+
+    Never the whole article - the publisher's page is where it is read. `complete` is
+    false when the page could not be opened now, or no longer carries the passage;
+    `paragraphs` is then the quote alone and `limitations` says why.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    url: str
+    domain: str
+    publisher: str | None = None
+    headline: str | None = None
+    published_at: datetime | None = None
+    read_minutes: int | None = None
+    # The article's picture, served from our own address.
+    image_url: str | None = None
+    paragraphs: tuple[str, ...] = ()
+    quote: QuoteLocationResponse
+    match_basis: MatchBasisResponse | None = None
+    credibility: str | None = None
+    tier: Tier
+    direction: Direction
+    complete: bool = False
+    limitations: tuple[str, ...] = ()
+
+
 class ReceiptSummaryResponse(BaseModel):
     """The receipt behind a result, checked when the result was sent (1.3).
 
@@ -557,6 +601,8 @@ def evidence_to_response(item: Any) -> EvidenceResponse:
         publisher=item.publisher,
         observed_at=item.observed_at,
         credibility=(item.credibility.value if getattr(item, "credibility", None) else None),
+        published_on=getattr(item, "published_on", None),
+        title=getattr(item, "title", None),
     )
 
 

@@ -407,8 +407,16 @@ class EvidenceRepository(_Repository):
         )
 
     async def for_claim(self, claim_id: UUID) -> list[Row]:
+        # With the page's own date and headline, kept on its snapshot.
         return await self._all(
-            "SELECT * FROM evidence WHERE claim_id = %s ORDER BY observed_at", (claim_id,)
+            """
+            SELECT e.*, s.published_at AS source_published_at, s.title AS source_title
+              FROM evidence e
+              LEFT JOIN source_snapshot s ON s.id = e.snapshot_id
+             WHERE e.claim_id = %s
+             ORDER BY e.observed_at
+            """,
+            (claim_id,),
         )
 
     async def add_advisory(

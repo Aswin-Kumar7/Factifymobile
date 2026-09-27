@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import asdict
+from datetime import UTC, date, datetime, time
 from typing import Any
 from uuid import UUID
 
@@ -217,8 +218,14 @@ class Ledger:
             final_url=item.citation_url,
             content_hash=item.snapshot_id,
             excerpt=item.source_excerpt,
-            title=None,
-            published_at=item.observed_at,
+            # The page's own headline and date. The fetch time used to be written
+            # here as the publication date; `observed_at` on the evidence row keeps it.
+            title=item.title,
+            published_at=(
+                datetime.combine(item.published_on, time(), tzinfo=UTC)
+                if item.published_on
+                else None
+            ),
         )
 
         await self._evidence.add_evidence(
@@ -239,6 +246,21 @@ class Ledger:
             publisher=item.publisher,
             input_anchor=(item.input_anchor.model_dump(mode="json") if item.input_anchor else None),
         )
+
+
+def _published_on(row: Any) -> date | None:
+    """The page's own publication date from a stored citation, when there is one.
+
+    Cases written before 2026-09-27 stored the fetch time in this column, so a date
+    within minutes of `observed_at` is the fetch, not the publication, and is dropped.
+    """
+    published = row.get("source_published_at")
+    observed = row.get("observed_at")
+    if published is None:
+        return None
+    if observed is not None and abs((published - observed).total_seconds()) < 600:
+        return None
+    return published.date()  # type: ignore[no-any-return]
 
 
 class CaseReader:
@@ -370,6 +392,8 @@ class CaseReader:
                                     if self._ranker is not None
                                     else None
                                 ),
+                                published_on=_published_on(e),
+                                title=e.get("source_title"),
                             )
                             for e in evidence_rows
                         ),

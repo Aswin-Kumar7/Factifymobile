@@ -1762,4 +1762,64 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get yourVideo => 'Your video';
+
+  @override
+  String srDirection(String direction) {
+    String _temp0 = intl.Intl.selectLogic(direction, {
+      'supports': 'Supports the claim',
+      'contradicts': 'Refutes the claim',
+      'other': 'Adds context',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String get srQuoted => 'Quoted in your result';
+
+  @override
+  String srParagraph(int number) {
+    return 'Paragraph $number';
+  }
+
+  @override
+  String srMatch(String score) {
+    return 'match $score';
+  }
+
+  @override
+  String srPublished(String date) {
+    return 'Published $date';
+  }
+
+  @override
+  String srReadMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count min read',
+      one: '1 min read',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get srBack => 'Back to result';
+
+  @override
+  String get srOpenSite => 'Open site';
+
+  @override
+  String get srLoading => 'Opening the source…';
+
+  @override
+  String get srOnlyPassage =>
+      'Only the passage around the quote is shown here. Open the site to read the whole article.';
+
+  @override
+  String get srUnavailable =>
+      'We couldn\'t open this page just now, so this is the passage our result quoted. Open the site to read it.';
+
+  @override
+  String get srMoved =>
+      'This page no longer carries the passage as we quoted it. It may have been edited since.';
 }

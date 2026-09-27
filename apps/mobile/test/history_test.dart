@@ -88,6 +88,41 @@ void main() {
     expect(HistoryStore().weekSummary().busiest, isEmpty);
   });
 
+  testWidgets('a busy day fits its column, however its verdicts are split', (tester) async {
+    // 22 checks in one day with one Misleading among them overflowed the chart on
+    // the phone (2026-09-27): each small share was bumped up to its minimum after
+    // the column had been divided.
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 2.625;
+    addTearDown(tester.view.reset);
+    final store = await _store([
+      for (var i = 0; i < 14; i++) ('Unconfirmed $i', 'SEND_TO_REVIEW'),
+      for (var i = 0; i < 4; i++) ('False $i', 'DO_NOT_SHARE'),
+      for (var i = 0; i < 3; i++) ('True $i', 'SAFE_TO_SHARE'),
+      ('Misleading', 'SHARE_WITH_CONTEXT'),
+    ]);
+    final client = FactifyClient(baseUrl: 'http://factify.test');
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildFactifyTheme(Brightness.light),
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        home: HistoryScreen(
+          services: AppServices(
+            client: client,
+            auth: AuthService(client: client, persist: false),
+            language: LanguagePreference.inMemory(),
+            history: store,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('22'), findsWidgets);
+  });
+
   testWidgets('search finds a check by its words, and a swipe left deletes one', (tester) async {
     tester.view.physicalSize = const Size(1080, 2340);
     tester.view.devicePixelRatio = 2.625;

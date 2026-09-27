@@ -32,7 +32,7 @@ List<TimelineEntry> timelineFor(Verdict verdict, AppLocalizations l10n) {
   final firstChecked = verdict.recurrence?.firstVerifiedAt;
   return [
     for (final evidence in verdict.allEvidence)
-      if (evidence.observedAt case final at?)
+      if (evidence.publishedOn case final at?)
         TimelineEntry(at: at, title: l10n.describeSource(evidence), direction: evidence.direction),
     if (firstChecked != null) TimelineEntry(at: firstChecked, title: l10n.timelineFirstChecked),
     TimelineEntry(at: verdict.retrievedAt, title: l10n.timelineRetrieved),

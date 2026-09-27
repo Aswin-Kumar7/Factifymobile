@@ -34,6 +34,24 @@ _JSON_LD = re.compile(
 # meta tag is a string a template wrote. Measured on 16 real Indian article pages,
 # JSON-LD alone found 8 dates and this recovered 1 more — small, but dating is the
 # flagship case and the cost is one regex.
+# A page's lead picture as its sharing card declares it, with the attributes in
+# either order. Most news pages give it here even when their JSON-LD does not.
+_META_TAG = re.compile(r"<meta\b[^>]*>", re.IGNORECASE)
+_META_ATTR = re.compile(r"""(property|name|content)\s*=\s*["']([^"']*)["']""", re.IGNORECASE)
+_IMAGE_KEYS = frozenset({"og:image", "og:image:url", "og:image:secure_url", "twitter:image"})
+
+
+def _card_image(html: str) -> str | None:
+    """The og:image (or twitter:image) address, if the page declares one."""
+    for tag in _META_TAG.findall(html):
+        attrs: dict[str, str] = {str(k).lower(): str(v) for k, v in _META_ATTR.findall(tag)}
+        label = (attrs.get("property") or attrs.get("name") or "").lower()
+        content = attrs.get("content", "").strip()
+        if label in _IMAGE_KEYS and content.startswith(("http://", "https://")):
+            return content
+    return None
+
+
 _META_PUBLISHED = re.compile(
     r"""<meta[^>]+(?:property|name)=["'](?:article:published_time|publishdate"""
     r"""|og:published_time|datePublished)["'][^>]+content=["']([^"']+)""",
@@ -317,6 +335,10 @@ def extract(html: str, *, url: str | None = None) -> ExtractedArticle:
         images = tuple(item for item in image_value if isinstance(item, str))
     elif isinstance(image_value, dict) and isinstance(image_value.get("url"), str):
         images = (str(image_value["url"]),)
+    if not images:
+        card = _card_image(html)
+        if card:
+            images = (card,)
 
     route = "web.jsonld+trafilatura" if has_structured else "web.trafilatura"
 

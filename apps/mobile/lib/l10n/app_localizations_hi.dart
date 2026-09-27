@@ -1761,4 +1761,64 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get yourVideo => 'आपका वीडियो';
+
+  @override
+  String srDirection(String direction) {
+    String _temp0 = intl.Intl.selectLogic(direction, {
+      'supports': 'दावे का समर्थन करता है',
+      'contradicts': 'दावे का खंडन करता है',
+      'other': 'संदर्भ जोड़ता है',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String get srQuoted => 'आपके नतीजे में उद्धृत';
+
+  @override
+  String srParagraph(int number) {
+    return 'पैराग्राफ़ $number';
+  }
+
+  @override
+  String srMatch(String score) {
+    return 'मिलान $score';
+  }
+
+  @override
+  String srPublished(String date) {
+    return '$date को प्रकाशित';
+  }
+
+  @override
+  String srReadMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'पढ़ने में $count मिनट',
+      one: 'पढ़ने में 1 मिनट',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get srBack => 'नतीजे पर वापस';
+
+  @override
+  String get srOpenSite => 'साइट खोलें';
+
+  @override
+  String get srLoading => 'स्रोत खुल रहा है…';
+
+  @override
+  String get srOnlyPassage =>
+      'यहाँ सिर्फ़ उद्धरण के आसपास का हिस्सा दिखाया गया है। पूरा लेख पढ़ने के लिए साइट खोलें।';
+
+  @override
+  String get srUnavailable =>
+      'यह पेज अभी नहीं खुल सका, इसलिए यह वही हिस्सा है जो हमारे नतीजे में उद्धृत है। पढ़ने के लिए साइट खोलें।';
+
+  @override
+  String get srMoved =>
+      'इस पेज पर अब यह हिस्सा वैसा नहीं है जैसा हमने उद्धृत किया था। हो सकता है बाद में बदला गया हो।';
 }

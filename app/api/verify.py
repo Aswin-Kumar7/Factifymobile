@@ -37,11 +37,13 @@ from app.api.schemas import (
     EvidenceResponse,
     ImageReadingResponse,
     MediaReportResponse,
+    QuoteLocationResponse,
     ReceiptResponse,
     ReceiptSummaryResponse,
     ReviewItemResponse,
     ReviewLabelRequest,
     SkippedCheckResponse,
+    SourceReaderResponse,
     StrengthResponse,
     VerifyRequest,
     VerifyResponse,
@@ -79,6 +81,7 @@ from app.orchestration.summary import case_summary
 from app.security.fetcher import FetchResult
 from app.sources.base import DEEP, current_depth
 from app.sources.outlets import outlet_name
+from app.sources.reader import SourceViews, read_source
 from app.sources.verification import page_key
 from app.verdict.technique import technique_for
 
@@ -1181,6 +1184,90 @@ async def _checked_video(
 
 
 _THUMBNAIL_KEY = re.compile(r"^[0-9a-f]{32}$")
+
+
+@router.get(
+    "/cases/{case_id}/sources/{evidence_id}",
+    response_model=SourceReaderResponse,
+    summary="A cited passage in its article, for reading in the app",
+)
+async def read_case_source(
+    case_id: UUID, evidence_id: str, request: Request, url: str | None = None
+) -> SourceReaderResponse:
+    """The quoted paragraph with its neighbours, the headline, date and read time.
+
+    `evidence_id` is the stored citation's id. A result fresh from `/v1/verify`
+    carries the check's own ids rather than the stored ones, so `url` - the cited
+    page - finds the same citation in the stored case.
+    """
+    cases = getattr(request.app.state, "case_reader", None)
+    fetcher = getattr(request.app.state, "url_reader", None)
+    if cases is None or fetcher is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="unavailable")
+    stored = await cases.get(case_id)
+    if stored is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such case")
+    cited = [item for claim in stored.claims for item in claim.evidence]
+    evidence = next((e for e in cited if e.id == evidence_id), None) or next(
+        (e for e in cited if url and e.citation_url == url), None
+    )
+    if evidence is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such source")
+
+    views: SourceViews | None = getattr(request.app.state, "source_views", None)
+    if views is None:
+        views = SourceViews()
+        request.app.state.source_views = views
+    key = f"{case_id}:{evidence.citation_url}:{evidence.source_excerpt[:80]}"
+    known = views.get(key)
+    if known is not None:
+        return known  # type: ignore[no-any-return]
+
+    view = await read_source(
+        fetcher,
+        url=evidence.citation_url,
+        quote=evidence.source_excerpt,
+        publisher=evidence.publisher,
+        # The page's own date when the ledger has it; the reader reads it off the
+        # page otherwise. Never `observed_at`, which is when we fetched it.
+        published_at=(
+            datetime.combine(evidence.published_on, datetime.min.time(), tzinfo=UTC)
+            if evidence.published_on
+            else None
+        ),
+        headline=evidence.title,
+        vendor=getattr(
+            getattr(request.app.state, "web_search_resolver", None), "_vendor_extract", None
+        ),
+    )
+    inspector = getattr(request.app.state, "media_inspector", None)
+    image_url = None
+    if view.image and inspector is not None:
+        image_url = f"{_THUMBNAILS}{inspector.thumbnails.put(view.image)}"
+    response = SourceReaderResponse(
+        url=view.url,
+        domain=view.domain,
+        publisher=view.publisher,
+        headline=view.headline,
+        published_at=view.published_at,
+        read_minutes=view.read_minutes,
+        image_url=image_url,
+        paragraphs=view.paragraphs,
+        quote=QuoteLocationResponse(
+            text=view.quote,
+            paragraph_index=view.quote_paragraph,
+            char_start=view.quote_start,
+            char_end=view.quote_end,
+        ),
+        match_basis=evidence.match_basis,
+        credibility=evidence.credibility,
+        tier=evidence.tier,
+        direction=evidence.direction,
+        complete=view.complete,
+        limitations=view.limitations,
+    )
+    views.put(key, response)
+    return response
 
 
 @router.get(

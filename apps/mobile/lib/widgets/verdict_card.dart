@@ -1077,10 +1077,11 @@ class _SourceCard extends StatelessWidget {
       'supports' => (k.tC, k.tS),
       _ => (k.mC, k.mS),
     };
-    final seen = evidence.observedAt;
+    // The article's own date; the day we read it is not the day it was published.
+    final published = evidence.publishedOn;
     final meta = [
       l10n.credibility(evidence.credibility ?? ''),
-      if (seen != null) DateFormat('d MMM', locale).format(seen.toLocal()),
+      if (published != null) DateFormat('d MMM yyyy', locale).format(published),
     ].join(' · ');
 
     return SizedBox(

@@ -2593,6 +2593,78 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Your video'**
   String get yourVideo;
+
+  /// No description provided for @srDirection.
+  ///
+  /// In en, this message translates to:
+  /// **'{direction, select, supports{Supports the claim} contradicts{Refutes the claim} other{Adds context}}'**
+  String srDirection(String direction);
+
+  /// No description provided for @srQuoted.
+  ///
+  /// In en, this message translates to:
+  /// **'Quoted in your result'**
+  String get srQuoted;
+
+  /// No description provided for @srParagraph.
+  ///
+  /// In en, this message translates to:
+  /// **'Paragraph {number}'**
+  String srParagraph(int number);
+
+  /// No description provided for @srMatch.
+  ///
+  /// In en, this message translates to:
+  /// **'match {score}'**
+  String srMatch(String score);
+
+  /// No description provided for @srPublished.
+  ///
+  /// In en, this message translates to:
+  /// **'Published {date}'**
+  String srPublished(String date);
+
+  /// No description provided for @srReadMinutes.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 min read} other{{count} min read}}'**
+  String srReadMinutes(int count);
+
+  /// No description provided for @srBack.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to result'**
+  String get srBack;
+
+  /// No description provided for @srOpenSite.
+  ///
+  /// In en, this message translates to:
+  /// **'Open site'**
+  String get srOpenSite;
+
+  /// No description provided for @srLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Opening the source…'**
+  String get srLoading;
+
+  /// No description provided for @srOnlyPassage.
+  ///
+  /// In en, this message translates to:
+  /// **'Only the passage around the quote is shown here. Open the site to read the whole article.'**
+  String get srOnlyPassage;
+
+  /// No description provided for @srUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t open this page just now, so this is the passage our result quoted. Open the site to read it.'**
+  String get srUnavailable;
+
+  /// No description provided for @srMoved.
+  ///
+  /// In en, this message translates to:
+  /// **'This page no longer carries the passage as we quoted it. It may have been edited since.'**
+  String get srMoved;
 }
 
 class _AppLocalizationsDelegate

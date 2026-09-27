@@ -158,6 +158,8 @@ class Evidence {
     required this.matchQuality,
     this.publisher,
     this.observedAt,
+    this.publishedOn,
+    this.title,
     this.inputAnchor,
     this.credibility,
   });
@@ -174,7 +176,15 @@ class Evidence {
   final MatchBasis matchBasis;
   final String matchQuality;
   final String? publisher;
+
+  /// When we fetched the page - never shown as the article's date.
   final DateTime? observedAt;
+
+  /// When the page itself says it was published (contract 1.3), and its headline.
+  /// A source card showed [observedAt] here, dating a 2024 article to the day we
+  /// read it.
+  final DateTime? publishedOn;
+  final String? title;
   final InputAnchor? inputAnchor;
 
   /// HIGH, MEDIUM or LOW, from the server's curated publisher list. Absent on a
@@ -199,6 +209,8 @@ class Evidence {
     matchQuality: json['match_quality'] as String? ?? 'WEAK',
     publisher: json['publisher'] as String?,
     observedAt: DateTime.tryParse(json['observed_at'] as String? ?? ''),
+    publishedOn: DateTime.tryParse(json['published_on'] as String? ?? ''),
+    title: json['title'] as String?,
     inputAnchor: json['input_anchor'] == null
         ? null
         : InputAnchor.fromJson((json['input_anchor'] as Map).cast<String, dynamic>()),

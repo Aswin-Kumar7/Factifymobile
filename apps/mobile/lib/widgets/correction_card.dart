@@ -237,11 +237,12 @@ class _CardClaim extends StatelessWidget {
   /// "Publisher · site · date", from whatever the source actually supplied.
   static String _source(Evidence evidence, AppLocalizations l10n) {
     final host = Uri.tryParse(evidence.citationUrl)?.host.replaceFirst(RegExp(r'^www\.'), '');
-    final observed = evidence.observedAt;
+    // The article's own date, never the day we read it.
+    final published = evidence.publishedOn;
     final parts = [
       evidence.publisher,
       if (host != null && host.isNotEmpty && host != evidence.publisher) host,
-      if (observed != null) DateFormat('d MMM yyyy', l10n.localeName).format(observed.toLocal()),
+      if (published != null) DateFormat('d MMM yyyy', l10n.localeName).format(published),
     ].whereType<String>().toList();
     return parts.isEmpty ? l10n.correctionSourceFallback : parts.join(' · ');
   }

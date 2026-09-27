@@ -50,6 +50,19 @@ Added for the v5 app.
   for a video the number of still `frames` checked. The detector and editing
   signals also arrive as `advisories`. A video upload is now checked (202, then
   `/v1/cases/{id}`) instead of being recorded as unprocessed.
+- **`GET /v1/cases/{case_id}/sources/{evidence_id}`** (the source reader): a cited
+  passage in its article - the quoted paragraph and one either side, never the
+  whole article - with `headline`, `published_at`, `read_minutes`, `image_url`
+  (served from our own address), `quote` (its paragraph and characters), and the
+  citation's `tier`, `direction`, `credibility` and `match_basis`. The server
+  fetches the page through the SSRF-guarded client and cleans its text; `complete`
+  is false, with `limitations` saying why, when the page will not open or no longer
+  carries the quote. A fresh result's evidence ids differ from the stored ones, so
+  `?url=` finds the citation by its page.
+- **`claims[].evidence[].published_on`** and **`title`**: the cited page's own
+  publication date and headline, when known. `observed_at` is when we fetched the
+  page and was being shown as if it were the article's date. Cases stored before
+  this carry no `published_on`.
 
 ## 1.2
 

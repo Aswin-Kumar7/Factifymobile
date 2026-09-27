@@ -1078,5 +1078,52 @@
   "pcEditClean": "No uneven noise or unusual patterns found",
   "pcFooter": "These are checks of the picture itself. They never change the verdict, which rests only on cited sources, and a clean result doesn't prove a picture is real.",
   "kindVideo": "Video",
-  "yourVideo": "Your video"
+  "yourVideo": "Your video",
+  "srDirection": "{direction, select, supports{Supports the claim} contradicts{Refutes the claim} other{Adds context}}",
+  "@srDirection": {
+    "placeholders": {
+      "direction": {
+        "type": "String"
+      }
+    }
+  },
+  "srQuoted": "Quoted in your result",
+  "srParagraph": "Paragraph {number}",
+  "@srParagraph": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "srMatch": "match {score}",
+  "@srMatch": {
+    "placeholders": {
+      "score": {
+        "type": "String"
+      }
+    }
+  },
+  "srPublished": "Published {date}",
+  "@srPublished": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "srReadMinutes": "{count, plural, =1{1 min read} other{{count} min read}}",
+  "@srReadMinutes": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "srBack": "Back to result",
+  "srOpenSite": "Open site",
+  "srLoading": "Opening the source…",
+  "srOnlyPassage": "Only the passage around the quote is shown here. Open the site to read the whole article.",
+  "srUnavailable": "We couldn't open this page just now, so this is the passage our result quoted. Open the site to read it.",
+  "srMoved": "This page no longer carries the passage as we quoted it. It may have been edited since."
 }
