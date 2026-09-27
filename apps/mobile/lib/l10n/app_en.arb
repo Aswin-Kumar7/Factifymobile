@@ -1147,5 +1147,125 @@
   "srLoading": "Opening the source…",
   "srOnlyPassage": "Only the passage around the quote is shown here. Open the site to read the whole article.",
   "srUnavailable": "We couldn't open this page just now, so this is the passage our result quoted. Open the site to read it.",
-  "srMoved": "This page no longer carries the passage as we quoted it. It may have been edited since."
+  "srMoved": "This page no longer carries the passage as we quoted it. It may have been edited since.",
+  "onbSkip": "Skip",
+  "onbNext": "Next",
+  "onbGetStarted": "Get started",
+  "onbPage": "Page {page} of {total}",
+  "@onbPage": {
+    "description": "Read out for the page dots.",
+    "placeholders": {
+      "page": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "onbForwarded": "Forwarded many times",
+  "onbSampleForward": "Govt to pay ₹5,000 a month to every woman from 1 July. Register at the link…",
+  "@onbSampleForward": {
+    "description": "An invented example of a forward, on the first welcome page."
+  },
+  "onbSampleLink": "RBI keeps repo rate unchanged in September review",
+  "@onbSampleLink": {
+    "description": "An example headline, on the first welcome page."
+  },
+  "onbSampleVideo": "Flooding inside Mumbai airport this morning",
+  "@onbSampleVideo": {
+    "description": "An example video caption, on the first welcome page."
+  },
+  "onbVideo": "Video",
+  "@onbVideo": {
+    "description": "Shown in capitals on a video placeholder."
+  },
+  "onbExample": "An example",
+  "@onbExample": {
+    "description": "Overline on the sample result on the second welcome page, in capitals. The sample is invented, so it says so."
+  },
+  "onbSampleClaim": "Govt to pay ₹5,000 a month to every woman from 1 July.",
+  "onbSourcesBody": "When the sources don't settle it, Factify says Unconfirmed rather than guess.",
+  "onbPrivacy": "We never keep a record of what you check.",
+  "confirmPasswordHint": "Repeat it",
+  "profileCreditsLabel": "{count, plural, =1{credit left} other{credits left}}",
+  "@profileCreditsLabel": {
+    "description": "Beside the balance, which is shown large on its own.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "planBetaShort": "Free · beta",
+  "profileChecksLabel": "{count, plural, =1{check so far} other{checks so far}}",
+  "@profileChecksLabel": {
+    "description": "Under the number of checks, which is shown large on its own.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "settingDarkMode": "Dark mode",
+  "settingDarkFollowsPhone": "Following your phone",
+  "themeBody": "Factify can follow your phone's setting, or stay light or dark.",
+  "themePhone": "Same as your phone",
+  "themeLight": "Always light",
+  "themeDark": "Always dark",
+  "settingNotify": "Notify when ready",
+  "settingNotifyBody": "For checks that take longer",
+  "settingService": "Service",
+  "errUnfinished": "The check didn't finish",
+  "@errUnfinished": {
+    "description": "Overline, in capitals."
+  },
+  "errNoConnection": "No connection",
+  "@errNoConnection": {
+    "description": "Overline, in capitals."
+  },
+  "errDailyLimit": "Daily limit",
+  "@errDailyLimit": {
+    "description": "Overline, in capitals."
+  },
+  "errYourAccount": "Your account",
+  "@errYourAccount": {
+    "description": "Overline, in capitals."
+  },
+  "errLinkTitle": "We couldn't read that page",
+  "errLinkBody": "Some sites block automatic reading. Copy the article's text and paste it here instead.",
+  "errLinkNote": "Couldn't be read automatically",
+  "errLinkAction": "Paste the article text",
+  "errOfflineTitle": "You're offline",
+  "errKept": "Kept on this phone, so you won't need to paste it again",
+  "@errKept": {
+    "description": "Under what was being checked: the check box still holds it."
+  },
+  "tryAgain": "Try again",
+  "errSlowTitle": "This is taking too long",
+  "errLimitTitle": "Factify has reached today's limit",
+  "errLimitAction": "See saved checks",
+  "errCreditsTitle": "You're out of credits",
+  "errCreditsAction": "See your credits",
+  "errSignedOutTitle": "Please sign in again",
+  "errTooLargeTitle": "That file is too big",
+  "errTooLargeAction": "Choose another file",
+  "errPausedTitle": "Checking is paused for now",
+  "errClose": "Close",
+  "@errClose": {
+    "description": "Tooltip on the close button."
+  },
+  "errKeptFile": "Still attached, so you won't need to choose it again",
+  "@errKeptFile": {
+    "description": "Under the file that was being checked: the check box still holds it."
+  },
+  "settingSavedShort": "{count} on this phone",
+  "@settingSavedShort": {
+    "description": "Profile, beside Saved checks.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
 }

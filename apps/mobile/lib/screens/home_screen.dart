@@ -33,6 +33,7 @@ import '../models/submission.dart';
 import '../widgets/action_style.dart';
 import '../widgets/ui/ui.dart';
 import 'checking_screen.dart';
+import 'error_screen.dart';
 import 'history_screen.dart';
 
 /// The largest picture read into memory for its preview.
@@ -42,12 +43,15 @@ const int _previewBytesLimit = 4 * 1024 * 1024;
 enum InputType { text, image, pdf }
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({required this.services, this.onSeeAll, super.key});
+  const HomeScreen({required this.services, this.onSeeAll, this.onOpenProfile, super.key});
 
   final AppServices services;
 
   /// Opens the History tab, from "See all".
   final VoidCallback? onSeeAll;
+
+  /// Opens the Profile tab (an error screen's "See your credits").
+  final VoidCallback? onOpenProfile;
 
   @override
   State<HomeScreen> createState() => HomeScreenState();
@@ -264,18 +268,32 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (submission == null) return;
     // Let go of the text box, or the keyboard opens again over the page on return.
     FocusManager.instance.primaryFocus?.unfocus();
-    unawaited(
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => CheckingScreen(
-            services: _services,
-            submission: submission,
-            deep: _type == InputType.text && _deep,
-            onFinished: clearInput,
-          ),
+    unawaited(_checkAndFollow(submission));
+  }
+
+  /// Opens Checking, and follows where an error screen's next step leads.
+  Future<void> _checkAndFollow(Submission submission) async {
+    final exit = await Navigator.of(context).push(
+      MaterialPageRoute<CheckExit>(
+        builder: (_) => CheckingScreen(
+          services: _services,
+          submission: submission,
+          deep: _type == InputType.text && _deep,
+          onFinished: clearInput,
         ),
       ),
     );
+    if (!mounted || exit == null) return;
+    switch (exit) {
+      case CheckExit.pasteText:
+        fillText('');
+      case CheckExit.chooseFile:
+        clearInput();
+      case CheckExit.openHistory:
+        widget.onSeeAll?.call();
+      case CheckExit.openProfile:
+        widget.onOpenProfile?.call();
+    }
   }
 
   /// A share from another app: added as the matching kind, and checked at once.

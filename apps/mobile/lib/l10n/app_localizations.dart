@@ -2713,6 +2713,300 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'This page no longer carries the passage as we quoted it. It may have been edited since.'**
   String get srMoved;
+
+  /// No description provided for @onbSkip.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip'**
+  String get onbSkip;
+
+  /// No description provided for @onbNext.
+  ///
+  /// In en, this message translates to:
+  /// **'Next'**
+  String get onbNext;
+
+  /// No description provided for @onbGetStarted.
+  ///
+  /// In en, this message translates to:
+  /// **'Get started'**
+  String get onbGetStarted;
+
+  /// Read out for the page dots.
+  ///
+  /// In en, this message translates to:
+  /// **'Page {page} of {total}'**
+  String onbPage(int page, int total);
+
+  /// No description provided for @onbForwarded.
+  ///
+  /// In en, this message translates to:
+  /// **'Forwarded many times'**
+  String get onbForwarded;
+
+  /// An invented example of a forward, on the first welcome page.
+  ///
+  /// In en, this message translates to:
+  /// **'Govt to pay ₹5,000 a month to every woman from 1 July. Register at the link…'**
+  String get onbSampleForward;
+
+  /// An example headline, on the first welcome page.
+  ///
+  /// In en, this message translates to:
+  /// **'RBI keeps repo rate unchanged in September review'**
+  String get onbSampleLink;
+
+  /// An example video caption, on the first welcome page.
+  ///
+  /// In en, this message translates to:
+  /// **'Flooding inside Mumbai airport this morning'**
+  String get onbSampleVideo;
+
+  /// Shown in capitals on a video placeholder.
+  ///
+  /// In en, this message translates to:
+  /// **'Video'**
+  String get onbVideo;
+
+  /// Overline on the sample result on the second welcome page, in capitals. The sample is invented, so it says so.
+  ///
+  /// In en, this message translates to:
+  /// **'An example'**
+  String get onbExample;
+
+  /// No description provided for @onbSampleClaim.
+  ///
+  /// In en, this message translates to:
+  /// **'Govt to pay ₹5,000 a month to every woman from 1 July.'**
+  String get onbSampleClaim;
+
+  /// No description provided for @onbSourcesBody.
+  ///
+  /// In en, this message translates to:
+  /// **'When the sources don\'t settle it, Factify says Unconfirmed rather than guess.'**
+  String get onbSourcesBody;
+
+  /// No description provided for @onbPrivacy.
+  ///
+  /// In en, this message translates to:
+  /// **'We never keep a record of what you check.'**
+  String get onbPrivacy;
+
+  /// No description provided for @confirmPasswordHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Repeat it'**
+  String get confirmPasswordHint;
+
+  /// Beside the balance, which is shown large on its own.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{credit left} other{credits left}}'**
+  String profileCreditsLabel(int count);
+
+  /// No description provided for @planBetaShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Free · beta'**
+  String get planBetaShort;
+
+  /// Under the number of checks, which is shown large on its own.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{check so far} other{checks so far}}'**
+  String profileChecksLabel(int count);
+
+  /// No description provided for @settingDarkMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Dark mode'**
+  String get settingDarkMode;
+
+  /// No description provided for @settingDarkFollowsPhone.
+  ///
+  /// In en, this message translates to:
+  /// **'Following your phone'**
+  String get settingDarkFollowsPhone;
+
+  /// No description provided for @themeBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Factify can follow your phone\'s setting, or stay light or dark.'**
+  String get themeBody;
+
+  /// No description provided for @themePhone.
+  ///
+  /// In en, this message translates to:
+  /// **'Same as your phone'**
+  String get themePhone;
+
+  /// No description provided for @themeLight.
+  ///
+  /// In en, this message translates to:
+  /// **'Always light'**
+  String get themeLight;
+
+  /// No description provided for @themeDark.
+  ///
+  /// In en, this message translates to:
+  /// **'Always dark'**
+  String get themeDark;
+
+  /// No description provided for @settingNotify.
+  ///
+  /// In en, this message translates to:
+  /// **'Notify when ready'**
+  String get settingNotify;
+
+  /// No description provided for @settingNotifyBody.
+  ///
+  /// In en, this message translates to:
+  /// **'For checks that take longer'**
+  String get settingNotifyBody;
+
+  /// No description provided for @settingService.
+  ///
+  /// In en, this message translates to:
+  /// **'Service'**
+  String get settingService;
+
+  /// Overline, in capitals.
+  ///
+  /// In en, this message translates to:
+  /// **'The check didn\'t finish'**
+  String get errUnfinished;
+
+  /// Overline, in capitals.
+  ///
+  /// In en, this message translates to:
+  /// **'No connection'**
+  String get errNoConnection;
+
+  /// Overline, in capitals.
+  ///
+  /// In en, this message translates to:
+  /// **'Daily limit'**
+  String get errDailyLimit;
+
+  /// Overline, in capitals.
+  ///
+  /// In en, this message translates to:
+  /// **'Your account'**
+  String get errYourAccount;
+
+  /// No description provided for @errLinkTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t read that page'**
+  String get errLinkTitle;
+
+  /// No description provided for @errLinkBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Some sites block automatic reading. Copy the article\'s text and paste it here instead.'**
+  String get errLinkBody;
+
+  /// No description provided for @errLinkNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t be read automatically'**
+  String get errLinkNote;
+
+  /// No description provided for @errLinkAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste the article text'**
+  String get errLinkAction;
+
+  /// No description provided for @errOfflineTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re offline'**
+  String get errOfflineTitle;
+
+  /// Under what was being checked: the check box still holds it.
+  ///
+  /// In en, this message translates to:
+  /// **'Kept on this phone, so you won\'t need to paste it again'**
+  String get errKept;
+
+  /// No description provided for @tryAgain.
+  ///
+  /// In en, this message translates to:
+  /// **'Try again'**
+  String get tryAgain;
+
+  /// No description provided for @errSlowTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'This is taking too long'**
+  String get errSlowTitle;
+
+  /// No description provided for @errLimitTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Factify has reached today\'s limit'**
+  String get errLimitTitle;
+
+  /// No description provided for @errLimitAction.
+  ///
+  /// In en, this message translates to:
+  /// **'See saved checks'**
+  String get errLimitAction;
+
+  /// No description provided for @errCreditsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re out of credits'**
+  String get errCreditsTitle;
+
+  /// No description provided for @errCreditsAction.
+  ///
+  /// In en, this message translates to:
+  /// **'See your credits'**
+  String get errCreditsAction;
+
+  /// No description provided for @errSignedOutTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Please sign in again'**
+  String get errSignedOutTitle;
+
+  /// No description provided for @errTooLargeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'That file is too big'**
+  String get errTooLargeTitle;
+
+  /// No description provided for @errTooLargeAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose another file'**
+  String get errTooLargeAction;
+
+  /// No description provided for @errPausedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking is paused for now'**
+  String get errPausedTitle;
+
+  /// Tooltip on the close button.
+  ///
+  /// In en, this message translates to:
+  /// **'Close'**
+  String get errClose;
+
+  /// Under the file that was being checked: the check box still holds it.
+  ///
+  /// In en, this message translates to:
+  /// **'Still attached, so you won\'t need to choose it again'**
+  String get errKeptFile;
+
+  /// Profile, beside Saved checks.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} on this phone'**
+  String settingSavedShort(int count);
 }
 
 class _AppLocalizationsDelegate

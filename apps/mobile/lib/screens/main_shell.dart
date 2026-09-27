@@ -93,9 +93,10 @@ class _MainShellState extends State<MainShell> {
             key: _home,
             services: widget.services,
             onSeeAll: () => setState(() => _tab = 1),
+            onOpenProfile: () => setState(() => _tab = 2),
           ),
           HistoryScreen(services: widget.services, onStartChecking: () => setState(() => _tab = 0)),
-          ProfileScreen(services: widget.services),
+          ProfileScreen(services: widget.services, onOpenHistory: () => setState(() => _tab = 1)),
         ],
       ),
       bottomNavigationBar: FxBottomNav(

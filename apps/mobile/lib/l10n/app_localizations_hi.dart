@@ -1849,4 +1849,176 @@ class AppLocalizationsHi extends AppLocalizations {
   @override
   String get srMoved =>
       'इस पेज पर अब यह हिस्सा वैसा नहीं है जैसा हमने उद्धृत किया था। हो सकता है बाद में बदला गया हो।';
+
+  @override
+  String get onbSkip => 'छोड़ें';
+
+  @override
+  String get onbNext => 'आगे';
+
+  @override
+  String get onbGetStarted => 'शुरू करें';
+
+  @override
+  String onbPage(int page, int total) {
+    return 'पेज $page / $total';
+  }
+
+  @override
+  String get onbForwarded => 'कई बार फ़ॉरवर्ड किया गया';
+
+  @override
+  String get onbSampleForward =>
+      'सरकार 1 जुलाई से हर महिला को हर महीने ₹5,000 देगी। लिंक पर रजिस्टर करें…';
+
+  @override
+  String get onbSampleLink => 'RBI ने सितंबर की समीक्षा में रेपो दर नहीं बदली';
+
+  @override
+  String get onbSampleVideo => 'आज सुबह मुंबई हवाई अड्डे के अंदर बाढ़';
+
+  @override
+  String get onbVideo => 'वीडियो';
+
+  @override
+  String get onbExample => 'एक उदाहरण';
+
+  @override
+  String get onbSampleClaim =>
+      'सरकार 1 जुलाई से हर महिला को हर महीने ₹5,000 देगी।';
+
+  @override
+  String get onbSourcesBody =>
+      'जब स्रोत बात तय नहीं करते, तो Factify अंदाज़ा लगाने के बजाय \'अपुष्ट\' कहता है।';
+
+  @override
+  String get onbPrivacy => 'आप क्या जाँचते हैं, इसका रिकॉर्ड हम कभी नहीं रखते।';
+
+  @override
+  String get confirmPasswordHint => 'फिर से लिखें';
+
+  @override
+  String profileCreditsLabel(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'क्रेडिट बाकी',
+      one: 'क्रेडिट बाकी',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get planBetaShort => 'मुफ़्त · बीटा';
+
+  @override
+  String profileChecksLabel(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'जाँचें अब तक',
+      one: 'जाँच अब तक',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get settingDarkMode => 'डार्क मोड';
+
+  @override
+  String get settingDarkFollowsPhone => 'फ़ोन की सेटिंग के अनुसार';
+
+  @override
+  String get themeBody =>
+      'Factify आपके फ़ोन की सेटिंग के अनुसार चल सकता है, या हमेशा लाइट या डार्क रह सकता है।';
+
+  @override
+  String get themePhone => 'फ़ोन के जैसा';
+
+  @override
+  String get themeLight => 'हमेशा लाइट';
+
+  @override
+  String get themeDark => 'हमेशा डार्क';
+
+  @override
+  String get settingNotify => 'तैयार होने पर बताएँ';
+
+  @override
+  String get settingNotifyBody => 'ज़्यादा समय लेने वाली जाँचों के लिए';
+
+  @override
+  String get settingService => 'सेवा';
+
+  @override
+  String get errUnfinished => 'जाँच पूरी नहीं हुई';
+
+  @override
+  String get errNoConnection => 'कोई कनेक्शन नहीं';
+
+  @override
+  String get errDailyLimit => 'दैनिक सीमा';
+
+  @override
+  String get errYourAccount => 'आपका खाता';
+
+  @override
+  String get errLinkTitle => 'हम वह पेज नहीं पढ़ सके';
+
+  @override
+  String get errLinkBody =>
+      'कुछ साइटें अपने-आप पढ़ने से रोकती हैं। लेख का टेक्स्ट कॉपी करके यहाँ चिपकाएँ।';
+
+  @override
+  String get errLinkNote => 'अपने-आप नहीं पढ़ा जा सका';
+
+  @override
+  String get errLinkAction => 'लेख का टेक्स्ट चिपकाएँ';
+
+  @override
+  String get errOfflineTitle => 'आप ऑफ़लाइन हैं';
+
+  @override
+  String get errKept => 'इस फ़ोन पर रखा है, दोबारा चिपकाना नहीं पड़ेगा';
+
+  @override
+  String get tryAgain => 'फिर से कोशिश करें';
+
+  @override
+  String get errSlowTitle => 'इसमें बहुत समय लग रहा है';
+
+  @override
+  String get errLimitTitle => 'Factify आज की सीमा तक पहुँच गया है';
+
+  @override
+  String get errLimitAction => 'सहेजी गई जाँचें देखें';
+
+  @override
+  String get errCreditsTitle => 'आपके क्रेडिट खत्म हो गए हैं';
+
+  @override
+  String get errCreditsAction => 'अपने क्रेडिट देखें';
+
+  @override
+  String get errSignedOutTitle => 'कृपया फिर से साइन इन करें';
+
+  @override
+  String get errTooLargeTitle => 'यह फ़ाइल बहुत बड़ी है';
+
+  @override
+  String get errTooLargeAction => 'दूसरी फ़ाइल चुनें';
+
+  @override
+  String get errPausedTitle => 'जाँच अभी रुकी हुई है';
+
+  @override
+  String get errClose => 'बंद करें';
+
+  @override
+  String get errKeptFile => 'अब भी जुड़ी है, दोबारा चुनना नहीं पड़ेगा';
+
+  @override
+  String settingSavedShort(int count) {
+    return 'इस फ़ोन पर $count';
+  }
 }

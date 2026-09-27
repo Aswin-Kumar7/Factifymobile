@@ -1849,4 +1849,179 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get srMoved =>
       'This page no longer carries the passage as we quoted it. It may have been edited since.';
+
+  @override
+  String get onbSkip => 'Skip';
+
+  @override
+  String get onbNext => 'Next';
+
+  @override
+  String get onbGetStarted => 'Get started';
+
+  @override
+  String onbPage(int page, int total) {
+    return 'Page $page of $total';
+  }
+
+  @override
+  String get onbForwarded => 'Forwarded many times';
+
+  @override
+  String get onbSampleForward =>
+      'Govt to pay ₹5,000 a month to every woman from 1 July. Register at the link…';
+
+  @override
+  String get onbSampleLink =>
+      'RBI keeps repo rate unchanged in September review';
+
+  @override
+  String get onbSampleVideo => 'Flooding inside Mumbai airport this morning';
+
+  @override
+  String get onbVideo => 'Video';
+
+  @override
+  String get onbExample => 'An example';
+
+  @override
+  String get onbSampleClaim =>
+      'Govt to pay ₹5,000 a month to every woman from 1 July.';
+
+  @override
+  String get onbSourcesBody =>
+      'When the sources don\'t settle it, Factify says Unconfirmed rather than guess.';
+
+  @override
+  String get onbPrivacy => 'We never keep a record of what you check.';
+
+  @override
+  String get confirmPasswordHint => 'Repeat it';
+
+  @override
+  String profileCreditsLabel(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'credits left',
+      one: 'credit left',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get planBetaShort => 'Free · beta';
+
+  @override
+  String profileChecksLabel(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'checks so far',
+      one: 'check so far',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get settingDarkMode => 'Dark mode';
+
+  @override
+  String get settingDarkFollowsPhone => 'Following your phone';
+
+  @override
+  String get themeBody =>
+      'Factify can follow your phone\'s setting, or stay light or dark.';
+
+  @override
+  String get themePhone => 'Same as your phone';
+
+  @override
+  String get themeLight => 'Always light';
+
+  @override
+  String get themeDark => 'Always dark';
+
+  @override
+  String get settingNotify => 'Notify when ready';
+
+  @override
+  String get settingNotifyBody => 'For checks that take longer';
+
+  @override
+  String get settingService => 'Service';
+
+  @override
+  String get errUnfinished => 'The check didn\'t finish';
+
+  @override
+  String get errNoConnection => 'No connection';
+
+  @override
+  String get errDailyLimit => 'Daily limit';
+
+  @override
+  String get errYourAccount => 'Your account';
+
+  @override
+  String get errLinkTitle => 'We couldn\'t read that page';
+
+  @override
+  String get errLinkBody =>
+      'Some sites block automatic reading. Copy the article\'s text and paste it here instead.';
+
+  @override
+  String get errLinkNote => 'Couldn\'t be read automatically';
+
+  @override
+  String get errLinkAction => 'Paste the article text';
+
+  @override
+  String get errOfflineTitle => 'You\'re offline';
+
+  @override
+  String get errKept =>
+      'Kept on this phone, so you won\'t need to paste it again';
+
+  @override
+  String get tryAgain => 'Try again';
+
+  @override
+  String get errSlowTitle => 'This is taking too long';
+
+  @override
+  String get errLimitTitle => 'Factify has reached today\'s limit';
+
+  @override
+  String get errLimitAction => 'See saved checks';
+
+  @override
+  String get errCreditsTitle => 'You\'re out of credits';
+
+  @override
+  String get errCreditsAction => 'See your credits';
+
+  @override
+  String get errSignedOutTitle => 'Please sign in again';
+
+  @override
+  String get errTooLargeTitle => 'That file is too big';
+
+  @override
+  String get errTooLargeAction => 'Choose another file';
+
+  @override
+  String get errPausedTitle => 'Checking is paused for now';
+
+  @override
+  String get errClose => 'Close';
+
+  @override
+  String get errKeptFile =>
+      'Still attached, so you won\'t need to choose it again';
+
+  @override
+  String settingSavedShort(int count) {
+    return '$count on this phone';
+  }
 }

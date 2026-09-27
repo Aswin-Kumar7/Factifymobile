@@ -1,4 +1,4 @@
-/// Signing in, and the profile the server reports (compulsory accounts).
+/// Signing up and signing in (compulsory accounts; v5, 2.1).
 ///
 /// Sign-in is the Factify server's own: create an account with an email and a
 /// password, or sign in with one; Google returns through factify://auth-callback.
@@ -10,7 +10,8 @@ import 'dart:convert';
 import 'package:factify_mobile/api/client.dart';
 import 'package:factify_mobile/auth/auth_service.dart';
 import 'package:factify_mobile/l10n/app_localizations.dart';
-import 'package:factify_mobile/screens/account_screen.dart';
+import 'package:factify_mobile/widgets/auth_form.dart';
+import 'package:factify_mobile/widgets/ui/fx_button.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -96,7 +97,12 @@ Future<void> _open(WidgetTester tester, AuthService auth) async {
     MaterialApp(
       supportedLocales: AppLocalizations.supportedLocales,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      home: AccountScreen(auth: auth),
+      home: Scaffold(
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: AuthForm(auth: auth),
+        ),
+      ),
     ),
   );
   await tester.pumpAndSettle();
@@ -115,26 +121,26 @@ void main() {
     expect(find.text('Create account'), findsNothing);
   });
 
-  testWidgets('creates an account and shows the credits the server reports', (tester) async {
+  testWidgets('creates an account with an email and a password, and no name', (tester) async {
     final posted = <Map<String, dynamic>>[];
     final (auth, _) = _auth(_server(posted: posted));
     await auth.start();
     await _open(tester, auth);
 
-    await tester.enterText(_field('Name'), 'Asha');
+    // A name is optional, added later from Profile: the form does not ask.
+    expect(_field('Name'), findsNothing);
     await tester.enterText(_field('Email'), 'asha@example.org');
     await tester.enterText(_field('Password'), 'long enough');
     await tester.enterText(_field('Confirm password'), 'long enough');
     await tester.pump();
-    await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
+    await tester.tap(find.widgetWithText(FxButton, 'Create account'));
     await tester.pumpAndSettle();
 
     expect(posted.single['path'], '/v1/auth/register');
-    expect(posted.single['name'], 'Asha');
+    expect(posted.single.containsKey('name'), isFalse);
     expect(auth.signedIn, isTrue);
     expect(auth.session?.method, 'password');
-    expect(find.text('asha@example.org'), findsOneWidget);
-    expect(find.text('99 credits left'), findsOneWidget);
+    expect(auth.account?.balance, 99);
   });
 
   testWidgets('passwords that do not match are caught before anything is sent', (tester) async {
@@ -147,7 +153,7 @@ void main() {
     await tester.enterText(_field('Password'), 'long enough');
     await tester.enterText(_field('Confirm password'), 'something else');
     await tester.pump();
-    await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
+    await tester.tap(find.widgetWithText(FxButton, 'Create account'));
     await tester.pumpAndSettle();
 
     expect(find.text("The passwords don't match."), findsOneWidget);
@@ -177,7 +183,7 @@ void main() {
     await tester.enterText(_field('Password'), 'long enough');
     await tester.enterText(_field('Confirm password'), 'long enough');
     await tester.pump();
-    await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
+    await tester.tap(find.widgetWithText(FxButton, 'Create account'));
     await tester.pumpAndSettle();
 
     expect(find.textContaining("There's already an account with this email"), findsOneWidget);
@@ -196,16 +202,16 @@ void main() {
     await tester.enterText(_field('Email'), 'asha@example.org');
     await tester.enterText(_field('Password'), 'not the password');
     await tester.pump();
-    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+    await tester.tap(find.widgetWithText(FxButton, 'Sign in'));
     await tester.pumpAndSettle();
     expect(find.text("That email and password don't match an account."), findsOneWidget);
 
     await tester.enterText(_field('Password'), 'long enough');
     await tester.pump();
-    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+    await tester.tap(find.widgetWithText(FxButton, 'Sign in'));
     await tester.pumpAndSettle();
     expect(auth.signedIn, isTrue);
-    expect(find.text('99 credits left'), findsOneWidget);
+    expect(auth.account?.balance, 99);
   });
 
   testWidgets('Google is offered only once the server has it set up', (tester) async {

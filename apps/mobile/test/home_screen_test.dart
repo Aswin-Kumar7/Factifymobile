@@ -108,10 +108,8 @@ Future<void> _check(WidgetTester tester, String text) async {
 }
 
 /// The verdict word, in the result's header.
-Finder _verdictWord(String word) => find.descendant(
-  of: find.byKey(const ValueKey('verdict-header')),
-  matching: find.text(word),
-);
+Finder _verdictWord(String word) =>
+    find.descendant(of: find.byKey(const ValueKey('verdict-header')), matching: find.text(word));
 
 void main() {
   const offer = 'Paste copied text';
@@ -227,14 +225,21 @@ void main() {
 
       await _check(tester, 'https://www.reuters.com/world/x');
 
-      expect(find.text("The check didn't finish"), findsOneWidget);
-      expect(find.textContaining("couldn't find anything to check on that page"), findsOneWidget);
+      expect(find.text("We couldn't read that page"), findsOneWidget);
+      expect(find.textContaining('Some sites block automatic reading'), findsOneWidget);
       expect(find.text('Unconfirmed'), findsNothing);
 
       await tester.tap(find.text('Back to home'));
       await tester.pumpAndSettle();
       // The link is still there to try another way.
       expect(find.text('https://www.reuters.com/world/x'), findsOneWidget);
+
+      // "Paste the article text" comes back to an empty text box instead.
+      await _check(tester, 'https://www.reuters.com/world/x');
+      await tester.tap(find.text('Paste the article text'));
+      await tester.pumpAndSettle();
+      expect(find.text('https://www.reuters.com/world/x'), findsNothing);
+      expect(find.text('What would you like to check?'), findsOneWidget);
     });
 
     testWidgets('"Check again" re-runs the same check fresh', (tester) async {
@@ -407,7 +412,10 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
 
-      // No way past without an account.
+      // Welcome, then Skip to the one page there is no way past without an account.
+      expect(find.text("Know what's true before you share it"), findsOneWidget);
+      await tester.tap(find.text('Skip'));
+      await tester.pumpAndSettle();
       expect(find.text('Create your account'), findsOneWidget);
       expect(find.textContaining('without an account'), findsNothing);
 
@@ -415,7 +423,7 @@ void main() {
       await tester.enterText(find.widgetWithText(TextField, 'Password'), 'long enough');
       await tester.enterText(find.widgetWithText(TextField, 'Confirm password'), 'long enough');
       await tester.pump();
-      final create = find.widgetWithText(FilledButton, 'Create account');
+      final create = find.widgetWithText(FxButton, 'Create account');
       await tester.ensureVisible(create);
       await tester.pumpAndSettle();
       await tester.tap(create);
@@ -427,7 +435,8 @@ void main() {
       await tester.tap(find.text('Profile'));
       await tester.pumpAndSettle();
       expect(find.text('Signed in with email'), findsOneWidget);
-      expect(find.text('100 credits left'), findsOneWidget);
+      expect(find.text('100'), findsOneWidget);
+      expect(find.text('credits left'), findsOneWidget);
     });
   });
 }

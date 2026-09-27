@@ -17,11 +17,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../api/client.dart';
 import '../app_services.dart';
 import '../checks/check_job.dart';
 import '../l10n/app_localizations.dart';
-import '../l10n/phrases.dart';
 import '../models/submission.dart';
 import '../models/verdict.dart';
 import '../theme/icons.dart';
@@ -29,9 +27,19 @@ import '../theme/tokens.dart';
 import '../theme/typography.dart';
 import '../widgets/scanner.dart';
 import '../widgets/ui/fx_button.dart';
+import 'error_screen.dart';
 import 'result_screen.dart';
 
 typedef _Phrase = String Function(AppLocalizations l10n);
+
+/// Why the check stopped, what to say, and whether trying again could help.
+class _Stopped {
+  const _Stopped(this.problem, this.message, {required this.retryable});
+
+  final CheckProblem problem;
+  final _Phrase message;
+  final bool retryable;
+}
 
 class CheckingScreen extends StatefulWidget {
   const CheckingScreen({
@@ -70,8 +78,7 @@ class _CheckingScreenState extends State<CheckingScreen> {
   Timer? _quiet;
   bool _silent = false;
   CheckJob? _job;
-  _Phrase? _error;
-  bool _retryable = false;
+  _Stopped? _stopped;
   bool _left = false;
 
   AppServices get _services => widget.services;
@@ -108,7 +115,7 @@ class _CheckingScreenState extends State<CheckingScreen> {
           notifyWhenReady: _services.notifyByDefault.value,
         );
     setState(() {
-      _error = null;
+      _stopped = null;
       _job = job;
       _silent = false;
     });
@@ -132,25 +139,23 @@ class _CheckingScreenState extends State<CheckingScreen> {
       final verdict = await job.result;
       if (!mounted || _left || job != _job) return;
       if (verdict == null) {
-        _stop((l10n) => l10n.deepTooSlow, retryable: true);
+        _stop(_Stopped(CheckProblem.slow, (l10n) => l10n.deepTooSlow, retryable: true));
         return;
       }
       _show(verdict);
     } on CheckFailed catch (failed) {
       if (!mounted || job != _job) return;
       final failure = failed.failure;
-      if (failure.kind == FailureKind.signedOut) {
-        // The session is over: back to sign-in, which the app shell does on sign-out.
-        unawaited(_services.auth.signOut());
-      }
-      final link = widget.submission.kind == SubmissionKind.link;
-      if (link && failure.kind == FailureKind.invalidInput) {
-        // A link the server refused is a page it could not read or found nothing
-        // to check on - not "Unconfirmed", as though sources had been looked for.
-        _stop((l10n) => l10n.failureLinkUnchecked, retryable: false);
-      } else {
-        _stop((l10n) => l10n.describeFailure(failure), retryable: failure.retryable);
-      }
+      // A link the server refused is a page it could not read or found nothing to
+      // check on - not "Unconfirmed", as though sources had been looked for.
+      final problem = CheckProblem.of(failure, link: widget.submission.kind == SubmissionKind.link);
+      _stop(
+        _Stopped(
+          problem,
+          (l10n) => errorMessage(l10n, problem, failure),
+          retryable: failure.retryable && problem != CheckProblem.linkUnread,
+        ),
+      );
     }
   }
 
@@ -178,13 +183,17 @@ class _CheckingScreenState extends State<CheckingScreen> {
     );
   }
 
-  void _stop(_Phrase message, {required bool retryable}) {
+  void _stop(_Stopped stopped) {
     _tick?.cancel();
     _clock.stop();
-    setState(() {
-      _error = message;
-      _retryable = retryable;
-    });
+    setState(() => _stopped = stopped);
+  }
+
+  /// A next step that leaves for somewhere else: Home acts on it.
+  void _exit(CheckExit exit) {
+    _left = true;
+    _job?.leave();
+    Navigator.of(context).pop(exit);
   }
 
   void _leave() {
@@ -209,7 +218,7 @@ class _CheckingScreenState extends State<CheckingScreen> {
   Widget build(BuildContext context) {
     final k = FactifyTokens.of(context);
     final l10n = AppLocalizations.of(context);
-    final error = _error;
+    final stopped = _stopped;
     final job = _job;
     return PopScope(
       canPop: true,
@@ -222,97 +231,63 @@ class _CheckingScreenState extends State<CheckingScreen> {
       child: Scaffold(
         backgroundColor: k.bg,
         body: SafeArea(
-          child: CustomScrollView(
-            slivers: [
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 2, 20, 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _TopRow(
-                        seconds: _clock.elapsed.inSeconds,
-                        onClose: _leave,
-                        showTimer: error == null,
+          child: stopped != null
+              ? ErrorView(
+                  problem: stopped.problem,
+                  submission: widget.submission,
+                  message: stopped.message(l10n),
+                  onRetry: stopped.retryable ? _run : null,
+                  onExit: _exit,
+                  onClose: _leave,
+                  // The session is over: signing out takes the app back to sign-in.
+                  onSignIn: () => unawaited(_services.auth.signOut()),
+                )
+              : CustomScrollView(
+                  slivers: [
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 2, 20, 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _TopRow(seconds: _clock.elapsed.inSeconds, onClose: _leave),
+                            if (job != null)
+                              ValueListenableBuilder<CheckWatch>(
+                                valueListenable: job.watch,
+                                builder: (context, watch, _) => _Working(
+                                  submission: widget.submission,
+                                  deep: widget.deep,
+                                  watch: watch,
+                                  silent: !watch.heard && _silent,
+                                  notify: job.notifyWhenReady,
+                                  onNotify: _toggleNotify,
+                                ),
+                              ),
+                            if (job == null) const Spacer(),
+                            if (job == null)
+                              Text(
+                                l10n.checkingTitle,
+                                textAlign: TextAlign.center,
+                                style: FactifyText.sans(14, color: k.ink3),
+                              ),
+                          ],
+                        ),
                       ),
-                      if (error != null)
-                        ..._failed(context, error)
-                      else if (job != null)
-                        ValueListenableBuilder<CheckWatch>(
-                          valueListenable: job.watch,
-                          builder: (context, watch, _) => _Working(
-                            submission: widget.submission,
-                            deep: widget.deep,
-                            watch: watch,
-                            silent: !watch.heard && _silent,
-                            notify: job.notifyWhenReady,
-                            onNotify: _toggleNotify,
-                          ),
-                        ),
-                      if (error == null && job == null) const Spacer(),
-                      if (error == null && job == null)
-                        Text(
-                          l10n.checkingTitle,
-                          textAlign: TextAlign.center,
-                          style: FactifyText.sans(14, color: k.ink3),
-                        ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
-          ),
         ),
       ),
     );
   }
-
-  List<Widget> _failed(BuildContext context, _Phrase error) {
-    final k = FactifyTokens.of(context);
-    final l10n = AppLocalizations.of(context);
-    return [
-      const Spacer(),
-      Center(
-        child: Container(
-          width: 84,
-          height: 84,
-          decoration: BoxDecoration(color: k.uS, shape: BoxShape.circle),
-          child: Icon(FxIcons.offline, size: 38, color: k.uC),
-        ),
-      ),
-      const SizedBox(height: 18),
-      Text(
-        l10n.checkingFailedTitle,
-        textAlign: TextAlign.center,
-        style: FactifyText.serif(24, color: k.ink),
-      ),
-      const SizedBox(height: 8),
-      Text(
-        error(l10n),
-        textAlign: TextAlign.center,
-        style: FactifyText.sans(14.5, color: k.ink2),
-      ),
-      const Spacer(),
-      if (_retryable) ...[
-        FxButton(label: l10n.retry, icon: FxIcons.retry, onPressed: _run),
-        const SizedBox(height: 10),
-      ],
-      FxButton(
-        label: l10n.backToHome,
-        variant: FxButtonVariant.secondary,
-        onPressed: () => Navigator.of(context).pop(),
-      ),
-    ];
-  }
 }
 
 class _TopRow extends StatelessWidget {
-  const _TopRow({required this.seconds, required this.onClose, required this.showTimer});
+  const _TopRow({required this.seconds, required this.onClose});
 
   final int seconds;
   final VoidCallback onClose;
-  final bool showTimer;
 
   @override
   Widget build(BuildContext context) {
@@ -342,17 +317,15 @@ class _TopRow extends StatelessWidget {
           ),
           SizedBox(
             width: 44,
-            child: showTimer
-                ? Text(
-                    shown,
-                    textAlign: TextAlign.end,
-                    style: FactifyText.mono(
-                      13,
-                      color: k.ink3,
-                      spacing: 0,
-                    ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
-                  )
-                : null,
+            child: Text(
+              shown,
+              textAlign: TextAlign.end,
+              style: FactifyText.mono(
+                13,
+                color: k.ink3,
+                spacing: 0,
+              ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
+            ),
           ),
         ],
       ),
