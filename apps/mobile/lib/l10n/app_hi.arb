@@ -496,5 +496,6 @@
   "quickSignIn": "इसे जाँचने के लिए Factify में साइन इन करें।",
   "settingQuick": "चैट के ऊपर जवाब",
   "settingQuickBody": "शेयर किए गए टेक्स्ट का जवाब चैट के ऊपर ही खुलता है",
-  "profileLoadFailed": "आपका खाता अभी लोड नहीं हो सका।"
+  "profileLoadFailed": "आपका खाता अभी लोड नहीं हो सका।",
+  "mediaVisualMatch": "{publisher} · {percent}% दृश्य मिलान"
 }

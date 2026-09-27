@@ -293,6 +293,7 @@ class CaseReader:
             StrengthResponse,
             VerifyResponse,
             claim_anchor_response,
+            earlier_media_of,
         )
 
         async with self._database.connection() as conn:
@@ -394,6 +395,12 @@ class CaseReader:
                                 ),
                                 published_on=_published_on(e),
                                 title=e.get("source_title"),
+                                earlier_media=earlier_media_of(
+                                    str(e["kind"]),
+                                    float((e["match_basis"] or {}).get("value", 0.0)),
+                                    _published_on(e),
+                                    e["publisher"],
+                                ),
                             )
                             for e in evidence_rows
                         ),

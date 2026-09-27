@@ -32,6 +32,9 @@ dependencies:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
+  # "Now", read through a clock the tests can fix, so the week chart, the date on
+  # Check and the golden images do not change with the day they are run.
+  clock: ^1.1.2
   # Talks only to our own API. No provider SDK is a dependency here, because
   # no provider credential may ever ship inside the APK.
   http: ^1.2.2

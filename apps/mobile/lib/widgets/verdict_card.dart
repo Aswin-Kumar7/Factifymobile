@@ -371,7 +371,7 @@ class _Body extends StatelessWidget {
         _WhatWeChecked(card: card),
         if (media != null && verdict.factVerdict != FactVerdict.trueClaim) ...[
           const SizedBox(height: 10),
-          _MediaMatch(evidence: media, thumbnail: card.thumbnail),
+          _MediaMatch(evidence: media, thumbnail: card.thumbnail, serverUrl: card.serverUrl),
         ],
         if (verdict.mediaReport case final report?) ...[
           _SectionTitle(
@@ -842,31 +842,59 @@ class _Underlined extends StatelessWidget {
 
 /// The picture checked beside the earlier copy it matched (Misleading, recycled).
 class _MediaMatch extends StatelessWidget {
-  const _MediaMatch({required this.evidence, required this.thumbnail});
+  const _MediaMatch({required this.evidence, required this.thumbnail, this.serverUrl});
 
   final Evidence evidence;
   final Uint8List? thumbnail;
+
+  /// Where the earlier copy's thumbnail is served from.
+  final String? serverUrl;
 
   @override
   Widget build(BuildContext context) {
     final k = FactifyTokens.of(context);
     final l10n = AppLocalizations.of(context);
     final locale = Localizations.localeOf(context).toLanguageTag();
-    final seen = evidence.observedAt;
+    final earlier = evidence.earlierMedia;
+    // The earlier copy's own publication date - never the day we read its page.
+    final published = earlier?.publishedAt ?? evidence.publishedOn;
+    final similarity = earlier?.similarity ?? evidence.matchBasis.value;
+    final publisher = (earlier?.publisher ?? '').trim().isNotEmpty
+        ? earlier!.publisher!
+        : evidence.sourceName;
+    final copy = earlier?.thumbnailUrl;
 
-    Widget tile(Color stripe, Color ink, String label, Uint8List? image) => Container(
-      height: 92,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), color: k.bg),
-      child: image != null
-          ? Image.memory(image, fit: BoxFit.cover)
-          : CustomPaint(
-              painter: _Stripes(stripe),
+    Widget tile(Color stripe, Color ink, String label, Widget? image) {
+      final stripes = CustomPaint(
+        painter: _Stripes(stripe),
+        child: Center(
+          child: Text(label, style: FactifyText.mono(9, color: ink, spacing: 1)),
+        ),
+      );
+      return Container(
+        height: 92,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), color: k.bg),
+        child: image ?? stripes,
+      );
+    }
+
+    Widget? network(String? path) => path == null || serverUrl == null
+        ? null
+        : Image.network(
+            '$serverUrl$path',
+            fit: BoxFit.cover,
+            width: double.infinity,
+            errorBuilder: (_, _, _) => CustomPaint(
+              painter: _Stripes(k.mS),
               child: Center(
-                child: Text(label, style: FactifyText.mono(9, color: ink, spacing: 1)),
+                child: Text(
+                  l10n.mediaEarlierCopy,
+                  style: FactifyText.mono(9, color: k.mC, spacing: 1),
+                ),
               ),
             ),
-    );
+          );
 
     return FxCard(
       padding: const EdgeInsets.all(12),
@@ -880,7 +908,14 @@ class _MediaMatch extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    tile(k.sf2, k.ink3, l10n.mediaYourPicture, thumbnail),
+                    tile(
+                      k.sf2,
+                      k.ink3,
+                      l10n.mediaYourPicture,
+                      thumbnail == null
+                          ? null
+                          : Image.memory(thumbnail!, fit: BoxFit.cover, width: double.infinity),
+                    ),
                     const SizedBox(height: 6),
                     Text(
                       l10n.yourPicture,
@@ -895,16 +930,18 @@ class _MediaMatch extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    tile(k.mS, k.mC, l10n.mediaEarlierCopy, null),
+                    tile(k.mS, k.mC, l10n.mediaEarlierCopy, network(copy)),
                     const SizedBox(height: 6),
                     Text(
-                      seen == null
+                      published == null
                           ? l10n.mediaEarlierCopy
-                          : l10n.mediaPublished(DateFormat('d MMM yyyy', locale).format(seen)),
+                          : l10n.mediaPublished(DateFormat('d MMM yyyy', locale).format(published)),
                       style: FactifyText.sans(11.5, weight: FontWeight.w600, color: k.ink),
                     ),
                     Text(
-                      l10n.mediaMatchedBy(evidence.sourceName),
+                      similarity > 0
+                          ? l10n.mediaVisualMatch(publisher, (similarity * 100).round())
+                          : l10n.mediaMatchedBy(publisher),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: FactifyText.sans(11, color: k.ink3),

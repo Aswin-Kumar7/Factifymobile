@@ -63,6 +63,11 @@ Added for the v5 app.
   publication date and headline, when known. `observed_at` is when we fetched the
   page and was being shown as if it were the article's date. Cases stored before
   this carry no `published_on`.
+- **`claims[].evidence[].earlier_media`** `{thumbnail_url, published_at, publisher,
+  similarity}` on a `media_match` citation: the earlier copy of the picture, for the
+  side-by-side on a Misleading answer. `similarity` is the match value (0-1).
+  `thumbnail_url` is on our own address, and only on a fresh result whose picture
+  checks fetched the same page; the upload is never kept, so a stored case has none.
 - **`POST /v1/cases/{case_id}/correction-text`** `{"language": "en" | "hi"}` →
   `{"message", "links"}`: a short, polite message to send back to the chat, built
   from the stored answer by template (no model). A decided verdict always names its

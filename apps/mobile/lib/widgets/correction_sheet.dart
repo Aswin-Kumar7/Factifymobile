@@ -26,6 +26,7 @@ import '../theme/tokens.dart';
 import '../theme/typography.dart';
 import 'correction_card.dart';
 import 'ui/fx_button.dart';
+import 'ui/fx_tap_area.dart';
 
 /// Hands [params] to a share sheet and reports what the person did with it.
 typedef ShareLauncher = Future<ShareResultStatus> Function(ShareParams params);
@@ -401,43 +402,53 @@ class _LanguageSwitch extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final k = FactifyTokens.of(context);
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(color: k.sf2, borderRadius: BorderRadius.circular(12)),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final MapEntry(key: code, value: name) in _languages.entries) ...[
-            if (code != _languages.keys.first) const SizedBox(width: 2),
-            Semantics(
-              button: true,
-              selected: code == selected,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: code == selected ? null : () => onChanged(code),
-                child: Container(
-                  height: 28,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: code == selected ? k.sf : null,
-                    borderRadius: BorderRadius.circular(9),
-                    boxShadow: code == selected ? k.shadow : null,
-                  ),
-                  child: Text(
-                    name,
-                    style: FactifyText.sans(
-                      12.5,
-                      weight: FontWeight.w600,
-                      color: code == selected ? k.ink : k.ink3,
+    // The track is drawn 34 tall, as designed; each half answers a tap over 44.
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Positioned.fill(
+          child: Center(
+            child: Container(
+              height: 34,
+              decoration: BoxDecoration(color: k.sf2, borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 3),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final MapEntry(key: code, value: name) in _languages.entries) ...[
+                if (code != _languages.keys.first) const SizedBox(width: 2),
+                FxTapArea(
+                  selected: code == selected,
+                  // The chosen half stays a button a screen reader can reach.
+                  onTap: () => onChanged(code),
+                  child: Container(
+                    height: 28,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: code == selected ? k.sf : null,
+                      borderRadius: BorderRadius.circular(9),
+                      boxShadow: code == selected ? k.shadow : null,
+                    ),
+                    child: Text(
+                      name,
+                      style: FactifyText.sans(
+                        12.5,
+                        weight: FontWeight.w600,
+                        color: code == selected ? k.ink : k.ink3,
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ),
-          ],
-        ],
-      ),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

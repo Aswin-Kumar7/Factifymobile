@@ -370,9 +370,11 @@ class _QuoteBox extends StatelessWidget {
             children: [
               Icon(FxIcons.quotes, size: 14, color: k.acc),
               const SizedBox(width: 6),
-              Text(
-                l10n.srQuoted.toUpperCase(),
-                style: FactifyText.mono(10, color: k.acc, spacing: 1),
+              Flexible(
+                child: Text(
+                  l10n.srQuoted.toUpperCase(),
+                  style: FactifyText.mono(10, color: k.acc, spacing: 1),
+                ),
               ),
             ],
           ),

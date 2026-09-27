@@ -82,6 +82,30 @@ enum ClaimStatus {
   bool get isDecisive => this != ClaimStatus.unverified;
 }
 
+/// The earlier copy a media match points at (contract 1.3).
+class EarlierMedia {
+  const EarlierMedia({this.thumbnailUrl, this.publishedAt, this.publisher, this.similarity});
+
+  /// Relative to our own server; never the third party's image.
+  final String? thumbnailUrl;
+  final DateTime? publishedAt;
+  final String? publisher;
+
+  /// 0-1: how closely the two pictures match.
+  final double? similarity;
+
+  static EarlierMedia? tryParse(Object? json) {
+    if (json is! Map) return null;
+    final map = json.cast<String, dynamic>();
+    return EarlierMedia(
+      thumbnailUrl: map['thumbnail_url'] as String?,
+      publishedAt: DateTime.tryParse(map['published_at'] as String? ?? ''),
+      publisher: map['publisher'] as String?,
+      similarity: (map['similarity'] as num?)?.toDouble(),
+    );
+  }
+}
+
 class SourceAnchor {
   const SourceAnchor({this.charStart, this.charEnd, this.paragraphIndex, this.pageNumber});
 
@@ -162,6 +186,7 @@ class Evidence {
     this.title,
     this.inputAnchor,
     this.credibility,
+    this.earlierMedia,
   });
 
   final String id;
@@ -185,6 +210,10 @@ class Evidence {
   /// read it.
   final DateTime? publishedOn;
   final String? title;
+
+  /// A media match's earlier copy, for the side-by-side (contract 1.3). Its
+  /// thumbnail, when there is one, is on our own server.
+  final EarlierMedia? earlierMedia;
   final InputAnchor? inputAnchor;
 
   /// HIGH, MEDIUM or LOW, from the server's curated publisher list. Absent on a
@@ -210,6 +239,7 @@ class Evidence {
     publisher: json['publisher'] as String?,
     observedAt: DateTime.tryParse(json['observed_at'] as String? ?? ''),
     publishedOn: DateTime.tryParse(json['published_on'] as String? ?? ''),
+    earlierMedia: EarlierMedia.tryParse(json['earlier_media']),
     title: json['title'] as String?,
     inputAnchor: json['input_anchor'] == null
         ? null

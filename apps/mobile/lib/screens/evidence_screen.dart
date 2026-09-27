@@ -26,7 +26,7 @@ import '../l10n/language_preference.dart';
 import '../l10n/phrases.dart';
 import '../models/submission.dart';
 import '../models/verdict.dart';
-import '../theme/colors.dart';
+import '../theme/tokens.dart';
 import '../widgets/action_style.dart';
 import '../widgets/advisory_panel.dart';
 import '../widgets/evidence_timeline.dart';
@@ -210,7 +210,7 @@ class _ClaimCard extends StatelessWidget {
                   const SizedBox(width: 8),
                   Text(
                     l10n.confidence(confidence),
-                    style: theme.textTheme.labelMedium?.copyWith(color: FactifyColors.inkMuted),
+                    style: theme.textTheme.labelMedium?.copyWith(color: FactifyTokens.of(context).ink3),
                   ),
                 ],
               ],
@@ -292,9 +292,9 @@ class _InputAnchorBlock extends StatelessWidget {
             TextSpan(text: text.substring(from, start)),
             TextSpan(
               text: text.substring(start, end),
-              style: const TextStyle(
-                backgroundColor: FactifyColors.emeraldSoft,
-                color: FactifyColors.emeraldDeep,
+              style: TextStyle(
+                backgroundColor: FactifyTokens.of(context).accS,
+                color: FactifyTokens.of(context).acc,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -314,7 +314,7 @@ class _InputAnchorBlock extends StatelessWidget {
       margin: const EdgeInsets.only(top: 8),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: FactifyColors.ground,
+        color: FactifyTokens.of(context).bg,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
@@ -322,7 +322,7 @@ class _InputAnchorBlock extends StatelessWidget {
         children: [
           Text(
             l10n.inputAnchorLabel,
-            style: theme.textTheme.labelSmall?.copyWith(color: FactifyColors.inkMuted),
+            style: theme.textTheme.labelSmall?.copyWith(color: FactifyTokens.of(context).ink3),
           ),
           const SizedBox(height: 4),
           detail,
@@ -357,7 +357,7 @@ class _MediaMatchPreview extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 10),
-        const Icon(Icons.compare_arrows_rounded, color: FactifyColors.inkMuted),
+        Icon(Icons.compare_arrows_rounded, color: FactifyTokens.of(context).ink3),
         const SizedBox(width: 10),
         Expanded(
           child: Column(
@@ -365,7 +365,7 @@ class _MediaMatchPreview extends StatelessWidget {
             children: [
               Text(
                 l10n.mediaMatchYours,
-                style: theme.textTheme.labelSmall?.copyWith(color: FactifyColors.inkMuted),
+                style: theme.textTheme.labelSmall?.copyWith(color: FactifyTokens.of(context).ink3),
               ),
               const SizedBox(height: 2),
               Text(l10n.mediaMatchEarlier, style: theme.textTheme.titleSmall),
@@ -398,7 +398,7 @@ class _HowWeChecked extends StatelessWidget {
         child: ExpansionTile(
           shape: const RoundedRectangleBorder(),
           collapsedShape: const RoundedRectangleBorder(),
-          leading: const Icon(Icons.info_outline_rounded, color: FactifyColors.emeraldDark),
+          leading: Icon(Icons.info_outline_rounded, color: FactifyTokens.of(context).acc),
           title: Text(
             l10n.howWeCheckedTitle,
             style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
@@ -461,7 +461,7 @@ class _Plain extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.all(14),
     decoration: BoxDecoration(
-      color: FactifyColors.ground,
+      color: FactifyTokens.of(context).bg,
       borderRadius: BorderRadius.circular(14),
     ),
     child: Text(text, style: Theme.of(context).textTheme.bodySmall),

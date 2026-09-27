@@ -2063,4 +2063,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get profileLoadFailed => 'Your account couldn\'t be loaded just now.';
+
+  @override
+  String mediaVisualMatch(String publisher, int percent) {
+    return '$publisher · $percent% visual match';
+  }
 }

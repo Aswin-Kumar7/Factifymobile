@@ -11,11 +11,14 @@ import '../../theme/tokens.dart';
 import '../../theme/typography.dart';
 
 class FxSegment<T> {
-  const FxSegment(this.value, this.label, {this.icon});
+  const FxSegment(this.value, this.label, {this.icon, this.flex = 1});
 
   final T value;
   final String label;
   final IconData? icon;
+
+  /// Its share of the width: a longer label can be given more.
+  final int flex;
 }
 
 class FxSegmented<T> extends StatelessWidget {
@@ -52,7 +55,7 @@ class FxSegmented<T> extends StatelessWidget {
         children: [
           for (final (index, segment) in segments.indexed) ...[
             if (index > 0) const SizedBox(width: 2),
-            Expanded(child: _item(context, k, segment)),
+            Expanded(flex: segment.flex, child: _item(context, k, segment)),
           ],
         ],
       ),

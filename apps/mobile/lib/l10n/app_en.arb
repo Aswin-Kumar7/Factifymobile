@@ -1290,5 +1290,17 @@
   "quickSignIn": "Sign in to Factify to check this.",
   "settingQuick": "Answer over the chat",
   "settingQuickBody": "Text you share opens its answer over the chat",
-  "profileLoadFailed": "Your account couldn't be loaded just now."
+  "profileLoadFailed": "Your account couldn't be loaded just now.",
+  "mediaVisualMatch": "{publisher} · {percent}% visual match",
+  "@mediaVisualMatch": {
+    "description": "Under the earlier copy of a picture: who published it, and how closely it matches.",
+    "placeholders": {
+      "publisher": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "int"
+      }
+    }
+  }
 }

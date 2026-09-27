@@ -22,6 +22,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Annotated, Any
+from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile, status
@@ -1079,9 +1080,45 @@ async def _with_media(
     except Exception:
         logger.exception("the picture checks failed; the answer is sent without them")
         return response
-    return response.model_copy(
-        update={"media_report": media, "advisories": (*response.advisories, *advisories)}
+    return with_earlier_copy(
+        response.model_copy(
+            update={"media_report": media, "advisories": (*response.advisories, *advisories)}
+        )
     )
+
+
+def _same_page(a: str, b: str) -> bool:
+    def bare(url: str) -> str:
+        parts = urlsplit(url.strip())
+        return f"{parts.netloc.lower().removeprefix('www.')}{parts.path.rstrip('/')}"
+
+    return bool(a) and bool(b) and bare(a) == bare(b)
+
+
+def with_earlier_copy(response: VerifyResponse) -> VerifyResponse:
+    """A media match cited in the answer shows the earlier copy's picture, when the
+    picture checks fetched that same page: its thumbnail is on our own address."""
+    report = response.media_report
+    earliest = report.history.earliest if report is not None else None
+    if earliest is None or earliest.thumbnail_url is None:
+        return response
+    claims = []
+    changed = False
+    for claim in response.claims:
+        evidence = []
+        for item in claim.evidence:
+            if item.earlier_media is not None and _same_page(item.citation_url, earliest.url):
+                item = item.model_copy(
+                    update={
+                        "earlier_media": item.earlier_media.model_copy(
+                            update={"thumbnail_url": earliest.thumbnail_url}
+                        )
+                    }
+                )
+                changed = True
+            evidence.append(item)
+        claims.append(claim.model_copy(update={"evidence": tuple(evidence)}))
+    return response.model_copy(update={"claims": tuple(claims)}) if changed else response
 
 
 def _remembered_media(request: Request) -> dict[str, _MediaShown]:

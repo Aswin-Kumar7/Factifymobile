@@ -3079,6 +3079,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Your account couldn\'t be loaded just now.'**
   String get profileLoadFailed;
+
+  /// Under the earlier copy of a picture: who published it, and how closely it matches.
+  ///
+  /// In en, this message translates to:
+  /// **'{publisher} · {percent}% visual match'**
+  String mediaVisualMatch(String publisher, int percent);
 }
 
 class _AppLocalizationsDelegate

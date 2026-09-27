@@ -11,6 +11,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:ui' as ui;
 
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart' show DateUtils;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -142,7 +143,7 @@ class HistoryStore extends ChangeNotifier {
       summary: submission.summaryWith(verdict),
       text: submission.text,
       thumbnail: await _smallPreview(submission.thumbnail),
-      checkedAt: DateTime.now(),
+      checkedAt: clock.now(),
       verdictJson: verdict.raw,
     );
     await _reread();
@@ -154,7 +155,7 @@ class HistoryStore extends ChangeNotifier {
 
   /// This week, Monday to Sunday, for History's chart and recap (v5).
   WeekSummary weekSummary([DateTime? now]) {
-    final today = DateUtils.dateOnly((now ?? DateTime.now()).toLocal());
+    final today = DateUtils.dateOnly((now ?? clock.now()).toLocal());
     final monday = today.subtract(Duration(days: today.weekday - DateTime.monday));
     final days = [for (var i = 0; i < 7; i++) DateUtils.addDaysToDate(monday, i)];
     final byDay = [

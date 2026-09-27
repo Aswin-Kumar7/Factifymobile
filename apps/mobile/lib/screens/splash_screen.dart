@@ -12,7 +12,6 @@ import 'package:flutter/services.dart';
 
 import '../app_services.dart';
 import '../l10n/app_localizations.dart';
-import '../theme/colors.dart';
 import '../widgets/brand.dart';
 import 'main_shell.dart';
 import 'welcome_screen.dart';
@@ -98,7 +97,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [FactifyColors.emerald, FactifyColors.emeraldDeep],
+              colors: [FactifyBrand.emerald, FactifyBrand.emeraldDeep],
             ),
           ),
           child: SafeArea(

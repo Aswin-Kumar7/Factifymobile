@@ -13,3 +13,4 @@ export 'fx_segmented.dart';
 export 'fx_sheet.dart';
 export 'fx_source_avatar.dart';
 export 'fx_switch.dart';
+export 'fx_tap_area.dart';

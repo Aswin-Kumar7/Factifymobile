@@ -2060,4 +2060,9 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get profileLoadFailed => 'आपका खाता अभी लोड नहीं हो सका।';
+
+  @override
+  String mediaVisualMatch(String publisher, int percent) {
+    return '$publisher · $percent% दृश्य मिलान';
+  }
 }

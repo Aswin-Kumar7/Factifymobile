@@ -19,6 +19,7 @@ library;
 import 'dart:async';
 import 'dart:io';
 
+import 'package:clock/clock.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -445,8 +446,9 @@ class _Header extends StatelessWidget {
       null => (k.ink3, l10n.statusChecking),
     };
 
-    return SizedBox(
-      height: 44,
+    // At least 44 tall, and taller when the text is large, rather than cut off.
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 44),
       child: Row(
         children: [
           ListenableBuilder(
@@ -480,10 +482,7 @@ class _Header extends StatelessWidget {
                             style: FactifyText.sans(14, weight: FontWeight.w600, color: k.ink),
                           ),
                           Text(
-                            DateFormat(
-                              'EEEE, d MMMM',
-                              locale.toLanguageTag(),
-                            ).format(DateTime.now()),
+                            DateFormat('EEEE, d MMMM', locale.toLanguageTag()).format(clock.now()),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: FactifyText.sans(12, color: k.ink3),
@@ -496,57 +495,49 @@ class _Header extends StatelessWidget {
               );
             },
           ),
-          Semantics(
-            button: true,
+          FxTapArea(
             label: status,
-            child: GestureDetector(
-              onTap: onProbe,
-              behavior: HitTestBehavior.opaque,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      status,
-                      style: FactifyText.sans(12, weight: FontWeight.w600, color: k.ink2),
-                    ),
-                  ],
-                ),
+            onTap: onProbe,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    status,
+                    style: FactifyText.sans(12, weight: FontWeight.w600, color: k.ink2),
+                  ),
+                ],
               ),
             ),
           ),
           const SizedBox(width: 6),
-          Semantics(
-            button: true,
-            label: l10n.switchLanguage,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => unawaited(services.language.choose(Locale(hindi ? 'en' : 'hi'))),
-              child: Container(
-                height: 36,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: k.line),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(FxIcons.language, size: 16, color: k.ink),
-                    const SizedBox(width: 5),
-                    Text(
-                      hindi ? 'हि' : 'EN',
-                      style: FactifyText.sans(12, weight: FontWeight.w600, color: k.ink),
-                    ),
-                  ],
-                ),
+          FxTapArea(
+            label: '${l10n.switchLanguage}, ${hindi ? 'हिन्दी' : 'English'}',
+            onTap: () => unawaited(services.language.choose(Locale(hindi ? 'en' : 'hi'))),
+            child: Container(
+              height: 36,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: k.line),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(FxIcons.language, size: 16, color: k.ink),
+                  const SizedBox(width: 5),
+                  Text(
+                    hindi ? 'हि' : 'EN',
+                    style: FactifyText.sans(12, weight: FontWeight.w600, color: k.ink),
+                  ),
+                ],
               ),
             ),
           ),
@@ -596,9 +587,11 @@ class _Composer extends StatelessWidget {
         children: [
           FxSegmented<InputType>(
             segments: [
-              FxSegment(InputType.text, l10n.inputTypeText, icon: FxIcons.text),
-              FxSegment(InputType.image, l10n.inputTypeImage, icon: FxIcons.image),
-              FxSegment(InputType.pdf, l10n.inputTypePdf, icon: FxIcons.pdf),
+              // "Text or link" is the longest and the most used: it gets the most room,
+              // so it is not cut short on a 360-wide phone.
+              FxSegment(InputType.text, l10n.inputTypeText, icon: FxIcons.text, flex: 4),
+              FxSegment(InputType.image, l10n.inputTypeImage, icon: FxIcons.image, flex: 3),
+              FxSegment(InputType.pdf, l10n.inputTypePdf, icon: FxIcons.pdf, flex: 3),
             ],
             selected: type,
             locked: hasInput ? InputType.values.toSet() : const {},

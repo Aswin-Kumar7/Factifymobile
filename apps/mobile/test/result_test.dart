@@ -308,4 +308,54 @@ void main() {
       });
     }
   });
+
+  testWidgets('a recycled picture is shown beside its earlier copy, dated by that copy', (
+    tester,
+  ) async {
+    final verdict = Verdict.fromJson({
+      'case_id': 'case-1',
+      'action': 'SHARE_WITH_CONTEXT',
+      'action_reason': 'r',
+      'verdict': 'MISLEADING',
+      'confidence': 84,
+      'rule_version': 'v',
+      'claims': [
+        {
+          ..._claim('Flooding inside Mumbai airport this morning.', status: 'MISLEADING_CONTEXT'),
+          'evidence': [
+            {
+              'id': 'ev_m',
+              'tier': 'B',
+              'kind': 'media_match',
+              'direction': 'contradicts',
+              'method': 'near_duplicate_verified',
+              'finding': 'f',
+              'citation_url': 'https://www.boomlive.in/flood-photo',
+              'source_excerpt': 'This image was published by BOOM on 20 July 2024.',
+              'match_basis': {'metric': 'clip_cosine', 'value': 0.97, 'threshold': 0.93},
+              'publisher': 'BOOM',
+              // The day we read the page: never shown as the picture's date.
+              'observed_at': '2026-09-26T10:00:00Z',
+              'published_on': '2024-07-20',
+              'earlier_media': {
+                'thumbnail_url': '/v1/media/thumbnails/aaaa',
+                'published_at': '2024-07-20',
+                'publisher': 'BOOM',
+                'similarity': 0.9712,
+              },
+            },
+          ],
+        },
+      ],
+      'retrieved_at': '2026-09-26T10:42:00Z',
+    });
+    await _show(
+      tester,
+      ResultScreen(services: _services(), verdict: verdict, kind: SubmissionKind.image),
+    );
+
+    expect(find.text('Published 20 Jul 2024'), findsOneWidget);
+    expect(find.text('BOOM · 97% visual match'), findsOneWidget);
+    expect(find.textContaining('26 Sep 2026'), findsNothing);
+  });
 }

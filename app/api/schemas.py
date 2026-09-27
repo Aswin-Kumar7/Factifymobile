@@ -139,6 +139,34 @@ class MatchBasisResponse(BaseModel):
     threshold: float
 
 
+class EarlierMediaResponse(BaseModel):
+    """The earlier copy a media match points at, for the side-by-side (1.3, 4.5).
+
+    `thumbnail_url` is on our own address, and only on a fresh result whose picture
+    checks fetched that page: the upload itself is never kept, so a case read back
+    later carries the date, publisher and match but no image.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    thumbnail_url: str | None = None
+    published_at: date | None = None
+    publisher: str | None = None
+    # 0-1: how closely the two pictures match (1.0 for the identical file).
+    similarity: float | None = None
+
+
+def earlier_media_of(
+    kind: str, similarity: float, published_on: date | None, publisher: str | None
+) -> EarlierMediaResponse | None:
+    """The side-by-side for a media match; nothing for any other kind of evidence."""
+    if str(kind) != "media_match":
+        return None
+    return EarlierMediaResponse(
+        published_at=published_on, publisher=publisher, similarity=round(similarity, 4)
+    )
+
+
 class EvidenceResponse(BaseModel):
     """One citable finding. Everything here points at something fetched."""
 
@@ -167,6 +195,8 @@ class EvidenceResponse(BaseModel):
     # of an article two years older.
     published_on: date | None = None
     title: str | None = None
+    # A media match's earlier copy, for the side-by-side on the answer (1.3).
+    earlier_media: EarlierMediaResponse | None = None
 
 
 class AdvisoryResponse(BaseModel):
@@ -624,6 +654,12 @@ def evidence_to_response(item: Any) -> EvidenceResponse:
         credibility=(item.credibility.value if getattr(item, "credibility", None) else None),
         published_on=getattr(item, "published_on", None),
         title=getattr(item, "title", None),
+        earlier_media=earlier_media_of(
+            item.kind,
+            item.match_basis.value,
+            getattr(item, "published_on", None),
+            item.publisher,
+        ),
     )
 
 

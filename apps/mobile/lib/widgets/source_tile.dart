@@ -12,8 +12,8 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../l10n/app_localizations.dart';
-import '../theme/colors.dart';
 import '../models/verdict.dart';
+import '../theme/tokens.dart';
 
 class SourceTile extends StatelessWidget {
   const SourceTile({super.key, required this.evidence, this.compact = false});
@@ -33,9 +33,12 @@ class SourceTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final k = FactifyTokens.of(context);
     final l10n = AppLocalizations.of(context);
     final refutes = evidence.contradicts;
-    final stanceColour = refutes ? const Color(0xFFDC2626) : FactifyColors.emerald;
+    // The False and True colours: a source that refutes points the way "False"
+    // does, and one that confirms the way "True" does.
+    final stanceColour = refutes ? k.fC : k.tC;
     final name = evidence.sourceName;
 
     final header = Row(
@@ -55,7 +58,7 @@ class SourceTile extends StatelessWidget {
               if (evidence.credibility != null)
                 Text(
                   l10n.credibility(evidence.credibility!),
-                  style: theme.textTheme.labelSmall?.copyWith(color: FactifyColors.inkMuted),
+                  style: theme.textTheme.labelSmall?.copyWith(color: k.ink3),
                 ),
             ],
           ),
@@ -75,9 +78,9 @@ class SourceTile extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: k.sf,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: FactifyColors.line),
+          border: Border.all(color: k.line),
         ),
         child: compact
             ? header
@@ -90,27 +93,24 @@ class SourceTile extends StatelessWidget {
                     width: double.infinity,
                     padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
                     decoration: BoxDecoration(
-                      color: FactifyColors.ground,
+                      color: k.bg,
                       borderRadius: BorderRadius.circular(10),
                       border: Border(left: BorderSide(color: stanceColour, width: 3)),
                     ),
                     child: Text(
                       '“${evidence.sourceExcerpt}”',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: FactifyColors.ink,
-                        height: 1.45,
-                      ),
+                      style: theme.textTheme.bodySmall?.copyWith(color: k.ink, height: 1.45),
                     ),
                   ),
                   const SizedBox(height: 6),
                   Row(
                     children: [
-                      const Icon(Icons.open_in_new_rounded, size: 14, color: FactifyColors.emeraldDark),
+                      Icon(Icons.open_in_new_rounded, size: 14, color: k.acc),
                       const SizedBox(width: 4),
                       Text(
                         l10n.openSource,
                         style: theme.textTheme.labelMedium?.copyWith(
-                          color: FactifyColors.emeraldDark,
+                          color: k.acc,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -130,22 +130,16 @@ class _Avatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final k = FactifyTokens.of(context);
     final letter = name.isEmpty ? '?' : name.characters.first.toUpperCase();
     return Container(
       width: 34,
       height: 34,
       alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: FactifyColors.emeraldTint,
-        borderRadius: BorderRadius.circular(10),
-      ),
+      decoration: BoxDecoration(color: k.accS, borderRadius: BorderRadius.circular(10)),
       child: Text(
         letter,
-        style: const TextStyle(
-          color: FactifyColors.emeraldDeep,
-          fontWeight: FontWeight.w800,
-          fontSize: 15,
-        ),
+        style: TextStyle(color: k.acc, fontWeight: FontWeight.w800, fontSize: 15),
       ),
     );
   }

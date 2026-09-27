@@ -32,6 +32,7 @@ import '../theme/typography.dart';
 import '../widgets/action_style.dart';
 import '../widgets/auth_form.dart';
 import '../widgets/ui/fx_button.dart';
+import '../widgets/ui/fx_tap_area.dart';
 import 'main_shell.dart';
 
 const int _pages = 3;
@@ -301,23 +302,18 @@ class _FirstHeader extends StatelessWidget {
             ),
           ),
           // English or Hindi, each named in itself; the one on screen is darker.
-          Semantics(
-            button: true,
+          FxTapArea(
             label: l10n.languageMenuTooltip,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(10),
-              onTap: () =>
-                  unawaited(services.language.choose(Locale(showing == 'hi' ? 'en' : 'hi'))),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
-                child: Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(text: 'EN', style: style(showing == 'en')),
-                      TextSpan(text: ' · ', style: style(false)),
-                      TextSpan(text: 'हि', style: style(showing == 'hi')),
-                    ],
-                  ),
+            onTap: () => unawaited(services.language.choose(Locale(showing == 'hi' ? 'en' : 'hi'))),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(text: 'EN', style: style(showing == 'en')),
+                    TextSpan(text: ' · ', style: style(false)),
+                    TextSpan(text: 'हि', style: style(showing == 'hi')),
+                  ],
                 ),
               ),
             ),
@@ -339,11 +335,10 @@ class _SkipButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final k = FactifyTokens.of(context);
     final l10n = AppLocalizations.of(context);
-    return InkWell(
-      borderRadius: BorderRadius.circular(10),
+    return FxTapArea(
       onTap: onSkip,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 6),
         child: Text(
           l10n.onbSkip,
           style: FactifyText.sans(13, weight: FontWeight.w600, color: k.ink),

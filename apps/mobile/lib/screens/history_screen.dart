@@ -8,6 +8,7 @@ library;
 
 import 'dart:async';
 
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
@@ -105,7 +106,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   String _dayLabel(DateTime day, AppLocalizations l10n, String locale) {
-    final today = DateUtils.dateOnly(DateTime.now());
+    final today = DateUtils.dateOnly(clock.now());
     if (DateUtils.isSameDay(day, today)) return l10n.historyToday;
     if (DateUtils.isSameDay(day, today.subtract(const Duration(days: 1)))) {
       return l10n.historyYesterday;
@@ -363,9 +364,11 @@ class _WeekCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 6),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                      textBaseline: TextBaseline.alphabetic,
+                    // Wraps rather than overflows: "checks" goes under the number on
+                    // a narrow phone, or in Hindi at a large text size.
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.end,
+                      spacing: 6,
                       children: [
                         Text(
                           '${summary.total}',
@@ -375,10 +378,12 @@ class _WeekCard extends StatelessWidget {
                             color: ink,
                           ).copyWith(height: 1, letterSpacing: -1),
                         ),
-                        const SizedBox(width: 6),
-                        Text(
-                          l10n.historyChecksUnit(summary.total),
-                          style: FactifyText.sans(13, color: ink.withValues(alpha: 0.75)),
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text(
+                            l10n.historyChecksUnit(summary.total),
+                            style: FactifyText.sans(13, color: ink.withValues(alpha: 0.75)),
+                          ),
                         ),
                       ],
                     ),
@@ -386,18 +391,24 @@ class _WeekCard extends StatelessWidget {
                 ),
               ),
               if (busiest.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Text(
-                    l10n.historyBusiest(
-                      busiest.length == 1
-                          ? busiest.first
-                          : l10n.historyDaysJoin(busiest[0], busiest[1]),
-                    ),
-                    style: FactifyText.sans(
-                      11,
-                      weight: FontWeight.w600,
-                      color: ink.withValues(alpha: 0.7),
+                // At the right, as designed, and held to a width so it wraps
+                // rather than pushes the count off a narrow card.
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 132),
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 4, left: 8),
+                    child: Text(
+                      textAlign: TextAlign.end,
+                      l10n.historyBusiest(
+                        busiest.length == 1
+                            ? busiest.first
+                            : l10n.historyDaysJoin(busiest[0], busiest[1]),
+                      ),
+                      style: FactifyText.sans(
+                        11,
+                        weight: FontWeight.w600,
+                        color: ink.withValues(alpha: 0.7),
+                      ),
                     ),
                   ),
                 ),
