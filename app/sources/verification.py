@@ -258,14 +258,17 @@ class SourceVerification:
                 # vote of confidence; the page has not been confirmed relevant.
                 outcomes.append({"host": host, "outcome": "unmentioned"})
                 continue
-            if reading.addresses_claim and reading.verdict == _expected(item):
+            # A narrower version of the claim is, by definition, not "the same
+            # assertion", so the check answered PARTLY and "not about the claim" in
+            # one breath, and requiring both threw away every narrower source: the
+            # Tamil Nadu reports behind "Govt pays every woman Rs 5,000 a month" were
+            # read as PARTLY twice and kept by neither (2026-09-27). When the reader
+            # found a narrower version and the check agrees it is PARTLY, it is kept.
+            partly = reading.verdict == "PARTLY"
+            if reading.verdict == _expected(item) and (reading.addresses_claim or partly):
                 kept.append(item)
                 outcomes.append({"host": host, "outcome": f"kept ({item.direction.value})"})
-            elif (
-                reading.addresses_claim
-                and reading.verdict == "PARTLY"
-                and item.direction is Direction.SUPPORTS
-            ):
+            elif partly and item.direction is Direction.SUPPORTS and reading.addresses_claim:
                 # Read as support, but it shows only part of the claim: the narrower
                 # version is what it is evidence of, not the claim.
                 kept.append(_as_narrower(item, reading.reason))

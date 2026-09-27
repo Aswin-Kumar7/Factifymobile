@@ -58,7 +58,7 @@ from app.sources.local_reading import local_reading, local_same_claim
 logger = logging.getLogger("factify.sources.reasoning")
 
 PROVIDER = "llm"
-REASONER_VERSION = "2026.09.28.1"
+REASONER_VERSION = "2026.09.28.3"
 
 # How many passages go to the model in one call. One call per source, not one per
 # passage: the model needs to see the alternatives to judge which actually bears on
@@ -406,6 +406,55 @@ def verify_quote(quote: str, passage: str) -> tuple[int, int] | None:
     return position, position + len(needle)
 
 
+# Where one sentence ends and the next begins: after . ! ? or the Devanagari danda,
+# optionally followed by a closing quote or bracket, then whitespace.
+_SENTENCE_BREAK = re.compile(r"(?<=[.!?\u0964\u0965])[\"'\u201d\u2019)]?\s+")
+# Not a sentence end: an initial ("M.K."), or a title or unit that takes a full stop.
+_ABBREVIATION = re.compile(
+    r"(?:\b[A-Z]|\b(?:Rs|Dr|Mr|Mrs|Ms|St|No|Sr|Jr|vs|Prof|Hon|Govt|Lt|Col|Gen))\.$"
+)
+
+
+def sentence_spans(text: str) -> list[tuple[int, int]]:
+    """(start, end) of each sentence in `text`, in order, whitespace excluded.
+
+    The reader is shown these numbered and answers with numbers; the words cited are
+    then copied from the page by `text[start:end]`, never retyped by the model. A
+    split in the wrong place costs little - the model names a run of sentences - and
+    the common ones, after an initial or "Rs.", are not made.
+    """
+    spans = []
+    start = 0
+    for match in _SENTENCE_BREAK.finditer(text):
+        end = match.start() + len(match.group(0).rstrip())
+        if _ABBREVIATION.search(text[max(0, match.start() - 6) : match.start()]):
+            continue
+        if text[start:end].strip():
+            spans.append((start, end))
+        start = match.end()
+    if text[start:].strip():
+        spans.append((start, len(text.rstrip())))
+    return spans
+
+
+# The longest run of sentences one judgement may cite: evidence, not the article.
+MAX_CITED_SENTENCES = 3
+
+
+def numbered_sentences(passages: list[Passage]) -> dict[int, tuple[int, int, int]]:
+    """Sentence number -> (passage index, start, end), numbered 1..N across the page.
+
+    One number per sentence of the whole page, not "passage.sentence": asked for
+    "(3.10)" the model twice answered sentence 10 of a passage that had eight
+    (2026-09-28). A single number cannot point at the wrong passage.
+    """
+    numbered: dict[int, tuple[int, int, int]] = {}
+    for passage in passages:
+        for start, end in sentence_spans(passage.text):
+            numbered[len(numbered) + 1] = (passage.index, start, end)
+    return numbered
+
+
 class _Judgement(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -414,6 +463,10 @@ class _Judgement(BaseModel):
     asserted_by: str = "THE_ARTICLE"
     contradiction_basis: str = "DENIES"
     scope: str = "FULL"
+    # The cited sentences, by number within the passage (1-based). The text itself is
+    # copied from the page; `quote` is read only when these are absent.
+    first_sentence: int = 0
+    last_sentence: int = 0
     quote: str = ""
     reason: str = ""
     relevance: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -447,7 +500,14 @@ _RESPONSE_SCHEMA: dict[str, Any] = {
                     # No URL, no publisher, no date. The model cannot describe where
                     # this came from, only what it says — the provenance is the
                     # fetch's, and there is nowhere here to overwrite it.
-                    "quote": {"type": "string"},
+                    #
+                    # Nor the words: it names sentences by number and the text is
+                    # copied from the page. Asked to retype a quote, the model wrote a
+                    # tab where the page had ₹ and control characters for other
+                    # symbols - 27 of 84 rejected quotes in the logs (2026-09-27) -
+                    # and the verbatim check threw the evidence away.
+                    "first_sentence": {"type": "integer"},
+                    "last_sentence": {"type": "integer"},
                     "reason": {"type": "string"},
                     # Who puts their name to the statement. Asked separately from
                     # the relation because the model answers it reliably and gets the
@@ -504,7 +564,8 @@ _RESPONSE_SCHEMA: dict[str, Any] = {
                 },
                 "required": [
                     "passage_index",
-                    "quote",
+                    "first_sentence",
+                    "last_sentence",
                     "reason",
                     "asserted_by",
                     "contradiction_basis",
@@ -571,7 +632,10 @@ For each source:
   new is one of the commonest fakes. A PUBLISHED date, when given, is when the page
   appeared: a page published before the event a claim describes cannot be reporting
   that event, however alike it reads - "the White House state dinner" in April is not
-  the one in September. When unsure, false.
+  the one in September. When unsure, false. A smaller version of this claim - the
+  same kind of payment, rule or event, but for one state, fewer people, a lower
+  amount, or once rather than every month - does address it: answer true, with
+  verdict PARTLY.
 - verdict:
   * TRUE if the passage, in its own voice, establishes that the claim is correct -
     every part of it: who acts, who it applies to, how much, how often, where and
@@ -653,12 +717,13 @@ _SYSTEM_INSTRUCTION = """\
 You judge whether passages from a published article bear on a specific claim.
 
 You are given one CLAIM and numbered PASSAGES taken from a single article that was
-fetched from the web. Return one judgement per passage that is relevant. Passages
-that say nothing about the claim may be omitted entirely.
+fetched from the web, each split into numbered sentences. Return one judgement per
+passage that is relevant. Passages that say nothing about the claim may be omitted
+entirely.
 
 An ARTICLE TITLE may also be given. Use it only to tell what kind of article the
 passages come from — a fact-check, a myth-buster, a news report, an advertisement.
-It is context, never evidence: every quote must come from a numbered passage.
+It is context, never evidence: evidence is always numbered sentences of a passage.
 
 A PUBLISHED date may also be given: the day the article appeared. An article
 published before the event a claim describes cannot be reporting that event. It is
@@ -750,11 +815,11 @@ For each judgement:
     a proposal, a promise or a demand for a claim that something was decided or is
     being paid.
 
-- quote: text copied EXACTLY from that passage, character for character, long
-  enough to stand alone as evidence (at least one full sentence). Do not paraphrase,
-  do not correct spelling, do not join fragments from different places, do not add
-  ellipses. A quote that does not appear verbatim in the passage is discarded and
-  your entire judgement for that passage is thrown away.
+- first_sentence, last_sentence: the numbers of the sentences that are the evidence,
+  as shown in brackets before each sentence - they run through the whole article.
+  Give the shortest run that stands alone as evidence: usually one sentence (first =
+  last), at most three when a sentence was split in the wrong place, all in the same
+  passage. The words are copied from the article for you; never retype them.
 
 - reason: one sentence saying why this passage has that relation to the claim.
   Name what in the text decides it.
@@ -801,6 +866,31 @@ Rules:
 
 # A four-digit year, 1900-2099, standing alone.
 _YEAR = re.compile(r"(?<![0-9])(19[0-9]{2}|20[0-9]{2})(?![0-9])")
+
+
+def _cited(
+    judgement: _Judgement, passage: Passage, numbered: dict[int, tuple[int, int, int]]
+) -> tuple[int, int, str] | None:
+    """(start, end, words) of what a judgement cites, copied from the passage.
+
+    By sentence number when given - the page's own characters, whatever symbols they
+    hold - and otherwise by locating a typed quote, as the reader answered before. A
+    run must stay inside one passage and be at most MAX_CITED_SENTENCES long.
+    """
+    if judgement.first_sentence > 0:
+        first = judgement.first_sentence
+        last = max(first, judgement.last_sentence)
+        if last - first >= MAX_CITED_SENTENCES or first not in numbered:
+            return None
+        run = [numbered.get(n) for n in range(first, last + 1)]
+        if any(item is None or item[0] != passage.index for item in run):
+            return None
+        start, end = run[0][1], run[-1][2]  # type: ignore[index]
+        return start, end, passage.text[start:end]
+    located = verify_quote(judgement.quote, passage.text)
+    if located is None:
+        return None
+    return located[0], located[1], judgement.quote.strip()
 
 
 def _years(text: str) -> set[int]:
@@ -1161,8 +1251,14 @@ class PassageReasoner:
         # opposite fixes.
         unverified: list[str] = []
 
+        numbered = numbered_sentences(passages)
         for judgement in response.judgements:
-            passage = by_index.get(judgement.passage_index)
+            # A cited sentence number names its own passage; the passage index the
+            # model also gave is only a fallback for a typed quote.
+            if judgement.first_sentence in numbered:
+                passage = by_index.get(numbered[judgement.first_sentence][0])
+            else:
+                passage = by_index.get(judgement.passage_index)
             if passage is None:
                 rejected += 1
                 continue
@@ -1296,18 +1392,21 @@ class PassageReasoner:
                 relation = Relation.CONTEXTUALIZES
                 demoted += 1
 
-            located = verify_quote(judgement.quote, passage.text)
-            if located is None:
+            cited = _cited(judgement, passage, numbered)
+            if cited is None:
                 rejected += 1
                 if len(unverified) < 3:
-                    unverified.append(judgement.quote[:160])
+                    unverified.append(
+                        judgement.quote[:160]
+                        or f"sentences {judgement.first_sentence}-{judgement.last_sentence}"
+                    )
                 continue
 
-            offset, end = located
+            offset, end, quote = cited
             kept.append(
                 PassageJudgement(
                     relation=relation,
-                    quote=judgement.quote.strip(),
+                    quote=quote,
                     reason=judgement.reason.strip(),
                     relevance=judgement.relevance,
                     passage_index=passage.index,
@@ -1375,7 +1474,12 @@ class PassageReasoner:
         if published is not None:
             lines += [f"PUBLISHED: {published.isoformat()}", ""]
         lines.append("PASSAGES:")
+        numbered = numbered_sentences(passages)
         for passage in passages:
-            lines.append(f"[{passage.index}] {plain_punctuation(passage.text)}")
+            lines.append(f"[{passage.index}]")
+            for number, (index, start, end) in numbered.items():
+                if index == passage.index:
+                    sentence = plain_punctuation(passage.text[start:end])
+                    lines.append(f"  ({number}) {sentence}")
             lines.append("")
         return "\n".join(lines)

@@ -140,8 +140,11 @@ class WebSearchResolver:
         governor: Any | None = None,
         max_results: int = _MAX_RESULTS,
         keeper: Any | None = None,
+        memory: Any | None = None,
     ) -> None:
         self._governor = governor
+        # The pages this claim was cited against before (app/knowledge/memory.py).
+        self._memory = memory
         # Keeps a fact-checker's page this search read (app/knowledge/factchecks.py).
         self._keeper = keeper
         self._fetcher = fetcher
@@ -312,7 +315,53 @@ class WebSearchResolver:
         # first; search order is kept within each group, and the rest still fill any
         # slot left over.
         shortlist.sort(key=lambda c: 0 if self._credibility.is_prominent(c.url) else 1)
-        return shortlist[:limit]
+        shortlist = shortlist[:limit]
+
+        # The pages this claim was cited against before are read again, first, beside
+        # what search found now - so a source is not lost because today's search did
+        # not return it. They add read slots rather than taking search's.
+        for remembered in await self._remembered(claim, {page_key(c.url) for c in shortlist}):
+            shortlist.insert(0, remembered)
+        return shortlist
+
+    async def _remembered(self, claim: Claim, seen: set[str]) -> list[SourceCandidate]:
+        if self._memory is None or not claim.normalized_text:
+            return []
+        found = []
+        remembered = await self._memory.pages(claim.normalized_text)
+        for page in remembered:
+            if page_key(page.url) in seen or not self._credibility.is_credible(page.url):
+                continue
+            seen.add(page_key(page.url))
+            # `snapshot` reads pages it has a row for; a remembered page has no search
+            # snippet, and never needs one.
+            self._pages[page.url] = {
+                "url": page.url,
+                "title": page.title,
+                "publisher": page.publisher,
+            }
+            found.append(
+                SourceCandidate(
+                    url=page.url,
+                    publisher=page.publisher,
+                    title=page.title,
+                    proposed_by="memory",
+                    prior_score=1.0,
+                )
+            )
+        if remembered:
+            event(
+                logger,
+                "remembered pages read again",
+                module="sources.websearch",
+                outcome="ok",
+                provider=PROVIDER,
+                remembered=len(remembered),
+                # The rest were in today's search results already.
+                added=len(found),
+                hosts=sorted({urlsplit(c.url).hostname or "" for c in found}),
+            )
+        return found
 
     async def snapshot(self, candidate: SourceCandidate) -> SourceSnapshot | None:
         """Read the page — ours first, the vendor's second, the snippet last.

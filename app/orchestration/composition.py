@@ -44,6 +44,7 @@ from app.extraction.model_wire import WireFormat
 from app.extraction.ocr import OcrExtractor
 from app.intake.normalizer import NormalisedIntake
 from app.knowledge.factchecks import FactCheckKeeper, load_factcheck_records
+from app.knowledge.memory import EvidenceMemory
 from app.knowledge.schedule import IngestionSchedule
 from app.media.detectors.local import build as build_local_detector
 from app.media.discovery import ReverseImageDiscovery
@@ -314,6 +315,8 @@ async def build(settings: Settings) -> dict[str, Any]:
             governor=governor,
             # A fact-checker's page found by search is kept too.
             keeper=keeper,
+            # And the pages a claim was cited against before are read again.
+            memory=EvidenceMemory(database),
         )
         resolvers.append(web_search)
 

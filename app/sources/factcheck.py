@@ -35,7 +35,7 @@ from app.embeddings.image import cosine
 from app.embeddings.text import TextEmbedder
 from app.governor.governor import Governor, ProviderUnavailable, Skip, SkipReason
 from app.observability.logging import event
-from app.security.fetcher import FetchResult, SecureFetcher
+from app.security.fetcher import FetchFailure, FetchResult, SecureFetcher
 from app.sources.base import (
     SourceCandidate,
     SourceRelation,
@@ -90,6 +90,13 @@ _CONFIDENT_MATCH = 0.95
 # paraphrase reaches the semantic gate in `relate`, which is where relevance is
 # actually decided. API results are already ranked by the provider and skip this.
 _CANDIDATE_PREFILTER = 0.15
+
+# A record of ours this close to the claim is taken as the fact-check of it, and the
+# API is not asked. Below this, the API is asked as well: sharing a few words - "Govt",
+# "5000", "women" - is a different fake about the same subject, not this claim, and
+# four such records once stopped the API being asked for "Rs 5000 a month to every
+# woman" at all (2026-09-27). Half the claim's significant words is the bar.
+_LOCAL_MATCH = 0.5
 
 # Ratings that constitute a contradiction. Deliberately explicit rather than
 # "anything that isn't true": fact-checkers use a wide vocabulary and a rating we do
@@ -257,7 +264,8 @@ class FactCheckResolver:
         shortlist = [c for c in shortlist if c.prior_score >= _CANDIDATE_PREFILTER]
         shortlist.sort(key=lambda candidate: -candidate.prior_score)
 
-        if shortlist:
+        # A close match of our own answers without the API.
+        if shortlist and shortlist[0].prior_score >= _LOCAL_MATCH:
             event(
                 logger,
                 "fact-check candidates from local corpus",
@@ -278,7 +286,11 @@ class FactCheckResolver:
                     outcome="skipped",
                     provider=PROVIDER,
                     failure_reason=outcome.reason.value,
+                    local_candidates=len(shortlist),
                 )
+                # Our own weaker matches are still read; they were found without it.
+                if shortlist:
+                    return shortlist[:5]
                 # Raised, not returned empty. "We could not ask" and "nobody has
                 # checked this" are different answers, and returning [] made them
                 # identical: the run counted as complete, so an abstention caused by
@@ -300,8 +312,11 @@ class FactCheckResolver:
             ]
             # No lexical prefilter here: the provider already ranked these by
             # relevance to the query, and the semantic gate in `relate` is what decides
-            # whether each is about this claim.
-            api_shortlist.sort(key=lambda candidate: -candidate.prior_score)
+            # whether each is about this claim. Our own weaker matches join them, one
+            # copy of each page.
+            seen = {candidate.url for candidate in api_shortlist}
+            merged = api_shortlist + [c for c in shortlist if c.url not in seen]
+            merged.sort(key=lambda candidate: -candidate.prior_score)
             event(
                 logger,
                 "fact-check candidates from API",
@@ -309,11 +324,12 @@ class FactCheckResolver:
                 outcome="ok",
                 provider=PROVIDER,
                 candidates=len(api_shortlist),
+                local_candidates=len(shortlist),
                 api_consulted=True,
             )
-            return api_shortlist[:5]
+            return merged[:5]
 
-        return []
+        return shortlist[:5]
 
     async def _query_api(self, claim: Claim) -> list[FactCheckRecord]:
         """Query the Google Fact Check Tools API and map its ClaimReviews to records.
@@ -326,6 +342,11 @@ class FactCheckResolver:
         assert self._fetcher is not None
         query = urlencode({"query": claim.text[:300], "pageSize": 10, "key": self._api_key})
         result = await self._fetcher.fetch(f"{self._endpoint}?{query}", provider=PROVIDER)
+        # Once more when the connection itself failed: a dropped connection is not an
+        # answer, and failing on it skips the fact-checks for the whole check
+        # (seen 2026-09-28, RemoteProtocolError on the first try).
+        if isinstance(result, FetchFailure) and result.kind == "transport":
+            result = await self._fetcher.fetch(f"{self._endpoint}?{query}", provider=PROVIDER)
         # A request that failed is not an answer. It used to return no records, which
         # reads exactly like "nobody has fact-checked this": a revoked key, a 429 or
         # an outage produced a complete-looking run, and a complete run is cached.
