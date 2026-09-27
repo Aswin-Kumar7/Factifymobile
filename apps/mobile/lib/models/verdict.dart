@@ -651,7 +651,7 @@ class MediaDetector {
   /// A video's sound: likelihood of a machine-made voice. Experimental.
   final double? voice;
 
-  /// Read by Factify's own models, sent nowhere else.
+  /// These detectors ran on Factify's own server (other checks may use providers).
   final bool onServer;
 
   bool get checked => status == 'checked';

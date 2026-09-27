@@ -209,10 +209,17 @@ class LocalModelSettings(BaseModel):
     directory: str = ".cache/models"
     # CPU threads each model may use per call.
     threads: int = Field(default=4, ge=1, le=32)
-    # AI-made pictures: Community Forensics (Aug 2026) with DDA as a second opinion.
+    # AI-made pictures: Community Forensics, retrained August 2026.
     pictures: bool = True
-    # Face swaps: YuNet finds faces, GenD judges them.
-    faces: bool = True
+    # DDA (NeurIPS 2025) as a second opinion that must agree. Off: after a WhatsApp-style
+    # send it caught 0 of 36 GPT-Image-2 pictures, so requiring agreement turned 23 of
+    # the main model's 36 catches into "unclear" (scripts/eval_models.py, 2026-09-28).
+    second_opinion: bool = False
+    # Face swaps: YuNet finds faces, GenD judges them. Off: measured on real photos it
+    # scored 4 of 9 real faces 90% or more "swapped" (Celeb-DF samples and our own test
+    # pictures, 2026-09-28). A face check that tells people a real face is fake does
+    # more harm than none; it stays off until it is calibrated on real Indian faces.
+    faces: bool = False
     # Cloned voices in a video's sound: Spectra-AASIST. Experimental.
     voice: bool = True
     # Text in pictures: PaddleOCR's models through RapidOCR.

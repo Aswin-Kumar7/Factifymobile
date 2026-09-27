@@ -1806,8 +1806,7 @@ class AppLocalizationsHi extends AppLocalizations {
   }
 
   @override
-  String get pcOnServer =>
-      'Factify के अपने सर्वर पर जाँचा गया। तस्वीर किसी और को नहीं भेजी गई।';
+  String get pcOnServer => 'यह जाँच Factify के अपने सर्वर पर हुई।';
 
   @override
   String get pcEditing => 'एडिटिंग के संकेत';

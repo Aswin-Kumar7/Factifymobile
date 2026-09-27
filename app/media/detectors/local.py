@@ -1,10 +1,13 @@
 """Our own detectors, behind the interface the hosted one had.
 
-A picture is read by two AI-picture models (Community Forensics, retrained in August
-2026, and DDA as the second opinion) and, when it shows faces, by the face-swap
-model. A video is read from its keyframes - the picture models on a few frames
-spread across the clip, the face model on the largest face in every frame - and its
-sound by the voice model.
+A picture is read by the AI-picture model (Community Forensics, retrained in August
+2026) and, where they are switched on, by a second picture model and the face-swap
+model - both off by default, because measured on our own test pictures they did
+more harm than good (app/config.py, LocalModelSettings).
+
+A video is read from its keyframes - the picture model on a few frames spread across
+the clip, the face model (when on) on the largest face in every frame - and its sound
+by the voice model.
 
 One inference at a time: the models share the CPU, and two checks running side by
 side would each take as long as both.
@@ -188,7 +191,7 @@ def build(settings: Any) -> LocalDetector | None:
 
     return LocalDetector(
         pictures=pictures,
-        second=optional("dda", "DdaDetector", local.pictures),
+        second=optional("dda", "DdaDetector", local.second_opinion),
         faces=optional("faces", "FaceSwapDetector", local.faces),
         voice=optional("voice", "VoiceDetector", local.voice),
     )

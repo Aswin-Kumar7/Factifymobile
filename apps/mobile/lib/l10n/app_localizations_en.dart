@@ -1804,8 +1804,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get pcOnServer =>
-      'Checked on Factify\'s own server. The picture wasn\'t sent to anyone else.';
+  String get pcOnServer => 'This check ran on Factify\'s own server.';
 
   @override
   String get pcEditing => 'Editing signals';

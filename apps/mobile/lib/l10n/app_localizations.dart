@@ -2651,7 +2651,7 @@ abstract class AppLocalizations {
   /// No description provided for @pcOnServer.
   ///
   /// In en, this message translates to:
-  /// **'Checked on Factify\'s own server. The picture wasn\'t sent to anyone else.'**
+  /// **'This check ran on Factify\'s own server.'**
   String get pcOnServer;
 
   /// No description provided for @pcEditing.

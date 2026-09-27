@@ -10,15 +10,16 @@ version keeps working and simply does not show the new fields.
 Our own detectors replace the hosted one. All new fields are optional.
 
 - **`media_report.detector.second_opinion`**: a second AI-picture model's likelihood
-  (DDA), 0-1.
+  (DDA), 0-1. Off by default, so usually absent.
 - **`media_report.detector.agreement`**: `likely_ai` when every AI-picture model
   agrees, `unclear` when they disagree, `no_sign` when none is raised. Never "real".
 - **`media_report.detector.faces`**: how many faces the face-swap model judged;
   absent when the face check did not run. `face_swap` is its highest likelihood.
 - **`media_report.detector.voice`**: for a video, the likelihood that the speech was
   made by a speech generator. Experimental.
-- **`media_report.detector.on_server`**: `true` when the picture was read by our own
-  models and sent nowhere else.
+- **`media_report.detector.on_server`**: `true` when these detectors ran on our own
+  server. It says nothing about other checks: the hosted reader may still read the
+  picture's text, and reverse image search sends it to its provider.
 
 ## 1.3 (2026-09-27)
 

@@ -928,6 +928,15 @@ class PassageReasoner:
                 logger.exception("local reading failed; the hosted reader reads the page")
                 local = None
             if local is not None:
+                event(
+                    logger,
+                    "hosted read skipped: no passage is about the claim",
+                    module="sources.reasoning",
+                    outcome="ok",
+                    provider="local",
+                    model_id=local.model_id,
+                    passages=local.passages_read,
+                )
                 return _without_older_events(local, claim_text, published)
 
         # Through the governor, per source, without exception.

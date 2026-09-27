@@ -13,9 +13,9 @@ through. So they are handled exactly like the forensic panel (`forensics.py`):
     never rounded into a label like "fake";
   - a detector that cannot be reached says so; it never reads as "not AI-generated".
 
-Since 2026-09-28 the detectors run on our own server (`app/media/detectors`): two
-AI-picture models that must agree before anything is called likely AI-made, a face
-model for swaps, and a voice model for a video's sound. The hosted detector is kept
+Since 2026-09-28 the detectors run on our own server (`app/media/detectors`): an
+AI-picture model, a voice model for a video's sound, and - when switched on - a
+second picture model that must agree and a face-swap model. The hosted detector is kept
 as an option; a picture read on our server is never sent anywhere.
 """
 

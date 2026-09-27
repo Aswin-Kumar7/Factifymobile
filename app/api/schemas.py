@@ -418,7 +418,8 @@ class DetectorResponse(BaseModel):
     faces: int | None = None
     # A video's sound: likelihood the voice was made by a speech generator.
     voice: float | None = None
-    # Read on our own server; nothing was sent to another company.
+    # These detectors ran on our own server. Other checks (the hosted text reader,
+    # reverse image search) may still send the picture to their providers.
     on_server: bool = False
 
 

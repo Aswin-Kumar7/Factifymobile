@@ -44,8 +44,10 @@ jobs:
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
-      - run: uv sync --frozen
-      - run: uv run mypy app
+      # With the models extra (CPU PyTorch, timm, OpenCV, RapidOCR): the vendored
+      # model code is type-checked against the libraries it runs on.
+      - run: uv sync --frozen --extra models
+      - run: uv run --extra models mypy app
 
   test:
     name: Tests

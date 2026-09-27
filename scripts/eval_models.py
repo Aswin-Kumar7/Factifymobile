@@ -65,10 +65,14 @@ def _report(name: str, scores: dict[str, list[float]], boundary: float) -> None:
 
 
 def pictures(folder: str) -> None:
+    """Each picture model alone, and the two together as the app shows them: "likely
+    AI-made" only when both are raised, "unclear" when one is."""
+    from app.media.detectors.dda import DdaDetector
     from app.media.detectors.picture import AiPictureDetector
 
-    detector = AiPictureDetector(directory=MODELS, threads=4)
-    detector.load()
+    main = AiPictureDetector(directory=MODELS, threads=4)
+    second = DdaDetector(directory=MODELS, threads=4)
+    main.load()
     files = {
         sub.name: sorted(
             p for p in sub.iterdir() if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}
@@ -78,20 +82,35 @@ def pictures(folder: str) -> None:
     }
     for state, change in STATES.items():
         scores: dict[str, list[float]] = {}
+        seconds: dict[str, list[float]] = {}
+        both: dict[str, dict[str, int]] = {}
         boundary = 0.65
         started = time.perf_counter()
         count = 0
         for label, paths in files.items():
+            tally = both.setdefault(label, {"likely_ai": 0, "unclear": 0, "no_sign": 0})
             for path in paths:
-                result = detector.score(change(path.read_bytes()))
+                data = change(path.read_bytes())
+                result = main.score(data)
                 if result is None:
                     continue
                 boundary = result.threshold
                 scores.setdefault(label, []).append(result.likelihood)
+                other = second.score(data) if second.available else None
+                votes = [result.raised]
+                if other is not None:
+                    seconds.setdefault(label, []).append(other.likelihood)
+                    votes.append(other.raised)
+                tally["likely_ai" if all(votes) else "unclear" if any(votes) else "no_sign"] += 1
                 count += 1
         elapsed = (time.perf_counter() - started) / max(1, count) * 1000
         print(f"\n[{state}] {count} pictures, {elapsed:.0f} ms each")
         _report("Community Forensics frontier", scores, boundary)
+        if seconds:
+            _report("DDA", seconds, 0.5)
+            print("  together (what the app shows):")
+            for label, tally in sorted(both.items()):
+                print(f"    {label:22s} {tally}")
 
 
 def stance(pairs_file: str) -> None:
