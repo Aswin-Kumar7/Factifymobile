@@ -16,7 +16,9 @@ development only and is not the container entrypoint.
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
+from pathlib import Path
 
 import truststore
 import uvicorn
@@ -25,6 +27,12 @@ import uvicorn
 # every source fetch fails with ConnectError and every claim abstains for a reason
 # that has nothing to do with the evidence.
 truststore.inject_into_ssl()
+
+# Local model weights live in the project's `.cache/models`, as they do in the image
+# (/srv/.models): Windows clears its Temp folder, and it took the CLIP weights with it.
+os.environ.setdefault(
+    "FASTEMBED_CACHE_PATH", str(Path(__file__).resolve().parent.parent / ".cache/models/fastembed")
+)
 
 from app.main import create_app  # noqa: E402  (must follow the TLS injection)
 

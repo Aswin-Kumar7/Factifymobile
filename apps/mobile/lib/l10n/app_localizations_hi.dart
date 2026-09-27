@@ -1767,6 +1767,49 @@ class AppLocalizationsHi extends AppLocalizations {
   String get pcDetectorNote => 'यह डिटेक्टर का अनुमान है, निष्कर्ष नहीं।';
 
   @override
+  String get pcAgreeLikelyAi =>
+      'दोनों डिटेक्टर कहते हैं कि यह शायद AI से बनी है';
+
+  @override
+  String get pcAgreeUnclear =>
+      'डिटेक्टर एकमत नहीं हैं, इसलिए साफ़ नहीं कहा जा सकता';
+
+  @override
+  String get pcAgreeNoSign =>
+      'AI जनरेटर से बनने का कोई संकेत नहीं मिला। इससे यह साबित नहीं होता कि यह असली है।';
+
+  @override
+  String get pcOneLikelyAi => 'डिटेक्टर कहता है कि यह शायद AI से बनी है';
+
+  @override
+  String pcSecondOpinion(int percent) {
+    return 'दूसरा डिटेक्टर: $percent% संभावना कि यह AI से बनी है';
+  }
+
+  @override
+  String get pcNoFace => 'बदले गए चेहरे की जाँच के लिए कोई चेहरा नहीं मिला';
+
+  @override
+  String pcFacesChecked(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count चेहरे जाँचे गए',
+      one: '1 चेहरा जाँचा गया',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String pcVoice(int percent) {
+    return '$percent% संभावना कि आवाज़ मशीन से बनी है (प्रयोगात्मक)';
+  }
+
+  @override
+  String get pcOnServer =>
+      'Factify के अपने सर्वर पर जाँचा गया। तस्वीर किसी और को नहीं भेजी गई।';
+
+  @override
   String get pcEditing => 'एडिटिंग के संकेत';
 
   @override

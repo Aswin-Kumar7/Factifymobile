@@ -2600,6 +2600,60 @@ abstract class AppLocalizations {
   /// **'A detector\'s estimate, not a finding.'**
   String get pcDetectorNote;
 
+  /// No description provided for @pcAgreeLikelyAi.
+  ///
+  /// In en, this message translates to:
+  /// **'Both detectors say this is likely AI-made'**
+  String get pcAgreeLikelyAi;
+
+  /// No description provided for @pcAgreeUnclear.
+  ///
+  /// In en, this message translates to:
+  /// **'The detectors disagree, so it\'s unclear'**
+  String get pcAgreeUnclear;
+
+  /// No description provided for @pcAgreeNoSign.
+  ///
+  /// In en, this message translates to:
+  /// **'No sign that an AI generator made it. That doesn\'t prove it\'s real.'**
+  String get pcAgreeNoSign;
+
+  /// No description provided for @pcOneLikelyAi.
+  ///
+  /// In en, this message translates to:
+  /// **'The detector says this is likely AI-made'**
+  String get pcOneLikelyAi;
+
+  /// No description provided for @pcSecondOpinion.
+  ///
+  /// In en, this message translates to:
+  /// **'Second detector: {percent}% likely AI-made'**
+  String pcSecondOpinion(int percent);
+
+  /// No description provided for @pcNoFace.
+  ///
+  /// In en, this message translates to:
+  /// **'No face to check for a swap'**
+  String get pcNoFace;
+
+  /// No description provided for @pcFacesChecked.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 face checked} other{{count} faces checked}}'**
+  String pcFacesChecked(int count);
+
+  /// No description provided for @pcVoice.
+  ///
+  /// In en, this message translates to:
+  /// **'{percent}% likely a machine-made voice (experimental)'**
+  String pcVoice(int percent);
+
+  /// No description provided for @pcOnServer.
+  ///
+  /// In en, this message translates to:
+  /// **'Checked on Factify\'s own server. The picture wasn\'t sent to anyone else.'**
+  String get pcOnServer;
+
   /// No description provided for @pcEditing.
   ///
   /// In en, this message translates to:

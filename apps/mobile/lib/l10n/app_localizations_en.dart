@@ -1767,6 +1767,47 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pcDetectorNote => 'A detector\'s estimate, not a finding.';
 
   @override
+  String get pcAgreeLikelyAi => 'Both detectors say this is likely AI-made';
+
+  @override
+  String get pcAgreeUnclear => 'The detectors disagree, so it\'s unclear';
+
+  @override
+  String get pcAgreeNoSign =>
+      'No sign that an AI generator made it. That doesn\'t prove it\'s real.';
+
+  @override
+  String get pcOneLikelyAi => 'The detector says this is likely AI-made';
+
+  @override
+  String pcSecondOpinion(int percent) {
+    return 'Second detector: $percent% likely AI-made';
+  }
+
+  @override
+  String get pcNoFace => 'No face to check for a swap';
+
+  @override
+  String pcFacesChecked(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count faces checked',
+      one: '1 face checked',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String pcVoice(int percent) {
+    return '$percent% likely a machine-made voice (experimental)';
+  }
+
+  @override
+  String get pcOnServer =>
+      'Checked on Factify\'s own server. The picture wasn\'t sent to anyone else.';
+
+  @override
   String get pcEditing => 'Editing signals';
 
   @override

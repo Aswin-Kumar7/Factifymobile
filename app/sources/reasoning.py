@@ -53,11 +53,12 @@ from app.observability.logging import event
 from app.security.fetcher import FetchResult
 from app.security.injection import fence
 from app.sources.corpus_text import is_navigation
+from app.sources.local_reading import local_reading, local_same_claim
 
 logger = logging.getLogger("factify.sources.reasoning")
 
 PROVIDER = "llm"
-REASONER_VERSION = "2026.09.27.3"
+REASONER_VERSION = "2026.09.28.1"
 
 # How many passages go to the model in one call. One call per source, not one per
 # passage: the model needs to see the alternatives to judge which actually bears on
@@ -867,7 +868,12 @@ class PassageReasoner:
         model_id: str,
         api_format: WireFormat = WireFormat.GEMINI,
         embedder: Any | None = None,
+        stance: Any | None = None,
     ) -> None:
+        # Our own relevance and support models (app/sources/stance.py): they read a
+        # page first and answer the clear cases, so the hosted model reads only the
+        # pages that need it.
+        self._stance = stance
         self._fetcher = fetcher
         # Optional, and only used to rank passages before reading them. The reader
         # degrades to lexical ranking without it rather than to reading page one.
@@ -910,6 +916,19 @@ class PassageReasoner:
         selected = await asyncio.to_thread(
             select_passages, claim_text, passages, embedder=self._embedder, language=language
         )
+
+        # Our own models first, for the two answers they are trusted with: this page
+        # is not about the claim, or it states the claim outright in English.
+        if self._stance is not None:
+            try:
+                local = await asyncio.to_thread(
+                    local_reading, self._stance, claim_text, selected, title, claim_type
+                )
+            except Exception:
+                logger.exception("local reading failed; the hosted reader reads the page")
+                local = None
+            if local is not None:
+                return _without_older_events(local, claim_text, published)
 
         # Through the governor, per source, without exception.
         #
@@ -978,6 +997,16 @@ class PassageReasoner:
         objection: a provider outage must not silently disable published
         adjudications, the strongest evidence class there is.
         """
+        if self._stance is not None:
+            try:
+                local = await asyncio.to_thread(
+                    local_same_claim, self._stance, claim_text, reviewed_text
+                )
+            except Exception:
+                logger.exception("local same-claim check failed; the hosted model is asked")
+                local = None
+            if local is not None:
+                return local
         try:
             grant = await self._governor.acquire(PROVIDER)
         except ProviderUnavailable:

@@ -30,7 +30,7 @@ import logging
 import time
 import uuid
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
@@ -163,12 +163,19 @@ class MediaInspector:
             asyncio.to_thread(provenance.read, video, filename="upload.mp4"), _no_credentials
         )
         editing = await _guarded(asyncio.to_thread(forensics.analyse_keyframes, frames), _no_panel)
-        readings = await asyncio.gather(
-            *(
-                _guarded(self._detector.read(frame, mime="image/jpeg"), _no_reading)
-                for frame in _spread(frames, FRAMES_DETECTED)
+        # Our own detectors read the whole clip - every keyframe's faces and the
+        # sound - in one pass; a per-picture detector reads a couple of frames.
+        read_video = getattr(self._detector, "read_video", None)
+        if read_video is not None:
+            synthetic = await _guarded(read_video(video, frames), _no_reading)
+        else:
+            readings = await asyncio.gather(
+                *(
+                    _guarded(self._detector.read(frame, mime="image/jpeg"), _no_reading)
+                    for frame in _spread(frames, FRAMES_DETECTED)
+                )
             )
-        )
+            synthetic = _strongest(readings)
         histories = await asyncio.gather(
             *(_guarded(self._discovery.discover(frame), _no_history) for frame in picked)
         )
@@ -176,7 +183,7 @@ class MediaInspector:
             kind="video",
             credentials=credentials,
             history=_merged(histories),
-            synthetic=_strongest(readings),
+            synthetic=synthetic,
             editing=editing,
             artifact_ref="frames",
             frames=len(frames),
@@ -261,9 +268,14 @@ def _strongest(readings: list[SyntheticReading]) -> SyntheticReading:
         return readings[0] if readings else SyntheticReading(reason="no frame to read")
     generated = [r.generated for r in checked if r.generated is not None]
     swapped = [r.face_swap for r in checked if r.face_swap is not None]
-    return SyntheticReading(
+    seconds = [r.second_opinion for r in checked if r.second_opinion is not None]
+    faces = [r.faces for r in checked if r.faces is not None]
+    return replace(
+        checked[0],
         generated=max(generated) if generated else None,
         face_swap=max(swapped) if swapped else None,
+        second_opinion=max(seconds) if seconds else None,
+        faces=sum(faces) if faces else None,
     )
 
 

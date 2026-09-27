@@ -22,6 +22,7 @@ call, which is what lets the fixed order in `Orchestrator` stay exactly as writt
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 from uuid import UUID
@@ -38,11 +39,13 @@ from app.embeddings.image import ImageEmbedder
 from app.embeddings.text import TextEmbedder
 from app.extraction.claims import ClaimPipeline
 from app.extraction.llm import LLMExtractor
+from app.extraction.local_ocr import LocalFirstOcr, LocalOcr
 from app.extraction.model_wire import WireFormat
 from app.extraction.ocr import OcrExtractor
 from app.intake.normalizer import NormalisedIntake
 from app.knowledge.factchecks import FactCheckKeeper, load_factcheck_records
 from app.knowledge.schedule import IngestionSchedule
+from app.media.detectors.local import build as build_local_detector
 from app.media.discovery import ReverseImageDiscovery
 from app.media.report import MediaInspector
 from app.media.synthetic import SightengineDetector
@@ -64,6 +67,7 @@ from app.sources.corpus import CorpusCorroboration, CorpusResolver
 from app.sources.credibility import SourceCredibility
 from app.sources.factcheck import FactCheckResolver
 from app.sources.reasoning import PassageReasoner
+from app.sources.stance import LocalStance
 from app.sources.verification import SourceVerification
 from app.sources.websearch import WebSearchResolver
 
@@ -234,7 +238,13 @@ async def build(settings: Settings) -> dict[str, Any]:
     # built when a model is configured; without it the corpus resolver falls back to
     # word overlap, which cannot detect contradiction and reports as much.
     reasoner: PassageReasoner | None = None
+    local_stance: LocalStance | None = None
     if settings.llm.enabled and settings.llm.api_key:
+        if settings.local.stance:
+            candidate = LocalStance(
+                directory=settings.local.directory, threads=settings.local.threads
+            )
+            local_stance = candidate if candidate.available else None
         reasoner = PassageReasoner(
             fetcher=SecureFetcher(timeout_seconds=MODEL_TIMEOUT_SECONDS),
             governor=governor,
@@ -245,6 +255,9 @@ async def build(settings: Settings) -> dict[str, Any]:
             # Ranks a page's passages against the claim before any of them are read.
             # Already loaded at startup, so this costs nothing per request.
             embedder=embedder,
+            # Our own relevance and support models read each page first and answer
+            # the clear cases (app/sources/local_reading.py).
+            stance=local_stance,
         )
 
     corpus = CorpusResolver(
@@ -433,11 +446,23 @@ async def build(settings: Settings) -> dict[str, Any]:
             api_format=WireFormat(settings.llm.api_format),
         )
 
+    # Text in pictures is read on our own server first (app/extraction/local_ocr.py);
+    # the hosted reader above is asked only when ours finds too little to go on.
+    if settings.local.ocr:
+        local_ocr = LocalOcr(directory=settings.local.directory, threads=settings.local.threads)
+        if local_ocr.available:
+            state["ocr"] = LocalFirstOcr(local=local_ocr, hosted=state.get("ocr"))
+
     # The picture checks (app/media/report.py): content credentials and the editing
     # signals always; reverse image search when Google Vision is configured, and the
     # AI-image detector when Sightengine is. A missing provider is reported as "not
     # checked" on the answer, never as a clean result.
     media_fetcher = SecureFetcher(timeout_seconds=15.0)
+    local_detector = build_local_detector(settings)
+    if local_detector is not None:
+        # Loaded in the background: the service answers at once, and the models are
+        # ready by the time a picture arrives.
+        asyncio.get_running_loop().run_in_executor(None, local_detector.warm)
     vision = settings.vision
     synthetic = settings.synthetic
     state["media_inspector"] = MediaInspector(
@@ -451,7 +476,10 @@ async def build(settings: Settings) -> dict[str, Any]:
             if vision.enabled and vision.api_key and vision.endpoint
             else None
         ),
-        detector=(
+        # Our own detectors first (app/media/detectors); the hosted one only when
+        # they are not installed and it is configured.
+        detector=local_detector
+        or (
             SightengineDetector(
                 fetcher=media_fetcher,
                 governor=governor,  # type: ignore[arg-type]
@@ -477,7 +505,13 @@ async def build(settings: Settings) -> dict[str, Any]:
         extraction_configured="claim_pipeline" in state,
         image_reading_configured="ocr" in state,
         reverse_image_search=vision.enabled and vision.api_key is not None,
-        ai_image_detector=synthetic.enabled and synthetic.api_key is not None,
+        ai_image_detector=(
+            "local:" + "+".join(local_detector.models)
+            if local_detector is not None
+            else synthetic.enabled and synthetic.api_key is not None
+        ),
+        local_ocr=isinstance(state.get("ocr"), LocalFirstOcr),
+        local_stance=reasoner is not None and local_stance is not None,
     )
     return state
 

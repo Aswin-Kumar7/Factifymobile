@@ -621,7 +621,16 @@ class EarlierCopy {
 }
 
 class MediaDetector {
-  const MediaDetector({required this.status, this.generated, this.faceSwap});
+  const MediaDetector({
+    required this.status,
+    this.generated,
+    this.faceSwap,
+    this.secondOpinion,
+    this.agreement,
+    this.faces,
+    this.voice,
+    this.onServer = false,
+  });
 
   /// checked or not_checked.
   final String status;
@@ -630,12 +639,32 @@ class MediaDetector {
   final double? generated;
   final double? faceSwap;
 
+  /// A second AI-picture model; both must agree before "likely AI-made".
+  final double? secondOpinion;
+
+  /// likely_ai, unclear or no_sign - never "real".
+  final String? agreement;
+
+  /// Faces the face-swap model judged; null when it did not run.
+  final int? faces;
+
+  /// A video's sound: likelihood of a machine-made voice. Experimental.
+  final double? voice;
+
+  /// Read by Factify's own models, sent nowhere else.
+  final bool onServer;
+
   bool get checked => status == 'checked';
 
   factory MediaDetector.fromJson(Map<String, dynamic> json) => MediaDetector(
     status: json['status'] as String? ?? 'not_checked',
     generated: (json['generated'] as num?)?.toDouble(),
     faceSwap: (json['face_swap'] as num?)?.toDouble(),
+    secondOpinion: (json['second_opinion'] as num?)?.toDouble(),
+    agreement: json['agreement'] as String?,
+    faces: (json['faces'] as num?)?.toInt(),
+    voice: (json['voice'] as num?)?.toDouble(),
+    onServer: json['on_server'] as bool? ?? false,
   );
 }
 

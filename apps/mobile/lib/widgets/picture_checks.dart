@@ -281,22 +281,54 @@ class _Detector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final k = FactifyTokens.of(context);
     final generated = detector.generated;
+    final second = detector.secondOpinion;
     final faceSwap = detector.faceSwap;
+    final voice = detector.voice;
+    final likelyAi = detector.agreement == 'likely_ai';
+    final agreement = switch (detector.agreement) {
+      'likely_ai' => second == null ? l10n.pcOneLikelyAi : l10n.pcAgreeLikelyAi,
+      'unclear' => l10n.pcAgreeUnclear,
+      'no_sign' => l10n.pcAgreeNoSign,
+      _ => null,
+    };
+    final nothing = generated == null && faceSwap == null && voice == null;
     final lines = <Widget>[
-      if (!detector.checked || (generated == null && faceSwap == null))
+      if (!detector.checked || nothing)
         _line(context, l10n.pcNotChecked, quiet: true)
       else ...[
-        if (generated != null) _Meter(value: generated, label: l10n.pcGenerated(_pct(generated))),
+        if (agreement != null) ...[
+          _line(context, agreement, raised: likelyAi),
+          const SizedBox(height: 8),
+        ],
+        if (generated != null)
+          _Meter(value: generated, label: l10n.pcGenerated(_pct(generated)), raised: likelyAi),
+        if (second != null) ...[
+          const SizedBox(height: 8),
+          _Meter(value: second, label: l10n.pcSecondOpinion(_pct(second)), raised: likelyAi),
+        ],
         if (faceSwap != null) ...[
           const SizedBox(height: 8),
           _Meter(value: faceSwap, label: l10n.pcFaceSwap(_pct(faceSwap))),
+          if (detector.faces != null) ...[
+            const SizedBox(height: 4),
+            _line(context, l10n.pcFacesChecked(detector.faces!), quiet: true),
+          ],
+        ] else if (detector.faces == 0) ...[
+          const SizedBox(height: 8),
+          _line(context, l10n.pcNoFace, quiet: true),
+        ],
+        if (voice != null) ...[
+          const SizedBox(height: 8),
+          _Meter(value: voice, label: l10n.pcVoice(_pct(voice))),
         ],
         const SizedBox(height: 6),
-        Text(
-          l10n.pcDetectorNote,
-          style: FactifyText.sans(11.5, color: FactifyTokens.of(context).ink3),
-        ),
+        Text(l10n.pcDetectorNote, style: FactifyText.sans(11.5, color: k.ink3)),
+        if (detector.onServer) ...[
+          const SizedBox(height: 2),
+          Text(l10n.pcOnServer, style: FactifyText.sans(11.5, color: k.ink3)),
+        ],
       ],
     ];
     return _Row(icon: FxIcons.scales, title: l10n.pcDetector, children: lines);
@@ -306,15 +338,18 @@ class _Detector extends StatelessWidget {
 }
 
 class _Meter extends StatelessWidget {
-  const _Meter({required this.value, required this.label});
+  const _Meter({required this.value, required this.label, bool? raised}) : _raised = raised;
 
   final double value;
   final String label;
 
+  /// Set by the caller when the server's own boundaries decided it; otherwise 0.7.
+  final bool? _raised;
+
   @override
   Widget build(BuildContext context) {
     final k = FactifyTokens.of(context);
-    final raised = value >= 0.7;
+    final raised = _raised ?? value >= 0.7;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

@@ -195,6 +195,32 @@ class LimitSettings(BaseModel):
     raw_media_retention_hours: int = Field(default=24, gt=0, le=72)
 
 
+class LocalModelSettings(BaseModel):
+    """The models we run on our own server instead of another company's API.
+
+    Each one is used only when its files are in `directory` and its libraries are
+    installed (`uv sync --extra models`); otherwise that check says "not checked",
+    never a made-up answer. Set FACTIFY_LOCAL__<NAME>=false to switch one off.
+    """
+
+    model_config = {"frozen": True}
+
+    # Relative to the working directory; `.cache/` is never committed.
+    directory: str = ".cache/models"
+    # CPU threads each model may use per call.
+    threads: int = Field(default=4, ge=1, le=32)
+    # AI-made pictures: Community Forensics (Aug 2026) with DDA as a second opinion.
+    pictures: bool = True
+    # Face swaps: YuNet finds faces, GenD judges them.
+    faces: bool = True
+    # Cloned voices in a video's sound: Spectra-AASIST. Experimental.
+    voice: bool = True
+    # Text in pictures: PaddleOCR's models through RapidOCR.
+    ocr: bool = True
+    # Which pages speak to a claim, and how: a reranker and two NLI models.
+    stance: bool = True
+
+
 class Settings(BaseSettings):
     """Application settings, loaded once at startup.
 
@@ -238,6 +264,7 @@ class Settings(BaseSettings):
     models: ModelSettings = ModelSettings()
     limits: LimitSettings = LimitSettings()
     auth: AuthSettings = AuthSettings()
+    local: LocalModelSettings = LocalModelSettings()
 
     # Optional providers. Every default is off, and no default enables anything
     # metered — an accidental deploy must cost nothing and reach for nothing.

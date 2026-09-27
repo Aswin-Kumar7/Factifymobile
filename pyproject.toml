@@ -22,6 +22,33 @@ dependencies = [
     "c2pa-python>=0.37.12",
 ]
 
+[project.optional-dependencies]
+# The detectors and readers that run on our own server instead of another company's
+# API (docs: app/media/detectors, app/extraction/local_ocr.py, app/sources/stance.py).
+# Optional, so the test suite and CI do not install PyTorch; `uv sync --extra models`.
+models = [
+    # CPU builds only (see [tool.uv.sources]): the server has no GPU, and the default
+    # Linux wheel carries ~2.5 GB of CUDA libraries it would never load.
+    "torch>=2.8",
+    "torchvision>=0.23",
+    "timm>=1.0.20",
+    # GenD's model code was written against 4.x; 5.x changed loading.
+    "transformers>=4.56,<5",
+    "peft>=0.15",
+    "safetensors>=0.4",
+    # Text in pictures, read on the server: PaddleOCR's models through ONNX Runtime.
+    "rapidocr>=3.9.2",
+]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+torchvision = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
 [dependency-groups]
 dev = [
     "pytest>=8.3",

@@ -13,8 +13,10 @@ through. So they are handled exactly like the forensic panel (`forensics.py`):
     never rounded into a label like "fake";
   - a detector that cannot be reached says so; it never reads as "not AI-generated".
 
-The picture is sent to the provider to be read, as it is to the model that reads its
-text and to the reverse image search. Nothing is stored here.
+Since 2026-09-28 the detectors run on our own server (`app/media/detectors`): two
+AI-picture models that must agree before anything is called likely AI-made, a face
+model for swaps, and a voice model for a video's sound. The hosted detector is kept
+as an option; a picture read on our server is never sent anywhere.
 """
 
 from __future__ import annotations
@@ -37,43 +39,85 @@ MODELS = "genai,deepfake"
 
 # At or above these a signal is raised as a suspicion. Sightengine's own guidance is
 # 0.5 for both; set higher here because a false "AI-made" on a real photograph is the
-# costlier error for a person deciding whether to believe it.
+# costlier error for a person deciding whether to believe it. Our own models carry
+# their own boundaries on each reading (`generated_at`, ...), set from their makers'
+# calibration and our measurements (scripts/eval_models.py).
 GENERATED_AT = 0.7
 FACE_SWAP_AT = 0.7
+SECOND_AT = 0.5
+VOICE_AT = 0.5
+
+# What the two AI-picture models said together.
+LIKELY_AI = "likely_ai"
+UNCLEAR = "unclear"
+NO_SIGN = "no_sign"
 
 
 @dataclass(frozen=True, slots=True)
 class SyntheticReading:
-    """What the detector said about one picture, or why it said nothing."""
+    """What the detectors said about one picture or clip, or why they said nothing."""
 
     generated: float | None = None
     face_swap: float | None = None
     reason: str | None = None
+    # A second AI-picture model, which must agree before anything is called likely
+    # AI-made: detectors differ by 20-40 points on the same generator (DailyBench).
+    second_opinion: float | None = None
+    generated_at: float = GENERATED_AT
+    second_at: float = SECOND_AT
+    face_swap_at: float = FACE_SWAP_AT
+    # How many faces the face model judged; None when the face check did not run.
+    faces: int | None = None
+    # A video's sound: the likelihood that the voice was made by a speech generator.
+    voice: float | None = None
+    voice_at: float = VOICE_AT
+    # Read by our own models, on our own server.
+    on_server: bool = False
+    models: tuple[str, ...] = ()
 
     @property
     def checked(self) -> bool:
         return self.reason is None
 
+    @property
+    def outcome(self) -> str | None:
+        """likely_ai only when every AI-picture model that read it agrees; unclear when
+        they disagree. Never "real": a detector that sees nothing proves nothing."""
+        if self.generated is None:
+            return None
+        votes = [self.generated >= self.generated_at]
+        if self.second_opinion is not None:
+            votes.append(self.second_opinion >= self.second_at)
+        if all(votes):
+            return LIKELY_AI
+        if any(votes):
+            return UNCLEAR
+        return NO_SIGN
+
     def advisories(self, *, artifact_ref: str) -> tuple[Advisory, ...]:
         """The reading as advisories - the only form in which it leaves this module."""
+        version = "+".join(self.models) if self.models else VERSION
         found: list[Advisory] = []
         if self.generated is not None:
+            estimate = (
+                f"Two AI-image detectors on our server read this picture: {self.generated:.0%} "
+                f"and {self.second_opinion:.0%} likely made by an image generator"
+                if self.second_opinion is not None
+                else f"An AI-image detector estimates a {self.generated:.0%} likelihood "
+                "that this picture was made by an image generator"
+            )
             found.append(
                 Advisory(
                     id=f"adv:generated:{artifact_ref}",
                     provider="ai_generation",
                     signal=(
                         SyntheticSignal.ADVISORY_SUSPICION
-                        if self.generated >= GENERATED_AT
+                        if self.outcome == LIKELY_AI
                         else SyntheticSignal.NO_SIGNAL
                     ),
-                    note=(
-                        f"An AI-image detector estimates a {self.generated:.0%} likelihood "
-                        "that this picture was made by an image generator. A detector's "
-                        "estimate, not a finding."
-                    ),
+                    note=f"{estimate}. A detector's estimate, not a finding.",
                     score=round(self.generated, 4),
-                    provider_version=VERSION,
+                    provider_version=version,
                     artifact_ref=artifact_ref,
                 )
             )
@@ -84,7 +128,7 @@ class SyntheticReading:
                     provider="face_swap",
                     signal=(
                         SyntheticSignal.ADVISORY_SUSPICION
-                        if self.face_swap >= FACE_SWAP_AT
+                        if self.face_swap >= self.face_swap_at
                         else SyntheticSignal.NO_SIGNAL
                     ),
                     note=(
@@ -93,7 +137,27 @@ class SyntheticReading:
                         "detector's estimate, not a finding."
                     ),
                     score=round(self.face_swap, 4),
-                    provider_version=VERSION,
+                    provider_version=version,
+                    artifact_ref=artifact_ref,
+                )
+            )
+        if self.voice is not None:
+            found.append(
+                Advisory(
+                    id=f"adv:voice:{artifact_ref}",
+                    provider="cloned_voice",
+                    signal=(
+                        SyntheticSignal.ADVISORY_SUSPICION
+                        if self.voice >= self.voice_at
+                        else SyntheticSignal.NO_SIGNAL
+                    ),
+                    note=(
+                        f"A voice detector estimates a {self.voice:.0%} likelihood that the "
+                        "speech in this video was made by a speech generator. Experimental, "
+                        "and weak on Hindi and on forwarded audio: an estimate, not a finding."
+                    ),
+                    score=round(self.voice, 4),
+                    provider_version=version,
                     artifact_ref=artifact_ref,
                 )
             )

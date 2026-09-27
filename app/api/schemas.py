@@ -409,6 +409,17 @@ class DetectorResponse(BaseModel):
     generated: float | None = None
     # Only when there was a face to judge.
     face_swap: float | None = None
+    # Added in 1.3 (2026-09-28), all optional: our own detectors.
+    # A second AI-picture model; both must agree before "likely_ai".
+    second_opinion: float | None = None
+    # likely_ai | unclear | no_sign - never "real".
+    agreement: str | None = None
+    # How many faces the face model judged; absent when it did not run.
+    faces: int | None = None
+    # A video's sound: likelihood the voice was made by a speech generator.
+    voice: float | None = None
+    # Read on our own server; nothing was sent to another company.
+    on_server: bool = False
 
 
 class EditingResponse(BaseModel):
@@ -733,6 +744,11 @@ def media_report_to_response(report: Any, *, thumbnails: str) -> MediaReportResp
             status="checked" if synthetic.checked else "not_checked",
             generated=synthetic.generated,
             face_swap=synthetic.face_swap,
+            second_opinion=synthetic.second_opinion,
+            agreement=synthetic.outcome,
+            faces=synthetic.faces,
+            voice=synthetic.voice,
+            on_server=synthetic.on_server,
         ),
         editing=EditingResponse(
             status="checked" if editing.rendered else "not_checked",
