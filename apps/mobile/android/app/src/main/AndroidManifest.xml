@@ -53,12 +53,11 @@
                 copy it out loses most of them at that step.
             -->
 
-            <!-- Text and links, from a messaging app or a browser. -->
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/*" />
-            </intent-filter>
+            <!--
+                Text and links go to QuickVerdictActivity below, which answers over
+                the chat; it hands them here, as an explicit share, when the quick
+                verdict is turned off in Profile.
+            -->
 
             <!-- A single image or video, from the gallery or a chat. -->
             <intent-filter>
@@ -102,6 +101,43 @@
                 <data android:scheme="factify" android:host="auth-callback" />
             </intent-filter>
         </activity>
+
+        <!--
+            The quick verdict over the chat (v5, 2.7): text and links shared from
+            another app are checked in a see-through window over that app, and the
+            answer shown in a sheet with "Copy correction". Its own Dart entry point
+            (quickVerdictMain); left out of Recents, since it belongs to the chat.
+        -->
+        <activity
+            android:name=".QuickVerdictActivity"
+            android:exported="true"
+            android:label="Factify"
+            android:theme="@style/QuickVerdictTheme"
+            android:excludeFromRecents="true"
+            android:taskAffinity="com.factify.factify_mobile.quick"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/*" />
+            </intent-filter>
+        </activity>
+
+        <!-- The home-screen widget (v5, 2.8): three buttons that open the app. -->
+        <receiver
+            android:name=".FactifyWidget"
+            android:exported="true"
+            android:label="Factify">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/factify_widget_info" />
+        </receiver>
 
         <!-- Keeps a check running while its answer is waited for (see above). -->
         <service

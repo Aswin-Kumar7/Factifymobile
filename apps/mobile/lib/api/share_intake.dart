@@ -14,7 +14,9 @@ import 'package:flutter/services.dart';
 class SharedContent {
   const SharedContent({required this.kind, required this.value, this.mimeType});
 
-  /// One of `text`, `url`, `file` or `error`.
+  /// One of `text`, `url`, `file` or `error` - or, delivered the same way, `record`
+  /// (open a result kept in History: [value] is its id, from the quick verdict) and
+  /// `widget` (a home-screen widget button: `paste`, `camera` or `history`).
   final String kind;
 
   /// The text itself, or a path to a file already copied into our cache.

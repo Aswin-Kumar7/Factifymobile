@@ -2021,4 +2021,43 @@ class AppLocalizationsHi extends AppLocalizations {
   String settingSavedShort(int count) {
     return 'इस फ़ोन पर $count';
   }
+
+  @override
+  String quickCheckedIn(int seconds) {
+    return '$seconds सेकंड में जाँचा';
+  }
+
+  @override
+  String get quickCopyCorrection => 'सुधार कॉपी करें';
+
+  @override
+  String get quickCopyContext => 'संदर्भ कॉपी करें';
+
+  @override
+  String get quickCopyResult => 'नतीजा कॉपी करें';
+
+  @override
+  String get quickCopyNote => 'एक संदेश कॉपी करें';
+
+  @override
+  String get quickCopied => 'कॉपी हो गया — चैट में चिपकाएँ';
+
+  @override
+  String get quickOpenResult => 'पूरा नतीजा खोलें';
+
+  @override
+  String get quickOpenApp => 'Factify खोलें';
+
+  @override
+  String get quickSignIn => 'इसे जाँचने के लिए Factify में साइन इन करें।';
+
+  @override
+  String get settingQuick => 'चैट के ऊपर जवाब';
+
+  @override
+  String get settingQuickBody =>
+      'शेयर किए गए टेक्स्ट का जवाब चैट के ऊपर ही खुलता है';
+
+  @override
+  String get profileLoadFailed => 'आपका खाता अभी लोड नहीं हो सका।';
 }

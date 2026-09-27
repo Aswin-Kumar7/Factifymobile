@@ -198,6 +198,14 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// Check with the copied text in the box (the home-screen widget's "Check copied
+  /// text"): the tap on the widget is the person asking for the clipboard.
+  Future<void> pasteCopiedText() async {
+    clearInput();
+    setState(() => _type = InputType.text);
+    await _paste();
+  }
+
   /// Opens the camera straight away (the home-screen widget's "Photo").
   Future<void> takePhoto() async {
     clearInput();

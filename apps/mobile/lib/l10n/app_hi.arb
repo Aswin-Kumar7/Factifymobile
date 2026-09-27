@@ -484,5 +484,17 @@
   "errPausedTitle": "जाँच अभी रुकी हुई है",
   "errClose": "बंद करें",
   "errKeptFile": "अब भी जुड़ी है, दोबारा चुनना नहीं पड़ेगा",
-  "settingSavedShort": "इस फ़ोन पर {count}"
+  "settingSavedShort": "इस फ़ोन पर {count}",
+  "quickCheckedIn": "{seconds} सेकंड में जाँचा",
+  "quickCopyCorrection": "सुधार कॉपी करें",
+  "quickCopyContext": "संदर्भ कॉपी करें",
+  "quickCopyResult": "नतीजा कॉपी करें",
+  "quickCopyNote": "एक संदेश कॉपी करें",
+  "quickCopied": "कॉपी हो गया — चैट में चिपकाएँ",
+  "quickOpenResult": "पूरा नतीजा खोलें",
+  "quickOpenApp": "Factify खोलें",
+  "quickSignIn": "इसे जाँचने के लिए Factify में साइन इन करें।",
+  "settingQuick": "चैट के ऊपर जवाब",
+  "settingQuickBody": "शेयर किए गए टेक्स्ट का जवाब चैट के ऊपर ही खुलता है",
+  "profileLoadFailed": "आपका खाता अभी लोड नहीं हो सका।"
 }

@@ -2024,4 +2024,43 @@ class AppLocalizationsEn extends AppLocalizations {
   String settingSavedShort(int count) {
     return '$count on this phone';
   }
+
+  @override
+  String quickCheckedIn(int seconds) {
+    return 'checked in $seconds s';
+  }
+
+  @override
+  String get quickCopyCorrection => 'Copy correction';
+
+  @override
+  String get quickCopyContext => 'Copy context';
+
+  @override
+  String get quickCopyResult => 'Copy result';
+
+  @override
+  String get quickCopyNote => 'Copy a note';
+
+  @override
+  String get quickCopied => 'Copied — paste it in the chat';
+
+  @override
+  String get quickOpenResult => 'Open full result';
+
+  @override
+  String get quickOpenApp => 'Open Factify';
+
+  @override
+  String get quickSignIn => 'Sign in to Factify to check this.';
+
+  @override
+  String get settingQuick => 'Answer over the chat';
+
+  @override
+  String get settingQuickBody =>
+      'Text you share opens its answer over the chat';
+
+  @override
+  String get profileLoadFailed => 'Your account couldn\'t be loaded just now.';
 }

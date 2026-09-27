@@ -78,8 +78,42 @@ class _MainShellState extends State<MainShell> {
     if (!mounted) return;
     // A share while a result or a check is open replaces it.
     Navigator.of(context).popUntil((route) => route.isFirst);
+    switch (content.kind) {
+      case 'record':
+        unawaited(_openRecord(content.value));
+      case 'widget':
+        _widgetButton(content.value);
+      default:
+        setState(() => _tab = 0);
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _home.currentState?.receiveShare(content),
+        );
+    }
+  }
+
+  /// "Open full result" on the quick verdict: the check it kept in History, which
+  /// this copy of the app reads again first, since the quick verdict wrote it.
+  Future<void> _openRecord(String id) async {
+    final history = widget.services.history;
+    await history.load();
+    final record = history.records.where((r) => r.id == id).firstOrNull;
+    if (!mounted) return;
+    setState(() => _tab = 1);
+    if (record != null) openHistoryRecord(context, widget.services, record);
+  }
+
+  /// A home-screen widget button: Check with the copied text, the camera, or History.
+  void _widgetButton(String button) {
+    if (button == 'history') {
+      setState(() => _tab = 1);
+      return;
+    }
     setState(() => _tab = 0);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _home.currentState?.receiveShare(content));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final home = _home.currentState;
+      if (home == null) return;
+      unawaited(button == 'camera' ? home.takePhoto() : home.pasteCopiedText());
+    });
   }
 
   @override

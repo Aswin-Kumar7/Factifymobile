@@ -13,6 +13,7 @@ import 'history/history_store.dart';
 import 'l10n/language_preference.dart';
 import 'notify/notify_preference.dart';
 import 'notify/ready_notifier.dart';
+import 'quick/quick_preference.dart';
 import 'theme/theme_mode_preference.dart';
 
 class AppServices {
@@ -24,9 +25,11 @@ class AppServices {
     ThemeModePreference? themeMode,
     ReadyNotifier? notifier,
     NotifyPreference? notifyByDefault,
+    QuickVerdictPreference? quickVerdict,
   }) : themeMode = themeMode ?? ThemeModePreference.inMemory(),
        notifier = notifier ?? SilentNotifier(),
-       notifyByDefault = notifyByDefault ?? NotifyPreference.inMemory();
+       notifyByDefault = notifyByDefault ?? NotifyPreference.inMemory(),
+       quickVerdict = quickVerdict ?? QuickVerdictPreference.inMemory();
 
   final FactifyClient client;
   final AuthService auth;
@@ -37,4 +40,7 @@ class AppServices {
   /// Tests get one that notifies nobody.
   final ReadyNotifier notifier;
   final NotifyPreference notifyByDefault;
+
+  /// Whether text shared to Factify is answered over the chat, or opens the app.
+  final QuickVerdictPreference quickVerdict;
 }

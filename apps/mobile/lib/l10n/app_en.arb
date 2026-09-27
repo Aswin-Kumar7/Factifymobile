@@ -1267,5 +1267,28 @@
         "type": "int"
       }
     }
-  }
+  },
+  "quickCheckedIn": "checked in {seconds} s",
+  "@quickCheckedIn": {
+    "description": "Beside the Factify name on the quick verdict.",
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "quickCopyCorrection": "Copy correction",
+  "quickCopyContext": "Copy context",
+  "quickCopyResult": "Copy result",
+  "quickCopyNote": "Copy a note",
+  "@quickCopyNote": {
+    "description": "For an Unconfirmed result: a polite note that it could not be confirmed yet."
+  },
+  "quickCopied": "Copied — paste it in the chat",
+  "quickOpenResult": "Open full result",
+  "quickOpenApp": "Open Factify",
+  "quickSignIn": "Sign in to Factify to check this.",
+  "settingQuick": "Answer over the chat",
+  "settingQuickBody": "Text you share opens its answer over the chat",
+  "profileLoadFailed": "Your account couldn't be loaded just now."
 }

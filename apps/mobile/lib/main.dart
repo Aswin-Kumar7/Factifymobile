@@ -21,6 +21,8 @@ import 'l10n/app_localizations.dart';
 import 'l10n/language_preference.dart';
 import 'notify/notify_preference.dart';
 import 'notify/ready_notifier.dart';
+import 'quick/quick_preference.dart';
+import 'quick/quick_verdict.dart';
 import 'screens/history_screen.dart';
 import 'screens/main_shell.dart';
 import 'screens/splash_screen.dart';
@@ -35,15 +37,23 @@ Future<void> main() async {
   final themeMode = await ThemeModePreference.load();
   final notifyByDefault = await NotifyPreference.load();
   final notifier = await LocalReadyNotifier.start();
+  final quickVerdict = await QuickVerdictPreference.load();
   runApp(
     FactifyApp(
       language: language,
       themeMode: themeMode,
       notifier: notifier,
       notifyByDefault: notifyByDefault,
+      quickVerdict: quickVerdict,
     ),
   );
 }
+
+/// The quick verdict over the chat (android QuickVerdictActivity): text shared to
+/// Factify, answered in a sheet over the app it came from. Its own entry point, so
+/// that window starts one check and one sheet rather than the whole app.
+@pragma('vm:entry-point')
+Future<void> quickVerdictMain() => runQuickVerdict();
 
 class FactifyApp extends StatefulWidget {
   const FactifyApp({
@@ -55,6 +65,7 @@ class FactifyApp extends StatefulWidget {
     this.history,
     this.notifier,
     this.notifyByDefault,
+    this.quickVerdict,
     bool? showIntro,
   }) : showIntro = showIntro ?? client == null;
 
@@ -77,6 +88,9 @@ class FactifyApp extends StatefulWidget {
   final ReadyNotifier? notifier;
   final NotifyPreference? notifyByDefault;
 
+  /// Whether shared text is answered over the chat (Profile).
+  final QuickVerdictPreference? quickVerdict;
+
   /// The splash and the welcome. On for the app; a test that supplies a client
   /// starts in the app itself unless it asks for them.
   final bool showIntro;
@@ -85,7 +99,7 @@ class FactifyApp extends StatefulWidget {
   State<FactifyApp> createState() => _FactifyAppState();
 }
 
-class _FactifyAppState extends State<FactifyApp> {
+class _FactifyAppState extends State<FactifyApp> with WidgetsBindingObserver {
   late final FactifyClient _client = widget.client ?? FactifyClient();
   late final AuthService _auth =
       widget.auth ??
@@ -105,6 +119,7 @@ class _FactifyAppState extends State<FactifyApp> {
     themeMode: widget.themeMode ?? ThemeModePreference.inMemory(ThemeMode.light),
     notifier: widget.notifier,
     notifyByDefault: widget.notifyByDefault,
+    quickVerdict: widget.quickVerdict,
   );
 
   final _navigator = GlobalKey<NavigatorState>();
@@ -119,6 +134,14 @@ class _FactifyAppState extends State<FactifyApp> {
     // Without the splash (tests), nothing else would load the saved history.
     if (!widget.showIntro) unawaited(_history.load());
     _taps = _services.notifier.taps.listen((tap) => unawaited(_open(tap)));
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  /// Back to the front: History is read again, since a check answered over a chat
+  /// (the quick verdict, which runs apart from the app) may have been kept since.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _history.loaded) unawaited(_history.load());
   }
 
   /// A tapped "your check is ready": the result, from History, where the finished
@@ -133,6 +156,7 @@ class _FactifyAppState extends State<FactifyApp> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     unawaited(_taps?.cancel());
     if (widget.auth == null) _auth.dispose();
     if (widget.client == null) _client.close();

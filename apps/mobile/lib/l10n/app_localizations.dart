@@ -3007,6 +3007,78 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{count} on this phone'**
   String settingSavedShort(int count);
+
+  /// Beside the Factify name on the quick verdict.
+  ///
+  /// In en, this message translates to:
+  /// **'checked in {seconds} s'**
+  String quickCheckedIn(int seconds);
+
+  /// No description provided for @quickCopyCorrection.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy correction'**
+  String get quickCopyCorrection;
+
+  /// No description provided for @quickCopyContext.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy context'**
+  String get quickCopyContext;
+
+  /// No description provided for @quickCopyResult.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy result'**
+  String get quickCopyResult;
+
+  /// For an Unconfirmed result: a polite note that it could not be confirmed yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy a note'**
+  String get quickCopyNote;
+
+  /// No description provided for @quickCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Copied — paste it in the chat'**
+  String get quickCopied;
+
+  /// No description provided for @quickOpenResult.
+  ///
+  /// In en, this message translates to:
+  /// **'Open full result'**
+  String get quickOpenResult;
+
+  /// No description provided for @quickOpenApp.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Factify'**
+  String get quickOpenApp;
+
+  /// No description provided for @quickSignIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in to Factify to check this.'**
+  String get quickSignIn;
+
+  /// No description provided for @settingQuick.
+  ///
+  /// In en, this message translates to:
+  /// **'Answer over the chat'**
+  String get settingQuick;
+
+  /// No description provided for @settingQuickBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Text you share opens its answer over the chat'**
+  String get settingQuickBody;
+
+  /// No description provided for @profileLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Your account couldn\'t be loaded just now.'**
+  String get profileLoadFailed;
 }
 
 class _AppLocalizationsDelegate

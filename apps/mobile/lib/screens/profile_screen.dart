@@ -48,12 +48,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
   /// Whether the service answered: null while asking.
   bool? _online;
 
+  /// Signed in, but the account could not be read: said, with "try again", rather
+  /// than a spinner that never stops.
+  bool _accountFailed = false;
+
   AppServices get _services => widget.services;
 
   @override
   void initState() {
     super.initState();
     unawaited(_probe());
+    unawaited(_loadAccount());
+  }
+
+  Future<void> _loadAccount() async {
+    final auth = _services.auth;
+    if (!auth.signedIn || auth.account != null) return;
+    if (mounted) setState(() => _accountFailed = false);
+    final account = await auth.refreshAccount();
+    if (mounted && auth.signedIn && account == null) setState(() => _accountFailed = true);
   }
 
   Future<void> _probe() async {
@@ -63,7 +76,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _refresh() async {
-    await Future.wait([_services.auth.refreshAccount(), _probe()]);
+    await Future.wait([_loadAccount(), _services.auth.refreshAccount(), _probe()]);
   }
 
   Future<void> _notify(bool on) async {
@@ -92,6 +105,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _services.language,
             _services.themeMode,
             _services.notifyByDefault,
+            _services.quickVerdict,
           ]),
           builder: (context, _) {
             final account = auth.account;
@@ -121,7 +135,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _Credits(account: account),
                     const SizedBox(height: 10),
                     _Stats(account: account),
-                  ] else if (auth.signedIn)
+                  ] else if (auth.signedIn && _accountFailed)
+                    FxCard(
+                      radius: 22,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(l10n.profileLoadFailed, style: FactifyText.sans(14, color: k.ink2)),
+                          const SizedBox(height: 12),
+                          FxButton(
+                            label: l10n.tryAgain,
+                            icon: FxIcons.retry,
+                            variant: FxButtonVariant.outline,
+                            height: 46,
+                            fontSize: 14,
+                            onPressed: () => unawaited(_loadAccount()),
+                          ),
+                        ],
+                      ),
+                    )
+                  else if (auth.signedIn)
                     Padding(
                       padding: const EdgeInsets.all(32),
                       child: Center(child: CircularProgressIndicator(color: k.acc)),
@@ -669,6 +702,17 @@ class _Settings extends StatelessWidget {
               value: services.notifyByDefault.value,
               label: l10n.settingNotify,
               onChanged: onNotify,
+            ),
+          ),
+          _Row(
+            icon: FxIcons.chat,
+            title: l10n.settingQuick,
+            subtitle: l10n.settingQuickBody,
+            onTap: () => unawaited(services.quickVerdict.choose(!services.quickVerdict.value)),
+            trailing: FxSwitch(
+              value: services.quickVerdict.value,
+              label: l10n.settingQuick,
+              onChanged: (on) => unawaited(services.quickVerdict.choose(on)),
             ),
           ),
           _Row(

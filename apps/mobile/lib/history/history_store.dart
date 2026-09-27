@@ -104,21 +104,33 @@ class HistoryStore extends ChangeNotifier {
   List<HistoryRecord> get records => _records;
   bool get loaded => _loaded;
 
+  /// Reads what is kept on the phone. Called again whenever the app comes back to
+  /// the front, since a check answered over a chat (the quick verdict, which runs
+  /// apart from the app) may have been kept since.
   Future<void> load() async {
+    await _reread();
+    _loaded = true;
+    notifyListeners();
+  }
+
+  /// The kept list, as it is on the phone now. Every change starts from it rather
+  /// than from memory: the quick verdict keeps checks from a second copy of the
+  /// app, and writing an old list back would drop them.
+  Future<void> _reread() async {
+    final store = _store;
+    if (store == null) return;
     try {
-      final saved = await _store?.getString(_key);
-      if (saved != null) {
-        _records = [
-          for (final item in jsonDecode(saved) as List)
-            ?HistoryRecord.fromJson((item as Map).cast<String, dynamic>()),
-        ];
-      }
+      final saved = await store.getString(_key);
+      _records = saved == null
+          ? const []
+          : [
+              for (final item in jsonDecode(saved) as List)
+                ?HistoryRecord.fromJson((item as Map).cast<String, dynamic>()),
+            ];
     } catch (_) {
       // An unreadable history is started afresh rather than crashing the app.
       _records = const [];
     }
-    _loaded = true;
-    notifyListeners();
   }
 
   /// Keep a finished check, newest first.
@@ -133,6 +145,7 @@ class HistoryStore extends ChangeNotifier {
       checkedAt: DateTime.now(),
       verdictJson: verdict.raw,
     );
+    await _reread();
     _records = [record, ..._records].take(limit).toList();
     notifyListeners();
     await _save();
@@ -155,6 +168,7 @@ class HistoryStore extends ChangeNotifier {
   }
 
   Future<void> remove(String id) async {
+    await _reread();
     _records = _records.where((r) => r.id != id).toList();
     notifyListeners();
     await _save();

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The home-screen widget's colours: the v5 light tokens (lib/theme/tokens.dart). -->
+<resources>
+    <color name="widget_bg">#F4F3EF</color>
+    <color name="widget_sf2">#EEEDE8</color>
+    <color name="widget_ink">#111513</color>
+    <color name="widget_ink3">#7B817D</color>
+    <color name="widget_acc">#0E6B4F</color>
+    <color name="widget_on_acc">#FFFFFF</color>
+</resources>

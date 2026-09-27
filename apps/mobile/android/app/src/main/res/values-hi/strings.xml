@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_description">कॉपी किया टेक्स्ट या फ़ोटो जाँचें, या इतिहास खोलें</string>
+    <string name="widget_check_copied">कॉपी किया टेक्स्ट जाँचें</string>
+    <string name="widget_photo">फ़ोटो</string>
+    <string name="widget_history">इतिहास</string>
+</resources>

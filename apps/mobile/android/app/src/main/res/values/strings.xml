@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Native strings: the home-screen widget, drawn by the launcher, not by Flutter. -->
+<resources>
+    <string name="widget_description">Check copied text or a photo, or open History</string>
+    <string name="widget_check_copied">Check copied text</string>
+    <string name="widget_photo">Photo</string>
+    <string name="widget_history">History</string>
+</resources>

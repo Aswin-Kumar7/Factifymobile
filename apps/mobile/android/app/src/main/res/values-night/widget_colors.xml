@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The widget in dark mode: the v5 dark tokens. -->
+<resources>
+    <color name="widget_bg">#0B0E0D</color>
+    <color name="widget_sf2">#1E2421</color>
+    <color name="widget_ink">#EDEFEB</color>
+    <color name="widget_ink3">#848C88</color>
+    <color name="widget_acc">#52C99D</color>
+    <color name="widget_on_acc">#04130D</color>
+</resources>

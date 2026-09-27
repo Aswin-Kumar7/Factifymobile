@@ -109,6 +109,18 @@ class MainActivity : FlutterActivity() {
      */
     private fun parse(intent: Intent?): Map<String, String?>? {
         if (intent == null) return null
+        // Not shares, but delivered the same way: open a kept result (from the quick
+        // verdict), or one of the home-screen widget's buttons.
+        when (intent.action) {
+            ACTION_OPEN_RECORD -> {
+                val record = intent.getStringExtra(EXTRA_RECORD) ?: return null
+                return mapOf("kind" to "record", "value" to record)
+            }
+            ACTION_WIDGET -> {
+                val button = intent.getStringExtra(EXTRA_WIDGET) ?: return null
+                return mapOf("kind" to "widget", "value" to button)
+            }
+        }
         if (intent.action != Intent.ACTION_SEND && intent.action != Intent.ACTION_SEND_MULTIPLE) {
             return null
         }
@@ -181,8 +193,16 @@ class MainActivity : FlutterActivity() {
         return data.toString()
     }
 
-    private companion object {
-        const val AUTH_CHANNEL = "factify/auth"
-        const val CHANNEL = "factify/share"
+    companion object {
+        private const val AUTH_CHANNEL = "factify/auth"
+        private const val CHANNEL = "factify/share"
+
+        /** Open a result kept in History: [EXTRA_RECORD] names it. */
+        const val ACTION_OPEN_RECORD = "com.factify.factify_mobile.OPEN_RECORD"
+        const val EXTRA_RECORD = "record"
+
+        /** A home-screen widget button: [EXTRA_WIDGET] is paste, camera or history. */
+        const val ACTION_WIDGET = "com.factify.factify_mobile.WIDGET"
+        const val EXTRA_WIDGET = "button"
     }
 }
