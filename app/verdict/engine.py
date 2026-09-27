@@ -29,12 +29,12 @@ from app.domain.enums import (
     Tier,
     Verdict,
 )
-from app.domain.evidence import Evidence
+from app.domain.evidence import Evidence, is_narrower_scope
 from app.domain.publishers import publishers_of
 
 # Stamped on every verdict. A cached verdict produced under older rules is therefore
 # identifiable, and the cache can refuse to serve it (M13).
-RULE_VERSION = "2026.09.26.3"
+RULE_VERSION = "2026.09.27.1"
 
 # Default number of genuinely independent origins required before corroboration can
 # support a claim. Tenant-configurable later; never below two, because one origin is
@@ -456,6 +456,41 @@ def _decide_rules(
                 f"{claim.document_count} documents support this claim."
             ),
             supporting_evidence_ids=tuple(e.id for e in supporting),
+        )
+
+    # Rule 4b — the claim is a real thing inflated. Credible sources establish only a
+    # narrower version of it: one state's scheme passed off as the government's,
+    # eligible families as everyone, a one-time grant as a monthly one.
+    #
+    # "Govt to pay Rs 5000 a month to every woman" came back SUPPORTED on two
+    # reports of a Tamil Nadu payment of Rs 5,000 to 1.3 crore women (2026-09-27).
+    # The passages were true; the forward was not. Neither SUPPORTED nor CONTRADICTED
+    # is honest - something real happened, and not what the claim says - and that is
+    # what MISLEADING_CONTEXT means.
+    #
+    # Held to the bar a contradiction meets (rules 3b and 3c): two independent
+    # publishers, or one highly credible one. Checked after rule 4, so a claim that
+    # two independent origins establish in full is still SUPPORTED.
+    narrower = [
+        e
+        for e in evidence
+        if e.direction is Direction.CONTEXTUALIZES
+        and is_narrower_scope(e.match_basis.metric)
+        and e.is_decisive_capable
+    ]
+    narrower_origins = _publishers(narrower)
+    if narrower and (
+        len(narrower_origins) >= min_origins
+        or any(e.credibility is Credibility.HIGH for e in narrower)
+    ):
+        return Decision(
+            status=ClaimStatus.MISLEADING_CONTEXT,
+            rule_id="rule.narrower_scope",
+            reason=(
+                "Sources show only a narrower version of this claim: "
+                f"{', '.join(sorted(narrower_origins))}."
+            ),
+            supporting_evidence_ids=tuple(e.id for e in narrower),
         )
 
     # Rule 6 — source risk is context about a publisher, never a finding about a

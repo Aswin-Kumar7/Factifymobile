@@ -39,7 +39,7 @@ from urllib.parse import urlsplit
 
 from app.domain.claim import Claim
 from app.domain.enums import Direction, EvidenceKind
-from app.domain.evidence import Evidence
+from app.domain.evidence import NARROWER_SCOPE, Evidence, MatchBasis, is_narrower_scope
 from app.domain.typography import fold
 from app.observability.logging import event
 
@@ -58,6 +58,32 @@ _NOT_TEXT = frozenset(
 )
 
 _AGREES = {Direction.SUPPORTS: "TRUE", Direction.CONTRADICTS: "FALSE"}
+
+
+def _expected(item: Evidence) -> str | None:
+    """What the check must say for this source to be kept: TRUE for support, FALSE
+    for a contradiction, PARTLY for a narrower version of the claim; None for other
+    context, which is not sent."""
+    if item.direction in _AGREES:
+        return _AGREES[item.direction]
+    if item.direction is Direction.CONTEXTUALIZES and is_narrower_scope(item.match_basis.metric):
+        return "PARTLY"
+    return None
+
+
+def _as_narrower(item: Evidence, reason: str) -> Evidence:
+    """A support the check read as only part of the claim: kept, as a narrower version."""
+    return item.model_copy(
+        update={
+            "direction": Direction.CONTEXTUALIZES,
+            "match_basis": MatchBasis(
+                metric=f"{NARROWER_SCOPE}: {reason}"[:200],
+                value=item.match_basis.value,
+                threshold=item.match_basis.threshold,
+            ),
+        }
+    )
+
 
 # When one page reaches a claim by more than one route, which copy to keep. A
 # published fact-check outranks a news report of the same page, and a decisive
@@ -174,14 +200,14 @@ class SourceVerification:
 
         passthrough = [item for item in unique if item.kind in _NOT_TEXT]
         text = [item for item in unique if item.kind not in _NOT_TEXT]
-        sided = [item for item in text if item.direction in _AGREES]
+        sided = [item for item in text if _expected(item) is not None]
         context_only = len(text) - len(sided)
         # What happened to each source, by host, for the log. Counts alone could not
         # answer "why was The Hindu not cited?" without re-running the check.
         outcomes = [
             {"host": _host(item.citation_url), "outcome": "context", "reason": item.finding[:200]}
             for item in text
-            if item.direction not in _AGREES
+            if _expected(item) is None
         ]
 
         if not sided:
@@ -232,9 +258,18 @@ class SourceVerification:
                 # vote of confidence; the page has not been confirmed relevant.
                 outcomes.append({"host": host, "outcome": "unmentioned"})
                 continue
-            if reading.addresses_claim and reading.verdict == _AGREES[item.direction]:
+            if reading.addresses_claim and reading.verdict == _expected(item):
                 kept.append(item)
                 outcomes.append({"host": host, "outcome": f"kept ({item.direction.value})"})
+            elif (
+                reading.addresses_claim
+                and reading.verdict == "PARTLY"
+                and item.direction is Direction.SUPPORTS
+            ):
+                # Read as support, but it shows only part of the claim: the narrower
+                # version is what it is evidence of, not the claim.
+                kept.append(_as_narrower(item, reading.reason))
+                outcomes.append({"host": host, "outcome": "kept (narrower than the claim)"})
             else:
                 outcomes.append(
                     {

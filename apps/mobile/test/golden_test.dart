@@ -104,7 +104,10 @@ void main() {
         then: () async {
           await tester.pump(const Duration(milliseconds: 300));
           sendMidCheck(events);
-          await tester.pump(const Duration(milliseconds: 900));
+          // Frames, so the sources finish arriving on the ring.
+          for (var i = 0; i < 6; i++) {
+            await tester.pump(const Duration(milliseconds: 150));
+          }
         },
       );
       await tester.pumpWidget(const SizedBox());

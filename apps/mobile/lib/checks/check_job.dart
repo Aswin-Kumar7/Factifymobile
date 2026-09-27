@@ -18,6 +18,7 @@ import 'package:flutter/foundation.dart';
 import '../api/check_events.dart';
 import '../api/client.dart';
 import '../app_services.dart';
+import '../history/history_store.dart';
 import '../models/submission.dart';
 import '../models/verdict.dart';
 
@@ -180,6 +181,11 @@ class CheckJob {
 
   bool get notifyWhenReady => _notify;
 
+  /// The check as History kept it, once answered: its own copy of a checked file
+  /// outlives the one that was shared, which may sit in a cache the phone clears.
+  HistoryRecord? get record => _record;
+  HistoryRecord? _record;
+
   /// Turned on from the Checking screen. On means the check keeps running if the
   /// person leaves, and a notification announces the answer.
   set notifyWhenReady(bool value) {
@@ -231,7 +237,7 @@ class CheckJob {
   }
 
   Future<void> _finished(Verdict verdict) async {
-    final record = await services.history.add(submission, verdict);
+    final record = _record = await services.history.add(submission, verdict);
     // The check cost a credit; show the balance the server now holds.
     unawaited(services.auth.refreshAccount());
     if (_notify) {

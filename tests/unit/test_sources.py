@@ -1462,7 +1462,7 @@ class TestASnippetCannotDecideAClaim:
                     reason=None,
                     passages_read=1,
                     best=lambda: SimpleNamespace(
-                        relation=relation, quote=quote, reason="r", relevance=0.9
+                        relation=relation, quote=quote, reason="r", relevance=0.9, narrower=False
                     ),
                 )
 

@@ -15,7 +15,6 @@ import 'package:intl/intl.dart' hide TextDirection;
 import '../app_services.dart';
 import '../history/history_store.dart';
 import '../l10n/app_localizations.dart';
-import '../models/submission.dart';
 import '../models/verdict.dart';
 import '../widgets/action_style.dart';
 import '../widgets/ui/ui.dart';
@@ -28,12 +27,8 @@ void openHistoryRecord(
   HistoryRecord record, {
   bool openShare = false,
 }) {
-  final text = record.text;
-  final submission = text == null
-      ? null
-      : record.kind == SubmissionKind.link
-      ? Submission.link(text)
-      : Submission.text(text);
+  // The text, or History's own copy of the file: either can be checked again.
+  final submission = record.submission;
   unawaited(
     Navigator.of(context).push(
       MaterialPageRoute<void>(

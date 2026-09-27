@@ -37,6 +37,7 @@ from urllib.parse import urlsplit
 
 from app.domain.claim import Claim
 from app.domain.enums import ClaimType, EvidenceKind, Method, Relation, Tier
+from app.domain.evidence import NARROWER_SCOPE
 from app.extraction.web import extract, plain_text
 from app.governor.governor import ProviderUnavailable, Skip, SkipReason
 from app.observability.logging import event
@@ -633,7 +634,11 @@ class WebSearchResolver:
             validator_version=f"{VERSION}/{REASONER_VERSION}",
             excerpt=best.quote,
             anchor=anchor,
-            metric=f"passage_entailment: {best.reason}{note}"[:200],
+            # A narrower version of the claim is recorded as such, so the rules can
+            # tell it from other context (app/domain/evidence.py, NARROWER_SCOPE).
+            metric=(
+                f"{NARROWER_SCOPE if best.narrower else 'passage_entailment'}: {best.reason}{note}"
+            )[:200],
             value=best.relevance,
             threshold=0.0,
         )

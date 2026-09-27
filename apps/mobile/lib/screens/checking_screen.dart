@@ -168,7 +168,9 @@ class _CheckingScreenState extends State<CheckingScreen> {
           pageBuilder: (_, _, _) => ResultScreen(
             services: _services,
             verdict: verdict,
-            submission: widget.submission,
+            // History's copy when it kept one, so "Check again" still works after
+            // the phone clears the shared file from its cache.
+            submission: _job?.record?.submission ?? widget.submission,
             justChecked: true,
           ),
           transitionsBuilder: (_, animation, _, child) => FadeTransition(
@@ -387,7 +389,9 @@ class _Working extends StatelessWidget {
             ).copyWith(fontStyle: FontStyle.italic),
           ),
           const SizedBox(height: 16),
-          Center(child: Scanner(sources: watch.sources)),
+          Center(
+            child: Scanner(sources: watch.sources, collected: watch.evidence),
+          ),
           const SizedBox(height: 16),
           if (silent) ...[
             Text(

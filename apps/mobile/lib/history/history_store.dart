@@ -9,11 +9,13 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:clock/clock.dart';
 import 'package:flutter/material.dart' show DateUtils;
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/submission.dart';
@@ -29,6 +31,8 @@ class HistoryRecord {
     required this.verdictJson,
     this.text,
     this.thumbnail,
+    this.filePath,
+    this.video = false,
   });
 
   final String id;
@@ -42,6 +46,28 @@ class HistoryRecord {
 
   /// A small preview of a checked picture.
   final Uint8List? thumbnail;
+
+  /// History's own copy of a checked picture, video or PDF, so it can be checked
+  /// again. On this phone only; null for text, and for the oldest files once there
+  /// are more than [HistoryStore.keptFiles].
+  final String? filePath;
+  final bool video;
+
+  /// What was checked, as it can be sent again - or null when it cannot.
+  Submission? get submission {
+    final value = text;
+    if (value != null) {
+      return kind == SubmissionKind.link ? Submission.link(value) : Submission.text(value);
+    }
+    final path = filePath;
+    if (path == null) return null;
+    final file = File(path);
+    if (!file.existsSync()) return null;
+    return kind == SubmissionKind.document
+        ? Submission.document(file)
+        : Submission.image(file, thumbnail, video: video);
+  }
+
   final DateTime checkedAt;
   final Map<String, dynamic> verdictJson;
 
@@ -64,6 +90,8 @@ class HistoryRecord {
     'summary': summary,
     'text': text,
     'thumbnail': thumbnail == null ? null : base64Encode(thumbnail!),
+    'file': filePath,
+    'video': video,
     'checked_at': checkedAt.toIso8601String(),
     'verdict': verdictJson,
   };
@@ -82,6 +110,8 @@ class HistoryRecord {
       summary: json['summary'] as String? ?? '',
       text: json['text'] as String?,
       thumbnail: thumb == null ? null : base64Decode(thumb),
+      filePath: json['file'] as String?,
+      video: json['video'] as bool? ?? false,
       checkedAt: at,
       verdictJson: verdict.cast<String, dynamic>(),
     );
@@ -90,7 +120,18 @@ class HistoryRecord {
 
 class HistoryStore extends ChangeNotifier {
   /// Kept on the phone when [store] is given; in memory only otherwise (tests).
-  HistoryStore({SharedPreferencesAsync? store}) : _store = store;
+  /// Checked files are copied into [files], or the app's own storage on the phone;
+  /// without either (tests), a record points at the file as it was checked.
+  HistoryStore({SharedPreferencesAsync? store, Directory? files}) : _store = store, _files = files;
+
+  /// Checked pictures, videos and PDFs kept for "Check again": the newest this many.
+  /// Older checks keep their answer and preview; only the file itself goes.
+  static const int keptFiles = 12;
+
+  /// A file larger than this is not copied: the server takes nothing bigger.
+  static const int largestFile = 30 * 1024 * 1024;
+
+  final Directory? _files;
 
   static const String _key = 'check_history';
 
@@ -136,21 +177,84 @@ class HistoryStore extends ChangeNotifier {
 
   /// Keep a finished check, newest first.
   Future<HistoryRecord> add(Submission submission, Verdict verdict) async {
+    // The counter keeps two checks saved within one clock tick apart.
+    final id = '${verdict.caseId}-${DateTime.now().microsecondsSinceEpoch}-${_added++}';
     final record = HistoryRecord(
-      // The counter keeps two checks saved within one clock tick apart.
-      id: '${verdict.caseId}-${DateTime.now().microsecondsSinceEpoch}-${_added++}',
+      id: id,
       kind: submission.kind,
       summary: submission.summaryWith(verdict),
       text: submission.text,
       thumbnail: await _smallPreview(submission.thumbnail),
+      filePath: await _keep(submission.file, id),
+      video: submission.video,
       checkedAt: clock.now(),
       verdictJson: verdict.raw,
     );
     await _reread();
-    _records = [record, ..._records].take(limit).toList();
+    final all = [record, ..._records];
+    _records = all.take(limit).toList();
+    // Files beyond the newest few, and of checks that fell off the list, are let go.
+    var files = 0;
+    _records = [
+      for (final r in _records)
+        if (r.filePath != null && ++files > keptFiles) _withoutFile(r) else r,
+    ];
+    for (final gone in all.skip(limit)) {
+      await _forget(gone.filePath);
+    }
     notifyListeners();
     await _save();
     return record;
+  }
+
+  /// A copy of a checked file that History owns: the one shared or picked may be
+  /// in a cache the phone clears. Null when there is nothing to keep, or it could
+  /// not be copied - the check is kept either way.
+  Future<String?> _keep(File? file, String id) async {
+    if (file == null) return null;
+    try {
+      if (!file.existsSync() || file.lengthSync() > largestFile) return null;
+      final folder = _files ?? (_store == null ? null : await _folder());
+      if (folder == null) return file.path;
+      await folder.create(recursive: true);
+      final name = file.uri.pathSegments.last;
+      final dot = name.lastIndexOf('.');
+      final ending = dot < 0 ? '' : name.substring(dot);
+      final safe = id.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+      return (await file.copy('${folder.path}/$safe$ending')).path;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<Directory> _folder() async =>
+      Directory('${(await getApplicationSupportDirectory()).path}/checked');
+
+  HistoryRecord _withoutFile(HistoryRecord r) {
+    unawaited(_forget(r.filePath));
+    return HistoryRecord(
+      id: r.id,
+      kind: r.kind,
+      summary: r.summary,
+      checkedAt: r.checkedAt,
+      verdictJson: r.verdictJson,
+      text: r.text,
+      thumbnail: r.thumbnail,
+      video: r.video,
+    );
+  }
+
+  /// Deletes a kept copy - only ever one History made itself.
+  Future<void> _forget(String? path) async {
+    if (path == null) return;
+    try {
+      final folder = _files ?? (_store == null ? null : await _folder());
+      if (folder == null || !path.startsWith(folder.path)) return;
+      final file = File(path);
+      if (file.existsSync()) await file.delete();
+    } catch (_) {
+      // A copy that could not be deleted is left for the phone to clear.
+    }
   }
 
   /// This week, Monday to Sunday, for History's chart and recap (v5).
@@ -170,12 +274,19 @@ class HistoryStore extends ChangeNotifier {
 
   Future<void> remove(String id) async {
     await _reread();
+    for (final r in _records.where((r) => r.id == id)) {
+      await _forget(r.filePath);
+    }
     _records = _records.where((r) => r.id != id).toList();
     notifyListeners();
     await _save();
   }
 
   Future<void> clear() async {
+    await _reread();
+    for (final r in _records) {
+      await _forget(r.filePath);
+    }
     _records = const [];
     notifyListeners();
     try {

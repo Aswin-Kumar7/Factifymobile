@@ -54,6 +54,18 @@ _DECISIVE_METHODS = frozenset(
 )
 
 
+# How a passage that establishes only a narrower version of a claim is recorded:
+# the start of its match metric. Context, never support - "Tamil Nadu pays Rs 5,000
+# to 1.3 crore women" does not establish "the government pays every woman Rs 5,000 a
+# month" - and what the rule engine calls misleading when credible sources agree.
+NARROWER_SCOPE = "passage_narrower"
+
+
+def is_narrower_scope(metric: str) -> bool:
+    """Whether a match metric records a narrower version of the claim."""
+    return metric.startswith(NARROWER_SCOPE)
+
+
 def can_be_decisive(method: Method) -> bool:
     """Whether evidence from this method may drive a decisive status.
 

@@ -1,11 +1,19 @@
-/// The Checking screen's scanner (v5, 176px): three pulsing rings, a rotating
-/// sweep, the magnifier at the centre, and up to ten sources in orbit.
+/// The Checking screen's scanner (v5, 176px): sources being searched and evidence
+/// being collected.
 ///
-/// The motion says only that work is going on. The sources are the ones the server
-/// reported opening, in the order it opened them: dim while waiting, raised while
-/// being read, filled when they had something to say about the claim. A slot with
-/// no source in it stays an empty dot - the orbit is never filled with names that
-/// were not read.
+/// Searching goes out, evidence comes in. A soft pulse leaves the magnifier at the
+/// centre, and a comet runs round the ring: the search. The sources the server
+/// reports opening take their place on the ring, in the order it opened them - with
+/// a turning arc while each is read, filled when it had something to say about the
+/// claim, faded when it did not. Every source that gives evidence sends a dot into
+/// the centre, and the centre counts what has been collected.
+///
+/// Nothing on the ring is invented: before the server names a source, the ring is
+/// empty. (An earlier version drew ten empty placeholder dots; in dark mode they read
+/// as holes, and the design's filled wedge smeared across them.)
+///
+/// Plain paints only. A sweep-gradient shader repainted every frame brought the
+/// Android emulator's software renderer down (2026-09-27).
 library;
 
 import 'dart:math' as math;
@@ -17,10 +25,13 @@ import '../theme/icons.dart';
 import '../theme/tokens.dart';
 
 class Scanner extends StatefulWidget {
-  const Scanner({required this.sources, super.key});
+  const Scanner({required this.sources, this.collected, super.key});
 
   /// In the order they were opened; the first ten are shown.
   final List<WatchedSource> sources;
+
+  /// The evidence count as the server keeps it; counted from [sources] if absent.
+  final int? collected;
 
   static const double size = 176;
   static const int slots = 10;
@@ -30,18 +41,20 @@ class Scanner extends StatefulWidget {
 }
 
 class _ScannerState extends State<Scanner> with SingleTickerProviderStateMixin {
-  // One clock for every motion: 24 s holds a whole number of pulses (2.4 s) and of
-  // sweeps (2 s), so the loop joins without a jump.
+  // One clock for the search: 12 s holds whole pulses (2.4 s) and turns (3 s).
   late final AnimationController _clock = AnimationController(
     vsync: this,
-    duration: const Duration(seconds: 24),
+    duration: const Duration(seconds: 12),
   );
+
+  bool _still = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Reduced motion: the rings and the sweep hold still; the sources still change.
-    if (MediaQuery.disableAnimationsOf(context)) {
+    // Reduced motion: no pulse, no comet, no flight; the sources still change.
+    _still = MediaQuery.disableAnimationsOf(context);
+    if (_still) {
       _clock.stop();
     } else if (!_clock.isAnimating) {
       _clock.repeat();
@@ -54,14 +67,22 @@ class _ScannerState extends State<Scanner> with SingleTickerProviderStateMixin {
     super.dispose();
   }
 
+  static Offset _at(int index) {
+    const centre = Scanner.size / 2;
+    const orbit = centre - 16;
+    final angle = index / Scanner.slots * 2 * math.pi - math.pi / 2;
+    return Offset(centre + orbit * math.cos(angle), centre + orbit * math.sin(angle));
+  }
+
   @override
   Widget build(BuildContext context) {
     final k = FactifyTokens.of(context);
     const size = Scanner.size;
     const centre = size / 2;
-    const orbit = centre - 14;
-    const core = 60.0;
+    const core = 56.0;
     final shown = widget.sources.take(Scanner.slots).toList();
+    final collected =
+        widget.collected ?? shown.where((s) => s.state == SourceState.evidence).length;
 
     return Semantics(
       container: true,
@@ -74,91 +95,192 @@ class _ScannerState extends State<Scanner> with SingleTickerProviderStateMixin {
             Positioned.fill(
               child: RepaintBoundary(
                 child: CustomPaint(
-                  painter: _Sweep(clock: _clock, tokens: k),
+                  painter: _Search(clock: _clock, tokens: k),
                 ),
               ),
             ),
+            // A dot flies in from every source that gave evidence, once.
+            for (final (i, source) in shown.indexed)
+              if (source.state == SourceState.evidence && !_still)
+                _Arrival(
+                  key: ValueKey('arrival-${source.domain}'),
+                  from: _at(i),
+                  to: const Offset(centre, centre),
+                  colour: k.acc,
+                ),
             Positioned(
               left: centre - core / 2,
               top: centre - core / 2,
-              child: Container(
-                width: core,
-                height: core,
-                decoration: BoxDecoration(
-                  color: k.acc,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: k.acc.withValues(alpha: 0.45),
-                      offset: const Offset(0, 8),
-                      blurRadius: 20,
-                      spreadRadius: -6,
-                    ),
-                  ],
-                ),
-                child: Icon(FxIcons.search, size: 26, color: k.onAcc),
-              ),
+              child: _Core(collected: collected, size: core),
             ),
-            for (var i = 0; i < Scanner.slots; i++)
-              _slot(k, i, i < shown.length ? shown[i] : null, centre: centre, orbit: orbit),
+            for (final (i, source) in shown.indexed)
+              _Slot(
+                key: ValueKey('slot-${source.domain}'),
+                source: source,
+                at: _at(i),
+                clock: _clock,
+                still: _still,
+              ),
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _slot(
-    FactifyTokens k,
-    int index,
-    WatchedSource? source, {
-    required double centre,
-    required double orbit,
-  }) {
-    const dot = 24.0;
-    final angle = index / Scanner.slots * 2 * math.pi - math.pi / 2;
-    final x = centre + orbit * math.cos(angle) - dot / 2;
-    final y = centre + orbit * math.sin(angle) - dot / 2;
-    final state = source?.state;
-    final found = state == SourceState.evidence;
-    final reading = state == SourceState.reading;
+/// The magnifier, and once evidence is in, how much has been collected.
+class _Core extends StatelessWidget {
+  const _Core({required this.collected, required this.size});
 
-    return Positioned(
-      left: x,
-      top: y,
-      child: AnimatedScale(
-        scale: reading ? 1.2 : 1,
-        duration: const Duration(milliseconds: 300),
-        child: AnimatedOpacity(
-          opacity: source == null ? 0.35 : 1,
-          duration: const Duration(milliseconds: 300),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            width: dot,
-            height: dot,
-            alignment: Alignment.center,
+  final int collected;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final k = FactifyTokens.of(context);
+    return SizedBox.square(
+      dimension: size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: size,
+            height: size,
             decoration: BoxDecoration(
-              color: found ? k.acc : k.sf,
+              color: k.acc,
               shape: BoxShape.circle,
-              boxShadow: reading
-                  ? [BoxShadow(color: k.accS, spreadRadius: 3)]
-                  : source == null
-                  ? null
-                  : k.shadow,
+              boxShadow: [
+                BoxShadow(
+                  color: k.acc.withValues(alpha: 0.4),
+                  offset: const Offset(0, 6),
+                  blurRadius: 18,
+                  spreadRadius: -6,
+                ),
+              ],
             ),
-            child: source == null
-                ? null
-                : Text(
-                    source.initials,
-                    maxLines: 1,
-                    overflow: TextOverflow.clip,
+            child: Icon(FxIcons.search, size: 24, color: k.onAcc),
+          ),
+          if (collected > 0)
+            Positioned(
+              right: -4,
+              top: -4,
+              child: TweenAnimationBuilder<double>(
+                // Grows in, and again with each new piece of evidence.
+                key: ValueKey(collected),
+                tween: Tween(begin: 0.6, end: 1),
+                duration: const Duration(milliseconds: 360),
+                curve: Curves.easeOutBack,
+                builder: (context, scale, child) => Transform.scale(scale: scale, child: child),
+                child: Container(
+                  constraints: const BoxConstraints(minWidth: 22),
+                  height: 22,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: k.bg,
+                    borderRadius: BorderRadius.circular(11),
+                    border: Border.all(color: k.acc, width: 1.5),
+                  ),
+                  child: Text(
+                    '$collected',
                     style: TextStyle(
                       fontFamily: 'Geist',
-                      fontSize: 7.5,
+                      fontSize: 11,
                       fontWeight: FontWeight.w700,
                       height: 1,
-                      color: found ? k.onAcc : k.ink2,
+                      color: k.acc,
                     ),
                   ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One source on the ring.
+class _Slot extends StatelessWidget {
+  const _Slot({
+    required this.source,
+    required this.at,
+    required this.clock,
+    required this.still,
+    super.key,
+  });
+
+  final WatchedSource source;
+  final Offset at;
+  final Animation<double> clock;
+  final bool still;
+
+  static const double dot = 26;
+
+  @override
+  Widget build(BuildContext context) {
+    final k = FactifyTokens.of(context);
+    final state = source.state;
+    final found = state == SourceState.evidence;
+    final reading = state == SourceState.reading;
+    final idle = state == SourceState.notRelevant;
+
+    final chip = AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      width: dot,
+      height: dot,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: found ? k.acc : k.sf,
+        shape: BoxShape.circle,
+        border: found ? null : Border.all(color: reading ? k.acc : k.line),
+      ),
+      child: Text(
+        source.initials,
+        maxLines: 1,
+        overflow: TextOverflow.clip,
+        style: TextStyle(
+          fontFamily: 'Geist',
+          fontSize: 8,
+          fontWeight: FontWeight.w700,
+          height: 1,
+          color: found ? k.onAcc : (idle ? k.ink3 : k.ink2),
+        ),
+      ),
+    );
+
+    return Positioned(
+      left: at.dx - dot / 2,
+      top: at.dy - dot / 2,
+      child: TweenAnimationBuilder<double>(
+        // Arrives on the ring when the server names it.
+        tween: Tween(begin: still ? 1 : 0, end: 1),
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOutBack,
+        builder: (context, scale, child) => Transform.scale(scale: scale, child: child),
+        child: AnimatedOpacity(
+          opacity: idle ? 0.45 : 1,
+          duration: const Duration(milliseconds: 300),
+          child: SizedBox.square(
+            dimension: dot,
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.center,
+              children: [
+                chip,
+                // Being read: a short arc turning round it.
+                if (reading && !still)
+                  Positioned(
+                    left: -3,
+                    top: -3,
+                    right: -3,
+                    bottom: -3,
+                    child: CustomPaint(
+                      painter: _Reading(clock: clock, colour: k.acc),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -166,9 +288,88 @@ class _ScannerState extends State<Scanner> with SingleTickerProviderStateMixin {
   }
 }
 
-/// The rings, the dashed orbit and the sweep, driven by one clock.
-class _Sweep extends CustomPainter {
-  _Sweep({required this.clock, required this.tokens}) : super(repaint: clock);
+class _Reading extends CustomPainter {
+  _Reading({required this.clock, required this.colour}) : super(repaint: clock);
+
+  final Animation<double> clock;
+  final Color colour;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // A turn every 0.8 s: 15 turns in the 12 s clock.
+    final turn = (clock.value * 15) % 1;
+    canvas.drawArc(
+      Offset.zero & size,
+      turn * 2 * math.pi - math.pi / 2,
+      math.pi * 0.6,
+      false,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..strokeCap = StrokeCap.round
+        ..color = colour,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_Reading old) => old.colour != colour;
+}
+
+/// A dot carried from a source into the centre: evidence collected.
+class _Arrival extends StatefulWidget {
+  const _Arrival({required this.from, required this.to, required this.colour, super.key});
+
+  final Offset from;
+  final Offset to;
+  final Color colour;
+
+  @override
+  State<_Arrival> createState() => _ArrivalState();
+}
+
+class _ArrivalState extends State<_Arrival> with SingleTickerProviderStateMixin {
+  late final AnimationController _flight = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 750),
+  )..forward();
+
+  @override
+  void dispose() {
+    _flight.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _flight,
+    builder: (context, _) {
+      if (_flight.isCompleted) return const SizedBox.shrink();
+      final t = Curves.easeInCubic.transform(_flight.value);
+      final at = Offset.lerp(widget.from, widget.to, t)!;
+      const size = 8.0;
+      return Positioned(
+        left: at.dx - size / 2,
+        top: at.dy - size / 2,
+        child: Opacity(
+          opacity: 1 - t * 0.6,
+          child: Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              color: widget.colour,
+              shape: BoxShape.circle,
+              boxShadow: [BoxShadow(color: widget.colour.withValues(alpha: 0.5), blurRadius: 6)],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+/// The ring, the pulse out from the centre, and the comet round the ring.
+class _Search extends CustomPainter {
+  _Search({required this.clock, required this.tokens}) : super(repaint: clock);
 
   final Animation<double> clock;
   final FactifyTokens tokens;
@@ -176,65 +377,61 @@ class _Sweep extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final centre = size.center(Offset.zero);
-    final radius = size.width / 2;
-    final seconds = clock.value * 24;
+    final orbit = size.width / 2 - 16;
+    final seconds = clock.value * 12;
+    final acc = tokens.acc;
 
-    // Three rings, 0.8 s apart, each growing from 42% to 108% and fading out.
-    for (var i = 0; i < 3; i++) {
-      final phase = ((seconds - i * 0.8) % 2.4) / 2.4;
-      final eased = Curves.easeOut.transform(phase);
-      final scale = 0.42 + (1.08 - 0.42) * eased;
-      final opacity = 0.7 * (1 - eased);
-      if (opacity <= 0) continue;
+    // A faint fill inside the ring, so it reads as one instrument.
+    canvas.drawCircle(centre, orbit, Paint()..color = acc.withValues(alpha: 0.05));
+
+    // The ring the sources sit on.
+    canvas.drawCircle(
+      centre,
+      orbit,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1
+        ..color = tokens.line,
+    );
+
+    // The search going out: one soft pulse from the centre every 2.4 s.
+    final phase = (seconds % 2.4) / 2.4;
+    final eased = Curves.easeOut.transform(phase);
+    final radius = 30 + (orbit - 30) * eased;
+    final fade = 0.45 * (1 - eased);
+    if (fade > 0) {
       canvas.drawCircle(
         centre,
-        radius * scale - 0.75,
+        radius,
         Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.5
-          ..color = tokens.acc.withValues(alpha: opacity),
+          ..color = acc.withValues(alpha: fade),
       );
     }
 
-    final inner = radius - 12;
-
-    // The dashed orbit.
-    final dash = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1
-      ..color = tokens.line;
-    const dashes = 60;
-    for (var i = 0; i < dashes; i++) {
-      final start = i / dashes * 2 * math.pi;
-      canvas.drawArc(
-        Rect.fromCircle(center: centre, radius: inner),
-        start,
-        math.pi / dashes,
-        false,
-        dash,
+    // The comet: a bright head running round the ring every 3 s, trailing a line of
+    // dots that shrink and fade behind it. Dots rather than a stroked arc: pieces of a
+    // translucent arc leave seams where they meet.
+    final head = (seconds % 3) / 3 * 2 * math.pi - math.pi / 2;
+    const trail = 12;
+    const step = math.pi / 40;
+    for (var i = trail; i >= 1; i--) {
+      final angle = head - i * step;
+      final left = 1 - i / (trail + 1);
+      canvas.drawCircle(
+        Offset(centre.dx + orbit * math.cos(angle), centre.dy + orbit * math.sin(angle)),
+        0.8 + 2 * left,
+        Paint()..color = acc.withValues(alpha: 0.85 * left * left),
       );
     }
-
-    // The sweep: a tail of tint trailing a leading edge, round every two seconds -
-    // the design's conic gradient, as a fan of slices growing more opaque towards
-    // the edge. A sweep-gradient shader repainted every frame brought the Android
-    // emulator's software renderer down (2026-09-27); plain slices draw the same
-    // thing more cheaply on any GPU.
-    final lead = (seconds % 2) / 2 * 2 * math.pi - math.pi / 2;
-    const slices = 18;
-    const tail = 0.3 * 2 * math.pi;
-    final disc = Rect.fromCircle(center: centre, radius: inner);
-    for (var i = 0; i < slices; i++) {
-      canvas.drawArc(
-        disc,
-        lead - tail + tail * i / slices,
-        tail / slices,
-        true,
-        Paint()..color = tokens.accS.withValues(alpha: (i + 1) / slices),
-      );
-    }
+    canvas.drawCircle(
+      Offset(centre.dx + orbit * math.cos(head), centre.dy + orbit * math.sin(head)),
+      3.5,
+      Paint()..color = acc,
+    );
   }
 
   @override
-  bool shouldRepaint(_Sweep old) => old.tokens != tokens;
+  bool shouldRepaint(_Search old) => old.tokens != tokens;
 }

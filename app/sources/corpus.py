@@ -35,6 +35,7 @@ from typing import Any
 
 from app.domain.claim import Claim
 from app.domain.enums import ClaimType, EvidenceKind, Method, Relation, Tier
+from app.domain.evidence import NARROWER_SCOPE
 from app.domain.publishers import publishers_of
 from app.embeddings.image import cosine
 from app.embeddings.text import TextEmbedder
@@ -568,7 +569,9 @@ class CorpusResolver:
             anchor=anchor,
             # The reason travels in the metric so the ledger records *why* this
             # relation was assigned, not merely that it was.
-            metric=f"passage_entailment: {best.reason}"[:200],
+            metric=(f"{NARROWER_SCOPE if best.narrower else 'passage_entailment'}: {best.reason}")[
+                :200
+            ],
             value=best.relevance,
             threshold=0.0,
         )
