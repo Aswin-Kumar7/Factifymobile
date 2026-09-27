@@ -131,7 +131,13 @@ class _ResultScreenState extends State<ResultScreen> {
 
   void _home() => Navigator.of(context).popUntil((route) => route.isFirst);
 
-  void _share() => unawaited(showCorrectionSheet(context, _verdict));
+  void _share() => unawaited(
+    showCorrectionSheet(
+      context,
+      _verdict,
+      load: (language) => widget.services.client.correctionText(_verdict.caseId, language),
+    ),
+  );
 
   void _openClaim(Claim claim) => unawaited(
     Navigator.of(context).push(

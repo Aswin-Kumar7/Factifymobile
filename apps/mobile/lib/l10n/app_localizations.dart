@@ -401,14 +401,8 @@ abstract class AppLocalizations {
   /// No description provided for @correctionCopied.
   ///
   /// In en, this message translates to:
-  /// **'Correction copied - paste it back into the chat'**
+  /// **'Copied'**
   String get correctionCopied;
-
-  /// No description provided for @correctionHeader.
-  ///
-  /// In en, this message translates to:
-  /// **'Checked with Factify:'**
-  String get correctionHeader;
 
   /// No description provided for @correctionSourceFallback.
   ///
@@ -463,6 +457,60 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Verdict from cited sources, never from a model score.'**
   String get correctionCardFooter;
+
+  /// On the shared picture, beside the Factify name: the day the sources were read. Shown in capitals.
+  ///
+  /// In en, this message translates to:
+  /// **'Checked {date}'**
+  String correctionChecked(String date);
+
+  /// No description provided for @correctionMessageWith.
+  ///
+  /// In en, this message translates to:
+  /// **'Message with it'**
+  String get correctionMessageWith;
+
+  /// No description provided for @correctionMessageHint.
+  ///
+  /// In en, this message translates to:
+  /// **'A polite note makes it easier to correct family and friends.'**
+  String get correctionMessageHint;
+
+  /// No description provided for @correctionMessageLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'The message sent with the picture'**
+  String get correctionMessageLabel;
+
+  /// Opens the note sent back to a family or friends chat. Warm and polite, never accusing. Must match the server's template in app/orchestration/correction.py.
+  ///
+  /// In en, this message translates to:
+  /// **'Hi! I checked this before forwarding.'**
+  String get correctionOpening;
+
+  /// No description provided for @correctionSaysFalse.
+  ///
+  /// In en, this message translates to:
+  /// **'Factify says it\'s false'**
+  String get correctionSaysFalse;
+
+  /// No description provided for @correctionSaysMisleading.
+  ///
+  /// In en, this message translates to:
+  /// **'Factify says it\'s misleading'**
+  String get correctionSaysMisleading;
+
+  /// No description provided for @correctionSaysTrue.
+  ///
+  /// In en, this message translates to:
+  /// **'Factify says it\'s true'**
+  String get correctionSaysTrue;
+
+  /// The note for an Unconfirmed result. Must never say the content is false.
+  ///
+  /// In en, this message translates to:
+  /// **'Hi! I tried to check this before forwarding. Factify couldn\'t find reliable sources confirming it yet, so it may be best not to forward it for now.'**
+  String get correctionUnconfirmedMessage;
 
   /// No description provided for @failureTimeout.
   ///

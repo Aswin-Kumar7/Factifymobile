@@ -63,6 +63,11 @@ Added for the v5 app.
   publication date and headline, when known. `observed_at` is when we fetched the
   page and was being shown as if it were the article's date. Cases stored before
   this carry no `published_on`.
+- **`POST /v1/cases/{case_id}/correction-text`** `{"language": "en" | "hi"}` →
+  `{"message", "links"}`: a short, polite message to send back to the chat, built
+  from the stored answer by template (no model). A decided verdict always names its
+  deciding source with the link; Unconfirmed never says false and names none. The
+  Hindi message leaves out the English summary. The app lets the person edit it.
 
 ## 1.2
 

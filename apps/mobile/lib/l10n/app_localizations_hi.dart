@@ -203,10 +203,7 @@ class AppLocalizationsHi extends AppLocalizations {
   }
 
   @override
-  String get correctionCopied => 'सुधार कॉपी हो गया — इसे चैट में वापस चिपकाएँ';
-
-  @override
-  String get correctionHeader => 'Factify से जाँचा गया:';
+  String get correctionCopied => 'कॉपी हो गया';
 
   @override
   String get correctionSourceFallback => 'स्रोत';
@@ -238,6 +235,37 @@ class AppLocalizationsHi extends AppLocalizations {
   @override
   String get correctionCardFooter =>
       'निर्णय उद्धृत स्रोतों से, कभी मॉडल स्कोर से नहीं।';
+
+  @override
+  String correctionChecked(String date) {
+    return 'जाँचा गया $date';
+  }
+
+  @override
+  String get correctionMessageWith => 'साथ में संदेश';
+
+  @override
+  String get correctionMessageHint =>
+      'विनम्र संदेश से परिवार और दोस्तों को सही बात बताना आसान होता है।';
+
+  @override
+  String get correctionMessageLabel => 'तस्वीर के साथ जाने वाला संदेश';
+
+  @override
+  String get correctionOpening => 'नमस्ते! आगे भेजने से पहले मैंने इसे जाँचा।';
+
+  @override
+  String get correctionSaysFalse => 'Factify के अनुसार यह झूठ है';
+
+  @override
+  String get correctionSaysMisleading => 'Factify के अनुसार यह भ्रामक है';
+
+  @override
+  String get correctionSaysTrue => 'Factify के अनुसार यह सच है';
+
+  @override
+  String get correctionUnconfirmedMessage =>
+      'नमस्ते! आगे भेजने से पहले मैंने इसे जाँचने की कोशिश की। Factify को अभी तक भरोसेमंद स्रोतों से इसकी पुष्टि नहीं मिली, इसलिए फ़िलहाल इसे आगे न भेजना बेहतर होगा।';
 
   @override
   String get failureTimeout =>

@@ -34,6 +34,8 @@ from app.api.schemas import (
     AdvisoryResponse,
     ClaimResponse,
     ComponentResponse,
+    CorrectionTextRequest,
+    CorrectionTextResponse,
     EvidenceResponse,
     ImageReadingResponse,
     MediaReportResponse,
@@ -73,6 +75,7 @@ from app.knowledge.registry import authenticate_trigger
 from app.media.video import KeyframeExtractor
 from app.observability.logging import event
 from app.observability.middleware import REQUEST_ID_HEADER
+from app.orchestration.correction import correction_message
 from app.orchestration.deep import DeepChecks
 from app.orchestration.pipeline import SkippedCheck, VerificationResult, claim_progress
 from app.orchestration.progress import CheckProgress, current_progress, valid_key
@@ -1184,6 +1187,25 @@ async def _checked_video(
 
 
 _THUMBNAIL_KEY = re.compile(r"^[0-9a-f]{32}$")
+
+
+@router.post(
+    "/cases/{case_id}/correction-text",
+    response_model=CorrectionTextResponse,
+    summary="A polite message to send back to the chat with the correction",
+)
+async def correction_text(
+    case_id: UUID, payload: CorrectionTextRequest, request: Request
+) -> CorrectionTextResponse:
+    """Built from the stored answer by template - no model - in English or Hindi."""
+    cases = getattr(request.app.state, "case_reader", None)
+    if cases is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="unavailable")
+    stored = await cases.get(case_id)
+    if stored is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such case")
+    built = correction_message(stored, payload.language)
+    return CorrectionTextResponse(message=built.message, links=built.links)
 
 
 @router.get(

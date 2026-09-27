@@ -204,11 +204,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get correctionCopied =>
-      'Correction copied - paste it back into the chat';
-
-  @override
-  String get correctionHeader => 'Checked with Factify:';
+  String get correctionCopied => 'Copied';
 
   @override
   String get correctionSourceFallback => 'Source';
@@ -240,6 +236,37 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get correctionCardFooter =>
       'Verdict from cited sources, never from a model score.';
+
+  @override
+  String correctionChecked(String date) {
+    return 'Checked $date';
+  }
+
+  @override
+  String get correctionMessageWith => 'Message with it';
+
+  @override
+  String get correctionMessageHint =>
+      'A polite note makes it easier to correct family and friends.';
+
+  @override
+  String get correctionMessageLabel => 'The message sent with the picture';
+
+  @override
+  String get correctionOpening => 'Hi! I checked this before forwarding.';
+
+  @override
+  String get correctionSaysFalse => 'Factify says it\'s false';
+
+  @override
+  String get correctionSaysMisleading => 'Factify says it\'s misleading';
+
+  @override
+  String get correctionSaysTrue => 'Factify says it\'s true';
+
+  @override
+  String get correctionUnconfirmedMessage =>
+      'Hi! I tried to check this before forwarding. Factify couldn\'t find reliable sources confirming it yet, so it may be best not to forward it for now.';
 
   @override
   String get failureTimeout =>

@@ -510,7 +510,7 @@ void main() {
     });
   });
 
-  group('the correction card (M44, PLAN 1.7.5)', () {
+  group('the correction card (v5, 2.6)', () {
     Verdict contradicted() => Verdict.fromJson(
       _payload(
         claims: [
@@ -525,13 +525,15 @@ void main() {
       child: CorrectionCard(verdict: verdict),
     );
 
-    testWidgets('names the decided claim, who said so and when, and no advisory', (tester) async {
+    testWidgets('names the verdict, the claim, who said so and when, and no advisory', (
+      tester,
+    ) async {
       await _pump(tester, correctionCard(contradicted()));
 
       expect(find.text('False'), findsOneWidget);
       expect(find.textContaining('The scheme was cancelled on Friday.'), findsOneWidget);
-      expect(find.textContaining('Factchecker · factchecker.example'), findsOneWidget);
-      expect(find.textContaining('Evidence retrieved'), findsOneWidget);
+      expect(find.text('Factchecker'), findsOneWidget);
+      expect(find.text('CHECKED 18 AUG'), findsOneWidget);
       // The picture leaves the app without the advisory panel's exclusion
       // header, so no forensic signal may travel on it.
       expect(find.textContaining('Noise levels vary'), findsNothing);
@@ -547,12 +549,20 @@ void main() {
       }
     });
 
-    test('the text beside it carries the links, or says nothing could be confirmed', () {
-      final l10n = lookupAppLocalizations(_english);
+    test('the note names the source with its link, or says nothing could be confirmed', () {
+      final english = lookupAppLocalizations(_english);
 
-      final text = correctionText(contradicted(), l10n);
-      expect(text, startsWith('Checked with Factify:'));
-      expect(text, contains('https://factchecker.example/1'));
+      final note = correctionMessage(contradicted(), english);
+      expect(
+        note.message,
+        startsWith("Hi! I checked this before forwarding. Factify says it's false"),
+      );
+      expect(note.message, endsWith('Factchecker: https://factchecker.example/1'));
+      expect(note.links, ['https://factchecker.example/1']);
+
+      final hindi = correctionMessage(contradicted(), lookupAppLocalizations(_hindi));
+      expect(hindi.message, startsWith('नमस्ते!'));
+      expect(hindi.message, contains('झूठ है। Factchecker:'));
 
       final undecided = Verdict.fromJson(
         _payload(
@@ -560,7 +570,49 @@ void main() {
           claims: [_claim(status: 'UNVERIFIED')],
         ),
       );
-      expect(correctionText(undecided, l10n), contains('No published source could confirm'));
+      for (final l10n in [english, lookupAppLocalizations(_hindi)]) {
+        final said = correctionMessage(undecided, l10n);
+        // Not finding a source is not the same as finding it wrong.
+        expect(said.message.toLowerCase(), isNot(contains('false')));
+        expect(said.message, isNot(contains('झूठ')));
+        expect(said.links, isEmpty);
+      }
+    });
+
+    test('a source that supports the claim never stands behind "false"', () {
+      final verdict = Verdict.fromJson(
+        _payload(
+          claims: [
+            _claim(
+              evidence: [
+                {..._evidence(direction: 'supports'), 'citation_url': 'https://other.example/2'},
+                _evidence(),
+              ],
+            ),
+          ],
+        ),
+      );
+      expect(decidingSources(verdict).map((e) => e.citationUrl), ['https://factchecker.example/1']);
+    });
+
+    test('the card and the note carry the summary\'s first sentence only', () {
+      expect(
+        firstSentence(
+          'Sources at factcheck.afp.com say there is no such cure. Others agree. One does not.',
+        ),
+        'Sources at factcheck.afp.com say there is no such cure.',
+      );
+      expect(firstSentence('Dr. Rao says it is not true.'), 'Dr. Rao says it is not true.');
+    });
+
+    test('the links travel beside the note, once each', () {
+      expect(
+        correctionShareText('Hi! It is false. X: https://a.example/1', [
+          'https://a.example/1',
+          'https://b.example/2',
+        ]),
+        'Hi! It is false. X: https://a.example/1\nhttps://b.example/2',
+      );
     });
 
     testWidgets('the sheet hands the share sheet a real picture, with the links as text', (

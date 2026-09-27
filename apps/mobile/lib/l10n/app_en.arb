@@ -97,8 +97,7 @@
       }
     }
   },
-  "correctionCopied": "Correction copied - paste it back into the chat",
-  "correctionHeader": "Checked with Factify:",
+  "correctionCopied": "Copied",
   "correctionSourceFallback": "Source",
   "correctionNoSource": "No published source could confirm or contradict this.",
   "correctionSheetTitle": "Send this back to the chat",
@@ -110,6 +109,29 @@
   "correctionCardFooter": "Verdict from cited sources, never from a model score.",
   "@correctionCardFooter": {
     "description": "Printed on the shared picture. States the method, and must not claim the content is true or false."
+  },
+  "correctionChecked": "Checked {date}",
+  "@correctionChecked": {
+    "description": "On the shared picture, beside the Factify name: the day the sources were read. Shown in capitals.",
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "correctionMessageWith": "Message with it",
+  "correctionMessageHint": "A polite note makes it easier to correct family and friends.",
+  "correctionMessageLabel": "The message sent with the picture",
+  "correctionOpening": "Hi! I checked this before forwarding.",
+  "@correctionOpening": {
+    "description": "Opens the note sent back to a family or friends chat. Warm and polite, never accusing. Must match the server's template in app/orchestration/correction.py."
+  },
+  "correctionSaysFalse": "Factify says it's false",
+  "correctionSaysMisleading": "Factify says it's misleading",
+  "correctionSaysTrue": "Factify says it's true",
+  "correctionUnconfirmedMessage": "Hi! I tried to check this before forwarding. Factify couldn't find reliable sources confirming it yet, so it may be best not to forward it for now.",
+  "@correctionUnconfirmedMessage": {
+    "description": "The note for an Unconfirmed result. Must never say the content is false."
   },
   "failureTimeout": "Factify is taking longer than usual. Try again in a moment.",
   "failureUnreachable": "Could not reach Factify. Check your connection and try again.",

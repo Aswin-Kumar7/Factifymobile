@@ -80,6 +80,14 @@ class VerifyRequest(BaseModel):
         return self
 
 
+class CorrectionTextRequest(BaseModel):
+    """Which language the message to the chat is written in (1.3)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    language: str = Field(default="en", pattern="^(en|hi)$")
+
+
 class ReviewLabelRequest(BaseModel):
     """A reviewer's judgement, recorded beside the machine's (M43)."""
 
@@ -439,6 +447,19 @@ class SourceReaderResponse(BaseModel):
     direction: Direction
     complete: bool = False
     limitations: tuple[str, ...] = ()
+
+
+class CorrectionTextResponse(BaseModel):
+    """A short, polite message to send back with a correction, and its links (1.3).
+
+    From templates, never a model: it says what the answer says, names the source
+    and quotes it. The app lets the person edit it before sending.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    message: str
+    links: tuple[str, ...] = ()
 
 
 class ReceiptSummaryResponse(BaseModel):

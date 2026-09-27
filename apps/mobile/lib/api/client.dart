@@ -13,6 +13,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import '../models/account.dart';
+import '../models/correction_message.dart';
 import '../models/source_view.dart';
 import 'check_events.dart';
 import '../models/verdict.dart';
@@ -312,6 +313,20 @@ class FactifyClient {
     final response = await _http.get(uri).timeout(const Duration(seconds: 30));
     _raiseFor(response);
     return SourceView.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  });
+
+  /// The polite note to send back to the chat with a correction, in English ("en")
+  /// or Hindi ("hi"). Written by the server from the stored answer, by template.
+  Future<CorrectionMessage> correctionText(String caseId, String language) => _guard(() async {
+    final response = await _http
+        .post(
+          Uri.parse('$baseUrl/v1/cases/$caseId/correction-text'),
+          headers: {'content-type': 'application/json'},
+          body: jsonEncode({'language': language}),
+        )
+        .timeout(const Duration(seconds: 15));
+    _raiseFor(response);
+    return CorrectionMessage.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   });
 
   /// Flag a verdict for human review. Returns the queue confirmation.
