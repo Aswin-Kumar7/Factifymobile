@@ -39,6 +39,17 @@ Added for the v5 app.
   the check ends. Setting `FACTIFY_PROGRESS_REDIS_URL` carries them between
   instances (needs the optional `redis` package).
 - **`request_id`** on the result: the `X-Request-ID` the app sent, echoed.
+- **`media_report`** for an uploaded picture or video: the checks of the upload
+  itself, beside the verdict and never inside it. `credentials` (C2PA: `valid`,
+  `untrusted`, `invalid`, `none`, `unavailable`, plus `declares_ai` when the file
+  itself says an AI tool made it), `history` (reverse image search: `found` with
+  the earliest dated appearance and `days_before`, `none`, `not_checked`; the
+  earlier copy's `thumbnail_url` is served from `GET /v1/media/thumbnails/{key}`,
+  never the third party), `detector` (an AI-image and face-swap detector's
+  likelihoods, 0-1, advisory), `editing` (noise and spectrum signals, advisory), and
+  for a video the number of still `frames` checked. The detector and editing
+  signals also arrive as `advisories`. A video upload is now checked (202, then
+  `/v1/cases/{id}`) instead of being recorded as unprocessed.
 
 ## 1.2
 

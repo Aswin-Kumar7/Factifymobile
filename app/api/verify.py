@@ -25,16 +25,18 @@ from typing import Annotated, Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile, status
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pypdf.errors import PdfReadError
 
 from app.api.accounts import charge, check_cost, require_credit, signed_in
 from app.api.schemas import (
     AcceptedResponse,
+    AdvisoryResponse,
     ClaimResponse,
     ComponentResponse,
     EvidenceResponse,
     ImageReadingResponse,
+    MediaReportResponse,
     ReceiptResponse,
     ReceiptSummaryResponse,
     ReviewItemResponse,
@@ -46,6 +48,7 @@ from app.api.schemas import (
     advisory_to_response,
     claim_anchor_response,
     evidence_to_response,
+    media_report_to_response,
 )
 from app.domain.claim import Claim
 from app.extraction.claims import ExtractedClaims
@@ -65,6 +68,7 @@ from app.intake.normalizer import (
     normalise_url,
 )
 from app.knowledge.registry import authenticate_trigger
+from app.media.video import KeyframeExtractor
 from app.observability.logging import event
 from app.observability.middleware import REQUEST_ID_HEADER
 from app.orchestration.deep import DeepChecks
@@ -900,7 +904,8 @@ async def _checked_file(
     request: Request, file: UploadFile, consent_to_process_media: bool, recheck: bool
 ) -> VerifyResponse | JSONResponse:
     """The upload check itself; `verify_file` above meters it."""
-    orchestrator = get_orchestrator(request)
+    # Unavailable is said before the upload is read, as for every check.
+    get_orchestrator(request)
     settings = request.app.state.settings
 
     data = await file.read(settings.limits.max_upload_bytes + 1)
@@ -927,19 +932,20 @@ async def _checked_file(
     case_id = uuid4()
 
     if intake.input_type is InputType.VIDEO:
-        # The 202 must lead somewhere. No video worker is deployed in this build,
-        # and until this write existed the returned case id pointed at nothing:
-        # the client polled `/v1/cases/{id}`, got 404 fifteen times, and gave up on
-        # a promise the server never intended to keep. Recording the case makes the
-        # poll terminate in an honest answer — routed to review, nothing checked —
-        # instead of an infinite pending.
-        asyncio.get_running_loop().create_task(
-            _record_unprocessed_video(request, case_id=case_id, intake=intake)
-        )
-        accepted = AcceptedResponse(case_id=str(case_id), poll_url=f"/v1/cases/{case_id}")
-        return JSONResponse(
-            status_code=status.HTTP_202_ACCEPTED, content=accepted.model_dump(mode="json")
-        )
+        return _start_video(request, intake, data, case_id=case_id, recheck=recheck)
+
+    # The picture's own checks - credentials, earlier copies, the AI and editing
+    # signals - run alongside the reading and the fact-check, and join the answer.
+    inspection = _inspect_picture(request, intake)
+    response = await _checked_upload(request, intake, case_id=case_id, recheck=recheck)
+    return await _with_media(response, inspection)
+
+
+async def _checked_upload(
+    request: Request, intake: NormalisedIntake, *, case_id: UUID, recheck: bool
+) -> VerifyResponse:
+    """A picture or a PDF, read and checked. Also a video's representative frame."""
+    orchestrator = get_orchestrator(request)
 
     # Probed before media preparation (hashing, embedding, OCR), for the same reason
     # the text path probes before extraction: a repeat should cost nothing. "Check
@@ -1014,6 +1020,182 @@ async def _checked_file(
                 *(SkippedCheckResponse(check=n.check, reason=n.reason) for n in notes),
             ),
         }
+    )
+
+
+# Where the picture checks' own copies of earlier appearances are served from.
+_THUMBNAILS = "/v1/media/thumbnails/"
+
+_MediaShown = tuple[MediaReportResponse, tuple[AdvisoryResponse, ...]]
+
+
+def _inspect_picture(
+    request: Request, intake: NormalisedIntake
+) -> asyncio.Task[_MediaShown] | None:
+    """Start the picture checks for an uploaded image, or None for anything else.
+
+    Remembered per picture in memory, like its reading: a repeat check pays for
+    neither the reverse image search nor the detector a second time.
+    """
+    inspector = getattr(request.app.state, "media_inspector", None)
+    data = intake.primary.data
+    if inspector is None or intake.input_type is not InputType.IMAGE or data is None:
+        return None
+    memo = _remembered_media(request)
+    key = intake.primary.sha256
+
+    async def run() -> _MediaShown:
+        known = memo.get(key)
+        if known is not None:
+            return known
+        report = await inspector.inspect_image(data, mime=_image_mime(data) or "image/jpeg")
+        shown = (
+            media_report_to_response(report, thumbnails=_THUMBNAILS),
+            tuple(advisory_to_response(item) for item in report.advisories),
+        )
+        memo.pop(key, None)
+        memo[key] = shown
+        while len(memo) > _READINGS_KEPT:
+            memo.pop(next(iter(memo)))
+        return shown
+
+    return asyncio.create_task(run())
+
+
+async def _with_media(
+    response: VerifyResponse, inspection: asyncio.Task[_MediaShown] | None
+) -> VerifyResponse:
+    """The answer with the picture checks beside it. A check that failed is left out."""
+    if inspection is None:
+        return response
+    try:
+        media, advisories = await inspection
+    except Exception:
+        logger.exception("the picture checks failed; the answer is sent without them")
+        return response
+    return response.model_copy(
+        update={"media_report": media, "advisories": (*response.advisories, *advisories)}
+    )
+
+
+def _remembered_media(request: Request) -> dict[str, _MediaShown]:
+    memo = getattr(request.app.state, "media_reports", None)
+    if memo is None:
+        memo = {}
+        request.app.state.media_reports = memo
+    return memo
+
+
+def _start_video(
+    request: Request, intake: NormalisedIntake, data: bytes, *, case_id: UUID, recheck: bool
+) -> JSONResponse:
+    """Check a video in the background and answer with its case id at once.
+
+    It used to be recorded as "not processed" and nothing else: the 202 led to an
+    empty case. It is now checked from its still frames (`app/media/video.py`) - the
+    middle one read and fact-checked like a picture, and every one put through the
+    picture checks - and the app collects the answer from `/v1/cases/{id}`.
+    """
+    runs: DeepChecks = request.app.state.deep_checks
+
+    async def work(progress: Any) -> VerifyResponse:
+        del progress
+        # Followed by its case id, which the app has from the 202, like a deep check.
+        async with _watched(request, str(case_id)) as watching:
+            response = await with_receipt(
+                request,
+                await _checked_video(request, intake, data, case_id=case_id, recheck=recheck),
+            )
+            if watching is not None:
+                await watching.done(str(case_id))
+        return response
+
+    runs.start(str(case_id), work)
+    accepted = AcceptedResponse(
+        case_id=str(case_id), poll_url=f"/v1/cases/{case_id}", estimated_seconds=45
+    )
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED, content=accepted.model_dump(mode="json")
+    )
+
+
+async def _checked_video(
+    request: Request, intake: NormalisedIntake, data: bytes, *, case_id: UUID, recheck: bool
+) -> VerifyResponse:
+    extracted = await KeyframeExtractor().extract(data)
+    if not extracted.succeeded:
+        # Nothing could be taken from the clip: said, and nothing else claimed.
+        await _record_unprocessed_video(request, case_id=case_id, intake=intake)
+        result = await get_orchestrator(request).verify(  # type: ignore[attr-defined]
+            intake, case_id=uuid4(), claims=[], fresh=True
+        )
+        response = to_response(result)
+        return response.model_copy(
+            update={
+                "case_id": str(case_id),
+                "skipped": (
+                    *response.skipped,
+                    SkippedCheckResponse(
+                        check="video_frames",
+                        reason=extracted.reason or "no frames could be taken from the video",
+                    ),
+                ),
+            }
+        )
+
+    frames = [frame.data for frame in extracted.keyframes]
+    settings = request.app.state.settings
+    middle = normalise_upload(
+        frames[len(frames) // 2],
+        max_bytes=settings.limits.max_upload_bytes,
+        declared_type="image/jpeg",
+        consent=True,
+    )
+    inspector = getattr(request.app.state, "media_inspector", None)
+    inspection = asyncio.create_task(inspector.inspect_video(data, frames)) if inspector else None
+    response = await _checked_upload(request, middle, case_id=case_id, recheck=recheck)
+    notes = (
+        SkippedCheckResponse(
+            check="video_frames",
+            reason=f"checked {len(frames)} still frames"
+            + (f"; {'; '.join(extracted.limitations)}" if extracted.limitations else ""),
+        ),
+    )
+    response = response.model_copy(update={"skipped": (*response.skipped, *notes)})
+    if inspection is None:
+        return response
+    try:
+        report = await inspection
+    except Exception:
+        logger.exception("the video's picture checks failed")
+        return response
+    return response.model_copy(
+        update={
+            "media_report": media_report_to_response(report, thumbnails=_THUMBNAILS),
+            "advisories": (
+                *response.advisories,
+                *(advisory_to_response(item) for item in report.advisories),
+            ),
+        }
+    )
+
+
+_THUMBNAIL_KEY = re.compile(r"^[0-9a-f]{32}$")
+
+
+@router.get(
+    "/media/thumbnails/{key}",
+    summary="A small copy of an earlier appearance of a checked picture",
+    response_class=Response,
+)
+async def media_thumbnail(key: str, request: Request) -> Response:
+    """Served from here so the app never loads a third-party image directly."""
+    inspector = getattr(request.app.state, "media_inspector", None)
+    data = inspector.thumbnails.get(key) if inspector and _THUMBNAIL_KEY.match(key) else None
+    if data is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such thumbnail")
+    return Response(
+        content=data, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=3600"}
     )
 
 

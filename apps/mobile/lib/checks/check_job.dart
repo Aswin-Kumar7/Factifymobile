@@ -218,6 +218,12 @@ class CheckJob {
       if (!_result.isCompleted) _result.complete(verdict);
     } on ApiFailure catch (failure) {
       if (!_result.isCompleted) _result.completeError(CheckFailed(failure));
+    } on Object {
+      // Anything unforeseen ends the check with an answer the person can act on -
+      // "try again" - rather than a screen left waiting on a result that never comes.
+      if (!_result.isCompleted) {
+        _result.completeError(const CheckFailed(ApiFailure(FailureKind.generic, retryable: true)));
+      }
     } finally {
       unawaited(_events?.cancel());
       if (!_notify || _cancelled) unawaited(services.notifier.release());
@@ -272,7 +278,13 @@ class CheckJob {
           onProgress: _showUpload,
         );
         watch.value = watch.value.copyWith(clearUpload: true);
-        if (outcome.isPending) return _poll(outcome.pendingCaseId!);
+        if (outcome.isPending) {
+          // A video is checked in the background: its progress is followed by the
+          // case id from here on, as a deep check's is.
+          unawaited(_events?.cancel());
+          _listen(outcome.pendingCaseId!);
+          return _poll(outcome.pendingCaseId!);
+        }
         return outcome.verdict;
     }
   }
@@ -298,10 +310,12 @@ class CheckJob {
     return null;
   }
 
-  /// A video: accepted, then polled for, bounded to about thirty seconds.
+  /// A video: accepted, then polled for. Checked from its still frames - read,
+  /// fact-checked and put through the picture checks - which takes up to a couple
+  /// of minutes, so the wait is bounded at two and a half.
   Future<Verdict?> _poll(String caseId) async {
-    for (var attempt = 0; attempt < 15; attempt++) {
-      await Future<void>.delayed(const Duration(seconds: 2));
+    for (var attempt = 0; attempt < 50; attempt++) {
+      await Future<void>.delayed(const Duration(seconds: 3));
       if (_cancelled) return null;
       final verdict = await services.client.getCase(caseId);
       if (verdict != null) return verdict;

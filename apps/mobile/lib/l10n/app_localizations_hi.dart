@@ -1602,4 +1602,163 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get nothingToCheckShort => 'जाँचने को कुछ नहीं';
+
+  @override
+  String get pcTitle => 'तस्वीर की जाँच';
+
+  @override
+  String get pcTitleVideo => 'वीडियो की जाँच';
+
+  @override
+  String pcFrames(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count स्थिर फ़्रेम',
+      one: '1 स्थिर फ़्रेम',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get pcNote => 'फ़ैसले का हिस्सा नहीं';
+
+  @override
+  String get pcCredentials => 'कंटेंट क्रेडेंशियल';
+
+  @override
+  String get pcCredAi => 'फ़ाइल में लिखा है कि इसे AI टूल से बनाया गया';
+
+  @override
+  String pcCredAiTool(String tool) {
+    return 'फ़ाइल में लिखा है कि इसे AI टूल ($tool) से बनाया गया';
+  }
+
+  @override
+  String pcCredValid(String signer) {
+    return '$signer द्वारा हस्ताक्षरित';
+  }
+
+  @override
+  String get pcCredUntrusted =>
+      'मौजूद हैं, पर हस्ताक्षर करने वाले की पुष्टि नहीं';
+
+  @override
+  String get pcCredInvalid => 'मौजूद हैं, पर सही नहीं निकले';
+
+  @override
+  String get pcCredNone =>
+      'नहीं हैं। यह आम है: ज़्यादातर तस्वीरों में नहीं होते।';
+
+  @override
+  String get pcNotChecked => 'जाँच नहीं हुई';
+
+  @override
+  String get pcHistory => 'ऑनलाइन पुरानी प्रतियाँ';
+
+  @override
+  String pcHistorySince(String date, String source) {
+    return '$date से ऑनलाइन · $source';
+  }
+
+  @override
+  String pcHistoryOld(String age) {
+    return 'यह नई तस्वीर नहीं है: यह इस जाँच से $age पहले ऑनलाइन थी।';
+  }
+
+  @override
+  String pcAgeYears(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count साल',
+      one: '1 साल',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String pcAgeMonths(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count महीने',
+      one: '1 महीना',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String pcAgeDays(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count दिन',
+      one: '1 दिन',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String pcHistoryUndated(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count पेजों पर मिली, किसी पर तारीख़ नहीं',
+      one: '1 पेज पर मिली, तारीख़ नहीं',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get pcHistoryNone => 'ऑनलाइन कोई पुरानी प्रति नहीं मिली';
+
+  @override
+  String get pcOpenPage => 'जहाँ यह दिखी वह पेज खोलता है';
+
+  @override
+  String get pcYourPicture => 'आपकी तस्वीर';
+
+  @override
+  String get pcEarlierCopy => 'पुरानी प्रति';
+
+  @override
+  String get pcDetector => 'AI से बनी तस्वीर का संकेत';
+
+  @override
+  String pcGenerated(int percent) {
+    return '$percent% संभावना कि इसे AI इमेज जनरेटर ने बनाया';
+  }
+
+  @override
+  String pcFaceSwap(int percent) {
+    return '$percent% संभावना कि कोई चेहरा बदला गया या AI से बदला गया';
+  }
+
+  @override
+  String get pcDetectorNote => 'यह डिटेक्टर का अनुमान है, निष्कर्ष नहीं।';
+
+  @override
+  String get pcEditing => 'एडिटिंग के संकेत';
+
+  @override
+  String get pcEditNoise =>
+      'तस्वीर के कुछ हिस्सों में असमान नॉइज़ है, जो एडिटिंग से हो सकता है';
+
+  @override
+  String get pcEditSpectrum =>
+      'बारीक हिस्सों में असामान्य पैटर्न, जो जनरेटर या ज़्यादा कंप्रेशन से हो सकते हैं';
+
+  @override
+  String get pcEditClean => 'कोई असमान नॉइज़ या असामान्य पैटर्न नहीं मिला';
+
+  @override
+  String get pcFooter =>
+      'ये तस्वीर की अपनी जाँचें हैं। ये फ़ैसले को कभी नहीं बदलतीं, जो सिर्फ़ उद्धृत स्रोतों पर आधारित है, और साफ़ नतीजे से यह साबित नहीं होता कि तस्वीर असली है।';
+
+  @override
+  String get kindVideo => 'वीडियो';
+
+  @override
+  String get yourVideo => 'आपका वीडियो';
 }

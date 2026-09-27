@@ -41,6 +41,9 @@ from app.extraction.llm import LLMExtractor
 from app.extraction.model_wire import WireFormat
 from app.extraction.ocr import OcrExtractor
 from app.intake.normalizer import NormalisedIntake
+from app.media.discovery import ReverseImageDiscovery
+from app.media.report import MediaInspector
+from app.media.synthetic import SightengineDetector
 from app.observability.logging import event
 from app.orchestration.adapters import (
     PoolAccountStore,
@@ -441,6 +444,38 @@ async def build(settings: Settings) -> dict[str, Any]:
             api_format=WireFormat(settings.llm.api_format),
         )
 
+    # The picture checks (app/media/report.py): content credentials and the editing
+    # signals always; reverse image search when Google Vision is configured, and the
+    # AI-image detector when Sightengine is. A missing provider is reported as "not
+    # checked" on the answer, never as a clean result.
+    media_fetcher = SecureFetcher(timeout_seconds=15.0)
+    vision = settings.vision
+    synthetic = settings.synthetic
+    state["media_inspector"] = MediaInspector(
+        discovery=(
+            ReverseImageDiscovery(
+                fetcher=media_fetcher,
+                governor=governor,  # type: ignore[arg-type]
+                endpoint=vision.endpoint,
+                api_key=vision.api_key.get_secret_value(),
+            )
+            if vision.enabled and vision.api_key and vision.endpoint
+            else None
+        ),
+        detector=(
+            SightengineDetector(
+                fetcher=media_fetcher,
+                governor=governor,  # type: ignore[arg-type]
+                endpoint=synthetic.endpoint or "https://api.sightengine.com/1.0/check.json",
+                account=synthetic.account,
+                secret=synthetic.api_key.get_secret_value(),
+            )
+            if synthetic.enabled and synthetic.api_key and synthetic.account
+            else None
+        ),
+        fetcher=media_fetcher,
+    )
+
     await _prewarm(embedder, image_embedder)
 
     event(
@@ -452,6 +487,8 @@ async def build(settings: Settings) -> dict[str, Any]:
         factcheck_records=len(records),
         extraction_configured="claim_pipeline" in state,
         image_reading_configured="ocr" in state,
+        reverse_image_search=vision.enabled and vision.api_key is not None,
+        ai_image_detector=synthetic.enabled and synthetic.api_key is not None,
     )
     return state
 

@@ -211,9 +211,18 @@ class KeyframeExtractor:
             frames = await self._scene_frames(source, root, limitations)
 
             if not frames:
-                # Nothing to say rather than a guess. A single-shot clip with no cuts
-                # is a real case, and reporting no frames is better than sampling
-                # arbitrarily and calling the result keyframes.
+                # A single-shot clip has no cuts - a phone video of one scene, the
+                # commonest forward there is. Three frames spread across it are taken
+                # instead, and the limitation says so, rather than calling them
+                # keyframes or checking nothing.
+                frames = await self._spread_frames(
+                    source, root, min(description.duration_seconds, self._max_seconds)
+                )
+                if frames:
+                    limitations.append("no scene changes; three evenly spaced frames were used")
+
+            if not frames:
+                # Nothing to say rather than a guess.
                 return ExtractedVideo(
                     probe=description,
                     truncated=truncated,
@@ -272,6 +281,38 @@ class KeyframeExtractor:
             )
 
         return await asyncio.to_thread(self._collect, workspace)
+
+    async def _spread_frames(
+        self, source: Path, workspace: Path, seconds: float
+    ) -> tuple[Keyframe, ...]:
+        """One frame at a tenth, half and nine tenths of the clip."""
+        frames: list[Keyframe] = []
+        for index, share in enumerate((0.1, 0.5, 0.9)):
+            moment = max(0.0, seconds * share)
+            target = workspace / f"spread-{index}.jpg"
+            code, _, _ = await _run(
+                [
+                    "ffmpeg",
+                    "-v",
+                    "error",
+                    "-ss",
+                    f"{moment:.2f}",
+                    "-i",
+                    str(source),
+                    "-frames:v",
+                    "1",
+                    "-vf",
+                    f"scale=-2:{self._max_height}",
+                    "-q:v",
+                    "3",
+                    str(target),
+                ],
+                timeout=30.0,
+            )
+            if code == 0 and target.exists():
+                data = await asyncio.to_thread(target.read_bytes)
+                frames.append(Keyframe(index=index, timestamp_ms=int(moment * 1000), data=data))
+        return tuple(frames)
 
     @staticmethod
     def _collect(workspace: Path) -> tuple[Keyframe, ...]:

@@ -51,6 +51,8 @@ class DatedInstance:
     published_at: datetime
     publisher: str | None = None
     method: str = "matched_page_date"
+    # The copy of the content at that appearance, when there is one to show.
+    image_url: str | None = None
 
     @property
     def is_archive_confirmed(self) -> bool:

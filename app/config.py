@@ -52,6 +52,9 @@ class ProviderSettings(BaseModel):
 
     enabled: bool = False
     api_key: SecretStr | None = None
+    # The account a key belongs to, for providers that take the two separately
+    # (Sightengine's api_user beside its api_secret). An identifier, not a secret.
+    account: str | None = None
     daily_cap: int = Field(default=0, ge=0)
     daily_hard_cap: int = Field(default=0, ge=0)
     per_minute_cap: int = Field(default=0, ge=0)
@@ -244,6 +247,9 @@ class Settings(BaseSettings):
     archive: ProviderSettings = ProviderSettings()
     # Live web search — the open-web evidence path. Off by default like the rest.
     websearch: ProviderSettings = ProviderSettings()
+    # The AI-generated and face-swap detector (Sightengine). Its readings are
+    # advisories: shown beside a picture, never an input to a verdict.
+    synthetic: ProviderSettings = ProviderSettings()
 
     # Which search provider `websearch` speaks to: "tavily" (search + clean extract in
     # one call) or "exa" (neural search with page text). Determines the request shape
@@ -299,6 +305,7 @@ class Settings(BaseSettings):
             "vision": self.vision,
             "archive": self.archive,
             "web_search": self.websearch,
+            "synthetic": self.synthetic,
         }
 
     def redacted(self) -> dict[str, Any]:

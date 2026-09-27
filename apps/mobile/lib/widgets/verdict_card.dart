@@ -30,6 +30,7 @@ import '../models/verdict.dart';
 import 'action_style.dart';
 import 'claim_spans.dart';
 import 'claim_words.dart';
+import 'picture_checks.dart';
 import 'english_only_note.dart';
 import 'teaching_line.dart';
 import 'ui/ui.dart';
@@ -55,6 +56,8 @@ class VerdictCard extends StatelessWidget {
     this.reported = false,
     this.receipt,
     this.receiptId,
+    this.serverUrl,
+    this.onOpenPage,
   });
 
   final Verdict verdict;
@@ -72,6 +75,12 @@ class VerdictCard extends StatelessWidget {
 
   /// Opens one source.
   final ValueChanged<Evidence>? onOpenSource;
+
+  /// Where the picture checks' copies of earlier appearances are served from.
+  final String? serverUrl;
+
+  /// Opens a page where the picture appeared before.
+  final ValueChanged<String>? onOpenPage;
 
   /// Reports this result as wrong. Null once reported.
   final VoidCallback? onReportForReview;
@@ -364,6 +373,20 @@ class _Body extends StatelessWidget {
           const SizedBox(height: 10),
           _MediaMatch(evidence: media, thumbnail: card.thumbnail),
         ],
+        if (verdict.mediaReport case final report?) ...[
+          _SectionTitle(
+            title: report.isVideo ? l10n.pcTitleVideo : l10n.pcTitle,
+            note: report.frames == null
+                ? l10n.pcNote
+                : '${l10n.pcFrames(report.frames!)} · ${l10n.pcNote}',
+          ),
+          PictureChecks(
+            report: report,
+            thumbnail: card.thumbnail,
+            serverUrl: card.serverUrl,
+            onOpenPage: card.onOpenPage,
+          ),
+        ],
         if (claims.isNotEmpty) ...[
           _SectionTitle(title: l10n.claimCount(claims.length), note: _statusNote(claims, l10n)),
           FxListCard(
@@ -634,7 +657,8 @@ class _WhatWeCheckedState extends State<_WhatWeChecked> {
         final host = Uri.tryParse(card.submittedText ?? '')?.host.replaceFirst('www.', '');
         kindLabel = host == null || host.isEmpty ? l10n.kindLink : '${l10n.kindLink} · $host';
       case SubmissionKind.image:
-        kindLabel = l10n.kindImage;
+        // A shared video arrives as a file like a picture; the server says which.
+        kindLabel = (verdict.mediaReport?.isVideo ?? false) ? l10n.kindVideo : l10n.kindImage;
       case SubmissionKind.document:
         kindLabel = l10n.kindPdf;
     }

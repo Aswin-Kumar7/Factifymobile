@@ -463,6 +463,157 @@ class MediaProvenance {
 /// The claims were extracted from [text], so showing it lets a person see exactly
 /// what was checked, and catch a misread before trusting the verdict built on it.
 /// [description] is context, never evidence.
+/// The picture checks: what can be said about an uploaded picture or video itself
+/// (contract 1.3, app/media/report.py). Four answers, each able to say "not checked".
+///
+/// None of it is a verdict. The detector and editing values are signals - a
+/// classifier's estimate, a forensic description - shown as such and never scored.
+class MediaReport {
+  const MediaReport({
+    required this.kind,
+    required this.credentials,
+    required this.history,
+    required this.detector,
+    required this.editing,
+    this.frames,
+  });
+
+  /// image or video.
+  final String kind;
+  final MediaCredentials credentials;
+  final MediaHistory history;
+  final MediaDetector detector;
+  final MediaEditing editing;
+
+  /// For a video, how many still frames were checked.
+  final int? frames;
+
+  bool get isVideo => kind == 'video';
+
+  static MediaReport? tryParse(Object? json) {
+    if (json is! Map) return null;
+    final map = json.cast<String, dynamic>();
+    Map<String, dynamic> part(String key) =>
+        (map[key] is Map ? (map[key] as Map).cast<String, dynamic>() : const <String, dynamic>{});
+    return MediaReport(
+      kind: map['kind'] as String? ?? 'image',
+      credentials: MediaCredentials.fromJson(part('credentials')),
+      history: MediaHistory.fromJson(part('history')),
+      detector: MediaDetector.fromJson(part('detector')),
+      editing: MediaEditing.fromJson(part('editing')),
+      frames: (map['frames'] as num?)?.toInt(),
+    );
+  }
+}
+
+class MediaCredentials {
+  const MediaCredentials({
+    required this.status,
+    this.signer,
+    this.declaresAi = false,
+    this.generator,
+  });
+
+  /// valid, untrusted, invalid, none or unavailable.
+  final String status;
+  final String? signer;
+
+  /// The file itself says an AI tool made it - what the file says, not our finding.
+  final bool declaresAi;
+  final String? generator;
+
+  factory MediaCredentials.fromJson(Map<String, dynamic> json) => MediaCredentials(
+    status: json['status'] as String? ?? 'unavailable',
+    signer: json['signer'] as String?,
+    declaresAi: json['declares_ai'] as bool? ?? false,
+    generator: json['generator'] as String?,
+  );
+}
+
+class MediaHistory {
+  const MediaHistory({required this.status, this.pages = 0, this.dated = 0, this.earliest});
+
+  /// found, none or not_checked.
+  final String status;
+  final int pages;
+  final int dated;
+  final EarlierCopy? earliest;
+
+  factory MediaHistory.fromJson(Map<String, dynamic> json) => MediaHistory(
+    status: json['status'] as String? ?? 'not_checked',
+    pages: (json['pages'] as num?)?.toInt() ?? 0,
+    dated: (json['dated'] as num?)?.toInt() ?? 0,
+    earliest: json['earliest'] is Map
+        ? EarlierCopy.fromJson((json['earliest'] as Map).cast<String, dynamic>())
+        : null,
+  );
+}
+
+class EarlierCopy {
+  const EarlierCopy({
+    required this.url,
+    required this.publishedAt,
+    this.publisher,
+    this.daysBefore,
+    this.thumbnailUrl,
+  });
+
+  final String url;
+  final DateTime publishedAt;
+  final String? publisher;
+  final int? daysBefore;
+
+  /// On our own server, relative to it; never the third party's copy.
+  final String? thumbnailUrl;
+
+  /// Online a month or more before the check: not a new picture.
+  bool get isOld => (daysBefore ?? 0) >= 30;
+
+  factory EarlierCopy.fromJson(Map<String, dynamic> json) => EarlierCopy(
+    url: json['url'] as String? ?? '',
+    publishedAt: DateTime.tryParse(json['published_at'] as String? ?? '') ?? DateTime(1970),
+    publisher: json['publisher'] as String?,
+    daysBefore: (json['days_before'] as num?)?.toInt(),
+    thumbnailUrl: json['thumbnail_url'] as String?,
+  );
+}
+
+class MediaDetector {
+  const MediaDetector({required this.status, this.generated, this.faceSwap});
+
+  /// checked or not_checked.
+  final String status;
+
+  /// 0-1 likelihoods from an AI-image detector: an estimate, never a finding.
+  final double? generated;
+  final double? faceSwap;
+
+  bool get checked => status == 'checked';
+
+  factory MediaDetector.fromJson(Map<String, dynamic> json) => MediaDetector(
+    status: json['status'] as String? ?? 'not_checked',
+    generated: (json['generated'] as num?)?.toDouble(),
+    faceSwap: (json['face_swap'] as num?)?.toDouble(),
+  );
+}
+
+class MediaEditing {
+  const MediaEditing({required this.status, this.unevenNoise = false, this.spectralPeaks = false});
+
+  /// checked or not_checked.
+  final String status;
+  final bool unevenNoise;
+  final bool spectralPeaks;
+
+  bool get checked => status == 'checked';
+
+  factory MediaEditing.fromJson(Map<String, dynamic> json) => MediaEditing(
+    status: json['status'] as String? ?? 'not_checked',
+    unevenNoise: json['uneven_noise'] as bool? ?? false,
+    spectralPeaks: json['spectral_peaks'] as bool? ?? false,
+  );
+}
+
 class ImageReading {
   const ImageReading({
     required this.text,
@@ -516,6 +667,7 @@ class Verdict {
     this.mediaProvenance,
     this.sourceRisk = 'UNKNOWN',
     this.imageReading,
+    this.mediaReport,
     this.raw = const {},
   });
 
@@ -555,6 +707,10 @@ class Verdict {
 
   /// For an uploaded picture: what was read in it. Null for text and links.
   final ImageReading? imageReading;
+
+  /// For an uploaded picture or video: the checks of the upload itself (contract
+  /// 1.3). Beside the verdict, never inside it.
+  final MediaReport? mediaReport;
 
   /// The claim the checked thing is mainly about: the headline claim, else the
   /// first. Null when nothing checkable was found.
@@ -611,6 +767,7 @@ class Verdict {
     imageReading: json['image_reading'] == null
         ? null
         : ImageReading.fromJson((json['image_reading'] as Map).cast<String, dynamic>()),
+    mediaReport: MediaReport.tryParse(json['media_report']),
     raw: json,
   );
 

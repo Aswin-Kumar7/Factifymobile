@@ -145,6 +145,12 @@ class _ResultScreenState extends State<ResultScreen> {
     ),
   );
 
+  /// A page where the picture appeared before, in the person's own browser.
+  void _openPage(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri != null) unawaited(launchUrl(uri, mode: LaunchMode.externalApplication));
+  }
+
   Future<void> _openSource(Evidence evidence) async {
     final uri = Uri.tryParse(evidence.citationUrl);
     if (uri == null) return;
@@ -239,6 +245,8 @@ class _ResultScreenState extends State<ResultScreen> {
                 reported: _reported,
                 receipt: _receipt,
                 receiptId: _receiptId,
+                serverUrl: widget.services.client.baseUrl,
+                onOpenPage: _openPage,
               ),
             ],
           ),

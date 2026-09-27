@@ -2389,6 +2389,210 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Nothing to check'**
   String get nothingToCheckShort;
+
+  /// No description provided for @pcTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Picture checks'**
+  String get pcTitle;
+
+  /// No description provided for @pcTitleVideo.
+  ///
+  /// In en, this message translates to:
+  /// **'Video checks'**
+  String get pcTitleVideo;
+
+  /// No description provided for @pcFrames.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 still frame} other{{count} still frames}}'**
+  String pcFrames(int count);
+
+  /// No description provided for @pcNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Not part of the verdict'**
+  String get pcNote;
+
+  /// No description provided for @pcCredentials.
+  ///
+  /// In en, this message translates to:
+  /// **'Content credentials'**
+  String get pcCredentials;
+
+  /// No description provided for @pcCredAi.
+  ///
+  /// In en, this message translates to:
+  /// **'The file says it was made with an AI tool'**
+  String get pcCredAi;
+
+  /// No description provided for @pcCredAiTool.
+  ///
+  /// In en, this message translates to:
+  /// **'The file says it was made with an AI tool ({tool})'**
+  String pcCredAiTool(String tool);
+
+  /// No description provided for @pcCredValid.
+  ///
+  /// In en, this message translates to:
+  /// **'Signed by {signer}'**
+  String pcCredValid(String signer);
+
+  /// No description provided for @pcCredUntrusted.
+  ///
+  /// In en, this message translates to:
+  /// **'Present, but the signer isn\'t verified'**
+  String get pcCredUntrusted;
+
+  /// No description provided for @pcCredInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Present, but they don\'t check out'**
+  String get pcCredInvalid;
+
+  /// No description provided for @pcCredNone.
+  ///
+  /// In en, this message translates to:
+  /// **'None. That\'s normal: most pictures carry none.'**
+  String get pcCredNone;
+
+  /// No description provided for @pcNotChecked.
+  ///
+  /// In en, this message translates to:
+  /// **'Not checked'**
+  String get pcNotChecked;
+
+  /// No description provided for @pcHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'Earlier copies online'**
+  String get pcHistory;
+
+  /// No description provided for @pcHistorySince.
+  ///
+  /// In en, this message translates to:
+  /// **'Online since {date} · {source}'**
+  String pcHistorySince(String date, String source);
+
+  /// No description provided for @pcHistoryOld.
+  ///
+  /// In en, this message translates to:
+  /// **'Not a new picture: it was online {age} before this check.'**
+  String pcHistoryOld(String age);
+
+  /// No description provided for @pcAgeYears.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 year} other{{count} years}}'**
+  String pcAgeYears(int count);
+
+  /// No description provided for @pcAgeMonths.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 month} other{{count} months}}'**
+  String pcAgeMonths(int count);
+
+  /// No description provided for @pcAgeDays.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 day} other{{count} days}}'**
+  String pcAgeDays(int count);
+
+  /// No description provided for @pcHistoryUndated.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Found on 1 page, with no date} other{Found on {count} pages, none dated}}'**
+  String pcHistoryUndated(int count);
+
+  /// No description provided for @pcHistoryNone.
+  ///
+  /// In en, this message translates to:
+  /// **'No earlier copies found online'**
+  String get pcHistoryNone;
+
+  /// No description provided for @pcOpenPage.
+  ///
+  /// In en, this message translates to:
+  /// **'Opens the page where it appeared'**
+  String get pcOpenPage;
+
+  /// No description provided for @pcYourPicture.
+  ///
+  /// In en, this message translates to:
+  /// **'Your picture'**
+  String get pcYourPicture;
+
+  /// No description provided for @pcEarlierCopy.
+  ///
+  /// In en, this message translates to:
+  /// **'Earlier copy'**
+  String get pcEarlierCopy;
+
+  /// No description provided for @pcDetector.
+  ///
+  /// In en, this message translates to:
+  /// **'AI-made picture signal'**
+  String get pcDetector;
+
+  /// No description provided for @pcGenerated.
+  ///
+  /// In en, this message translates to:
+  /// **'{percent}% likely made by an AI image generator'**
+  String pcGenerated(int percent);
+
+  /// No description provided for @pcFaceSwap.
+  ///
+  /// In en, this message translates to:
+  /// **'{percent}% likely a face was swapped or changed by AI'**
+  String pcFaceSwap(int percent);
+
+  /// No description provided for @pcDetectorNote.
+  ///
+  /// In en, this message translates to:
+  /// **'A detector\'s estimate, not a finding.'**
+  String get pcDetectorNote;
+
+  /// No description provided for @pcEditing.
+  ///
+  /// In en, this message translates to:
+  /// **'Editing signals'**
+  String get pcEditing;
+
+  /// No description provided for @pcEditNoise.
+  ///
+  /// In en, this message translates to:
+  /// **'Parts of the picture have uneven noise, which editing can cause'**
+  String get pcEditNoise;
+
+  /// No description provided for @pcEditSpectrum.
+  ///
+  /// In en, this message translates to:
+  /// **'Unusual patterns in the fine detail, which generators and heavy compression can cause'**
+  String get pcEditSpectrum;
+
+  /// No description provided for @pcEditClean.
+  ///
+  /// In en, this message translates to:
+  /// **'No uneven noise or unusual patterns found'**
+  String get pcEditClean;
+
+  /// No description provided for @pcFooter.
+  ///
+  /// In en, this message translates to:
+  /// **'These are checks of the picture itself. They never change the verdict, which rests only on cited sources, and a clean result doesn\'t prove a picture is real.'**
+  String get pcFooter;
+
+  /// No description provided for @kindVideo.
+  ///
+  /// In en, this message translates to:
+  /// **'Video'**
+  String get kindVideo;
+
+  /// No description provided for @yourVideo.
+  ///
+  /// In en, this message translates to:
+  /// **'Your video'**
+  String get yourVideo;
 }
 
 class _AppLocalizationsDelegate

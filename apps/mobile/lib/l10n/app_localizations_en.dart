@@ -1605,4 +1605,161 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get nothingToCheckShort => 'Nothing to check';
+
+  @override
+  String get pcTitle => 'Picture checks';
+
+  @override
+  String get pcTitleVideo => 'Video checks';
+
+  @override
+  String pcFrames(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count still frames',
+      one: '1 still frame',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get pcNote => 'Not part of the verdict';
+
+  @override
+  String get pcCredentials => 'Content credentials';
+
+  @override
+  String get pcCredAi => 'The file says it was made with an AI tool';
+
+  @override
+  String pcCredAiTool(String tool) {
+    return 'The file says it was made with an AI tool ($tool)';
+  }
+
+  @override
+  String pcCredValid(String signer) {
+    return 'Signed by $signer';
+  }
+
+  @override
+  String get pcCredUntrusted => 'Present, but the signer isn\'t verified';
+
+  @override
+  String get pcCredInvalid => 'Present, but they don\'t check out';
+
+  @override
+  String get pcCredNone => 'None. That\'s normal: most pictures carry none.';
+
+  @override
+  String get pcNotChecked => 'Not checked';
+
+  @override
+  String get pcHistory => 'Earlier copies online';
+
+  @override
+  String pcHistorySince(String date, String source) {
+    return 'Online since $date · $source';
+  }
+
+  @override
+  String pcHistoryOld(String age) {
+    return 'Not a new picture: it was online $age before this check.';
+  }
+
+  @override
+  String pcAgeYears(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count years',
+      one: '1 year',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String pcAgeMonths(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count months',
+      one: '1 month',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String pcAgeDays(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count days',
+      one: '1 day',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String pcHistoryUndated(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Found on $count pages, none dated',
+      one: 'Found on 1 page, with no date',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get pcHistoryNone => 'No earlier copies found online';
+
+  @override
+  String get pcOpenPage => 'Opens the page where it appeared';
+
+  @override
+  String get pcYourPicture => 'Your picture';
+
+  @override
+  String get pcEarlierCopy => 'Earlier copy';
+
+  @override
+  String get pcDetector => 'AI-made picture signal';
+
+  @override
+  String pcGenerated(int percent) {
+    return '$percent% likely made by an AI image generator';
+  }
+
+  @override
+  String pcFaceSwap(int percent) {
+    return '$percent% likely a face was swapped or changed by AI';
+  }
+
+  @override
+  String get pcDetectorNote => 'A detector\'s estimate, not a finding.';
+
+  @override
+  String get pcEditing => 'Editing signals';
+
+  @override
+  String get pcEditNoise =>
+      'Parts of the picture have uneven noise, which editing can cause';
+
+  @override
+  String get pcEditSpectrum =>
+      'Unusual patterns in the fine detail, which generators and heavy compression can cause';
+
+  @override
+  String get pcEditClean => 'No uneven noise or unusual patterns found';
+
+  @override
+  String get pcFooter =>
+      'These are checks of the picture itself. They never change the verdict, which rests only on cited sources, and a clean result doesn\'t prove a picture is real.';
+
+  @override
+  String get kindVideo => 'Video';
+
+  @override
+  String get yourVideo => 'Your video';
 }

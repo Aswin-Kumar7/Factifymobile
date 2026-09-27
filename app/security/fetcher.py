@@ -312,6 +312,53 @@ class SecureFetcher:
             elapsed_ms=(time.perf_counter() - started) * 1000,
         )
 
+    async def post_multipart(
+        self,
+        url: str,
+        fields: dict[str, str],
+        files: dict[str, tuple[str, bytes, str]],
+        *,
+        provider: str,
+    ) -> FetchResult | FetchFailure:
+        """POST a file to a configured provider endpoint, as a multipart form.
+
+        For providers that take an upload rather than JSON (the AI-image detector).
+        SSRF-checked like every other call; an HTTP error is a failure, as it is for
+        `post_json`, because nothing in an error body is a result.
+        """
+        started = time.perf_counter()
+        try:
+            resolve_and_validate(url)
+        except BlockedDestination as blocked:
+            return self._failure(url, blocked.reason, kind="blocked", provider=provider)
+        try:
+            response = await self._client.post(url, data=fields, files=files)
+        except httpx.TimeoutException:
+            return self._failure(url, "request timed out", kind="timeout", provider=provider)
+        except httpx.HTTPError as exc:
+            return self._failure(
+                url, f"transport error: {type(exc).__name__}", kind="transport", provider=provider
+            )
+        body = await response.aread()
+        await response.aclose()
+        if response.status_code >= 400:
+            return self._failure(
+                url,
+                f"provider returned {response.status_code}",
+                kind="provider_error",
+                provider=provider,
+            )
+        return FetchResult(
+            url=url,
+            final_url=url,
+            status_code=response.status_code,
+            content_type=response.headers.get("content-type", "").split(";")[0] or None,
+            body=body,
+            byte_count=len(body),
+            fetched_at=datetime.now(UTC),
+            elapsed_ms=(time.perf_counter() - started) * 1000,
+        )
+
     async def post_json(
         self,
         url: str,

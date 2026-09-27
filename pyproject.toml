@@ -19,6 +19,7 @@ dependencies = [
     # Multipart parsing for /v1/verify/file. FastAPI raises at import time without
     # it, so an upload route cannot be added by accident and left broken.
     "python-multipart>=0.0.20",
+    "c2pa-python>=0.37.12",
 ]
 
 [dependency-groups]

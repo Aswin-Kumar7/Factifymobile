@@ -18,11 +18,20 @@ it:
 P1 by design: this module is deliberately off the critical path, because spending
 build time on a signal that returns unknown for the dominant input distribution would
 be time not spent on the paths that resolve real cases.
+
+**Declared AI generation** is read too (2026-09-27): the IPTC digital source type an
+AI tool writes into its own output - OpenAI, Adobe Firefly and Google sign theirs with
+"trainedAlgorithmicMedia" - from a manifest, or from the file's XMP metadata where
+there is no manifest. It is the one AI-generation signal that is not a guess: the file
+says so itself. It is reported as what the file says, trusted signer or not, and like
+everything here it never enters a verdict.
 """
 
 from __future__ import annotations
 
+import io
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -61,6 +70,19 @@ class ProvenanceReport:
     ingredients: tuple[Ingredient, ...] = field(default_factory=tuple)
     validation_errors: tuple[str, ...] = field(default_factory=tuple)
     reason: str | None = None
+    # What the file says made it (an IPTC digital source type such as
+    # "trainedAlgorithmicMedia"), and the tool it names. From the manifest, or from
+    # XMP metadata when there is none; None when nothing is declared.
+    digital_source: str | None = None
+    generator: str | None = None
+    # The manifest is intact but its signer is on no trust list checked here - a
+    # self-signed or unknown credential. Readable, never citable.
+    untrusted_signer: bool = False
+
+    @property
+    def declares_ai(self) -> bool:
+        """The file itself says a trained model made or composited it."""
+        return self.digital_source in _AI_SOURCES
 
     @property
     def is_unknown(self) -> bool:
@@ -142,7 +164,11 @@ def read(data: bytes, *, filename: str = "upload") -> ProvenanceReport:
         return ProvenanceReport(present=False, reason=f"unreadable: {type(exc).__name__}")
 
     if not manifest_json:
-        return ProvenanceReport(present=False, reason="no manifest in this asset")
+        return ProvenanceReport(
+            present=False,
+            reason="no manifest in this asset",
+            digital_source=declared_source(data),
+        )
 
     return _parse(manifest_json)
 
@@ -153,13 +179,22 @@ def _read_manifest(module: Any, data: bytes, filename: str) -> dict[str, Any] | 
     The Python binding has changed shape across releases. Rather than pin behaviour to
     one version, try the current entry point and fall back; an unrecognised build
     returns nothing, which lands on unknown like every other failure.
+
+    The reader takes a stream, not bytes: handed the bytes it failed on every upload,
+    and every one was reported as having no credentials. The format is read from the
+    bytes too - uploads are named by their hash, so a PNG was read as a JPEG.
     """
     import json
 
     reader = getattr(module, "Reader", None)
     if reader is not None:
-        with reader(_format_for(filename), data) as handle:
-            return dict(json.loads(handle.json()))
+        try:
+            with reader(_format_of(data, filename), io.BytesIO(data)) as handle:
+                return dict(json.loads(handle.json()))
+        except Exception as exc:
+            if "ManifestNotFound" in type(exc).__name__:
+                return None
+            raise
 
     legacy = getattr(module, "read_file", None)
     if legacy is not None:
@@ -168,11 +203,54 @@ def _read_manifest(module: Any, data: bytes, filename: str) -> dict[str, Any] | 
     return None
 
 
-def _format_for(filename: str) -> str:
+def _format_of(data: bytes, filename: str) -> str:
+    """The media type, from the file's first bytes; the name only as a fallback."""
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith(b"\x89PNG"):
+        return "image/png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    if data[4:8] == b"ftyp":
+        return "video/mp4"
     suffix = filename.rsplit(".", 1)[-1].lower() if "." in filename else "jpeg"
     return {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "mp4": "video/mp4"}.get(
         suffix, "image/jpeg"
     )
+
+
+# IPTC digital source types meaning a trained model made the picture, or part of it.
+# https://cv.iptc.org/newscodes/digitalsourcetype/
+_AI_SOURCES = frozenset({"trainedAlgorithmicMedia", "compositeWithTrainedAlgorithmicMedia"})
+_SOURCE_TERM = re.compile(rb"digitalsourcetype/([A-Za-z]+)")
+
+
+def declared_source(data: bytes) -> str | None:
+    """The IPTC digital source type written in the file's own metadata, if any.
+
+    XMP is stored as plain text inside JPEG, PNG and WebP files, so the term is read
+    straight from the bytes - no manifest, no library. Platforms strip metadata as
+    readily as credentials, so absence means nothing; presence means the file says it.
+    """
+    found = _SOURCE_TERM.search(data)
+    return found.group(1).decode("ascii") if found else None
+
+
+def _actions(active: dict[str, Any]) -> list[dict[str, Any]]:
+    """The actions the manifest records (`c2pa.actions` and its versions)."""
+    actions: list[dict[str, Any]] = []
+    for item in active.get("assertions", []) or []:
+        if str(item.get("label", "")).startswith("c2pa.actions"):
+            data = item.get("data") or {}
+            actions.extend(a for a in data.get("actions", []) or [] if isinstance(a, dict))
+    return actions
+
+
+def _agent_name(agent: Any) -> str | None:
+    if isinstance(agent, dict):
+        name = agent.get("name")
+        return str(name) if name else None
+    return str(agent) if agent else None
 
 
 def _parse(manifest_json: dict[str, Any]) -> ProvenanceReport:
@@ -190,6 +268,23 @@ def _parse(manifest_json: dict[str, Any]) -> ProvenanceReport:
         for item in status
         if str(item.get("code", "")).startswith(("signing", "claim", "assertion"))
     )
+    # An unknown signer is its own finding, not a broken credential: the manifest is
+    # intact and says what it says; only nobody we trust vouches for it.
+    untrusted = errors == ("signingCredential.untrusted",)
+
+    source: str | None = None
+    agent: str | None = None
+    for action in _actions(active):
+        term = str(action.get("digitalSourceType") or "").rstrip("/").rsplit("/", 1)[-1]
+        if term:
+            source = term
+            agent = _agent_name(action.get("softwareAgent")) or agent
+            if term in _AI_SOURCES:
+                break
+    if agent is None:
+        generators = active.get("claim_generator_info") or []
+        if generators and isinstance(generators[0], dict):
+            agent = _agent_name(generators[0])
 
     signature = active.get("signature_info", {}) or {}
 
@@ -224,6 +319,9 @@ def _parse(manifest_json: dict[str, Any]) -> ProvenanceReport:
         assertions=assertions,
         ingredients=ingredients,
         validation_errors=errors,
+        digital_source=source,
+        generator=agent,
+        untrusted_signer=untrusted,
     )
 
     event(

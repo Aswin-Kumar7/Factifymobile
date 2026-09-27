@@ -389,7 +389,7 @@ class _Working extends StatelessWidget {
     final step = watch.step < 0 ? 0 : watch.step;
     final labels = [l10n.stepReading, l10n.stepSearching, l10n.stepComparing];
     final what = submission.kind == SubmissionKind.image && submission.summary.isEmpty
-        ? l10n.yourPicture
+        ? (submission.video ? l10n.yourVideo : l10n.yourPicture)
         : submission.summary;
     final detail = uploading
         ? l10n.uploading((watch.upload! * 100).round())

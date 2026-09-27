@@ -294,7 +294,9 @@ class FactifyClient {
 
   Future<Verdict?> getCase(String caseId) => _guard(() async {
     final response = await _http.get(Uri.parse('$baseUrl/v1/cases/$caseId')).timeout(_timeout);
-    if (response.statusCode == 404) return null;
+    // 202 is a video still being checked: not an answer yet. It was read as one,
+    // failed on the missing verdict, and left the Checking screen waiting forever.
+    if (response.statusCode == 404 || response.statusCode == 202) return null;
     _raiseFor(response);
     return Verdict.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   });

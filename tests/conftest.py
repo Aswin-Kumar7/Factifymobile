@@ -97,6 +97,12 @@ async def conn(database: Database) -> AsyncIterator[object]:
     async with database.connection() as connection:
         transaction = connection.transaction(force_rollback=True)
         async with transaction:
+            # The database is shared with a local server, whose real provider calls
+            # leave today's budget rows behind - a Vision call made during a phone
+            # test broke four budget tests. Cleared inside the rolled-back
+            # transaction, so each test sees the empty state it expects and nothing
+            # real is deleted.
+            await connection.execute("DELETE FROM call_budget")
             yield connection
 
 

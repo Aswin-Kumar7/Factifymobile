@@ -60,6 +60,9 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   InputType _type = InputType.text;
   File? _file;
   Uint8List? _preview;
+
+  /// The shared file is a video: sent the same way, only named differently.
+  bool _video = false;
   int? _fileSize;
   bool _deep = false;
 
@@ -147,6 +150,7 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _file = null;
       _preview = null;
       _fileSize = null;
+      _video = false;
     });
   }
 
@@ -220,7 +224,7 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     Uint8List? preview;
     try {
       size = await file.length();
-      if (type == InputType.image && size <= _previewBytesLimit) {
+      if (type == InputType.image && !_video && size <= _previewBytesLimit) {
         preview = await file.readAsBytes();
       }
     } on FileSystemException {
@@ -248,7 +252,7 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             : Submission.text(value);
       case InputType.image:
         final file = _file;
-        return file == null ? null : Submission.image(file, _preview);
+        return file == null ? null : Submission.image(file, _preview, video: _video);
       case InputType.pdf:
         final file = _file;
         return file == null ? null : Submission.document(file);
@@ -285,6 +289,7 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (content.isFile) {
       final mime = content.mimeType ?? '';
       final isPdf = mime == 'application/pdf' || content.value.toLowerCase().endsWith('.pdf');
+      _video = mime.startsWith('video/');
       await _useFile(File(content.value), isPdf ? InputType.pdf : InputType.image);
     } else {
       setState(() => _type = InputType.text);

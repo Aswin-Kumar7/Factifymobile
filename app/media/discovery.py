@@ -19,6 +19,7 @@ comes from M10 and is honoured here rather than worked around.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
@@ -49,6 +50,8 @@ class MatchingPage:
     title: str | None = None
     score: float = 0.0
     full_match: bool = True
+    # The copy of the picture on that page, for showing the two side by side.
+    image_url: str | None = None
 
     @property
     def is_worth_fetching(self) -> bool:
@@ -165,6 +168,14 @@ class ReverseImageDiscovery:
                 title=entry.get("pageTitle"),
                 score=float(entry.get("score", 0.0)),
                 full_match=bool(entry.get("fullMatchingImages")),
+                image_url=next(
+                    (
+                        str(image["url"])
+                        for image in entry.get("fullMatchingImages") or []
+                        if isinstance(image, dict) and image.get("url")
+                    ),
+                    None,
+                ),
             )
             for entry in detection.get("pagesWithMatchingImages", [])
             if entry.get("url")
@@ -179,31 +190,30 @@ class ReverseImageDiscovery:
         This is where a page URL becomes a citation. A page that will not load, or
         that carries no date, contributes nothing rather than a guess — an undated
         appearance cannot establish that anything predates anything.
+
+        The pages are read at once rather than one after another: six pages at a few
+        seconds each is most of a check's time budget when read in turn.
         """
-        instances: list[DatedInstance] = []
 
-        for page in pages[: self._max_pages]:
-            if not page.is_worth_fetching:
-                continue
-
+        async def dated(page: MatchingPage) -> DatedInstance | None:
             response = await self._fetcher.fetch(page.url, provider="matched_page")
             if not isinstance(response, FetchResult):
-                continue
-
-            article = extract(response.text, url=page.url)
+                return None
+            # Parsing is CPU work; off the event loop, so the pages are read together.
+            article = await asyncio.to_thread(extract, response.text, url=page.url)
             if article.published_at is None:
-                continue
-
-            instances.append(
-                DatedInstance(
-                    url=response.final_url,
-                    published_at=article.published_at,
-                    publisher=article.publisher,
-                    method="matched_page_date",
-                )
+                return None
+            return DatedInstance(
+                url=response.final_url,
+                published_at=article.published_at,
+                publisher=article.publisher,
+                method="matched_page_date",
+                image_url=page.image_url,
             )
 
-        return tuple(instances)
+        worth = [page for page in pages[: self._max_pages] if page.is_worth_fetching]
+        found = await asyncio.gather(*(dated(page) for page in worth), return_exceptions=True)
+        return tuple(item for item in found if isinstance(item, DatedInstance))
 
 
 class UnavailableDiscovery:

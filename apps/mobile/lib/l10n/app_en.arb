@@ -964,5 +964,119 @@
   "notifyWorkingBody": "We'll tell you when the answer is ready.",
   "notifyWorkingChannel": "Checks in progress",
   "notifyOpenResult": "Open result",
-  "nothingToCheckShort": "Nothing to check"
+  "nothingToCheckShort": "Nothing to check",
+  "pcTitle": "Picture checks",
+  "pcTitleVideo": "Video checks",
+  "pcFrames": "{count, plural, =1{1 still frame} other{{count} still frames}}",
+  "@pcFrames": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pcNote": "Not part of the verdict",
+  "pcCredentials": "Content credentials",
+  "pcCredAi": "The file says it was made with an AI tool",
+  "pcCredAiTool": "The file says it was made with an AI tool ({tool})",
+  "@pcCredAiTool": {
+    "placeholders": {
+      "tool": {
+        "type": "String"
+      }
+    }
+  },
+  "pcCredValid": "Signed by {signer}",
+  "@pcCredValid": {
+    "placeholders": {
+      "signer": {
+        "type": "String"
+      }
+    }
+  },
+  "pcCredUntrusted": "Present, but the signer isn't verified",
+  "pcCredInvalid": "Present, but they don't check out",
+  "pcCredNone": "None. That's normal: most pictures carry none.",
+  "pcNotChecked": "Not checked",
+  "pcHistory": "Earlier copies online",
+  "pcHistorySince": "Online since {date} · {source}",
+  "@pcHistorySince": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      },
+      "source": {
+        "type": "String"
+      }
+    }
+  },
+  "pcHistoryOld": "Not a new picture: it was online {age} before this check.",
+  "@pcHistoryOld": {
+    "placeholders": {
+      "age": {
+        "type": "String"
+      }
+    }
+  },
+  "pcAgeYears": "{count, plural, =1{1 year} other{{count} years}}",
+  "@pcAgeYears": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pcAgeMonths": "{count, plural, =1{1 month} other{{count} months}}",
+  "@pcAgeMonths": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pcAgeDays": "{count, plural, =1{1 day} other{{count} days}}",
+  "@pcAgeDays": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pcHistoryUndated": "{count, plural, =1{Found on 1 page, with no date} other{Found on {count} pages, none dated}}",
+  "@pcHistoryUndated": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pcHistoryNone": "No earlier copies found online",
+  "pcOpenPage": "Opens the page where it appeared",
+  "pcYourPicture": "Your picture",
+  "pcEarlierCopy": "Earlier copy",
+  "pcDetector": "AI-made picture signal",
+  "pcGenerated": "{percent}% likely made by an AI image generator",
+  "@pcGenerated": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "pcFaceSwap": "{percent}% likely a face was swapped or changed by AI",
+  "@pcFaceSwap": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "pcDetectorNote": "A detector's estimate, not a finding.",
+  "pcEditing": "Editing signals",
+  "pcEditNoise": "Parts of the picture have uneven noise, which editing can cause",
+  "pcEditSpectrum": "Unusual patterns in the fine detail, which generators and heavy compression can cause",
+  "pcEditClean": "No uneven noise or unusual patterns found",
+  "pcFooter": "These are checks of the picture itself. They never change the verdict, which rests only on cited sources, and a clean result doesn't prove a picture is real.",
+  "kindVideo": "Video",
+  "yourVideo": "Your video"
 }

@@ -314,6 +314,89 @@ class ImageReadingResponse(BaseModel):
     language: str | None = None
 
 
+class CredentialsResponse(BaseModel):
+    """What the file's content credentials say (C2PA), or that it has none."""
+
+    model_config = ConfigDict(frozen=True)
+
+    # valid | untrusted (intact, but signed by nobody on a trust list checked) |
+    # invalid | none | unavailable (not read)
+    status: str
+    signer: str | None = None
+    # The file says a trained model made or composited it - from its credentials, or
+    # from its metadata when it has none. What the file says, not a finding of ours.
+    declares_ai: bool = False
+    digital_source: str | None = None
+    generator: str | None = None
+
+
+class EarlierCopyResponse(BaseModel):
+    """The oldest dated appearance of the picture found online."""
+
+    model_config = ConfigDict(frozen=True)
+
+    url: str
+    publisher: str | None = None
+    published_at: datetime
+    # How long before this check it was already online.
+    days_before: int | None = None
+    # A small copy served from our own address, never the third-party image itself.
+    thumbnail_url: str | None = None
+
+
+class HistoryResponse(BaseModel):
+    """Where the picture has appeared before (reverse image search)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    # found | none | not_checked
+    status: str
+    pages: int = 0
+    dated: int = 0
+    earliest: EarlierCopyResponse | None = None
+
+
+class DetectorResponse(BaseModel):
+    """An AI-image detector's estimates, 0-1. Advisory: never in a verdict."""
+
+    model_config = ConfigDict(frozen=True)
+
+    # checked | not_checked
+    status: str
+    generated: float | None = None
+    # Only when there was a face to judge.
+    face_swap: float | None = None
+
+
+class EditingResponse(BaseModel):
+    """The forensic view: descriptive signals, never scored, never in a verdict."""
+
+    model_config = ConfigDict(frozen=True)
+
+    # checked | not_checked
+    status: str
+    uneven_noise: bool = False
+    spectral_peaks: bool = False
+
+
+class MediaReportResponse(BaseModel):
+    """The picture checks: what can be said about the upload itself (1.3).
+
+    Beside the verdict, never inside it: the verdict is about what the picture's text
+    claims and rests on cited sources. See app/media/report.py.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    kind: str  # image | video
+    credentials: CredentialsResponse
+    history: HistoryResponse
+    detector: DetectorResponse
+    editing: EditingResponse
+    # For a video: how many still frames were checked.
+    frames: int | None = None
+
+
 class ReceiptSummaryResponse(BaseModel):
     """The receipt behind a result, checked when the result was sent (1.3).
 
@@ -362,6 +445,8 @@ class VerifyResponse(BaseModel):
 
     # For an uploaded image: its text and what it shows. None for everything else.
     image_reading: ImageReadingResponse | None = None
+    # For an uploaded picture or video: the checks of the upload itself (1.3).
+    media_report: MediaReportResponse | None = None
 
     receipt_url: str | None = None
     # The receipt itself, checked as the result was sent. None when none was issued.
@@ -472,6 +557,86 @@ def evidence_to_response(item: Any) -> EvidenceResponse:
         publisher=item.publisher,
         observed_at=item.observed_at,
         credibility=(item.credibility.value if getattr(item, "credibility", None) else None),
+    )
+
+
+def media_report_to_response(report: Any, *, thumbnails: str) -> MediaReportResponse:
+    """Project a `MediaReport` (app/media/report.py) onto the wire.
+
+    Statuses, not sentences: the app words them in the reader's language.
+    """
+    from app.domain.enums import SyntheticSignal
+    from app.media.report import days_before
+
+    credentials = report.credentials
+    if credentials.present and credentials.valid:
+        status = "valid"
+    elif credentials.present and credentials.untrusted_signer:
+        status = "untrusted"
+    elif credentials.present:
+        status = "invalid"
+    elif (credentials.reason or "").startswith(("unavailable", "unreadable")):
+        status = "unavailable"
+    else:
+        status = "none"
+
+    history = report.history
+    earliest = history.oldest
+    if history.pages:
+        history_status = "found"
+    elif history.reason == "no matching pages found":
+        history_status = "none"
+    else:
+        history_status = "not_checked"
+
+    synthetic = report.synthetic
+    editing = report.editing
+    # Forensic advisory ids read "adv:<signal>:<artifact>".
+    suspicious = {
+        advisory.id.split(":")[1]
+        for advisory in editing.advisories
+        if advisory.signal is SyntheticSignal.ADVISORY_SUSPICION
+    }
+    return MediaReportResponse(
+        kind=report.kind,
+        credentials=CredentialsResponse(
+            status=status,
+            signer=credentials.signer,
+            declares_ai=credentials.declares_ai,
+            digital_source=credentials.digital_source,
+            generator=credentials.generator,
+        ),
+        history=HistoryResponse(
+            status=history_status,
+            pages=len(history.pages),
+            dated=len(history.instances),
+            earliest=(
+                EarlierCopyResponse(
+                    url=earliest.url,
+                    publisher=earliest.publisher,
+                    published_at=earliest.published_at,
+                    days_before=days_before(earliest),
+                    thumbnail_url=(
+                        f"{thumbnails}{report.earliest_thumbnail}"
+                        if report.earliest_thumbnail
+                        else None
+                    ),
+                )
+                if earliest is not None
+                else None
+            ),
+        ),
+        detector=DetectorResponse(
+            status="checked" if synthetic.checked else "not_checked",
+            generated=synthetic.generated,
+            face_swap=synthetic.face_swap,
+        ),
+        editing=EditingResponse(
+            status="checked" if editing.rendered else "not_checked",
+            uneven_noise="noise" in suspicious,
+            spectral_peaks="spectrum" in suspicious,
+        ),
+        frames=report.frames,
     )
 
 

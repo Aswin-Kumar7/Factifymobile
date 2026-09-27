@@ -17,7 +17,13 @@ import 'verdict.dart';
 enum SubmissionKind { text, link, image, document }
 
 class Submission {
-  const Submission._({required this.kind, this.text, this.file, this.thumbnail});
+  const Submission._({
+    required this.kind,
+    this.text,
+    this.file,
+    this.thumbnail,
+    this.video = false,
+  });
 
   factory Submission.text(String value) => Submission._(kind: SubmissionKind.text, text: value);
 
@@ -26,8 +32,11 @@ class Submission {
   /// [thumbnail] is read once at pick time rather than re-read on every rebuild:
   /// the picked file lives in a cache directory the system may clear, and a
   /// preview that vanishes mid-session looks like a bug in the verdict.
-  factory Submission.image(File file, Uint8List? thumbnail) =>
-      Submission._(kind: SubmissionKind.image, file: file, thumbnail: thumbnail);
+  /// A picture, or a video shared into the app: both go up as a file and the
+  /// server tells them apart by their bytes. [video] only changes what the
+  /// interface calls it while it is being checked.
+  factory Submission.image(File file, Uint8List? thumbnail, {bool video = false}) =>
+      Submission._(kind: SubmissionKind.image, file: file, thumbnail: thumbnail, video: video);
 
   factory Submission.document(File file) => Submission._(kind: SubmissionKind.document, file: file);
 
@@ -35,6 +44,7 @@ class Submission {
   final String? text;
   final File? file;
   final Uint8List? thumbnail;
+  final bool video;
 
   bool get isMedia => kind == SubmissionKind.image || kind == SubmissionKind.document;
 
