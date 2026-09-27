@@ -70,6 +70,7 @@ from app.verdict.engine import (
     roll_up,
     verdict_for,
 )
+from app.verdict.explain import explain, narrower_note
 from app.verdict.strength import Strength, evidence_strength
 
 logger = logging.getLogger("factify.orchestration")
@@ -832,7 +833,18 @@ class Orchestrator:
         # rule had correctly declined to call it true. The app says what UNCONFIRMED
         # means in its own words instead.
         if not decision.status.is_decisive:
-            explanation = _unreported_note(claim, evidence) if search == "searched" else None
+            explanation = narrower_note(evidence, language=claim.language) or (
+                _unreported_note(claim, evidence) if search == "searched" else None
+            )
+        else:
+            # Written from what decided the claim - its source, named and quoted - and
+            # never by the model (app/verdict/explain.py).
+            explanation = explain(
+                decision.status,
+                evidence,
+                decision.supporting_evidence_ids,
+                language=claim.language,
+            )
 
         # Strength counts the evidence that *carries* this verdict, which is not
         # always the evidence the decision counted.

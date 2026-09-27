@@ -256,14 +256,18 @@ class Settings(BaseSettings):
     # and auth header, exactly as api_format does for the LLM.
     websearch_provider: str = Field(default="tavily", pattern="^(tavily|exa)$")
 
-    # Whether the ingested local corpus is searched for evidence. Off by default.
+    # Whether the ingested local corpus is searched for evidence - our own stored
+    # articles, searched before the paid web search, which then runs only when they
+    # do not settle the claim.
     #
-    # The corpus stopped updating on 2026-08-18, so for anything recent it can only
-    # offer old articles on a nearby topic. It ran first on every claim, cost up to
-    # six model reads per claim, and supplied 11% of all stored evidence. It stays
-    # built — origin counting still reads its stored signatures — and comes back with
-    # FACTIFY_CORPUS_RETRIEVAL=true once ingestion runs again.
-    corpus_retrieval: bool = False
+    # Off while the corpus stood still (it stopped at 2026-08-18, when nothing ran
+    # ingestion). On again now that ingestion runs on a schedule (below).
+    corpus_retrieval: bool = True
+
+    # How often, in seconds, the news is collected while the service runs: a small
+    # batch of due feeds from data/feeds.json each time. 0 turns the schedule off;
+    # `/internal/ingest-tick` still runs a batch when an outside scheduler calls it.
+    ingestion_interval_seconds: float = 900
 
     @model_validator(mode="after")
     def _model_ids_required_when_llm_enabled(self) -> Self:

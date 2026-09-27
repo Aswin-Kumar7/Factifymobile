@@ -109,7 +109,7 @@ FactCheck.org, the first decisive verdict from real evidence). Commits `1752754`
 | B1 | Extraction cache never renews `expires_at` — 17 of 19 rows permanently dead | open |
 | B2 | Extraction runs before the verdict-cache probe (cached repeat: 83ms inside, 19.2s wall) | open |
 | B3 | Extraction on Gemini default thinking (25s) | ✅ moot — extraction now on Groq gpt-oss-120b (~3s) |
-| B4 | Ingestion trigger never runs a tick; corpus stuck at 2026-08-18 | open — the fact-check API now compensates for decisive verdicts, but the corpus still does not refresh |
+| B4 | Ingestion trigger never runs a tick; corpus stuck at 2026-08-18 | ✅ the trigger runs a batch; the service also collects every 15 minutes (`app/knowledge/schedule.py`), and local search is on again |
 | B5 | Request `language` ignored; Hindi phrasing templates (M21) never called; file endpoint lacks a `language` form field | open |
 | B6 | Ledger read-back lossy — strength components, publisher, anchors dropped on read | ✅ `a420cdb` — read-back restores components, advisory-excluded, publisher, date, input anchor; write persists publisher + input anchor |
 | B7 | Evidence date not persisted/read | ✅ addressed with B6 (publisher + anchor written; date read back) |

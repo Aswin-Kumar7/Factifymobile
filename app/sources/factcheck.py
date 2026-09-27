@@ -33,7 +33,7 @@ from app.domain.claim import Claim
 from app.domain.enums import EvidenceKind, Method, Relation, Tier
 from app.embeddings.image import cosine
 from app.embeddings.text import TextEmbedder
-from app.governor.governor import Governor, ProviderUnavailable, Skip
+from app.governor.governor import Governor, ProviderUnavailable, Skip, SkipReason
 from app.observability.logging import event
 from app.security.fetcher import FetchResult, SecureFetcher
 from app.sources.base import (
@@ -212,9 +212,13 @@ class FactCheckResolver:
         api_key: str = "",
         embedder: TextEmbedder | None = None,
         reasoner: PassageReasoner | None = None,
+        keeper: Any | None = None,
     ) -> None:
         self._records = records
         self._governor = governor
+        # Keeps each fact-check the API points at (app/knowledge/factchecks.py), so
+        # the next check of the claim finds it here and never asks the API.
+        self._keeper = keeper
         # Judges whether an adjudication is about *this* claim by meaning rather than
         # shared words. Without it, relevance falls back to lexical overlap, which
         # rejects most real paraphrased fact-checks.
@@ -316,19 +320,26 @@ class FactCheckResolver:
 
         Language is deliberately not constrained: a Hindi claim is often adjudicated in
         English and vice versa, and the overlap gate filters relevance afterwards. A
-        transport or parse failure yields no records rather than an exception — a
-        missing fact-check is an absence of evidence, never an outage of the request.
+        failed request raises `ProviderUnavailable`: the check is reported as skipped
+        rather than as "no fact-check exists", and the result is not cached.
         """
         assert self._fetcher is not None
         query = urlencode({"query": claim.text[:300], "pageSize": 10, "key": self._api_key})
         result = await self._fetcher.fetch(f"{self._endpoint}?{query}", provider=PROVIDER)
-        if not isinstance(result, FetchResult):
-            return []
+        # A request that failed is not an answer. It used to return no records, which
+        # reads exactly like "nobody has fact-checked this": a revoked key, a 429 or
+        # an outage produced a complete-looking run, and a complete run is cached.
+        # Raised instead, the pipeline records the check as skipped and the result
+        # is never cached. An empty list is kept for what it means: no fact-checks.
+        if not isinstance(result, FetchResult) or not 200 <= result.status_code < 300:
+            raise ProviderUnavailable(PROVIDER, SkipReason.PROVIDER_ERROR)
 
         try:
             payload = json.loads(result.text)
-        except json.JSONDecodeError:
-            return []
+        except json.JSONDecodeError as error:
+            raise ProviderUnavailable(PROVIDER, SkipReason.PROVIDER_ERROR) from error
+        if not isinstance(payload, dict) or "error" in payload:
+            raise ProviderUnavailable(PROVIDER, SkipReason.PROVIDER_ERROR)
 
         records = [
             record
@@ -337,7 +348,20 @@ class FactCheckResolver:
         ]
         for record in records:
             self._api_cache[record.url] = record
+        if self._keeper is not None and records:
+            self._keeper.remember([record.url for record in records])
         return records
+
+    def add_records(self, records: list[FactCheckRecord]) -> None:
+        """Fact-checks kept since boot, searched from the next check on."""
+        known = {(r.url, r.normalized_text) for r in self._records}
+        self._records = self._records + [
+            r for r in records if (r.url, r.normalized_text) not in known
+        ]
+
+    def replace_records(self, records: list[FactCheckRecord]) -> None:
+        """Every fact-check held, after an ingestion run added some."""
+        self._records = list(records)
 
     @staticmethod
     def _to_record(entry: dict[str, Any]) -> FactCheckRecord | None:

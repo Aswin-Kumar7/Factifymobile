@@ -61,6 +61,13 @@ _DECISIVE_METHODS = frozenset(
 NARROWER_SCOPE = "passage_narrower"
 
 
+# How relevant the reader must rate a passage, 0-1, before it can decide anything.
+# It was 0.0, so every passage cleared it: one the reader itself rated 0.1 relevant
+# was a MODERATE match and could carry a verdict. At 0.5, below half-relevant is WEAK
+# (context at most), 0.5-0.7 MODERATE, and 0.7 up STRONG (see derive_match_quality).
+READING_RELEVANCE_THRESHOLD = 0.5
+
+
 def is_narrower_scope(metric: str) -> bool:
     """Whether a match metric records a narrower version of the claim."""
     return metric.startswith(NARROWER_SCOPE)

@@ -1694,8 +1694,16 @@ async def ingest_tick(
         # to an unauthenticated caller is information they have no use for.
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not found")
 
-    worker = getattr(request.app.state, "ingestion_worker", None)
-    if worker is None:
+    # It answered "accepted" and ran nothing: the worker it looked for was never
+    # created, so the corpus stood still from 2026-08-18.
+    ingestion = getattr(request.app.state, "ingestion", None)
+    if ingestion is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="unavailable")
 
-    return {"status": "accepted"}
+    result = await ingestion.tick()
+    return {
+        "status": "done",
+        "feeds": str(result.feeds_attempted),
+        "items_new": str(result.items_new),
+        "factchecks_kept": str(result.factchecks_kept),
+    }

@@ -73,7 +73,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except Exception as error:
             logger.exception("composition failed; /verify will report unavailable: %s", error)
 
+        # The news, collected in the background while the service runs.
+        ingestion = getattr(app.state, "ingestion", None)
+        if ingestion is not None:
+            ingestion.start()
+
         yield
+
+        if ingestion is not None:
+            await ingestion.stop()
 
         database = getattr(app.state, "database", None)
         if database is not None:

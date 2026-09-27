@@ -17,6 +17,10 @@ timer either stops firing or fires N times, and both are silent. The trigger com
 from outside (Cloud Scheduler), authenticated with a shared secret compared in
 constant time.
 
+On one long-running machine (the local server, a single VM) the service can collect
+the news itself: `FACTIFY_INGESTION_INTERVAL_SECONDS` (default 900) runs the same batch
+in the background. **Set it to 0 on Cloud Run** and keep the outside trigger.
+
 ---
 
 ## Memory

@@ -41,6 +41,8 @@ from app.extraction.llm import LLMExtractor
 from app.extraction.model_wire import WireFormat
 from app.extraction.ocr import OcrExtractor
 from app.intake.normalizer import NormalisedIntake
+from app.knowledge.factchecks import FactCheckKeeper, load_factcheck_records
+from app.knowledge.schedule import IngestionSchedule
 from app.media.discovery import ReverseImageDiscovery
 from app.media.report import MediaInspector
 from app.media.synthetic import SightengineDetector
@@ -60,7 +62,7 @@ from app.security.fetcher import SecureFetcher
 from app.sources.base import SourceResolver
 from app.sources.corpus import CorpusCorroboration, CorpusResolver
 from app.sources.credibility import SourceCredibility
-from app.sources.factcheck import FactCheckRecord, FactCheckResolver, parse_rating_from_title
+from app.sources.factcheck import FactCheckResolver
 from app.sources.reasoning import PassageReasoner
 from app.sources.verification import SourceVerification
 from app.sources.websearch import WebSearchResolver
@@ -190,41 +192,6 @@ class ServedOrchestrator:
         return result
 
 
-async def load_factcheck_records(database: Database) -> list[FactCheckRecord]:
-    """Published adjudications, read from the corpus.
-
-    Deliberately sourced from `corpus_item` rather than `factcheck_record`: the
-    dedicated table holds zero rows, because ingestion writes fact-checker feeds into
-    the corpus like any other source. Reading the empty table instead would leave the
-    resolver with nothing and look like an absence of fact-checks rather than a wiring
-    mistake.
-    """
-    async with database.connection() as conn:
-        cursor = await conn.execute(
-            """
-            SELECT ci.title, ci.canonical_url, ci.publisher, ci.published_at
-              FROM corpus_item ci
-              JOIN source s ON s.id = ci.source_id
-             WHERE s.source_class = 'factchecker'
-               AND ci.canonical_url IS NOT NULL
-            """
-        )
-        rows = list(await cursor.fetchall())
-
-    return [
-        FactCheckRecord(
-            claim_text=str(row["title"] or ""),
-            normalized_text=" ".join(str(row["title"] or "").lower().split()),
-            url=str(row["canonical_url"]),
-            rating=parse_rating_from_title(str(row["title"] or "")),
-            publisher=row["publisher"],
-            published_at=row["published_at"],
-            retrieved_at=row["published_at"],
-        )
-        for row in rows
-    ]
-
-
 async def build(settings: Settings) -> dict[str, Any]:
     """Assemble everything the served application needs.
 
@@ -246,6 +213,8 @@ async def build(settings: Settings) -> dict[str, Any]:
 
     source_fetcher = SecureFetcher(timeout_seconds=SOURCE_TIMEOUT_SECONDS)
 
+    # Every fact-check held: the ClaimReviews kept from fact-checkers' own pages, and
+    # the headlines their feeds brought in.
     records = await load_factcheck_records(database)
 
     # Order is not significant — the pipeline runs resolvers concurrently — but the
@@ -284,29 +253,32 @@ async def build(settings: Settings) -> dict[str, Any]:
         fetcher=source_fetcher,
         reasoner=reasoner,
     )
-    resolvers: list[SourceResolver] = [
-        FactCheckResolver(
-            records=records,
-            governor=governor,
-            # Live only when the provider is configured and credentialled. The API is
-            # the strongest, cheapest evidence class — one adjudication settles a claim
-            # that would otherwise need corroboration across several origins — so it is
-            # on whenever the key is present, and falls back to the ingested records
-            # (and a clean skip) when quota or credentials are not.
-            api_available=settings.factcheck.usable,
-            fetcher=source_fetcher,
-            endpoint=settings.factcheck.endpoint,
-            api_key=(
-                settings.factcheck.api_key.get_secret_value() if settings.factcheck.api_key else ""
-            ),
-            # Semantic relevance, so a paraphrased fact-check ("Coronavirus is a result
-            # of 5G") is recognised as adjudicating the claim it restates.
-            embedder=embedder,
-            # And a reader for the borderline band, so a check of a neighbouring claim
-            # on the same subject cannot have its rating applied here.
-            reasoner=reasoner,
+    # Each fact-check the API points at is kept, so the next check finds it here.
+    keeper = FactCheckKeeper(database=database, fetcher=source_fetcher)
+    factchecks = FactCheckResolver(
+        records=records,
+        governor=governor,
+        # Live only when the provider is configured and credentialled. The API is
+        # the strongest, cheapest evidence class — one adjudication settles a claim
+        # that would otherwise need corroboration across several origins — so it is
+        # on whenever the key is present, and falls back to the ingested records
+        # (and a clean skip) when quota or credentials are not.
+        api_available=settings.factcheck.usable,
+        fetcher=source_fetcher,
+        endpoint=settings.factcheck.endpoint,
+        api_key=(
+            settings.factcheck.api_key.get_secret_value() if settings.factcheck.api_key else ""
         ),
-    ]
+        # Semantic relevance, so a paraphrased fact-check ("Coronavirus is a result
+        # of 5G") is recognised as adjudicating the claim it restates.
+        embedder=embedder,
+        # And a reader for the borderline band, so a check of a neighbouring claim
+        # on the same subject cannot have its rating applied here.
+        reasoner=reasoner,
+        keeper=keeper,
+    )
+    keeper.on_kept = factchecks.add_records
+    resolvers: list[SourceResolver] = [factchecks]
     if settings.corpus_retrieval:
         resolvers.insert(0, corpus)
 
@@ -327,8 +299,23 @@ async def build(settings: Settings) -> dict[str, Any]:
             # Only credible publishers are read and cited from the open web.
             credibility=SourceCredibility.load(),
             governor=governor,
+            # A fact-checker's page found by search is kept too.
+            keeper=keeper,
         )
         resolvers.append(web_search)
+
+    async def _reload_factchecks() -> None:
+        factchecks.replace_records(await load_factcheck_records(database))
+
+    # The news, collected on a schedule while the service runs (data/feeds.json), and
+    # the fact-checks re-read after each batch that brought anything new.
+    ingestion = IngestionSchedule(
+        database=database,
+        fetcher=SecureFetcher(timeout_seconds=25.0, max_bytes=8 * 1024 * 1024),
+        embedder=embedder,
+        interval_seconds=settings.ingestion_interval_seconds,
+        after_tick=_reload_factchecks,
+    )
 
     review_queue = PoolReviewQueue(database)
 
@@ -404,6 +391,8 @@ async def build(settings: Settings) -> dict[str, Any]:
         # rung of the ladder a retrieved source already climbs.
         "web_search_resolver": web_search,
         "case_reader": CaseReader(database, ranker=SourceCredibility.load()),
+        "ingestion": ingestion,
+        "factcheck_keeper": keeper,
         "review_queue": review_queue,
         "orchestrator": ServedOrchestrator(
             database=database,

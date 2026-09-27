@@ -35,7 +35,7 @@ from typing import Any
 
 from app.domain.claim import Claim
 from app.domain.enums import ClaimType, EvidenceKind, Method, Relation, Tier
-from app.domain.evidence import NARROWER_SCOPE
+from app.domain.evidence import NARROWER_SCOPE, READING_RELEVANCE_THRESHOLD
 from app.domain.publishers import publishers_of
 from app.embeddings.image import cosine
 from app.embeddings.text import TextEmbedder
@@ -573,7 +573,7 @@ class CorpusResolver:
                 :200
             ],
             value=best.relevance,
-            threshold=0.0,
+            threshold=READING_RELEVANCE_THRESHOLD,
         )
 
     async def _relate_lexically(self, claim: Claim, snapshot: SourceSnapshot) -> SourceRelation:

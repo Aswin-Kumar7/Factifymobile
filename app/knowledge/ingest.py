@@ -32,6 +32,7 @@ import feedparser
 
 from app.db.repositories import CorpusRepository, SourceRepository
 from app.embeddings.text import TextEmbedder
+from app.extraction.claimreview import ClaimReview, read_claim_reviews
 from app.extraction.language import Language, detect
 from app.extraction.web import extract
 from app.intake.normalizer import _canonical_url
@@ -70,6 +71,8 @@ class IngestedItem:
     published_at: datetime | None
     language: str
     body: str = ""
+    # The page's own ClaimReview verdicts, when it is a fact-check with markup.
+    reviews: tuple[ClaimReview, ...] = ()
 
     @property
     def clustering_text(self) -> str:
@@ -111,6 +114,8 @@ class TickResult:
     items_hydrated: int = 0
     clusters_created: int = 0
     multi_outlet_clusters: int = 0
+    # ClaimReview verdicts read from fact-checkers' pages and recorded.
+    factchecks_kept: int = 0
     failures: list[str] = field(default_factory=list)
 
     @property
@@ -322,14 +327,17 @@ class IngestionWorker:
                 continue
 
             article = extract(response.text, url=item.canonical_url)
+            # A fact-checker's verdict, exactly as it published it (ClaimReview): the
+            # rating its headline may not carry. Recorded in `_store`.
+            reviews = tuple(read_claim_reviews(response.text, page_url=response.final_url))
 
             # A near-empty extraction means the page was a wrapper, a paywall or a
             # JavaScript shell. The excerpt is better than a fragment, so keep it.
             if len(article.body) < _MIN_BODY_CHARS:
-                hydrated.append(item)
+                hydrated.append(replace(item, reviews=reviews))
                 continue
 
-            hydrated.append(replace(item, body=article.body))
+            hydrated.append(replace(item, body=article.body, reviews=reviews))
             result.items_hydrated += 1
 
         return tuple(hydrated) + items[self._body_fetch_limit :]
@@ -378,6 +386,18 @@ class IngestionWorker:
                 minhash_signature=sign(item.clustering_text).to_bytes(),
             )
             new_count += 1
+
+            for review in item.reviews:
+                await self._corpus.record_factcheck(
+                    claim_text=review.claim_reviewed,
+                    normalized_text=" ".join(review.claim_reviewed.lower().split()),
+                    url=review.url or item.canonical_url,
+                    rating=review.rating,
+                    publisher=review.publisher or item.publisher,
+                    published_at=review.published_at or item.published_at,
+                    snapshot_id=snapshot_id,
+                )
+                result.factchecks_kept += 1
 
             assignment = self._clusterer.assign(
                 document_id=str(item_id),

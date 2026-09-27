@@ -37,7 +37,7 @@ from urllib.parse import urlsplit
 
 from app.domain.claim import Claim
 from app.domain.enums import ClaimType, EvidenceKind, Method, Relation, Tier
-from app.domain.evidence import NARROWER_SCOPE
+from app.domain.evidence import NARROWER_SCOPE, READING_RELEVANCE_THRESHOLD
 from app.extraction.web import extract, plain_text
 from app.governor.governor import ProviderUnavailable, Skip, SkipReason
 from app.observability.logging import event
@@ -139,8 +139,11 @@ class WebSearchResolver:
         credibility: SourceCredibility | None = None,
         governor: Any | None = None,
         max_results: int = _MAX_RESULTS,
+        keeper: Any | None = None,
     ) -> None:
         self._governor = governor
+        # Keeps a fact-checker's page this search read (app/knowledge/factchecks.py).
+        self._keeper = keeper
         self._fetcher = fetcher
         self._reasoner = reasoner
         self._provider = provider
@@ -468,6 +471,8 @@ class WebSearchResolver:
         )
         if not parts.hostname or not words:
             return None
+        if not await self._metered("listing"):
+            return None
         result = await self._fetcher.post_json(
             self._endpoint,
             {
@@ -492,6 +497,30 @@ class WebSearchResolver:
                 return row.get("title"), content
         return None
 
+    async def _metered(self, call: str) -> bool:
+        """Whether the budget allows one more paid call to the search provider.
+
+        The search itself was always metered; the extract and listing calls, which
+        spend the same provider's credits, were not - so the daily cap only appeared
+        to bound what a day could cost. Past the cap they are skipped: the page stays
+        unread, which is how any page we cannot read is treated.
+        """
+        if self._governor is None:
+            return True
+        outcome = await self._governor.try_acquire(PROVIDER)
+        if isinstance(outcome, Skip):
+            event(
+                logger,
+                "search provider call not made",
+                module="sources.websearch",
+                outcome="skipped",
+                provider=PROVIDER,
+                call=call,
+                failure_reason=outcome.reason.value,
+            )
+            return False
+        return True
+
     async def _vendor_extract(self, url: str) -> str:
         """Ask the search provider for the text of one page we could not read.
 
@@ -500,6 +529,8 @@ class WebSearchResolver:
         already, so there is nothing to ask for.
         """
         if self._provider != "tavily" or not self._api_key:
+            return ""
+        if not await self._metered("extract"):
             return ""
 
         result = await self._fetcher.post_json(
@@ -628,6 +659,15 @@ class WebSearchResolver:
                 relation = Relation.CONTEXTUALIZES
                 note = " (a fact-check of a different claim)"
 
+        # A fact-checker's page that spoke to the claim: its ClaimReview is kept,
+        # so the next check of it is answered from our own records.
+        if (
+            self._keeper is not None
+            and relation in (Relation.SUPPORTS, Relation.CONTRADICTS)
+            and self._credibility.is_fact_checker(snapshot.final_url or snapshot.url)
+        ):
+            self._keeper.remember([snapshot.final_url or snapshot.url])
+
         return SourceRelation(
             relation=relation,
             validator=f"{NAME}+reasoner",
@@ -640,7 +680,7 @@ class WebSearchResolver:
                 f"{NARROWER_SCOPE if best.narrower else 'passage_entailment'}: {best.reason}{note}"
             )[:200],
             value=best.relevance,
-            threshold=0.0,
+            threshold=READING_RELEVANCE_THRESHOLD,
         )
 
     # ---------------------------------------------------------------- providers
