@@ -94,18 +94,19 @@ class AppLocalizationsHi extends AppLocalizations {
   String get stepComparing => 'हर स्रोत को दावे से मिलाना';
 
   @override
-  String get usuallyTakes => 'एक जाँच में आम तौर पर 20–50 सेकंड लगते हैं।';
+  String get usuallyTakes =>
+      'हर दावे की जाँच होती है, इसलिए आम तौर पर 1–2 मिनट लगते हैं।';
 
   @override
   String get statusNotChecked => 'जाँचा नहीं गया';
 
   @override
   String get claimNotSearched =>
-      'जल्दी वाली जाँच अपने तीन सबसे अहम दावों को देखती है, और यह उनमें से नहीं था। हर दावे की जाँच के लिए गहरी जाँच चुनें।';
+      'यह दावा नहीं जाँचा गया: Factify का पुराना संस्करण केवल तीन दावे जाँचता था। फिर से जाँचें दबाएँ।';
 
   @override
   String get claimTimedOut =>
-      'इसका कोई स्रोत पढ़ने से पहले समय खत्म हो गया। फिर से जाँचें दबाएँ।';
+      'इसका कोई स्रोत समय पर नहीं पढ़ा जा सका। फिर से जाँचें दबाएँ।';
 
   @override
   String get claimNothingFound =>
@@ -261,6 +262,10 @@ class AppLocalizationsHi extends AppLocalizations {
   String get correctionSaysMisleading => 'Factify के अनुसार यह भ्रामक है';
 
   @override
+  String get correctionSaysPartlyTrue =>
+      'Factify के अनुसार यह केवल आंशिक रूप से सच है';
+
+  @override
   String get correctionSaysTrue => 'Factify के अनुसार यह सच है';
 
   @override
@@ -320,10 +325,10 @@ class AppLocalizationsHi extends AppLocalizations {
       'आंशिक रूप से सही, पर ज़रूरी संदर्भ छूटा है';
 
   @override
-  String get headlineShareWithCorrection => 'भ्रामक';
+  String get headlineShareWithCorrection => 'आंशिक रूप से सच';
 
   @override
-  String get subheadShareWithCorrection => 'इसका एक हिस्सा गलत है';
+  String get subheadShareWithCorrection => 'इसमें कुछ बातें सही हैं, कुछ नहीं';
 
   @override
   String get headlineDoNotShare => 'झूठ';
@@ -654,11 +659,6 @@ class AppLocalizationsHi extends AppLocalizations {
   String get inputAnchorLabel => 'आपकी भेजी सामग्री में यह कहाँ है';
 
   @override
-  String inputAnchorCharacters(int start, int end) {
-    return 'अक्षर $start–$end';
-  }
-
-  @override
   String inputAnchorPage(int page) {
     return 'पेज $page';
   }
@@ -801,8 +801,8 @@ class AppLocalizationsHi extends AppLocalizations {
   }
 
   @override
-  String creditCosts(int check, int deep) {
-    return 'एक जाँच: $check · गहरी जाँच: $deep';
+  String creditCosts(int check) {
+    return 'एक जाँच: $check';
   }
 
   @override
@@ -856,25 +856,13 @@ class AppLocalizationsHi extends AppLocalizations {
   String get authGeneric => 'साइन-इन नहीं हुआ। फिर कोशिश करें।';
 
   @override
-  String get deepCheck => 'गहरी जाँच';
-
-  @override
-  String get deepCheckHint => 'ज़्यादा दावे और स्रोत · 1–3 मिनट लगते हैं';
-
-  @override
-  String get deepChecking => 'गहरी जाँच…';
-
-  @override
-  String deepProgress(int done, int total) {
+  String claimsProgress(int done, int total) {
     return '$total में से $done दावे जाँचे गए';
   }
 
   @override
-  String get deepUsuallyTakes => 'गहरी जाँच में आम तौर पर 1–3 मिनट लगते हैं।';
-
-  @override
-  String get deepTooSlow =>
-      'गहरी जाँच उम्मीद से ज़्यादा समय ले रही है। एक मिनट बाद फिर से जाँचें।';
+  String get checkTooSlow =>
+      'यह जाँच आम से ज़्यादा समय ले रही है। एक मिनट बाद फिर से जाँचें।';
 
   @override
   String get imageReadTitle => 'आपकी तस्वीर में हमने क्या पढ़ा';
@@ -1236,19 +1224,10 @@ class AppLocalizationsHi extends AppLocalizations {
   String get pasteCopiedText => 'चिपकाएँ';
 
   @override
-  String get deepChip => 'गहरी';
-
-  @override
-  String get deepChipOnHint => 'गहरी जाँच चालू है';
-
-  @override
   String get shareFromWhatsApp => 'या WhatsApp से शेयर करें';
 
   @override
-  String get checkTakes => 'आम तौर पर 20–50 सेकंड लगते हैं';
-
-  @override
-  String get checkTakesDeep => 'गहरी जाँच · 1–3 मिनट';
+  String get checkTakes => 'हर दावा जाँचा जाता है · आम तौर पर 1–2 मिनट';
 
   @override
   String get recentTitle => 'हाल की जाँचें';
@@ -1359,7 +1338,31 @@ class AppLocalizationsHi extends AppLocalizations {
   String get claimStateMissingContext => 'संदर्भ अधूरा';
 
   @override
+  String get claimStatePartlyTrue => 'आंशिक रूप से सच';
+
+  @override
   String get claimStateUnconfirmed => 'अपुष्ट';
+
+  @override
+  String get rightWrongTitle => 'क्या सही है, क्या गलत';
+
+  @override
+  String get rightWrongRight => 'सही';
+
+  @override
+  String get rightWrongWrong => 'गलत';
+
+  @override
+  String get rightWrongPartly => 'केवल आंशिक रूप से सही';
+
+  @override
+  String get rightWrongContext => 'संदर्भ अधूरा';
+
+  @override
+  String get rightWrongUnconfirmed => 'पुष्टि नहीं हुई';
+
+  @override
+  String get sourcesReport => 'स्रोत असल में क्या बताते हैं';
 
   @override
   String claimStateCount(int count, String state) {

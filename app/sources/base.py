@@ -45,29 +45,17 @@ from app.domain.typography import fold, unquoted
 current_check: ContextVar[str] = ContextVar("current_check", default="")
 
 
-@dataclass(frozen=True, slots=True)
-class SearchDepth:
-    """How hard one check looks: the normal check, or the deep one a person asked for.
-
-    Set for the length of a check like `current_check`, and read where each limit
-    applies — the orchestrator for claims and time, the web-search resolver for
-    queries and pages — so a deep check changes how much is done, never how it is
-    judged.
-    """
-
-    name: str
-    claims: int  # claims searched on the open web
-    queries: int  # search queries per claim
-    pages: int  # pages read per claim
-    seconds: float  # the check's time budget
-
-
-NORMAL = SearchDepth("normal", claims=5, queries=4, pages=6, seconds=55.0)
-# About two and a half times the searching of a normal check, for three credits; long
-# enough that it runs in the background while the app shows its progress.
-DEEP = SearchDepth("deep", claims=10, queries=5, pages=10, seconds=180.0)
-
-current_depth: ContextVar[SearchDepth] = ContextVar("current_depth", default=NORMAL)
+# How long the check running now may take, when it runs in the background while the
+# app shows its progress: every claim is searched and read, however long that takes,
+# up to this. None for a check someone waits on in one request, which keeps the
+# orchestrator's own shorter budget. Set for the length of a check like
+# `current_check`.
+#
+# There used to be two kinds of check: a normal one that searched only its three most
+# important claims inside 55 seconds, and a deep one for everything. On a phone, most
+# claims came back "not checked in a quick check" or "we ran out of time", which read
+# as a verdict problem when it was a time limit (2026-09-28). There is one check now.
+check_seconds: ContextVar[float | None] = ContextVar("check_seconds", default=None)
 
 
 @dataclass(frozen=True, slots=True)

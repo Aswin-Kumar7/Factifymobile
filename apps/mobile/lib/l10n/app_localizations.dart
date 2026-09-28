@@ -251,7 +251,7 @@ abstract class AppLocalizations {
   /// No description provided for @usuallyTakes.
   ///
   /// In en, this message translates to:
-  /// **'A check usually takes 20–50 seconds.'**
+  /// **'Every claim is checked, so this usually takes 1–2 minutes.'**
   String get usuallyTakes;
 
   /// No description provided for @statusNotChecked.
@@ -263,13 +263,13 @@ abstract class AppLocalizations {
   /// No description provided for @claimNotSearched.
   ///
   /// In en, this message translates to:
-  /// **'A quick check looks at its three most important claims, and this wasn\'t one of them. Use Deep check to check every claim.'**
+  /// **'This claim wasn\'t checked: an older version of Factify checked only three claims. Tap Check again.'**
   String get claimNotSearched;
 
   /// No description provided for @claimTimedOut.
   ///
   /// In en, this message translates to:
-  /// **'We ran out of time before any source for this could be read. Tap Check again.'**
+  /// **'No source for this could be read in time. Tap Check again.'**
   String get claimTimedOut;
 
   /// No description provided for @claimNothingFound.
@@ -500,6 +500,12 @@ abstract class AppLocalizations {
   /// **'Factify says it\'s misleading'**
   String get correctionSaysMisleading;
 
+  /// No description provided for @correctionSaysPartlyTrue.
+  ///
+  /// In en, this message translates to:
+  /// **'Factify says it\'s only partly true'**
+  String get correctionSaysPartlyTrue;
+
   /// No description provided for @correctionSaysTrue.
   ///
   /// In en, this message translates to:
@@ -605,13 +611,13 @@ abstract class AppLocalizations {
   /// No description provided for @headlineShareWithCorrection.
   ///
   /// In en, this message translates to:
-  /// **'Misleading'**
+  /// **'Partly true'**
   String get headlineShareWithCorrection;
 
   /// No description provided for @subheadShareWithCorrection.
   ///
   /// In en, this message translates to:
-  /// **'Part of this is wrong'**
+  /// **'Some of this is right, some of it isn\'t'**
   String get subheadShareWithCorrection;
 
   /// No description provided for @headlineDoNotShare.
@@ -1022,12 +1028,6 @@ abstract class AppLocalizations {
   /// **'Where your submission says this'**
   String get inputAnchorLabel;
 
-  /// No description provided for @inputAnchorCharacters.
-  ///
-  /// In en, this message translates to:
-  /// **'Characters {start}–{end}'**
-  String inputAnchorCharacters(int start, int end);
-
   /// No description provided for @inputAnchorPage.
   ///
   /// In en, this message translates to:
@@ -1223,8 +1223,8 @@ abstract class AppLocalizations {
   /// No description provided for @creditCosts.
   ///
   /// In en, this message translates to:
-  /// **'A check costs {check} · a deep check costs {deep}'**
-  String creditCosts(int check, int deep);
+  /// **'A check costs {check}'**
+  String creditCosts(int check);
 
   /// No description provided for @checksSoFar.
   ///
@@ -1298,41 +1298,17 @@ abstract class AppLocalizations {
   /// **'Sign-in didn\'t work. Try again.'**
   String get authGeneric;
 
-  /// No description provided for @deepCheck.
-  ///
-  /// In en, this message translates to:
-  /// **'Deep check'**
-  String get deepCheck;
-
-  /// No description provided for @deepCheckHint.
-  ///
-  /// In en, this message translates to:
-  /// **'More claims and sources · takes 1–3 minutes'**
-  String get deepCheckHint;
-
-  /// No description provided for @deepChecking.
-  ///
-  /// In en, this message translates to:
-  /// **'Deep check…'**
-  String get deepChecking;
-
-  /// No description provided for @deepProgress.
+  /// No description provided for @claimsProgress.
   ///
   /// In en, this message translates to:
   /// **'{done} of {total} claims checked'**
-  String deepProgress(int done, int total);
+  String claimsProgress(int done, int total);
 
-  /// No description provided for @deepUsuallyTakes.
+  /// No description provided for @checkTooSlow.
   ///
   /// In en, this message translates to:
-  /// **'A deep check usually takes 1–3 minutes.'**
-  String get deepUsuallyTakes;
-
-  /// No description provided for @deepTooSlow.
-  ///
-  /// In en, this message translates to:
-  /// **'The deep check is taking longer than expected. Try Check again in a minute.'**
-  String get deepTooSlow;
+  /// **'This check is taking longer than usual. Try Check again in a minute.'**
+  String get checkTooSlow;
 
   /// No description provided for @imageReadTitle.
   ///
@@ -1922,18 +1898,6 @@ abstract class AppLocalizations {
   /// **'Paste copied text'**
   String get pasteCopiedText;
 
-  /// No description provided for @deepChip.
-  ///
-  /// In en, this message translates to:
-  /// **'Deep'**
-  String get deepChip;
-
-  /// No description provided for @deepChipOnHint.
-  ///
-  /// In en, this message translates to:
-  /// **'Deep check is on'**
-  String get deepChipOnHint;
-
   /// No description provided for @shareFromWhatsApp.
   ///
   /// In en, this message translates to:
@@ -1943,14 +1907,8 @@ abstract class AppLocalizations {
   /// No description provided for @checkTakes.
   ///
   /// In en, this message translates to:
-  /// **'Usually takes 20–50 seconds'**
+  /// **'Every claim is checked · usually 1–2 minutes'**
   String get checkTakes;
-
-  /// No description provided for @checkTakesDeep.
-  ///
-  /// In en, this message translates to:
-  /// **'Deep check · usually 1–3 minutes'**
-  String get checkTakesDeep;
 
   /// No description provided for @recentTitle.
   ///
@@ -2096,11 +2054,59 @@ abstract class AppLocalizations {
   /// **'Missing context'**
   String get claimStateMissingContext;
 
+  /// No description provided for @claimStatePartlyTrue.
+  ///
+  /// In en, this message translates to:
+  /// **'Partly true'**
+  String get claimStatePartlyTrue;
+
   /// No description provided for @claimStateUnconfirmed.
   ///
   /// In en, this message translates to:
   /// **'Unconfirmed'**
   String get claimStateUnconfirmed;
+
+  /// No description provided for @rightWrongTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'What\'s right, what\'s wrong'**
+  String get rightWrongTitle;
+
+  /// No description provided for @rightWrongRight.
+  ///
+  /// In en, this message translates to:
+  /// **'Right'**
+  String get rightWrongRight;
+
+  /// No description provided for @rightWrongWrong.
+  ///
+  /// In en, this message translates to:
+  /// **'Wrong'**
+  String get rightWrongWrong;
+
+  /// No description provided for @rightWrongPartly.
+  ///
+  /// In en, this message translates to:
+  /// **'Only partly right'**
+  String get rightWrongPartly;
+
+  /// No description provided for @rightWrongContext.
+  ///
+  /// In en, this message translates to:
+  /// **'Missing context'**
+  String get rightWrongContext;
+
+  /// No description provided for @rightWrongUnconfirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'Not confirmed'**
+  String get rightWrongUnconfirmed;
+
+  /// No description provided for @sourcesReport.
+  ///
+  /// In en, this message translates to:
+  /// **'What sources actually report'**
+  String get sourcesReport;
 
   /// No description provided for @claimStateCount.
   ///

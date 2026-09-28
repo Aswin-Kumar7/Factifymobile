@@ -45,11 +45,13 @@ _OPENING = {
 _SAYS = {
     "en": {
         Verdict.FALSE: "Factify says it's false",
+        Verdict.PARTLY_TRUE: "Factify says it's only partly true",
         Verdict.MISLEADING: "Factify says it's misleading",
         Verdict.TRUE: "Factify says it's true",
     },
     "hi": {
         Verdict.FALSE: "Factify के अनुसार यह झूठ है",
+        Verdict.PARTLY_TRUE: "Factify के अनुसार यह केवल आंशिक रूप से सच है",
         Verdict.MISLEADING: "Factify के अनुसार यह भ्रामक है",
         Verdict.TRUE: "Factify के अनुसार यह सच है",
     },
@@ -74,6 +76,7 @@ for _language, _lines in WORDING.items():
     _OPENING[_language] = _lines["correction.opening"]
     _SAYS[_language] = {
         Verdict.FALSE: _lines.get("correction.false", _SAYS["en"][Verdict.FALSE]),
+        Verdict.PARTLY_TRUE: _lines.get("correction.partly", _SAYS["en"][Verdict.PARTLY_TRUE]),
         Verdict.MISLEADING: _lines.get("correction.misleading", _SAYS["en"][Verdict.MISLEADING]),
         Verdict.TRUE: _lines.get("correction.true", _SAYS["en"][Verdict.TRUE]),
     }
@@ -82,6 +85,10 @@ for _language, _lines in WORDING.items():
 # The claim statuses and source directions that carry each verdict.
 _CARRIED_BY: dict[Verdict, tuple[set[ClaimStatus], set[str]]] = {
     Verdict.FALSE: ({ClaimStatus.CONTRADICTED}, {"contradicts"}),
+    Verdict.PARTLY_TRUE: (
+        {ClaimStatus.CONTRADICTED, ClaimStatus.MISLEADING_CONTEXT},
+        {"contradicts", "contextualizes"},
+    ),
     Verdict.MISLEADING: (
         {ClaimStatus.MISLEADING_CONTEXT, ClaimStatus.CONTRADICTED},
         {"contradicts", "contextualizes"},

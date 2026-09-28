@@ -48,8 +48,9 @@ extension Phrases on AppLocalizations {
     if (page != null) return inputAnchorPage(page);
     final moment = anchor.frameStartMs;
     if (moment != null) return inputAnchorMoment(moment ~/ 1000);
-    final start = anchor.charStart;
-    if (start != null) return inputAnchorCharacters(start, anchor.charEnd ?? start);
+    // A bare character range ("Characters 110-249") says nothing to a reader. Where
+    // the words themselves are at hand they are shown instead; where they are not -
+    // a link, a picture's reading - the claim above says it.
     return null;
   }
 

@@ -201,7 +201,8 @@ class _ResultScreenState extends State<ResultScreen> {
 
     final (label, icon, action) = switch (_verdict.factVerdict) {
       _ when nothing => (l10n.newCheck, FxIcons.forward, _home),
-      FactVerdict.falseClaim => (l10n.shareCorrection, FxIcons.correction, _share),
+      FactVerdict.falseClaim ||
+      FactVerdict.partlyTrue => (l10n.shareCorrection, FxIcons.correction, _share),
       FactVerdict.misleading => (l10n.shareContext, FxIcons.correction, _share),
       FactVerdict.trueClaim => (l10n.shareResult, FxIcons.share, _share),
       FactVerdict.unconfirmed when _canCheckAgain => (

@@ -46,7 +46,7 @@ const int _summaryCharacters = 280;
 List<Evidence> decidingSources(Verdict verdict) {
   final (statuses, directions) = switch (verdict.factVerdict) {
     FactVerdict.falseClaim => ({ClaimStatus.contradicted}, {'contradicts'}),
-    FactVerdict.misleading => (
+    FactVerdict.partlyTrue || FactVerdict.misleading => (
       {ClaimStatus.misleadingContext, ClaimStatus.contradicted},
       {'contradicts', 'contextualizes', 'context'},
     ),
@@ -92,6 +92,7 @@ CorrectionMessage correctionMessage(Verdict verdict, AppLocalizations l10n) {
   final sources = decidingSources(verdict);
   final says = switch (verdict.factVerdict) {
     FactVerdict.falseClaim => l10n.correctionSaysFalse,
+    FactVerdict.partlyTrue => l10n.correctionSaysPartlyTrue,
     FactVerdict.misleading => l10n.correctionSaysMisleading,
     FactVerdict.trueClaim => l10n.correctionSaysTrue,
     FactVerdict.unconfirmed => null,

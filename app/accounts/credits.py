@@ -1,6 +1,6 @@
 """The credit book: what each person has spent, and whether they may spend more.
 
-One check costs one credit, a deep check more. A new account is granted a starting
+One check costs one credit. A new account is granted a starting
 balance once. Every decision is made here, on the server, from the ledger; the app
 only displays the answer.
 

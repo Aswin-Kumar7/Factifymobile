@@ -289,11 +289,12 @@ void main() {
     });
 
     testWidgets('a claim that was never searched says so, not "no sources found"', (tester) async {
+      // Only a result kept from before 1.4 carries this: every claim is checked now.
       final claim = _claim(status: 'UNVERIFIED')..['search'] = 'not_searched';
       await _open(tester, _verdict(action: 'SEND_TO_REVIEW', claims: [claim]));
 
       expect(find.text('Not checked'), findsOneWidget);
-      expect(find.textContaining("this wasn't one of them"), findsOneWidget);
+      expect(find.textContaining("This claim wasn't checked"), findsOneWidget);
       expect(find.textContaining("couldn't find enough reliable sources"), findsNothing);
     });
 

@@ -95,18 +95,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get stepComparing => 'Compare each source with the claim';
 
   @override
-  String get usuallyTakes => 'A check usually takes 20–50 seconds.';
+  String get usuallyTakes =>
+      'Every claim is checked, so this usually takes 1–2 minutes.';
 
   @override
   String get statusNotChecked => 'Not checked';
 
   @override
   String get claimNotSearched =>
-      'A quick check looks at its three most important claims, and this wasn\'t one of them. Use Deep check to check every claim.';
+      'This claim wasn\'t checked: an older version of Factify checked only three claims. Tap Check again.';
 
   @override
   String get claimTimedOut =>
-      'We ran out of time before any source for this could be read. Tap Check again.';
+      'No source for this could be read in time. Tap Check again.';
 
   @override
   String get claimNothingFound =>
@@ -262,6 +263,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get correctionSaysMisleading => 'Factify says it\'s misleading';
 
   @override
+  String get correctionSaysPartlyTrue => 'Factify says it\'s only partly true';
+
+  @override
   String get correctionSaysTrue => 'Factify says it\'s true';
 
   @override
@@ -321,10 +325,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'True in part, but missing important context';
 
   @override
-  String get headlineShareWithCorrection => 'Misleading';
+  String get headlineShareWithCorrection => 'Partly true';
 
   @override
-  String get subheadShareWithCorrection => 'Part of this is wrong';
+  String get subheadShareWithCorrection =>
+      'Some of this is right, some of it isn\'t';
 
   @override
   String get headlineDoNotShare => 'False';
@@ -655,11 +660,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get inputAnchorLabel => 'Where your submission says this';
 
   @override
-  String inputAnchorCharacters(int start, int end) {
-    return 'Characters $start–$end';
-  }
-
-  @override
   String inputAnchorPage(int page) {
     return 'Page $page';
   }
@@ -802,8 +802,8 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String creditCosts(int check, int deep) {
-    return 'A check costs $check · a deep check costs $deep';
+  String creditCosts(int check) {
+    return 'A check costs $check';
   }
 
   @override
@@ -857,25 +857,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get authGeneric => 'Sign-in didn\'t work. Try again.';
 
   @override
-  String get deepCheck => 'Deep check';
-
-  @override
-  String get deepCheckHint => 'More claims and sources · takes 1–3 minutes';
-
-  @override
-  String get deepChecking => 'Deep check…';
-
-  @override
-  String deepProgress(int done, int total) {
+  String claimsProgress(int done, int total) {
     return '$done of $total claims checked';
   }
 
   @override
-  String get deepUsuallyTakes => 'A deep check usually takes 1–3 minutes.';
-
-  @override
-  String get deepTooSlow =>
-      'The deep check is taking longer than expected. Try Check again in a minute.';
+  String get checkTooSlow =>
+      'This check is taking longer than usual. Try Check again in a minute.';
 
   @override
   String get imageReadTitle => 'What we read in your picture';
@@ -1237,19 +1225,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pasteCopiedText => 'Paste copied text';
 
   @override
-  String get deepChip => 'Deep';
-
-  @override
-  String get deepChipOnHint => 'Deep check is on';
-
-  @override
   String get shareFromWhatsApp => 'Or share from WhatsApp';
 
   @override
-  String get checkTakes => 'Usually takes 20–50 seconds';
-
-  @override
-  String get checkTakesDeep => 'Deep check · usually 1–3 minutes';
+  String get checkTakes => 'Every claim is checked · usually 1–2 minutes';
 
   @override
   String get recentTitle => 'Recent';
@@ -1360,7 +1339,31 @@ class AppLocalizationsEn extends AppLocalizations {
   String get claimStateMissingContext => 'Missing context';
 
   @override
+  String get claimStatePartlyTrue => 'Partly true';
+
+  @override
   String get claimStateUnconfirmed => 'Unconfirmed';
+
+  @override
+  String get rightWrongTitle => 'What\'s right, what\'s wrong';
+
+  @override
+  String get rightWrongRight => 'Right';
+
+  @override
+  String get rightWrongWrong => 'Wrong';
+
+  @override
+  String get rightWrongPartly => 'Only partly right';
+
+  @override
+  String get rightWrongContext => 'Missing context';
+
+  @override
+  String get rightWrongUnconfirmed => 'Not confirmed';
+
+  @override
+  String get sourcesReport => 'What sources actually report';
 
   @override
   String claimStateCount(int count, String state) {

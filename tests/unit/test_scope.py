@@ -144,15 +144,22 @@ class TestTheRules:
 
 
 class _Checker:
-    def __init__(self, verdicts: list[str]) -> None:
+    def __init__(self, verdicts: list[str], *, smaller: bool = True, about: bool = True) -> None:
         self.verdicts = verdicts
+        self.smaller = smaller
+        self.about = about
         self.sent: list[tuple[str, str]] = []
 
     async def check_sources(self, claim_text: str, sources: list[tuple[str, str]]) -> SourceCheck:
         self.sent = sources
         return SourceCheck(
             readings={
-                i: SourceReading(addresses_claim=True, verdict=v, reason="one state only")
+                i: SourceReading(
+                    addresses_claim=self.about,
+                    verdict=v,
+                    reason="one state only",
+                    smaller_version=self.smaller and v != "TRUE",
+                )
                 for i, v in enumerate(self.verdicts)
             },
             explanation="Tamil Nadu pays Rs 5,000 to eligible women; not every woman, monthly.",
@@ -187,6 +194,49 @@ class TestTheSourceCheck:
         kept = verified.evidence[0]
         assert kept.direction is Direction.CONTEXTUALIZES
         assert is_narrower_scope(kept.match_basis.metric)
+
+    def test_a_smaller_version_the_check_calls_false_is_still_partly_true(self) -> None:
+        """The check answered FALSE and "not about the claim" for a one-time Rs 5,000
+        payment, three runs of three, while its reason described a smaller version.
+        Its own yes-or-no on "smaller version" decides (2026-09-28)."""
+        verified = asyncio.run(
+            SourceVerification(checker=_Checker(["FALSE"], about=False), ranker=_Ranker()).check(
+                claim(text=CLAIM),
+                [_support("timesofindia.indiatimes.com")],  # type: ignore[list-item]
+            )
+        )
+        [kept] = verified.evidence
+        assert kept.direction is Direction.CONTEXTUALIZES
+        assert is_narrower_scope(kept.match_basis.metric)
+
+    def test_partly_without_a_smaller_version_is_not_kept(self) -> None:
+        """ "Atal Free Pension Scheme" against the real Atal Pension Yojana: PARTLY, but
+        not a smaller version - a scam's borrowed name, not a real thing inflated."""
+        verified = asyncio.run(
+            SourceVerification(checker=_Checker(["PARTLY"], smaller=False), ranker=_Ranker()).check(
+                claim(text="Under the Atal Free Pension Scheme everyone over 60 gets Rs 5,000"),
+                [_support("pfrda.org.in")],  # type: ignore[list-item]
+            )
+        )
+        assert verified.evidence == []
+
+    def test_a_denial_is_never_turned_into_a_smaller_version(self) -> None:
+        denial = evidence(
+            kind=EvidenceKind.CORROBORATION,
+            direction=Direction.CONTRADICTS,
+            tier=Tier.D,
+            method=Method.PASSAGE_ENTAILMENT,
+            basis=MatchBasis(metric="passage_entailment: r", value=0.9, threshold=0.0),
+            citation_url="https://pib.gov.in/fact-check",
+            publisher="PIB",
+        )
+        verified = asyncio.run(
+            SourceVerification(checker=_Checker(["PARTLY"]), ranker=_Ranker()).check(
+                claim(text=CLAIM),
+                [denial],  # type: ignore[list-item]
+            )
+        )
+        assert verified.evidence == []
 
     def test_other_context_is_still_not_sent(self) -> None:
         plain_context = evidence(

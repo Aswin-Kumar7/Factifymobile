@@ -42,7 +42,6 @@ class Account {
     required this.used,
     required this.checks,
     required this.checkCost,
-    required this.deepCheckCost,
     required this.limited,
     this.name,
     this.avatarUrl,
@@ -60,7 +59,6 @@ class Account {
   final int used;
   final int checks;
   final int checkCost;
-  final int deepCheckCost;
 
   /// Whether the server refuses checks past the balance. False until plans exist.
   final bool limited;
@@ -82,7 +80,6 @@ class Account {
       used: (credits['used'] as num).toInt(),
       checks: (credits['checks'] as num).toInt(),
       checkCost: (credits['check_cost'] as num).toInt(),
-      deepCheckCost: (credits['deep_check_cost'] as num).toInt(),
       limited: credits['limited'] as bool? ?? false,
     );
   }

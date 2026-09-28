@@ -58,7 +58,7 @@ from app.sources.local_reading import local_reading, local_same_claim
 logger = logging.getLogger("factify.sources.reasoning")
 
 PROVIDER = "llm"
-REASONER_VERSION = "2026.09.28.3"
+REASONER_VERSION = "2026.09.28.5"
 
 # How many passages go to the model in one call. One call per source, not one per
 # passage: the model needs to see the alternatives to judge which actually bears on
@@ -593,13 +593,27 @@ _CHECK_SOURCES_SCHEMA: dict[str, Any] = {
                 "properties": {
                     "index": {"type": "integer"},
                     "reason": {"type": "string"},
+                    # Asked on its own, before the verdict. Told in the instruction
+                    # that a smaller version addresses the claim and is PARTLY, the
+                    # model still answered FALSE and "not about the claim" three times
+                    # of three, with reasons that described a smaller version exactly
+                    # ("a one-time payment of Rs 5,000, not a monthly one") - it
+                    # would not reconcile the two. As a yes-or-no of its own it is a
+                    # description, which it gives reliably (2026-09-28).
+                    "smaller_version": {"type": "boolean"},
                     "addresses_claim": {"type": "boolean"},
                     "verdict": {
                         "type": "string",
                         "enum": ["TRUE", "PARTLY", "FALSE", "UNCLEAR"],
                     },
                 },
-                "required": ["index", "reason", "addresses_claim", "verdict"],
+                "required": [
+                    "index",
+                    "reason",
+                    "smaller_version",
+                    "addresses_claim",
+                    "verdict",
+                ],
             },
         },
     },
@@ -618,6 +632,16 @@ never makes a passage about a different subject into one about this claim.
 
 For each source:
 - reason: one short sentence naming what in the passage decides it.
+- smaller_version: true if the passage reports, as real, the same kind of payment,
+  benefit, rule or event as the claim, only smaller or narrower: for one state rather
+  than the country, for fewer or only eligible people rather than everyone, a lower
+  amount, once or in instalments rather than every month, a proposal rather than a
+  decision. A state scheme that paid women Rs 5,000 once is a smaller version of "the
+  government gives every woman Rs 5,000 a month". False when the passage denies or
+  debunks the claim, when it is about a different kind of thing, when it is an
+  earlier or later event of the same kind (last year's fuel-price cut for a claim of a
+  new one), and when the claim names a particular scheme and the passage is about a
+  differently named one.
 - addresses_claim: true only if the passage is about THIS claim - the same subject and
   the same assertion. Sharing a topic is not enough. A page about pensions in
   general does not address a claim about one named scheme. A page about a different
@@ -635,7 +659,11 @@ For each source:
   the one in September. When unsure, false. A smaller version of this claim - the
   same kind of payment, rule or event, but for one state, fewer people, a lower
   amount, or once rather than every month - does address it: answer true, with
-  verdict PARTLY.
+  verdict PARTLY. That holds when the smaller version has a scheme name of its own
+  and the claim names none: a report that one state credited Rs 5,000 once to women
+  under its scheme addresses "the government gives every woman Rs 5,000 a month" -
+  true, PARTLY. Only when the claim itself names a scheme is a differently named one
+  a different subject.
 - verdict:
   * TRUE if the passage, in its own voice, establishes that the claim is correct -
     every part of it: who acts, who it applies to, how much, how often, where and
@@ -647,9 +675,11 @@ For each source:
     government), some or eligible people for every person, a one-time payment for a
     monthly one, a lower amount, a proposal or promise for a decision.
   * FALSE if the passage establishes that the claim is wrong, including a fact-check
-    rating it false and an official denial. A passage that repeats the claim in order
-    to debunk it is FALSE, never TRUE. Wrong means it states something that cannot be
-    true at the same time as the claim, about the same thing: a different total for
+    rating it false and an official denial. FALSE is a finding about this claim, so it
+    always goes with addresses_claim true; a passage about something else is UNCLEAR.
+    A passage that repeats the claim in order to debunk it is FALSE, never TRUE. Wrong
+    means it states something that cannot be true at the same time as the claim,
+    about the same thing: a different total for
     the same count over the same period, a different outcome of the same event, an
     explicit denial. It is UNCLEAR, not FALSE, when the passage names other or extra
     details (a menu listing another dish), leaves some of the claim's details out,
@@ -672,6 +702,8 @@ class SourceReading:
     addresses_claim: bool
     verdict: str
     reason: str
+    # The passage reports a smaller version of the claim as real (see the schema).
+    smaller_version: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -1206,6 +1238,7 @@ class PassageReasoner:
                         addresses_claim=bool(item["addresses_claim"]),
                         verdict=str(item["verdict"]).upper(),
                         reason=str(item.get("reason") or "").strip(),
+                        smaller_version=bool(item.get("smaller_version", False)),
                     )
             return SourceCheck(
                 readings=readings, explanation=str(payload.get("explanation") or "").strip()

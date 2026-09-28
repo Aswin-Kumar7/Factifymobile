@@ -49,7 +49,7 @@ from app.domain.enums import (
 # `receipt`, so the seal shows without a second call; and progress events for a check
 # the app follows by `request_id`. Additive: a 1.2 client ignores all of it. See
 # docs/contract-changelog.md.
-CONTRACT_VERSION = "1.3"
+CONTRACT_VERSION = "1.4"
 
 
 # ------------------------------------------------------------------------ requests
@@ -68,7 +68,11 @@ class VerifyRequest(BaseModel):
     url: str | None = None
     text: str | None = Field(default=None, max_length=50_000)
     language: str | None = None
-    mode: str = Field(default="fast", pattern="^(fast|deep)$")
+    # "background": answered at once with a case id (202) and checked while the app
+    # follows its progress - every claim, with the time that takes. What the app uses
+    # (1.4). "deep" is the name it had before, kept so an older app still works.
+    # "fast": answered in this one request, inside the time a request can hold.
+    mode: str = Field(default="fast", pattern="^(fast|deep|background)$")
     consent_to_process_media: bool = False
     # "Check again": skip the stored verdict and check from scratch.
     recheck: bool = False
@@ -575,7 +579,7 @@ class VerifyResponse(BaseModel):
 
 
 class AcceptedResponse(BaseModel):
-    """202 for video, which cannot finish inside the synchronous budget."""
+    """202 for a check run in the background: a video, or any check asked for that way."""
 
     model_config = ConfigDict(frozen=True)
 

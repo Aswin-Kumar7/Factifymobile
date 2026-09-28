@@ -2,9 +2,10 @@
 ///
 /// Every colour on a screen comes from here, read through the theme, so a screen
 /// never decides a colour for itself and dark mode is the same layout with the
-/// other set. The four verdict pairs are the strong colour (tC, fC, mC, uC) and its
-/// soft tint (tS, fS, mS, uS). Unconfirmed is grey in both sets and never red: it
-/// means the sources did not settle the claim, not that something bad was found.
+/// other set. The five verdict pairs are the strong colour (tC, fC, pC, mC, uC) and
+/// its soft tint (tS, fS, pS, mS, uS). Partly true is yellow, set apart from the
+/// amber of Misleading. Unconfirmed is grey in both sets and never red: it means the
+/// sources did not settle the claim, not that something bad was found.
 library;
 
 import 'package:flutter/material.dart';
@@ -35,6 +36,8 @@ class FactifyTokens extends ThemeExtension<FactifyTokens> {
     required this.tS,
     required this.fC,
     required this.fS,
+    required this.pC,
+    required this.pS,
     required this.mC,
     required this.mS,
     required this.uC,
@@ -80,11 +83,13 @@ class FactifyTokens extends ThemeExtension<FactifyTokens> {
   /// The bottom navigation bar, slightly translucent.
   final Color nav;
 
-  /// True, False, Misleading and Unconfirmed: strong colour, soft tint.
+  /// True, False, Partly true, Misleading and Unconfirmed: strong colour, soft tint.
   final Color tC;
   final Color tS;
   final Color fC;
   final Color fS;
+  final Color pC;
+  final Color pS;
   final Color mC;
   final Color mS;
   final Color uC;
@@ -119,6 +124,9 @@ class FactifyTokens extends ThemeExtension<FactifyTokens> {
     tS: Color(0xFFE0F1E7),
     fC: Color(0xFFC23A2E),
     fS: Color(0xFFFAE8E4),
+    // 4.5:1 on its own tint, like the others.
+    pC: Color(0xFF856A00),
+    pS: Color(0xFFFAF0C4),
     mC: Color(0xFFAA650B),
     mS: Color(0xFFF8EDD9),
     uC: Color(0xFF5F6763),
@@ -159,6 +167,8 @@ class FactifyTokens extends ThemeExtension<FactifyTokens> {
     tS: Color.fromRGBO(82, 201, 157, .14),
     fC: Color(0xFFF2735F),
     fS: Color.fromRGBO(242, 115, 95, .13),
+    pC: Color(0xFFE3C84A),
+    pS: Color.fromRGBO(227, 200, 74, .14),
     mC: Color(0xFFE9AB4C),
     mS: Color.fromRGBO(233, 171, 76, .14),
     uC: Color(0xFFA2AAA6),
@@ -202,6 +212,8 @@ class FactifyTokens extends ThemeExtension<FactifyTokens> {
       tS: c(tS, other.tS),
       fC: c(fC, other.fC),
       fS: c(fS, other.fS),
+      pC: c(pC, other.pC),
+      pS: c(pS, other.pS),
       mC: c(mC, other.mC),
       mS: c(mS, other.mS),
       uC: c(uC, other.uC),

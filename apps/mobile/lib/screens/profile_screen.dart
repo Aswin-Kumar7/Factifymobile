@@ -451,7 +451,7 @@ class _Credits extends StatelessWidget {
                     runSpacing: 2,
                     children: [
                       Text(l10n.creditsUsed(account.used)),
-                      Text(l10n.creditCosts(account.checkCost, account.deepCheckCost)),
+                      Text(l10n.creditCosts(account.checkCost)),
                     ],
                   ),
                 ),

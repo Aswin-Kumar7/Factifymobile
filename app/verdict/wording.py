@@ -23,6 +23,7 @@ WORDING: dict[str, dict[str, str]] = {
         "correction.true": "Factify বলে এটা সত্য",
         "correction.unconfirmed": "হাই! আমি ফরওয়ার্ড করার আগে এটি পরীক্ষা করার চেষ্টা করেছি। Factify এখনও এটি নিশ্চিত করার জন্য নির্ভরযোগ্য সূত্র খুঁজে পায়নি, তাই আপাতত এটি ফরওয়ার্ড না করাই ভাল হতে পারে।",
         "correction.stop": "।",
+        "correction.partly": "Factify বলছে এটা শুধুমাত্র আংশিক সত্য",
     },
     "mr": {
         "explain.factcheck": "{who} ने हा दावा तपासला आणि तो खोटा असल्याचे ठरवले: “{quote}”",
@@ -39,6 +40,7 @@ WORDING: dict[str, dict[str, str]] = {
         "correction.true": "Factify म्हणते की हे खरे आहे",
         "correction.unconfirmed": "हाय! मी हे पुढे पाठवण्यापूर्वी तपासण्याचा प्रयत्न केला. Factify ला अद्याप याची पुष्टी करणारे विश्वसनीय स्रोत सापडले नाहीत, त्यामुळे सध्या हे पुढे पाठवू नये असे वाटते.",
         "correction.stop": ".",
+        "correction.partly": "Factify म्हणते की ते अंशतः खरे आहे",
     },
     "te": {
         "explain.factcheck": "{who} ఈ క్లెయిమ్\u200cను తనిఖీ చేసి దాన్ని తప్పు అని రేటింగ్ ఇచ్చారు: “{quote}”",
@@ -55,6 +57,7 @@ WORDING: dict[str, dict[str, str]] = {
         "correction.true": "Factify నిజమేనని చెబుతుంది",
         "correction.unconfirmed": "హాయ్! నేను ముందుకు పంపించే ముందు దీన్ని తనిఖీ చేయడానికి ప్రయత్నించాను. Factify ఇప్పటికీ దీన్ని నిర్ధారించే నమ్మకమైన వనరులను కనుగొనలేకపోయింది, కాబట్టి ఇప్పటికీ దీన్ని ముందుకు పంపించకపోవడం మంచిది.",
         "correction.stop": ".",
+        "correction.partly": "ఇది పాక్షికంగా మాత్రమే నిజం అని Factify చెప్పారు",
     },
     "ta": {
         "explain.factcheck": "{who} இந்த கூற்றை சரிபார்த்து தவறானதாக மதிப்பீடு செய்தார்: “{quote}”",
@@ -71,6 +74,7 @@ WORDING: dict[str, dict[str, str]] = {
         "correction.true": "Factify இது உண்மையென்று கூறுகிறது",
         "correction.unconfirmed": "வணக்கம்! நான் இதை முன்னோக்கி அனுப்புவதற்கு முன் சரிபார்க்க முயற்சித்தேன். Factify இதை உறுதிப்படுத்தும் நம்பகமான ஆதாரங்களை இன்னும் கண்டுபிடிக்கவில்லை, ஆகையால் இதை இப்போது முன்னோக்கி அனுப்பாமல் இருக்கவேண்டும்.",
         "correction.stop": ".",
+        "correction.partly": "அது ஓரளவு மட்டுமே உண்மை என்று Factify கூறுகிறார்",
     },
     "gu": {
         "explain.factcheck": "{who} એ આ દાવો તપાસ્યો અને તેને ખોટો ગણાવ્યો: “{quote}”",
@@ -87,6 +91,7 @@ WORDING: dict[str, dict[str, str]] = {
         "correction.true": "Factify કહે છે કે તે સાચું છે",
         "correction.unconfirmed": "હાય! મેં આગળ મોકલતા પહેલા આ તપાસવાનો પ્રયાસ કર્યો હતો. Factify હજુ સુધી આની પુષ્ટિ કરતી વિશ્વસનીય સ્રોતો શોધી શક્યું નથી, તેથી હાલમાં માટે તેને આગળ ન મોકલવું શ્રેષ્ઠ હોઈ શકે છે.",
         "correction.stop": ".",
+        "correction.partly": "Factify કહે છે કે તે માત્ર અંશતઃ સાચું છે",
     },
     "ur": {
         "explain.factcheck": "{who} نے اس دعوے کی جانچ کی اور اسے غلط قرار دیا: “{quote}”",
@@ -103,6 +108,7 @@ WORDING: dict[str, dict[str, str]] = {
         "correction.true": "Factify کہتا ہے کہ یہ سچ ہے",
         "correction.unconfirmed": "ہیلو! میں نے اسے فارورڈ کرنے سے پہلے چیک کرنے کی کوشش کی۔ Factify ابھی تک اس کی تصدیق کرنے والے قابل اعتماد ذرائع نہیں ڈھونڈ سکا، اس لیے فی الحال اسے فارورڈ نہ کرنا بہتر ہوگا۔",
         "correction.stop": "۔",
+        "correction.partly": "Factify کا کہنا ہے کہ یہ صرف جزوی طور پر درست ہے",
     },
     "kn": {
         "explain.factcheck": "{who} ಈ ದಾವಿಯನ್ನು ಪರಿಶೀಲಿಸಿ ತಪ್ಪು ಎಂದು ಮೌಲ್ಯಮಾಪನ ಮಾಡಿದರು: “{quote}”",
@@ -119,6 +125,7 @@ WORDING: dict[str, dict[str, str]] = {
         "correction.true": "Factify ಹೇಳುತ್ತದೆ ಇದು ಸತ್ಯ",
         "correction.unconfirmed": "ಹಾಯ್! ನಾನು ಇದನ್ನು ಮುಂದಿನವರಿಗೆ ಕಳುಹಿಸುವ ಮೊದಲು ಪರಿಶೀಲಿಸಲು ಪ್ರಯತ್ನಿಸಿದೆ. Factify ಇದನ್ನು ದೃಢಪಡಿಸುವ ವಿಶ್ವಾಸಾರ್ಹ ಮೂಲಗಳನ್ನು ಇನ್ನೂ ಕಂಡುಹಿಡಿಯಲಿಲ್ಲ, ಆದ್ದರಿಂದ ಇದನ್ನು ಈಗಾಗಲೇ ಮುಂದಿನವರಿಗೆ ಕಳುಹಿಸದಿರುವುದು ಉತ್ತಮವಾಗಿರಬಹುದು.",
         "correction.stop": ".",
+        "correction.partly": "ಇದು ಭಾಗಶಃ ನಿಜ ಎಂದು Factify ಹೇಳುತ್ತಾರೆ",
     },
     "or": {
         "explain.factcheck": "{who} ଏହି ଦାବିକୁ ଯାଞ୍ଚ କରିଛନ୍ତି ଏବଂ ଏହାକୁ ମିଥ୍ୟା ବୋଲି ମୂଲ୍ୟାଙ୍କନ କରିଛନ୍ତି: “{quote}”",
@@ -135,6 +142,7 @@ WORDING: dict[str, dict[str, str]] = {
         "correction.true": "Factify କହେ ଯେ ଏହା ସତ୍ୟ",
         "correction.unconfirmed": "ନମସ୍କାର! ମୁଁ ଏହାକୁ ଆଗକୁ ପଠାଇବା ପୂର୍ବରୁ ଯାଞ୍ଚ କରିବାକୁ ଚେଷ୍ଟା କରିଥିଲି। Factify ଏପର୍ଯ୍ୟନ୍ତ ଏହାକୁ ସମର୍ଥନ କରୁଥିବା ଭରସାଯୋଗ୍ୟ ସୂତ୍ର ମିଳାଇପାରିନାହାନ୍ତି, ସେହିପାଇଁ ବର୍ତ୍ତମାନ ପାଇଁ ଏହାକୁ ଆଗକୁ ପଠାଇବା ଭଲ ନ ହେବ।",
         "correction.stop": "।",
+        "correction.partly": "Factify କୁହନ୍ତି ଏହା କେବଳ ଆଂଶିକ ସତ୍ୟ",
     },
     "ml": {
         "explain.factcheck": "{who} ഈ അവകാശം പരിശോധിച്ച് തെറ്റായി വിലയിരുത്തി: “{quote}”",
@@ -151,6 +159,7 @@ WORDING: dict[str, dict[str, str]] = {
         "correction.true": "Factify പറയുന്നു അത് സത്യമാണെന്ന്",
         "correction.unconfirmed": "ഹായ്! ഇത് ഫോർവേഡ് ചെയ്യുന്നതിന് മുമ്പ് ഞാൻ പരിശോധിക്കാൻ ശ്രമിച്ചു. Factify ഇതുവരെ ഇത് സ്ഥിരീകരിക്കുന്ന വിശ്വസനീയമായ ഉറവിടങ്ങൾ കണ്ടെത്താൻ കഴിഞ്ഞില്ല, അതിനാൽ ഇപ്പോൾ ഇത് ഫോർവേഡ് ചെയ്യാതിരിക്കുക നല്ലതായിരിക്കും.",
         "correction.stop": ".",
+        "correction.partly": "ഇത് ഭാഗികമായി മാത്രം ശരിയാണെന്ന് Factify പറയുന്നു",
     },
     "pa": {
         "explain.factcheck": "{who} ਨੇ ਇਸ ਦਾਅਵੇ ਦੀ ਜਾਂਚ ਕੀਤੀ ਅਤੇ ਇਸਨੂੰ ਗਲਤ ਦਰਜ ਕੀਤਾ: “{quote}”",
@@ -167,5 +176,6 @@ WORDING: dict[str, dict[str, str]] = {
         "correction.true": "Factify ਕਹਿੰਦਾ ਹੈ ਕਿ ਇਹ ਸੱਚ ਹੈ",
         "correction.unconfirmed": "ਸਤ ਸ੍ਰੀ ਅਕਾਲ! ਮੈਂ ਅੱਗੇ ਭੇਜਣ ਤੋਂ ਪਹਿਲਾਂ ਇਸ ਦੀ ਜਾਂਚ ਕਰਨ ਦੀ ਕੋਸ਼ਿਸ਼ ਕੀਤੀ। Factify ਅਜੇ ਤੱਕ ਇਸ ਦੀ ਪੁਸ਼ਟੀ ਕਰਨ ਵਾਲੇ ਭਰੋਸੇਮੰਦ ਸਰੋਤ ਨਹੀਂ ਲੱਭ ਸਕਿਆ, ਇਸ ਲਈ ਹੁਣ ਲਈ ਇਸਨੂੰ ਅੱਗੇ ਭੇਜਣਾ ਵਧੀਆ ਨਹੀਂ ਹੋਵੇਗਾ।",
         "correction.stop": "।",
+        "correction.partly": "Factify ਕਹਿੰਦਾ ਹੈ ਕਿ ਇਹ ਸਿਰਫ਼ ਅੰਸ਼ਕ ਤੌਰ 'ਤੇ ਸੱਚ ਹੈ",
     },
 }

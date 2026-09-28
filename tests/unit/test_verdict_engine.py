@@ -251,13 +251,19 @@ class TestCaseRollup:
         """One wrong detail does not make the piece false: a BOOM fact-check of a
         deepfake read FALSE because two side details drew contradictions. The
         headline, main thesis and CRITICAL claims still decide FALSE (above)."""
-        c = claim(importance=Importance.SUPPORTING_DETAIL, severity=Severity.HIGH)
-        decision = decide(c, [_contradicting_factcheck()])  # type: ignore[list-item]
+        headline = claim(claim_id="cl_h", independent_origin_count=3, document_count=4)
+        c = claim(claim_id="cl_d", importance=Importance.SUPPORTING_DETAIL, severity=Severity.HIGH)
 
-        case = roll_up([(c, decision)])
+        case = roll_up(
+            [
+                (headline, decide(headline, [_supporting_source()])),  # type: ignore[list-item]
+                (c, decide(c, [_contradicting_factcheck()])),  # type: ignore[list-item]
+            ]
+        )
 
         assert case.action is Action.SHARE_WITH_CORRECTION
         assert case.rule_id == "rollup.minor_correction"
+        assert case.verdict is Verdict.PARTLY_TRUE
 
     def test_misleading_material_claim_shares_with_context(self) -> None:
         c = claim(importance=Importance.HEADLINE, severity=Severity.HIGH)
@@ -274,14 +280,83 @@ class TestCaseRollup:
         assert case.action is Action.SHARE_WITH_CONTEXT
         assert case.rule_id == "rollup.misleading_material"
 
-    def test_minor_contradiction_shares_with_correction(self) -> None:
+    def test_a_wrong_detail_with_nothing_confirmed_is_misleading_not_partly_true(self) -> None:
+        """Partly true says some of it is true. With nothing confirmed, a wrong detail
+        makes the piece misleading, not partly true."""
         c = claim(importance=Importance.BACKGROUND, severity=Severity.LOW)
         decision = decide(c, [_contradicting_factcheck()])  # type: ignore[list-item]
 
         case = roll_up([(c, decision)])
 
+        assert case.action is Action.SHARE_WITH_CONTEXT
+        assert case.rule_id == "rollup.wrong_detail"
+        assert case.verdict is Verdict.MISLEADING
+
+
+class TestPartlyTrue:
+    """Some of it right, some of it wrong: said as that (contract 1.4, 2026-09-28)."""
+
+    def test_a_confirmed_claim_beside_a_contradicted_one_is_partly_true(self) -> None:
+        headline = claim(claim_id="cl_1", independent_origin_count=3, document_count=4)
+        thesis = claim(claim_id="cl_2", importance=Importance.MAIN_THESIS)
+
+        case = roll_up(
+            [
+                (headline, decide(headline, [_supporting_source()])),  # type: ignore[list-item]
+                (thesis, decide(thesis, [_contradicting_factcheck()])),  # type: ignore[list-item]
+            ]
+        )
+
+        assert case.rule_id == "rollup.mixed"
         assert case.action is Action.SHARE_WITH_CORRECTION
-        assert case.rule_id == "rollup.minor_correction"
+        assert case.verdict is Verdict.PARTLY_TRUE
+
+    def test_a_true_aside_under_a_false_headline_leaves_it_false(self) -> None:
+        headline = claim(claim_id="cl_1")
+        aside = claim(
+            claim_id="cl_2",
+            importance=Importance.BACKGROUND,
+            independent_origin_count=3,
+            document_count=4,
+        )
+
+        case = roll_up(
+            [
+                (headline, decide(headline, [_contradicting_factcheck()])),  # type: ignore[list-item]
+                (aside, decide(aside, [_supporting_source()])),  # type: ignore[list-item]
+            ]
+        )
+
+        assert case.action is Action.DO_NOT_SHARE
+        assert case.verdict is Verdict.FALSE
+
+    def test_a_real_thing_inflated_is_partly_true(self) -> None:
+        """Govt pays every woman Rs 5,000 a month, where sources report one state's
+        one-time payment: partly true, not misleading media."""
+        from tests.unit.test_scope import CLAIM, _narrower
+
+        c = claim(text=CLAIM)
+        found = [_narrower("thenewsminute.com"), _narrower("indiatoday.in")]
+        decision = decide(c, found)  # type: ignore[arg-type]
+
+        case = roll_up([(c, decision)])
+
+        assert decision.status is ClaimStatus.MISLEADING_CONTEXT
+        assert case.rule_id == "rollup.partly_true"
+        assert case.verdict is Verdict.PARTLY_TRUE
+
+    def test_media_out_of_context_is_still_misleading(self) -> None:
+        c = claim(importance=Importance.HEADLINE, severity=Severity.HIGH)
+        item = evidence(
+            kind=EvidenceKind.MEDIA_MATCH,
+            direction=Direction.CONTRADICTS,
+            tier=Tier.B,
+            method=Method.NEAR_DUPLICATE_VERIFIED,
+        )
+
+        case = roll_up([(c, decide(c, [item]))])  # type: ignore[list-item]
+
+        assert case.verdict is Verdict.MISLEADING
 
     def test_developing_claim_waits(self) -> None:
         c = claim(within_developing_window=True)

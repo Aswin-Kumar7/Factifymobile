@@ -131,7 +131,7 @@ class CheckWatch {
   /// How much of an upload has been sent, 0 to 1, while it is being sent.
   final double? upload;
 
-  /// A deep check's claims done of its total.
+  /// Claims checked so far, of all the claims found (0 until they are found).
   final int claimsDone;
   final int claimsTotal;
 
@@ -284,7 +284,6 @@ class CheckJob {
     required this.services,
     required this.submission,
     required this.language,
-    this.deep = false,
     this.recheck = false,
     bool notifyWhenReady = false,
     Stream<CheckEvent> Function(String key)? follow,
@@ -294,7 +293,6 @@ class CheckJob {
   final AppServices services;
   final Submission submission;
   final String language;
-  final bool deep;
   final bool recheck;
   final Stream<CheckEvent> Function(String key) _follow;
 
@@ -305,7 +303,7 @@ class CheckJob {
   bool _notify;
   bool _left = false;
 
-  /// The answer: a verdict, null when a deep check outlasted the wait, or a
+  /// The answer: a verdict, null when the check outlasted the wait, or a
   /// [CheckFailed] error.
   Future<Verdict?> get result => _result.future;
 
@@ -337,6 +335,9 @@ class CheckJob {
 
   void cancel() {
     _cancelled = true;
+    _pause?.cancel();
+    final waiting = _waiting;
+    if (waiting != null && !waiting.isCompleted) waiting.complete();
     unawaited(_events?.cancel());
     unawaited(services.notifier.release());
   }
@@ -393,12 +394,16 @@ class CheckJob {
       case SubmissionKind.link:
         final value = submission.text ?? '';
         final link = submission.kind == SubmissionKind.link;
-        if (deep) return _deepCheck(value, link: link);
-        final key = newRequestId();
-        _listen(key);
-        return link
-            ? client.verifyUrl(value, language: language, recheck: recheck, requestId: key)
-            : client.verifyText(value, language: language, recheck: recheck, requestId: key);
+        // Every claim is checked, in the background, with the time that takes: the
+        // server answers at once with a case id, and the check is followed by it.
+        final caseId = await client.startCheck(
+          text: link ? null : value,
+          url: link ? value : null,
+          language: language,
+          recheck: recheck,
+        );
+        _listen(caseId);
+        return _followCase(caseId);
       case SubmissionKind.image:
       case SubmissionKind.document:
         final key = newRequestId();
@@ -410,54 +415,70 @@ class CheckJob {
           consentToProcessMedia: true,
           language: language,
           recheck: recheck,
+          background: true,
           requestId: key,
           onProgress: _showUpload,
         );
         watch.value = watch.value.copyWith(clearUpload: true);
         if (outcome.isPending) {
-          // A video is checked in the background: its progress is followed by the
-          // case id from here on, as a deep check's is.
+          // Checked in the background, like text: followed by the case id from here.
           unawaited(_events?.cancel());
           _listen(outcome.pendingCaseId!);
-          return _poll(outcome.pendingCaseId!);
+          return _followCase(outcome.pendingCaseId!);
         }
+        // An older server answers a picture in the one request.
         return outcome.verdict;
     }
   }
 
-  /// A deep check: started, then followed until the verdict. Null past the wait.
-  Future<Verdict?> _deepCheck(String value, {required bool link}) async {
-    final caseId = await services.client.startDeepCheck(
-      text: link ? null : value,
-      url: link ? value : null,
-      language: language,
-      recheck: recheck,
-    );
-    _listen(caseId);
-    // Up to five minutes: past the server's own three-minute budget, so a check
-    // that finished is always collected.
-    for (var attempt = 0; attempt < 100; attempt++) {
-      await Future<void>.delayed(const Duration(seconds: 3));
+  /// A check running in the background, followed until its verdict. Null past the
+  /// wait: six and a half minutes, past the server's own five, so a check that
+  /// finished is always collected.
+  ///
+  /// A poll that fails on the way - the phone's connection dropping for a moment -
+  /// does not end a check the server is still running: a few in a row are
+  /// waited out. A refusal from the server (nothing on that page to check) still
+  /// ends it at once.
+  Future<Verdict?> _followCase(String caseId) async {
+    var misses = 0;
+    for (var attempt = 0; attempt < 130; attempt++) {
+      await _wait(const Duration(seconds: 3));
       if (_cancelled) return null;
-      final progress = await services.client.checkOn(caseId);
+      final CheckProgress progress;
+      try {
+        progress = await services.client.checkOn(caseId);
+      } on ApiFailure catch (failure) {
+        if (!_passing(failure) || ++misses > _missesAllowed) rethrow;
+        continue;
+      }
+      misses = 0;
       if (progress.verdict != null) return progress.verdict;
       watch.value = watch.value.copyWith(claimsDone: progress.done, claimsTotal: progress.total);
     }
     return null;
   }
 
-  /// A video: accepted, then polled for. Checked from its still frames - read,
-  /// fact-checked and put through the picture checks - which takes up to a couple
-  /// of minutes, so the wait is bounded at two and a half.
-  Future<Verdict?> _poll(String caseId) async {
-    for (var attempt = 0; attempt < 50; attempt++) {
-      await Future<void>.delayed(const Duration(seconds: 3));
-      if (_cancelled) return null;
-      final verdict = await services.client.getCase(caseId);
-      if (verdict != null) return verdict;
-    }
-    return null;
+  Timer? _pause;
+  Completer<void>? _waiting;
+
+  /// A pause between polls that [cancel] ends at once, so a check someone left
+  /// leaves no timer behind.
+  Future<void> _wait(Duration duration) {
+    final waiting = _waiting = Completer<void>();
+    _pause = Timer(duration, () {
+      if (!waiting.isCompleted) waiting.complete();
+    });
+    return waiting.future;
   }
+
+  /// Polls in a row that may fail before the check is given up on (about 30 s).
+  static const _missesAllowed = 10;
+
+  /// A failure of the connection rather than an answer from the server.
+  static bool _passing(ApiFailure failure) => switch (failure.kind) {
+    FailureKind.timeout || FailureKind.unreachable || FailureKind.interrupted => true,
+    _ => false,
+  };
 
   /// Redrawn in steps of two percent, not on every chunk.
   void _showUpload(int sent, int total) {

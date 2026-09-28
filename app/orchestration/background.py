@@ -1,9 +1,9 @@
-"""Deep checks: run in the background while the app watches them progress.
+"""Checks run in the background while the app watches them progress.
 
-A deep check searches more claims, more queries and more pages than a normal one and
-takes one to three minutes — longer than the app waits on one request. So the request
-returns at once with a case id, the check runs here, and the app polls the case:
-progress ("3 of 8 claims checked") while it runs, the verdict when it is done.
+Every claim is searched and read, which takes one to three minutes for an article -
+longer than the app waits on one request. So the request returns at once with a case
+id, the check runs here, and the app polls the case: progress ("3 of 7 claims
+checked") while it runs, the verdict when it is done. Videos are checked this way too.
 
 Held in memory. A restart loses the checks in flight, and a finished one is kept for a
 quarter of an hour for the app to collect; neither is a place anything is recorded.
@@ -20,16 +20,16 @@ from typing import Any
 
 from fastapi import HTTPException
 
-logger = logging.getLogger("factify.deep")
+logger = logging.getLogger("factify.background")
 
-# How long a finished deep check waits to be collected.
+# How long a finished check waits to be collected.
 _KEEP_SECONDS = 900.0
 
 Progress = Callable[[int, int], None]
 
 
 @dataclass(slots=True)
-class DeepRun:
+class BackgroundRun:
     case_id: str
     started: float
     status: str = "running"  # running | done | failed
@@ -37,20 +37,20 @@ class DeepRun:
     claims_total: int = 0
     response: Any = None
     error_status: int = 500
-    error_detail: str = "the deep check did not finish"
+    error_detail: str = "the check did not finish"
     finished: float | None = None
     task: asyncio.Task[None] | None = field(default=None, repr=False)
 
 
-class DeepChecks:
+class BackgroundChecks:
     def __init__(self, *, clock: Callable[[], float] = time.monotonic) -> None:
         self._clock = clock
-        self._runs: dict[str, DeepRun] = {}
+        self._runs: dict[str, BackgroundRun] = {}
 
-    def start(self, case_id: str, work: Callable[[Progress], Awaitable[Any]]) -> DeepRun:
+    def start(self, case_id: str, work: Callable[[Progress], Awaitable[Any]]) -> BackgroundRun:
         """Start `work` in the background. It is handed a progress callback."""
         self._forget_collected()
-        run = DeepRun(case_id=case_id, started=self._clock())
+        run = BackgroundRun(case_id=case_id, started=self._clock())
 
         def progress(done: int, total: int) -> None:
             run.claims_done, run.claims_total = done, total
@@ -66,7 +66,7 @@ class DeepChecks:
                 run.error_status = refused.status_code
                 run.error_detail = str(refused.detail)
             except Exception:
-                logger.exception("deep check %s failed", case_id)
+                logger.exception("background check %s failed", case_id)
                 run.status = "failed"
             finally:
                 run.finished = self._clock()
@@ -75,10 +75,10 @@ class DeepChecks:
         self._runs[case_id] = run
         return run
 
-    def get(self, case_id: str) -> DeepRun | None:
+    def get(self, case_id: str) -> BackgroundRun | None:
         return self._runs.get(case_id)
 
-    def elapsed(self, run: DeepRun) -> int:
+    def elapsed(self, run: BackgroundRun) -> int:
         return int((run.finished or self._clock()) - run.started)
 
     def _forget_collected(self) -> None:

@@ -190,7 +190,10 @@ class LocalReadyNotifier with WidgetsBindingObserver implements ReadyNotifier {
     final verdict = record.verdict.factVerdict;
     final word = ActionStyle.word(verdict, l10n);
     final colour = ActionStyle.colours(verdict, FactifyTokens.light).$1;
-    final correct = verdict == FactVerdict.falseClaim || verdict == FactVerdict.misleading;
+    final correct =
+        verdict == FactVerdict.falseClaim ||
+        verdict == FactVerdict.partlyTrue ||
+        verdict == FactVerdict.misleading;
     try {
       await _plugin.show(
         id: record.id.hashCode & 0x7fffffff,

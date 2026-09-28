@@ -90,8 +90,16 @@ Future<List<Map<String, dynamic>>> _pumpApp(
         return http.Response('{"ready": true, "missing": []}', 200);
       }
       if (request.url.path == '/v1/auth/config') return http.Response('{"enabled": false}', 200);
-      sent.add(jsonDecode(request.body) as Map<String, dynamic>);
-      return answer?.call(request) ?? http.Response(jsonEncode(_verdictJson()), 200);
+      // Every check starts in the background (contract 1.4): accepted with a case id,
+      // then answered when the app asks after it.
+      if (request.method == 'POST' && request.url.path == '/v1/verify') {
+        sent.add(jsonDecode(request.body) as Map<String, dynamic>);
+        return http.Response('{"case_id": "case-1", "poll_url": "/v1/cases/case-1"}', 202);
+      }
+      if (request.url.path == '/v1/cases/case-1') {
+        return answer?.call(request) ?? http.Response(jsonEncode(_verdictJson()), 200);
+      }
+      return http.Response('{}', 404);
     }),
   );
 
@@ -270,7 +278,7 @@ void main() {
       expect(find.text('Recent'), findsOneWidget);
     });
 
-    testWidgets('a deep check shows the progress the server reports, then the verdict', (
+    testWidgets('every check shows the progress the server reports, then the verdict', (
       tester,
     ) async {
       _phone(tester, _FakeClipboard(hasText: false));
@@ -301,8 +309,8 @@ void main() {
       await tester.pumpWidget(FactifyApp(language: LanguagePreference.inMemory(), client: client));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Deep'));
-      await tester.pump();
+      // There is no Deep toggle: every check checks every claim.
+      expect(find.text('Deep'), findsNothing);
       await tester.enterText(find.byType(TextField), claim);
       await tester.pump();
       await tester.tap(find.text('Check now'));
@@ -312,11 +320,11 @@ void main() {
       expect(find.text('STEP 1 OF 3'), findsOneWidget);
       await tester.pump(const Duration(seconds: 2));
 
-      expect(sent.single['mode'], 'deep');
+      expect(sent.single['mode'], 'background');
       expect(find.text('1 of 3 claims checked'), findsOneWidget);
       // This test server reports no progress events, so a few seconds in the page
-      // stops expecting them and names the check instead of a step.
-      expect(find.text('Deep check…'), findsOneWidget);
+      // stops expecting them and says what it is doing instead of a step.
+      expect(find.text('Looking for sources that address this'), findsOneWidget);
 
       await tester.pump(const Duration(seconds: 3));
       await tester.pumpAndSettle();

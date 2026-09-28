@@ -85,8 +85,10 @@ Map<String, dynamic> _evidence(
   String publisher,
   String url,
   String direction,
-  String tier,
-) => {
+  String tier, {
+  String metric = 'claim_similarity',
+  String excerpt = 'No such scheme has been announced by the Government of India.',
+}) => {
   'id': id,
   'tier': tier,
   'kind': tier == 'C' ? 'fact_check' : 'dated_source',
@@ -95,16 +97,16 @@ Map<String, dynamic> _evidence(
   'finding': 'f',
   'citation_url': url,
   'snapshot_id': 's',
-  'source_excerpt': 'No such scheme has been announced by the Government of India.',
+  'source_excerpt': excerpt,
   'source_anchor': {'paragraph_index': 3},
-  'match_basis': {'metric': 'claim_similarity', 'value': 0.86, 'threshold': 0.62},
+  'match_basis': {'metric': metric, 'value': 0.86, 'threshold': 0.62},
   'match_quality': 'STRONG',
   'publisher': publisher,
   'credibility': 'HIGH',
   'published_on': '2026-09-24',
 };
 
-/// One of the four verdicts, as the server would send it.
+/// One of the five verdicts, as the server would send it.
 Verdict sampleVerdict(FactVerdict kind) => Verdict.fromJson(sampleVerdictJson(kind));
 
 /// The same, as JSON.
@@ -133,6 +135,14 @@ Map<String, dynamic> sampleVerdictJson(FactVerdict kind) {
       'supports',
       88,
       'The RBI kept the repo rate at 6.5% in its September review.',
+    ),
+    FactVerdict.partlyTrue => (
+      'SHARE_WITH_CORRECTION',
+      'PARTLY_TRUE',
+      'MISLEADING_CONTEXT',
+      'contextualizes',
+      74,
+      'Only a smaller, partial version of this claim is reported: one state paid Rs 5,000 once.',
     ),
     FactVerdict.unconfirmed => (
       'SEND_TO_REVIEW',
@@ -164,7 +174,7 @@ Map<String, dynamic> sampleVerdictJson(FactVerdict kind) {
         'reason': decided
             ? 'Two published fact-checks and a dated report address it directly.'
             : 'We read 10 sources and none addressed this directly.',
-        'rule_id': 'r',
+        'rule_id': kind == FactVerdict.partlyTrue ? 'rule.narrower_scope' : 'r',
         'rule_version': 'v',
         'confidence': confidence,
         'input_anchor': {'char_start': 0, 'char_end': 54},
@@ -187,6 +197,18 @@ Map<String, dynamic> sampleVerdictJson(FactVerdict kind) {
           ],
         },
         'evidence': [
+          if (kind == FactVerdict.partlyTrue)
+            // What the sources actually report: a smaller version of the claim.
+            _evidence(
+              'ev_0',
+              'The Times of India',
+              'https://timesofindia.indiatimes.com/tn-women',
+              direction,
+              'D',
+              metric: 'passage_narrower: a one-time payment in one state',
+              excerpt:
+                  'Tamil Nadu credited Rs 5,000 once to 1.31 crore women under its own scheme.',
+            ),
           if (decided) ...[
             _evidence('ev_1', 'PIB Fact Check', 'https://pib.gov.in/factcheck/1', direction, 'C'),
             _evidence('ev_2', 'Alt News', 'https://www.altnews.in/scheme', direction, 'C'),
@@ -207,10 +229,16 @@ Map<String, dynamic> sampleVerdictJson(FactVerdict kind) {
 
 /// A server that knows a signed-in person, and answers a check with [sampleVerdict]'s
 /// False - or, with [hold], never answers it (a check caught mid-way).
+///
+/// A check is started in the background (contract 1.4): accepted with a case id,
+/// and answered when the app polls for it.
 MockClient _server({bool hold = false}) => MockClient((request) async {
   final path = request.url.path;
   if (path == '/v1/verify') {
     if (hold) return Completer<http.Response>().future;
+    return http.Response('{"case_id": "case-1", "poll_url": "/v1/cases/case-1"}', 202);
+  }
+  if (path == '/v1/cases/case-1') {
     // As bytes: the body carries ₹, which a plain string response refuses.
     return http.Response.bytes(
       utf8.encode(jsonEncode(sampleVerdictJson(FactVerdict.falseClaim))),

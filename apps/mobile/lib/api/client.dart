@@ -178,8 +178,10 @@ class FactifyClient {
     return Verdict.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 
-  /// Submit a file. Images and PDFs resolve synchronously; video returns 202
-  /// with a case id to poll, because it cannot finish inside the budget.
+  /// Submit a file. With [background] (what the app sends, contract 1.4) the
+  /// server answers 202 with a case id for any file and checks it while the app
+  /// follows it; without it, images and PDFs resolve in this request and only
+  /// video returns 202.
   ///
   /// Sent through the injected client rather than `request.send()`, so the
   /// upload path is testable like every other call.
@@ -195,6 +197,7 @@ class FactifyClient {
     bool consentToProcessMedia = false,
     String? language,
     bool recheck = false,
+    bool background = false,
     String? requestId,
     void Function(int sent, int total)? onProgress,
   }) => _guard(() async {
@@ -203,6 +206,7 @@ class FactifyClient {
       ..fields['consent_to_process_media'] = consentToProcessMedia.toString();
     if (language != null) request.fields['language'] = language;
     if (recheck) request.fields['recheck'] = 'true';
+    if (background) request.fields['background'] = 'true';
     request.headers.addAll(await _signedIn());
     if (requestId != null) request.headers['x-request-id'] = requestId;
 
@@ -217,10 +221,10 @@ class FactifyClient {
     return VerifyFileOutcome.done(Verdict.fromJson(payload));
   });
 
-  /// Retrieve a case previously computed, for polling an accepted video.
-  /// Start a deep check. The server answers at once with a case id and runs the
-  /// check in the background; follow it with [checkOn].
-  Future<String> startDeepCheck({
+  /// Start a check. The server answers at once with a case id and checks every
+  /// claim in the background, taking the time that needs (contract 1.4); follow it
+  /// with [checkOn].
+  Future<String> startCheck({
     String? text,
     String? url,
     String? language,
@@ -236,7 +240,7 @@ class FactifyClient {
               'text': ?text,
               'url': ?url,
               'language': ?language,
-              'mode': 'deep',
+              'mode': 'background',
               if (recheck) 'recheck': true,
             }),
           )
@@ -245,8 +249,9 @@ class FactifyClient {
     return (jsonDecode(response.body) as Map<String, dynamic>)['case_id'] as String;
   }
 
-  /// Where a deep check has got to: its progress while it runs, its verdict when
-  /// done. A refusal (such as nothing to check on a page) is raised as a failure.
+  /// Where a check running in the background has got to: its progress while it
+  /// runs, its verdict when done. A refusal (such as nothing to check on a page) is
+  /// raised as a failure.
   Future<CheckProgress> checkOn(String caseId) async {
     final response = await _send(
       () => _http.get(Uri.parse('$baseUrl/v1/cases/$caseId')).timeout(const Duration(seconds: 20)),
@@ -465,8 +470,8 @@ class FactifyClient {
 }
 
 /// Either a finished verdict, or a case id to poll.
-/// A deep check's state: claims done of total while it runs, the verdict when
-/// done. The total is zero until the claims have been read out of the input.
+/// A background check's state: claims done of total while it runs, the verdict
+/// when done. The total is zero until the claims have been read out of the input.
 class CheckProgress {
   const CheckProgress({this.verdict, this.done = 0, this.total = 0});
 

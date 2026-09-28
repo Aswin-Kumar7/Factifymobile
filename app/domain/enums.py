@@ -128,6 +128,10 @@ class Verdict(StrEnum):
 
     TRUE = "TRUE"
     FALSE = "FALSE"
+    # Some of it is right and some of it is not: one claim confirmed and another
+    # contradicted, or a real thing inflated - sources report a smaller version of
+    # what the message says (contract 1.4, 2026-09-28).
+    PARTLY_TRUE = "PARTLY_TRUE"
     MISLEADING = "MISLEADING"
     UNCONFIRMED = "UNCONFIRMED"
 

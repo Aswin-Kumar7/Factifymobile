@@ -24,6 +24,7 @@ import httpx
 
 from app.observability.logging import event
 from app.observability.metrics import metrics
+from app.security.patience import current_patience
 from app.security.ssrf import BlockedDestination, resolve_and_validate
 
 logger = logging.getLogger("factify.fetch")
@@ -127,11 +128,11 @@ _BACKOFF_SECONDS = (1.0, 3.0)
 _MAX_RETRY_AFTER_SECONDS = 10.0
 
 
-def _retry_delay(response: httpx.Response, attempt: int) -> float:
+def _retry_delay(response: httpx.Response, attempt: int, *, cap: float) -> float:
     """The provider's Retry-After when it gives one (capped), else a short backoff."""
     header = response.headers.get("retry-after", "")
     try:
-        return min(max(float(header), 0.0), _MAX_RETRY_AFTER_SECONDS)
+        return min(max(float(header), 0.0), cap)
     except ValueError:
         return _BACKOFF_SECONDS[min(attempt, len(_BACKOFF_SECONDS) - 1)]
 
@@ -386,7 +387,11 @@ class SecureFetcher:
         # refusing. That answer used to drop the call: a source read on a busy minute
         # simply vanished from the check. A short wait and another try, honouring the
         # provider's own Retry-After, recovers it. Anything else fails at once.
-        for attempt in range(_PROVIDER_RETRIES + 1):
+        # A check in the background waits longer and more often (app/security/patience).
+        patience = current_patience.get()
+        retries = max(_PROVIDER_RETRIES, patience.retries)
+        cap = max(_MAX_RETRY_AFTER_SECONDS, patience.retry_after_cap)
+        for attempt in range(retries + 1):
             try:
                 response = await self._client.post(
                     url,
@@ -405,9 +410,9 @@ class SecureFetcher:
 
             body = await response.aread()
             await response.aclose()
-            if response.status_code not in _RETRYABLE or attempt == _PROVIDER_RETRIES:
+            if response.status_code not in _RETRYABLE or attempt == retries:
                 break
-            await asyncio.sleep(_retry_delay(response, attempt))
+            await asyncio.sleep(_retry_delay(response, attempt, cap=cap))
 
         elapsed_ms = (time.perf_counter() - started) * 1000
 

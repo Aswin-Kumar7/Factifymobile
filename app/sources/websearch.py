@@ -43,12 +43,10 @@ from app.governor.governor import ProviderUnavailable, Skip, SkipReason
 from app.observability.logging import event
 from app.security.fetcher import FetchResult, SecureFetcher
 from app.sources.base import (
-    NORMAL,
     SourceCandidate,
     SourceRelation,
     SourceSnapshot,
     current_check,
-    current_depth,
     insufficient,
     locate_excerpt,
 )
@@ -302,9 +300,7 @@ class WebSearchResolver:
             # and those need opposite responses.
             dropped_hosts=sorted(set(dropped_hosts)),
         )
-        # A deep check reads further down the list; a normal one keeps its own limit.
-        depth = current_depth.get()
-        limit = self._max_results if depth is NORMAL else depth.pages
+        limit = self._max_results
 
         # Which pages get the read slots. Search rank alone gave them to whatever the
         # provider ranked first: on "CJP threatens 'Jantar Mantar 2.0' if CEC Gyanesh
@@ -761,8 +757,7 @@ class WebSearchResolver:
 
         claim_text = _comparable(claim.text)
 
-        depth = current_depth.get()
-        max_queries = _MAX_QUERIES if depth is NORMAL else depth.queries
+        max_queries = _MAX_QUERIES
 
         queries = [claim.text]
         # Translated as well as in its own words, for a claim not made in English:

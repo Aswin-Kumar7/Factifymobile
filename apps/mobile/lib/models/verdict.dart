@@ -1,4 +1,4 @@
-/// Wire models for the Factify contract (M41), contract_version 1.3 (read back to 1.0).
+/// Wire models for the Factify contract (M41), contract_version 1.4 (read back to 1.0).
 ///
 /// Mirrors app/api/schemas.py field for field. Two properties of the server
 /// contract are load-bearing and are preserved deliberately:
@@ -43,21 +43,29 @@ enum VerdictAction {
 enum FactVerdict {
   trueClaim,
   falseClaim,
+
+  /// Some of it is right and some of it is not (contract 1.4): one claim confirmed
+  /// and another contradicted, or sources confirming only a smaller version.
+  partlyTrue,
   misleading,
   unconfirmed;
 
   static FactVerdict parse(String? raw, VerdictAction action) => switch (raw) {
     'TRUE' => FactVerdict.trueClaim,
     'FALSE' => FactVerdict.falseClaim,
+    'PARTLY_TRUE' => FactVerdict.partlyTrue,
     'MISLEADING' => FactVerdict.misleading,
     'UNCONFIRMED' => FactVerdict.unconfirmed,
     _ => fromAction(action),
   };
 
+  /// A result kept from before 1.4 carries its verdict, so it reads as it did then;
+  /// only a response with no verdict at all is read from its action.
   static FactVerdict fromAction(VerdictAction action) => switch (action) {
     VerdictAction.safeToShare => FactVerdict.trueClaim,
     VerdictAction.doNotShare => FactVerdict.falseClaim,
-    VerdictAction.shareWithContext || VerdictAction.shareWithCorrection => FactVerdict.misleading,
+    VerdictAction.shareWithCorrection => FactVerdict.partlyTrue,
+    VerdictAction.shareWithContext => FactVerdict.misleading,
     VerdictAction.waitAndRecheck || VerdictAction.sendToReview => FactVerdict.unconfirmed,
   };
 
@@ -80,6 +88,26 @@ enum ClaimStatus {
 
   /// Mirrors `ClaimStatus.is_decisive` on the server.
   bool get isDecisive => this != ClaimStatus.unverified;
+}
+
+/// How one claim is shown: right, wrong, partly right, missing context or not
+/// confirmed. Its status, with "partly true" told apart from "missing context" -
+/// both arrive as MISLEADING_CONTEXT, and the rule that decided it says which
+/// (contract 1.4).
+enum ClaimMark {
+  right,
+  wrong,
+  partly,
+  missingContext,
+  unconfirmed;
+
+  static ClaimMark of(Claim claim) => switch (claim.status) {
+    ClaimStatus.supported => ClaimMark.right,
+    ClaimStatus.contradicted => ClaimMark.wrong,
+    ClaimStatus.misleadingContext when claim.isPartlyTrue => ClaimMark.partly,
+    ClaimStatus.misleadingContext => ClaimMark.missingContext,
+    ClaimStatus.unverified => ClaimMark.unconfirmed,
+  };
 }
 
 /// The earlier copy a media match points at (contract 1.3).
@@ -366,11 +394,16 @@ class Claim {
     this.ownAnchor,
     this.technique,
     this.language,
+    this.ruleId,
   });
 
   final String id;
   final String text;
   final String claimType;
+
+  /// The rule that decided this claim. `rule.narrower_scope` is a claim sources
+  /// confirm only in a smaller version: partly true (contract 1.4).
+  final String? ruleId;
 
   /// The language the claim was made in: en, hi, or bn mr te ta gu ur kn or ml pa.
   final String? language;
@@ -388,8 +421,9 @@ class Claim {
   /// decided claim, so it can never disagree with the badge beside it.
   final String? explanation;
 
-  /// Whether the web was searched for this claim: "searched", "not_searched",
-  /// "timed_out" or "unavailable" (the news search could not be reached). Null on
+  /// Whether the web was searched for this claim: "searched", "timed_out" or
+  /// "unavailable" (the news search could not be reached). "not_searched" only on a
+  /// result kept from before 1.4, when a quick check searched three claims. Null on
   /// results stored before the server recorded it.
   final String? search;
 
@@ -419,9 +453,27 @@ class Claim {
         : InputAnchor.fromJson((json['input_anchor'] as Map).cast<String, dynamic>()),
     technique: json['technique'] as String?,
     language: json['language'] as String?,
+    ruleId: json['rule_id'] as String?,
   );
 
   bool get isDecisive => status.isDecisive;
+
+  /// How this claim is shown: right, wrong, partly right, missing context, unconfirmed.
+  ClaimMark get mark => ClaimMark.of(this);
+
+  /// Sources confirm only a smaller version of this claim: one state's scheme for
+  /// the government's, a one-time payment for a monthly one. Partly true.
+  bool get isPartlyTrue =>
+      status == ClaimStatus.misleadingContext && ruleId == 'rule.narrower_scope';
+
+  /// What the sources actually report, for a claim that is partly true: the
+  /// citations that show the smaller version.
+  List<Evidence> get smallerVersion => evidence
+      .where(
+        (e) =>
+            e.direction == 'contextualizes' && e.matchBasis.metric.startsWith('passage_narrower'),
+      )
+      .toList();
   List<Evidence> get contradicting => evidence.where((e) => e.contradicts).toList();
   List<Evidence> get supporting => evidence.where((e) => e.supports).toList();
 

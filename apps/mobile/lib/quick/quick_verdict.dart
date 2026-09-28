@@ -271,7 +271,7 @@ class _QuickVerdictSheetState extends State<QuickVerdictSheet> {
       if (!mounted || job != _job) return;
       _stopClock();
       if (verdict == null) {
-        _fail(CheckProblem.slow, (l10n) => l10n.deepTooSlow, retryable: true);
+        _fail(CheckProblem.slow, (l10n) => l10n.checkTooSlow, retryable: true);
         return;
       }
       final record = _services.history.records
@@ -508,13 +508,14 @@ class _QuickVerdictSheetState extends State<QuickVerdictSheet> {
     final summary = firstSentence(verdict.summary ?? '');
     final chips = decidingSources(verdict).map(l10n.describeSource).toSet().take(3).toList();
     final copy = switch (fact) {
-      FactVerdict.falseClaim => l10n.quickCopyCorrection,
+      FactVerdict.falseClaim || FactVerdict.partlyTrue => l10n.quickCopyCorrection,
       FactVerdict.misleading => l10n.quickCopyContext,
       FactVerdict.trueClaim => l10n.quickCopyResult,
       FactVerdict.unconfirmed => l10n.quickCopyNote,
     };
     final glyph = switch (fact) {
       FactVerdict.falseClaim => Icons.close_rounded,
+      FactVerdict.partlyTrue => Icons.contrast_rounded,
       FactVerdict.misleading => Icons.priority_high_rounded,
       FactVerdict.trueClaim => Icons.check_rounded,
       FactVerdict.unconfirmed => Icons.question_mark_rounded,

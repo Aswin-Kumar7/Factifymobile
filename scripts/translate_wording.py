@@ -51,6 +51,7 @@ ENGLISH = {
     # app/orchestration/correction.py
     "correction.opening": "Hi! I checked this before forwarding.",
     "correction.false": "Factify says it's false",
+    "correction.partly": "Factify says it's only partly true",
     "correction.misleading": "Factify says it's misleading",
     "correction.true": "Factify says it's true",
     "correction.unconfirmed": (

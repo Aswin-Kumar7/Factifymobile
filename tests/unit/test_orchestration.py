@@ -930,9 +930,8 @@ class TestTheFallbackStage:
         assert any(e.kind.value == "corroboration" for e in result.evidence)
 
     @pytest.mark.anyio
-    async def test_only_the_most_important_claims_reach_the_web(self) -> None:
-        from app.orchestration.pipeline import MAX_FALLBACK_CLAIMS
-
+    async def test_every_claim_reaches_the_web_the_most_important_first(self) -> None:
+        """Every claim is checked; the ones that decide the answer start first."""
         web = _web_search()
         claims = [
             _claim(claim_id="background", importance=Importance.BACKGROUND),
@@ -948,9 +947,8 @@ class TestTheFallbackStage:
             normalise_text("A long article with seven claims."), case_id=uuid4(), claims=claims
         )
 
-        assert len(web.asked) == MAX_FALLBACK_CLAIMS == 3
-        # the top three by importance; the tie between details keeps extraction order
-        assert set(web.asked) == {"headline", "thesis", "detail_1"}
+        assert sorted(web.asked) == sorted(c.id for c in claims)
+        assert web.asked[:3] == ["headline", "thesis", "detail_1"]
 
     @pytest.mark.anyio
     async def test_a_critical_detail_is_searched_before_minor_ones(self) -> None:
@@ -981,8 +979,8 @@ class TestTheFallbackStage:
             claims=[*minor, critical],
         )
 
-        assert "critical" in web.asked
-        assert len(web.asked) == 3
+        assert web.asked[0] == "critical"
+        assert len(web.asked) == 6
 
 
 class TestTheCacheIsAskedFirst:
@@ -1472,9 +1470,8 @@ class TestEveryClaimSaysWhetherItWasSearched:
             return []
 
     @pytest.mark.anyio
-    async def test_a_claim_below_the_cap_is_marked_not_searched(self) -> None:
-        from app.orchestration.pipeline import MAX_FALLBACK_CLAIMS
-
+    async def test_every_claim_is_searched(self) -> None:
+        """There is no cap any more: a fourth claim is searched like the first."""
         search = self._Search()
         orchestrator = Orchestrator(
             cache=NullCache(),  # type: ignore[arg-type]
@@ -1483,17 +1480,15 @@ class TestEveryClaimSaysWhetherItWasSearched:
             extractor_version="test",
         )
         claims = [
-            claim(claim_id=f"cl_{n}", importance=Importance.SUPPORTING_DETAIL)
-            for n in range(MAX_FALLBACK_CLAIMS + 1)
+            claim(claim_id=f"cl_{n}", importance=Importance.SUPPORTING_DETAIL) for n in range(4)
         ]
-        intake = normalise_text("Four claims, one more than the search cap.")
+        intake = normalise_text("Four claims, all of them searched.")
 
         result = await orchestrator.verify(intake, case_id=uuid4(), claims=claims)
 
         statuses = {outcome.claim.id: outcome.search for outcome in result.claims}
-        assert sorted(search.asked) == sorted(statuses)[:MAX_FALLBACK_CLAIMS]
-        assert list(statuses.values()).count("searched") == MAX_FALLBACK_CLAIMS
-        assert list(statuses.values()).count("not_searched") == 1
+        assert sorted(search.asked) == sorted(statuses)
+        assert set(statuses.values()) == {"searched"}
 
     @pytest.mark.anyio
     async def test_a_search_that_could_not_run_is_not_a_search_that_found_nothing(
@@ -1564,22 +1559,16 @@ class TestAnUnreportedNationalClaimIsSaidPlainly:
 
 
 @pytest.mark.anyio
-async def test_a_quick_check_lists_the_claims_past_its_cap_as_not_checked() -> None:
-    """Seven claims from a linked page queued for the same slots and six ran out of
-    time (2026-09-28). A quick check now checks the most important three fully and
-    lists the rest as not searched; a deep check checks every one."""
-    from app.orchestration.pipeline import MAX_FALLBACK_CLAIMS
-
+async def test_every_claim_of_a_long_page_is_checked_and_answered_in_order() -> None:
+    """A quick check used to check three claims of seven and list the rest as "not
+    checked in a quick check" (2026-09-28). Every claim is checked now, and the
+    answer lists them in the page's order, whatever order they started in."""
     checked = _web_search()
     claims = [_claim(claim_id=f"c{n}", importance=Importance.SUPPORTING_DETAIL) for n in range(7)]
     result = await _economy_orchestrator([_fact_check(None), checked]).verify(
         normalise_text("A linked page with seven claims."), case_id=uuid4(), claims=claims
     )
 
-    searches = [outcome.search for outcome in result.claims]
-    assert searches.count("not_searched") == len(claims) - MAX_FALLBACK_CLAIMS
-    assert all(
-        outcome.decision.status.value == "UNVERIFIED"
-        for outcome in result.claims
-        if outcome.search == "not_searched"
-    )
+    assert [outcome.claim.id for outcome in result.claims] == [c.id for c in claims]
+    assert "not_searched" not in [outcome.search for outcome in result.claims]
+    assert sorted(checked.asked) == sorted(c.id for c in claims)

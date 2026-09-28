@@ -39,16 +39,23 @@ READERS = {
     "hi": ("ocr-rec-devanagari", "inference.onnx"),
     "en": ("ocr-rec-en", "inference.onnx"),
 }
-# Read with when the two above are unsure: Tamil, Telugu, and Urdu (Arabic script),
-# PaddleOCR's own PP-OCRv5 readers (Apache-2.0). Bengali, Gujarati, Odia, Kannada,
-# Malayalam and Gurmukhi have no such reader yet, and go to the hosted reader.
+# Read with when the two above are unsure: Tamil, PaddleOCR's own PP-OCRv5 reader
+# (Apache-2.0). Every other script goes to the hosted reader.
+#
+# Telugu and Urdu had readers here too, and were taken out after they were measured
+# against cards of known text (2026-09-28). Each was sure of itself and wrong in ways
+# that change the claim: the Telugu reader read the "ra" joined under a letter as a
+# bracket and dropped it, so "ప్రతి" (every) came out "పతి" (husband) and a claim
+# about every woman became one about husbands and wives, which every source then
+# rightly failed to support; the Urdu one is an Arabic-script reader and gave Arabic
+# letters for Urdu ones ("ہر", every, read "بر"). A misread claim is checked wrong,
+# which is worse than paying to read it right. Tamil read its claim whole (0.92 of
+# the card, the errors in the call to action), and stays.
 SCRIPT_READERS = {
     "ta": ("ocr-rec-ta", "inference.onnx"),
-    "te": ("ocr-rec-te", "inference.onnx"),
-    "ur": ("ocr-rec-arabic", "inference.onnx"),
 }
-# Read right to left.
-_RIGHT_TO_LEFT = {"ur"}
+# Read right to left: none of the readers above, but kept for an Arabic-script one.
+_RIGHT_TO_LEFT: frozenset[str] = frozenset()
 
 # Enough text, read with enough confidence, that the hosted reader is not asked.
 # A news card or a forward carries sentences; a photograph with a shop sign in it

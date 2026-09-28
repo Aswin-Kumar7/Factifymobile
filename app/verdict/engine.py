@@ -34,12 +34,16 @@ from app.domain.publishers import publishers_of
 
 # Stamped on every verdict. A cached verdict produced under older rules is therefore
 # identifiable, and the cache can refuse to serve it (M13).
-RULE_VERSION = "2026.09.27.1"
+RULE_VERSION = "2026.09.28.1"
 
 # Default number of genuinely independent origins required before corroboration can
 # support a claim. Tenant-configurable later; never below two, because one origin is
 # a source rather than a corroboration.
 DEFAULT_MIN_ORIGINS = 2
+
+# The rule that finds a claim true only in a smaller version (rule 4b). Named once:
+# the rollup tells "partly true" from "shown out of context" by it.
+NARROWER_RULE = "rule.narrower_scope"
 
 
 class AdvisoryLeakError(TypeError):
@@ -485,7 +489,7 @@ def _decide_rules(
     ):
         return Decision(
             status=ClaimStatus.MISLEADING_CONTEXT,
-            rule_id="rule.narrower_scope",
+            rule_id=NARROWER_RULE,
             reason=(
                 "Sources show only a narrower version of this claim: "
                 f"{', '.join(sorted(narrower_origins))}."
@@ -541,7 +545,8 @@ def roll_up(
 _VERDICT_OF = {
     Action.SAFE_TO_SHARE: Verdict.TRUE,
     Action.DO_NOT_SHARE: Verdict.FALSE,
-    Action.SHARE_WITH_CORRECTION: Verdict.MISLEADING,
+    # Share only with the correction: part of it is right and part is not.
+    Action.SHARE_WITH_CORRECTION: Verdict.PARTLY_TRUE,
     Action.SHARE_WITH_CONTEXT: Verdict.MISLEADING,
     Action.WAIT_AND_RECHECK: Verdict.UNCONFIRMED,
     Action.SEND_TO_REVIEW: Verdict.UNCONFIRMED,
@@ -561,9 +566,9 @@ def case_confidence(verdict: Verdict, claims: list[tuple[ClaimStatus, int | None
     """The case's confidence, from the claims that decided it.
 
     TRUE takes the weakest of the supported claims, because the whole piece is only
-    as sound as its least-supported central claim. FALSE and MISLEADING take the
-    strongest finding against it, because one well-sourced refutation is enough to
-    make a piece unsafe to share.
+    as sound as its least-supported central claim. FALSE, PARTLY_TRUE and MISLEADING
+    take the strongest finding against it, because one well-sourced refutation is
+    enough to make a piece unsafe to share whole.
     """
     if verdict is Verdict.UNCONFIRMED:
         return None
@@ -608,15 +613,54 @@ def _roll_up_action(
     contradicted = [(c, d) for c, d in decisions if d.status is ClaimStatus.CONTRADICTED]
     misleading = [(c, d) for c, d in decisions if d.status is ClaimStatus.MISLEADING_CONTEXT]
     unverified = [(c, d) for c, d in decisions if d.status is ClaimStatus.UNVERIFIED]
+    # A claim sources establish only in a smaller version (rule 4b): part of it is
+    # right. Told apart from media shown out of context, the other way to reach
+    # MISLEADING_CONTEXT, by the rule that decided it.
+    partly = [(c, d) for c, d in misleading if d.rule_id == NARROWER_RULE]
+    # What sources confirm, in full or in part: a central claim among these makes a
+    # piece partly true rather than false when another of its claims is wrong.
+    right_central = [
+        c
+        for c, d in decisions
+        if blocks_clearance(c) and (d.status is ClaimStatus.SUPPORTED or d.rule_id == NARROWER_RULE)
+    ]
+    anything_right = any(d.status is ClaimStatus.SUPPORTED for _, d in decisions) or bool(partly)
 
     for claim, _ in contradicted:
         if claim.importance in {Importance.HEADLINE, Importance.MAIN_THESIS} or (
             claim.severity is Severity.CRITICAL
         ):
+            # Some of it right, some of it wrong: said as that, with each claim shown
+            # as what it is, rather than the whole piece called false for one part.
+            # Only when a claim that carries the piece is confirmed - a true aside
+            # under a false headline leaves the piece false.
+            if any(other is not claim for other in right_central):
+                return CaseDecision(
+                    action=Action.SHARE_WITH_CORRECTION,
+                    rule_id="rollup.mixed",
+                    reason=(
+                        "Part of this is confirmed and part of it is contradicted by cited "
+                        "evidence. Share only with the correction."
+                    ),
+                )
             return CaseDecision(
                 action=Action.DO_NOT_SHARE,
                 rule_id="rollup.contradicted_material",
                 reason="A central claim in this content is contradicted by cited evidence.",
+            )
+
+    # A real thing inflated: sources report a smaller version of a claim that carries
+    # the piece - one state's scheme as the government's, a one-time payment as a
+    # monthly one. Partly true, and shown with what the sources actually report.
+    for claim, _ in partly:
+        if claim.is_material:
+            return CaseDecision(
+                action=Action.SHARE_WITH_CORRECTION,
+                rule_id="rollup.partly_true",
+                reason=(
+                    "Sources confirm only a smaller version of this claim. Share only "
+                    "with the correction."
+                ),
             )
 
     # A contradicted detail is a correction, not a verdict on the whole piece.
@@ -642,11 +686,23 @@ def _roll_up_action(
                 ),
             )
 
-    if contradicted or misleading:
+    if (contradicted or misleading) and anything_right:
         return CaseDecision(
             action=Action.SHARE_WITH_CORRECTION,
             rule_id="rollup.minor_correction",
             reason="A supporting detail is inaccurate. Share only with a correction.",
+        )
+
+    # A wrong detail with nothing else confirmed is not "partly true": nothing was
+    # found true. It is misleading - share it, if at all, only with the context.
+    if contradicted or misleading:
+        return CaseDecision(
+            action=Action.SHARE_WITH_CONTEXT,
+            rule_id="rollup.wrong_detail",
+            reason=(
+                "A detail in this is contradicted by cited evidence, and nothing else in "
+                "it could be confirmed."
+            ),
         )
 
     if any(claim.within_developing_window for claim, _ in unverified):

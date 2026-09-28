@@ -696,7 +696,11 @@ void main() {
           if (request.url.path == '/readyz') {
             return http.Response('{"ready": true, "missing": []}', 200);
           }
-          sent.add(jsonDecode(request.body) as Map<String, dynamic>);
+          // Started in the background (contract 1.4), then answered when polled.
+          if (request.method == 'POST') {
+            sent.add(jsonDecode(request.body) as Map<String, dynamic>);
+            return http.Response('{"case_id": "case-1", "poll_url": "/v1/cases/case-1"}', 202);
+          }
           return http.Response(jsonEncode(_abstention().raw), 200);
         }),
       );

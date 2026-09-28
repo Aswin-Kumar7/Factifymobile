@@ -1,9 +1,9 @@
-"""Deep checks: a longer, wider check that runs in the background while the app polls.
+"""Background checks: every claim checked, while the app polls for progress.
 
-The same pipeline as a normal check, run with the deep profile; the tests hold that it
-is really deep (the profile is in force inside the check), that it answers at once
-with a case id, that polling shows progress and then the verdict, and that it is
-charged — three credits — only when it finishes.
+The same pipeline as a check answered in one request, run with the background budget
+and patience; the tests hold that the budget really is in force inside the check,
+that it answers at once with a case id, that polling shows progress and then the
+verdict, and that it is charged - one credit, like any check - only when it finishes.
 """
 
 from __future__ import annotations
@@ -18,8 +18,10 @@ from fastapi import HTTPException
 
 from app.accounts import CreditBook
 from app.extraction.claims import ExtractedClaims
-from app.orchestration.deep import DeepChecks
-from app.sources.base import DEEP, NORMAL, current_depth
+from app.orchestration.background import BackgroundChecks
+from app.orchestration.pipeline import BACKGROUND_SECONDS
+from app.security.patience import BRIEF, PATIENT, current_patience
+from app.sources.base import check_seconds
 from tests.unit.factories import claim
 from tests.unit.test_accounts import PERSON, _Store
 from tests.unit.test_orchestration import _result
@@ -28,7 +30,7 @@ from tests.unit.test_orchestration import _result
 class TestTheBackgroundRunner:
     @pytest.mark.anyio
     async def test_progress_is_visible_and_the_result_is_kept(self) -> None:
-        runs = DeepChecks()
+        runs = BackgroundChecks()
         release = asyncio.Event()
 
         async def work(progress: Any) -> str:
@@ -48,7 +50,7 @@ class TestTheBackgroundRunner:
 
     @pytest.mark.anyio
     async def test_a_refusal_is_delivered_when_collected(self) -> None:
-        runs = DeepChecks()
+        runs = BackgroundChecks()
 
         async def work(progress: Any) -> None:
             raise HTTPException(422, "no checkable claims were found on the page")
@@ -63,12 +65,15 @@ class TestTheBackgroundRunner:
         )
 
 
-class TestADeepCheckThroughTheApi:
+class TestABackgroundCheckThroughTheApi:
     @pytest.mark.anyio
-    async def test_it_answers_at_once_runs_deep_and_is_charged_when_done(self) -> None:
+    @pytest.mark.parametrize("mode", ["background", "deep"])
+    async def test_it_answers_at_once_takes_its_time_and_is_charged_when_done(
+        self, mode: str
+    ) -> None:
         from app.main import create_app
 
-        seen_depth: list[str] = []
+        seen: list[tuple[float | None, Any]] = []
         store = _Store()
 
         class _Identity:
@@ -84,7 +89,7 @@ class TestADeepCheckThroughTheApi:
                 return None
 
             async def verify(self, intake: Any, *, case_id: UUID, **kwargs: Any) -> Any:
-                seen_depth.append(current_depth.get().name)
+                seen.append((check_seconds.get(), current_patience.get()))
                 await asyncio.sleep(0.05)
                 return _result(case_id=case_id)
 
@@ -98,7 +103,8 @@ class TestADeepCheckThroughTheApi:
         async with httpx.AsyncClient(transport=transport, base_url="http://factify.test") as api:
             started = await api.post(
                 "/v1/verify",
-                json={"text": "A forward to check deeply.", "mode": "deep"},
+                # "deep", the name an older app sends, runs the same one check.
+                json={"text": "A forward to check.", "mode": mode},
                 headers={"Authorization": "Bearer good"},
             )
             assert started.status_code == 202
@@ -113,6 +119,8 @@ class TestADeepCheckThroughTheApi:
 
         assert polled.status_code == 200
         assert polled.json()["case_id"] == case_id
-        assert seen_depth == [DEEP.name]  # the deep profile was in force
-        assert current_depth.get() is NORMAL  # and did not leak out of the check
-        assert [(e[1], e[2]) for e in store.ledger] == [(100, "signup_grant"), (-3, "deep_check")]
+        # The background budget and patience were in force inside the check...
+        assert seen == [(BACKGROUND_SECONDS, PATIENT)]
+        # ...and did not leak out of it.
+        assert (check_seconds.get(), current_patience.get()) == (None, BRIEF)
+        assert [(e[1], e[2]) for e in store.ledger] == [(100, "signup_grant"), (-1, "check")]

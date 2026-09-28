@@ -3,8 +3,10 @@
 /// What it shows is only what is true. The scanner, the step and the sources come
 /// from the server's own reports as the check runs (contract 1.3): which step it is
 /// on, each source as it is opened, and whether that source had anything to say
-/// about the claim. An upload has a real percentage and a deep check reports claims
-/// done, so both are shown. A server that reports nothing - an older one, or a
+/// about the claim. An upload has a real percentage and every check reports claims
+/// done ("3 of 7 claims checked"), so both are shown. Every claim is checked, which
+/// can take a minute or two, and this is how the wait shows it is working. A server
+/// that reports nothing - an older one, or a
 /// stream that could not be read - gets no invented progress: the clock of seconds
 /// actually spent, the steps every check goes through, and how long one usually
 /// takes, so a forty-second wait reads as normal rather than stuck.
@@ -45,7 +47,6 @@ class CheckingScreen extends StatefulWidget {
   const CheckingScreen({
     required this.services,
     required this.submission,
-    this.deep = false,
     this.recheck = false,
     this.onFinished,
     this.job,
@@ -54,7 +55,6 @@ class CheckingScreen extends StatefulWidget {
 
   final AppServices services;
   final Submission submission;
-  final bool deep;
 
   /// Checked fresh rather than answered from the server's store ("Check again").
   final bool recheck;
@@ -110,7 +110,6 @@ class _CheckingScreenState extends State<CheckingScreen> {
           services: _services,
           submission: widget.submission,
           language: _language,
-          deep: widget.deep,
           recheck: widget.recheck,
           notifyWhenReady: _services.notifyByDefault.value,
         );
@@ -139,7 +138,7 @@ class _CheckingScreenState extends State<CheckingScreen> {
       final verdict = await job.result;
       if (!mounted || _left || job != _job) return;
       if (verdict == null) {
-        _stop(_Stopped(CheckProblem.slow, (l10n) => l10n.deepTooSlow, retryable: true));
+        _stop(_Stopped(CheckProblem.slow, (l10n) => l10n.checkTooSlow, retryable: true));
         return;
       }
       _show(verdict);
@@ -259,7 +258,6 @@ class _CheckingScreenState extends State<CheckingScreen> {
                                 valueListenable: job.watch,
                                 builder: (context, watch, _) => _Working(
                                   submission: widget.submission,
-                                  deep: widget.deep,
                                   watch: watch,
                                   silent: !watch.heard && _silent,
                                   notify: job.notifyWhenReady,
@@ -338,7 +336,6 @@ class _TopRow extends StatelessWidget {
 class _Working extends StatelessWidget {
   const _Working({
     required this.submission,
-    required this.deep,
     required this.watch,
     required this.silent,
     required this.notify,
@@ -346,7 +343,6 @@ class _Working extends StatelessWidget {
   });
 
   final Submission submission;
-  final bool deep;
   final CheckWatch watch;
 
   /// Nothing reported yet, well into the check: the server is not reporting.
@@ -368,8 +364,8 @@ class _Working extends StatelessWidget {
         : submission.summary;
     final detail = uploading
         ? l10n.uploading((watch.upload! * 100).round())
-        : deep && watch.claimsTotal > 0
-        ? l10n.deepProgress(watch.claimsDone, watch.claimsTotal)
+        : watch.claimsTotal > 0
+        ? l10n.claimsProgress(watch.claimsDone, watch.claimsTotal)
         : null;
 
     return Expanded(
@@ -399,7 +395,7 @@ class _Working extends StatelessWidget {
           const SizedBox(height: 16),
           if (silent) ...[
             Text(
-              deep ? l10n.deepChecking : l10n.working,
+              l10n.working,
               textAlign: TextAlign.center,
               style: FactifyText.serif(22, color: k.ink).copyWith(height: 1.2),
             ),
@@ -408,7 +404,7 @@ class _Working extends StatelessWidget {
             _StepsCard(labels: labels),
             const SizedBox(height: 12),
             Text(
-              deep ? l10n.deepUsuallyTakes : l10n.usuallyTakes,
+              l10n.usuallyTakes,
               textAlign: TextAlign.center,
               style: FactifyText.sans(12.5, color: k.ink3),
             ),

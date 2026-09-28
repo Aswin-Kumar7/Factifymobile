@@ -14,6 +14,9 @@ from app.domain.enums import ClaimStatus, Importance, Verdict
 _STATUS_FOR_VERDICT = {
     Verdict.TRUE: {ClaimStatus.SUPPORTED},
     Verdict.FALSE: {ClaimStatus.CONTRADICTED},
+    # What makes it only partly true: the claim that is wrong, or the one sources
+    # confirm only in a smaller version.
+    Verdict.PARTLY_TRUE: {ClaimStatus.CONTRADICTED, ClaimStatus.MISLEADING_CONTEXT},
     Verdict.MISLEADING: {ClaimStatus.CONTRADICTED, ClaimStatus.MISLEADING_CONTEXT},
 }
 _IMPORTANCE_RANK = {

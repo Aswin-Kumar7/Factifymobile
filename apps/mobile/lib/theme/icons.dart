@@ -78,6 +78,9 @@ abstract final class FxIcons {
   /// Phosphor xCircle.
   static const IconData falseV = IconData(0xe4f8, fontFamily: 'PhosphorFill');
 
+  /// Phosphor circleHalf: partly true, half of it holds.
+  static const IconData partlyV = IconData(0xe18c, fontFamily: 'PhosphorFill');
+
   /// Phosphor warningCircle.
   static const IconData misleadingV = IconData(0xe4e2, fontFamily: 'PhosphorFill');
 

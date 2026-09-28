@@ -1,9 +1,38 @@
 # API contract changelog
 
 The shape both clients read is defined in `app/api/schemas.py` and versioned by
-`CONTRACT_VERSION`. Every change so far is additive: a field is added, optional, and
+`CONTRACT_VERSION`. Every change up to 1.3 is additive: a field is added, optional, and
 nothing that was there changes name, type or meaning. A client built against an older
-version keeps working and simply does not show the new fields.
+version keeps working and simply does not show the new fields. 1.4 adds a value to
+`verdict`; see below for how an older client reads it.
+
+## 1.4 (2026-09-28): one full check, and "partly true"
+
+The first change that is not purely additive: `verdict` has a new value.
+
+- **`verdict: "PARTLY_TRUE"`**: some of it is right and some of it is not - a claim
+  that carries the piece is confirmed while another is contradicted, or sources
+  confirm only a smaller version of a claim (one state's one-time payment for "every
+  woman, every month"). Its `action` is `SHARE_WITH_CORRECTION`, which used to read
+  `MISLEADING`; an app built before 1.4 that meets an unknown verdict falls back to
+  the action, and shows it as it did before. `MISLEADING` is now only
+  `SHARE_WITH_CONTEXT`: media shown out of context, or a wrong detail in a piece of
+  which nothing else could be confirmed.
+- A claim confirmed only in a smaller version is still `status: MISLEADING_CONTEXT`;
+  its `rule_id` is `rule.narrower_scope`, which is how a client tells "partly true"
+  from "out of context".
+- **`POST /v1/verify` `mode: "background"`**: answered at once with `202` and a case
+  id, and checked in the background - every claim searched and read, with up to five
+  minutes to do it. Poll `GET /v1/cases/{id}` for `claims_done` / `claims_total` and
+  then the answer; follow `/v1/cases/{id}/events` for each source. `mode: "deep"` is
+  kept as another name for it. `mode: "fast"` (the default) still answers in one
+  request, and now also checks every claim, inside what one request can hold.
+- **`POST /v1/verify/file` `background=true`**: the same for a picture or a PDF. A
+  video is always checked in the background, as before.
+- There is no quick or deep check any more: `claims[].search` is never
+  `not_searched` from 1.4 on (an older stored answer may still carry it), and every
+  check costs `check_cost`. `credits.deep_check_cost` is kept, equal to `check_cost`,
+  for an app that reads it.
 
 ## 1.3, addition (2026-09-28): languages
 

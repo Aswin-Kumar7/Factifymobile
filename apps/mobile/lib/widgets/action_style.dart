@@ -4,8 +4,8 @@
 /// card, so the verdict a person reads in the app and the one their group receives
 /// can never be worded or coloured differently.
 ///
-/// Four verdicts, four colours, read from the theme's tokens (tC/tS, fC/fS, mC/mS,
-/// uC/uS in lib/theme/tokens.dart), and the fourth is deliberately not a warning:
+/// Five verdicts, five colours, read from the theme's tokens (tC/tS, fC/fS, pC/pS,
+/// mC/mS, uC/uS in lib/theme/tokens.dart), and the last is deliberately not a warning:
 /// "Unconfirmed" is grey, because it means the sources did not settle the claim, not
 /// that something bad was found. Painting it red would teach people that "we could
 /// not confirm this" and "this is false" are the same answer.
@@ -51,6 +51,7 @@ class ActionStyle {
       switch (verdict) {
         FactVerdict.trueClaim => (k.tC, k.tS),
         FactVerdict.falseClaim => (k.fC, k.fS),
+        FactVerdict.partlyTrue => (k.pC, k.pS),
         FactVerdict.misleading => (k.mC, k.mS),
         FactVerdict.unconfirmed => (k.uC, k.uS),
       };
@@ -113,11 +114,12 @@ class ActionStyle {
         icon: FxIcons.misleadingV,
         tokens: k,
       ),
+      // Share only with the correction: partly true (contract 1.4).
       VerdictAction.shareWithCorrection => _make(
-        verdict: FactVerdict.misleading,
+        verdict: FactVerdict.partlyTrue,
         headline: l10n.headlineShareWithCorrection,
         subhead: l10n.subheadShareWithCorrection,
-        icon: FxIcons.misleadingV,
+        icon: FxIcons.partlyV,
         tokens: k,
       ),
       VerdictAction.waitAndRecheck => _make(
@@ -147,10 +149,11 @@ class ActionStyle {
   static IconData labelIcon(Verdict verdict) =>
       verdict.nothingToCheck ? FxIcons.info : iconFor(verdict.factVerdict);
 
-  /// The one word for a verdict: True, False, Misleading, Unconfirmed.
+  /// The one word for a verdict: True, False, Partly true, Misleading, Unconfirmed.
   static String word(FactVerdict verdict, AppLocalizations l10n) => switch (verdict) {
     FactVerdict.trueClaim => l10n.headlineSafeToShare,
     FactVerdict.falseClaim => l10n.headlineDoNotShare,
+    FactVerdict.partlyTrue => l10n.headlineShareWithCorrection,
     FactVerdict.misleading => l10n.headlineShareWithContext,
     FactVerdict.unconfirmed => l10n.headlineSendToReview,
   };
@@ -159,37 +162,41 @@ class ActionStyle {
   static IconData iconFor(FactVerdict verdict) => switch (verdict) {
     FactVerdict.trueClaim => FxIcons.trueV,
     FactVerdict.falseClaim => FxIcons.falseV,
+    FactVerdict.partlyTrue => FxIcons.partlyV,
     FactVerdict.misleading => FxIcons.misleadingV,
     FactVerdict.unconfirmed => FxIcons.unconfirmedV,
   };
 
-  /// The colour for one claim's status, for the smaller per-claim marks.
-  static Color forStatus(ClaimStatus status, [Brightness brightness = Brightness.light]) {
+  /// The colour for one claim, for the smaller per-claim marks.
+  static Color forMark(ClaimMark mark, [Brightness brightness = Brightness.light]) {
     final k = _tokens(brightness);
-    return switch (status) {
-      ClaimStatus.supported => k.tC,
-      ClaimStatus.contradicted => k.fC,
-      ClaimStatus.misleadingContext => k.mC,
-      ClaimStatus.unverified => k.uC,
+    return switch (mark) {
+      ClaimMark.right => k.tC,
+      ClaimMark.wrong => k.fC,
+      ClaimMark.partly => k.pC,
+      ClaimMark.missingContext => k.mC,
+      ClaimMark.unconfirmed => k.uC,
     };
   }
 
-  /// The tint behind one claim's status.
-  static Color tintForStatus(ClaimStatus status, [Brightness brightness = Brightness.light]) {
+  /// The tint behind one claim.
+  static Color tintForMark(ClaimMark mark, [Brightness brightness = Brightness.light]) {
     final k = _tokens(brightness);
-    return switch (status) {
-      ClaimStatus.supported => k.tS,
-      ClaimStatus.contradicted => k.fS,
-      ClaimStatus.misleadingContext => k.mS,
-      ClaimStatus.unverified => k.uS,
+    return switch (mark) {
+      ClaimMark.right => k.tS,
+      ClaimMark.wrong => k.fS,
+      ClaimMark.partly => k.pS,
+      ClaimMark.missingContext => k.mS,
+      ClaimMark.unconfirmed => k.uS,
     };
   }
 
-  /// The icon for one claim's status.
-  static IconData iconForStatus(ClaimStatus status) => switch (status) {
-    ClaimStatus.supported => FxIcons.trueV,
-    ClaimStatus.contradicted => FxIcons.falseV,
-    ClaimStatus.misleadingContext => FxIcons.misleadingV,
-    ClaimStatus.unverified => FxIcons.unconfirmedV,
+  /// The icon for one claim.
+  static IconData iconForMark(ClaimMark mark) => switch (mark) {
+    ClaimMark.right => FxIcons.trueV,
+    ClaimMark.wrong => FxIcons.falseV,
+    ClaimMark.partly => FxIcons.partlyV,
+    ClaimMark.missingContext => FxIcons.misleadingV,
+    ClaimMark.unconfirmed => FxIcons.unconfirmedV,
   };
 }

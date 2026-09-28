@@ -11,11 +11,11 @@ library;
 import '../models/verdict.dart';
 
 class ClaimSpan {
-  const ClaimSpan(this.start, this.end, this.status);
+  const ClaimSpan(this.start, this.end, this.mark);
 
   final int start;
   final int end;
-  final ClaimStatus status;
+  final ClaimMark mark;
 }
 
 /// [useAnchors] is off when [text] is not the exact text the server anchored its
@@ -34,7 +34,7 @@ List<ClaimSpan> locateClaims(String text, List<Claim> claims, {bool useAnchors =
         _longestRun(lower, claim);
     if (span == null) continue;
     final overlaps = found.any((f) => span.$1 < f.end && f.start < span.$2);
-    if (!overlaps) found.add(ClaimSpan(span.$1, span.$2, claim.status));
+    if (!overlaps) found.add(ClaimSpan(span.$1, span.$2, claim.mark));
   }
   found.sort((a, b) => a.start.compareTo(b.start));
   return found;

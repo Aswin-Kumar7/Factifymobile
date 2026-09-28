@@ -145,7 +145,7 @@ class _Header extends StatelessWidget {
     final decided = verdict.factVerdict.isDecided;
     final confidence = decided ? verdict.confidence : null;
     final size = switch (verdict.factVerdict) {
-      FactVerdict.misleading => 44.0,
+      FactVerdict.misleading || FactVerdict.partlyTrue => 44.0,
       FactVerdict.unconfirmed => 38.0,
       _ => 68.0,
     };
@@ -369,6 +369,10 @@ class _Body extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _WhatWeChecked(card: card),
+        if (RightAndWrong.shows(verdict, claims)) ...[
+          _SectionTitle(title: l10n.rightWrongTitle),
+          RightAndWrong(claims: claims),
+        ],
         if (media != null && verdict.factVerdict != FactVerdict.trueClaim) ...[
           const SizedBox(height: 10),
           _MediaMatch(evidence: media, thumbnail: card.thumbnail, serverUrl: card.serverUrl),
@@ -576,17 +580,18 @@ class _Body extends StatelessWidget {
   /// "2 contradicted · 1 unconfirmed".
   static String _statusNote(List<Claim> claims, AppLocalizations l10n) {
     const order = [
-      ClaimStatus.contradicted,
-      ClaimStatus.misleadingContext,
-      ClaimStatus.supported,
-      ClaimStatus.unverified,
+      ClaimMark.wrong,
+      ClaimMark.partly,
+      ClaimMark.missingContext,
+      ClaimMark.right,
+      ClaimMark.unconfirmed,
     ];
     return [
-      for (final status in order)
-        if (claims.any((c) => c.status == status))
+      for (final mark in order)
+        if (claims.any((c) => c.mark == mark))
           l10n.claimStateCount(
-            claims.where((c) => c.status == status).length,
-            claimStateLabel(status, l10n).toLowerCase(),
+            claims.where((c) => c.mark == mark).length,
+            claimStateLabel(mark, l10n).toLowerCase(),
           ),
     ].join(' · ');
   }
@@ -607,7 +612,12 @@ class _SectionTitle extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.baseline,
         textBaseline: TextBaseline.alphabetic,
         children: [
-          Text(title, style: FactifyText.of(context).section),
+          // A title with no note beside it may wrap: a long one ("What's right,
+          // what's wrong", in Hindi at 130%) ran off the screen.
+          if (note == null)
+            Flexible(child: Text(title, style: FactifyText.of(context).section))
+          else
+            Text(title, style: FactifyText.of(context).section),
           const SizedBox(width: 12),
           if (note != null)
             Expanded(
@@ -685,7 +695,7 @@ class _WhatWeCheckedState extends State<_WhatWeChecked> {
     final spans = verdict.nothingToCheck
         ? const <ClaimSpan>[]
         : locateClaims(quote, verdict.claims, useAnchors: card.kind == SubmissionKind.text);
-    final keys = {for (final s in spans) s.status}.toList();
+    final keys = {for (final s in spans) s.mark}.toList();
 
     return FxCard(
       padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
@@ -774,7 +784,7 @@ class _WhatWeCheckedState extends State<_WhatWeChecked> {
               spacing: 12,
               runSpacing: 4,
               children: [
-                for (final status in keys)
+                for (final mark in keys)
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -782,13 +792,13 @@ class _WhatWeCheckedState extends State<_WhatWeChecked> {
                         width: 14,
                         height: 2,
                         decoration: BoxDecoration(
-                          color: ActionStyle.forStatus(status, k.brightness),
+                          color: ActionStyle.forMark(mark, k.brightness),
                           borderRadius: BorderRadius.circular(1),
                         ),
                       ),
                       const SizedBox(width: 5),
                       Text(
-                        claimStateLabel(status, l10n),
+                        claimStateLabel(mark, l10n),
                         style: FactifyText.sans(11, color: k.ink3),
                       ),
                     ],
@@ -826,9 +836,9 @@ class _Underlined extends StatelessWidget {
           text: text.substring(span.start, span.end),
           style: TextStyle(
             decoration: TextDecoration.underline,
-            decorationColor: ActionStyle.forStatus(span.status, k.brightness),
+            decorationColor: ActionStyle.forMark(span.mark, k.brightness),
             decorationThickness: 2,
-            backgroundColor: ActionStyle.tintForStatus(span.status, k.brightness),
+            backgroundColor: ActionStyle.tintForMark(span.mark, k.brightness),
           ),
         ),
       );
@@ -989,6 +999,149 @@ class _Stripes extends CustomPainter {
   bool shouldRepaint(_Stripes old) => old.colour != colour;
 }
 
+/// What's right and what's wrong, claim by claim (contract 1.4).
+///
+/// Shown when the answer is partly true, and whenever the claims do not all point
+/// the same way: a person asked "which part is right and which is wrong", and the
+/// list of claims below answers it only for someone who reads every row. Grouped
+/// wrong first, then partly right, then right, then not confirmed. A claim that is
+/// only partly right shows, under it, what the sources actually report - their
+/// words, quoted, never a summary of them - so the two can be read side by side.
+class RightAndWrong extends StatelessWidget {
+  const RightAndWrong({required this.claims, super.key});
+
+  final List<Claim> claims;
+
+  static const _order = [
+    ClaimMark.wrong,
+    ClaimMark.partly,
+    ClaimMark.missingContext,
+    ClaimMark.right,
+    ClaimMark.unconfirmed,
+  ];
+
+  /// Whether [verdict]'s claims are mixed enough to be worth setting apart.
+  static bool shows(Verdict verdict, List<Claim> claims) {
+    if (claims.isEmpty) return false;
+    if (verdict.factVerdict == FactVerdict.partlyTrue) return true;
+    final decided = {
+      for (final c in claims)
+        if (c.mark != ClaimMark.unconfirmed) c.mark,
+    };
+    return decided.length >= 2 || decided.contains(ClaimMark.partly);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final k = FactifyTokens.of(context);
+    final l10n = AppLocalizations.of(context);
+    final groups = [
+      for (final mark in _order)
+        if (claims.any((c) => c.mark == mark)) (mark, claims.where((c) => c.mark == mark).toList()),
+    ];
+    String heading(ClaimMark mark) => switch (mark) {
+      ClaimMark.right => l10n.rightWrongRight,
+      ClaimMark.wrong => l10n.rightWrongWrong,
+      ClaimMark.partly => l10n.rightWrongPartly,
+      ClaimMark.missingContext => l10n.rightWrongContext,
+      ClaimMark.unconfirmed => l10n.rightWrongUnconfirmed,
+    };
+
+    return FxCard(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final (index, (mark, marked)) in groups.indexed) ...[
+            if (index > 0) const SizedBox(height: 14),
+            Row(
+              children: [
+                Icon(
+                  ActionStyle.iconForMark(mark),
+                  size: 16,
+                  color: ActionStyle.forMark(mark, k.brightness),
+                ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    heading(mark),
+                    style: FactifyText.sans(
+                      12.5,
+                      weight: FontWeight.w700,
+                      color: ActionStyle.forMark(mark, k.brightness),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            for (final claim in marked) ...[
+              const SizedBox(height: 6),
+              Padding(
+                padding: const EdgeInsetsDirectional.only(start: 22),
+                child: Text(
+                  claim.text,
+                  style: FactifyText.sans(13.5, color: k.ink).copyWith(height: 1.4),
+                ),
+              ),
+              if (mark == ClaimMark.partly)
+                if (claim.smallerVersion.firstOrNull case final said?)
+                  _SourcesReport(evidence: said),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Under a claim that is only partly right: what a source actually reports.
+class _SourcesReport extends StatelessWidget {
+  const _SourcesReport({required this.evidence});
+
+  final Evidence evidence;
+
+  @override
+  Widget build(BuildContext context) {
+    final k = FactifyTokens.of(context);
+    final l10n = AppLocalizations.of(context);
+    final quote = evidence.sourceExcerpt.trim();
+    if (quote.isEmpty) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsetsDirectional.only(start: 22, top: 6),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      decoration: BoxDecoration(
+        color: Color.alphaBlend(k.pS, k.bg),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            l10n.sourcesReport,
+            style: FactifyText.sans(11, weight: FontWeight.w600, color: k.ink3),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            '“$quote”',
+            maxLines: 5,
+            overflow: TextOverflow.ellipsis,
+            style: FactifyText.serif(
+              13.5,
+              weight: FontWeight.w400,
+              color: k.ink,
+            ).copyWith(height: 1.4),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            '— ${evidence.sourceName}',
+            style: FactifyText.sans(11.5, weight: FontWeight.w600, color: k.ink2),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ClaimRow extends StatelessWidget {
   const _ClaimRow({required this.claim, this.onTap});
 
@@ -999,7 +1152,7 @@ class _ClaimRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final k = FactifyTokens.of(context);
     final l10n = AppLocalizations.of(context);
-    final colour = ActionStyle.forStatus(claim.status, k.brightness);
+    final colour = ActionStyle.forMark(claim.mark, k.brightness);
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -1011,10 +1164,10 @@ class _ClaimRow extends StatelessWidget {
               width: 28,
               height: 28,
               decoration: BoxDecoration(
-                color: ActionStyle.tintForStatus(claim.status, k.brightness),
+                color: ActionStyle.tintForMark(claim.mark, k.brightness),
                 shape: BoxShape.circle,
               ),
-              child: Icon(ActionStyle.iconForStatus(claim.status), size: 17, color: colour),
+              child: Icon(ActionStyle.iconForMark(claim.mark), size: 17, color: colour),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -1034,7 +1187,7 @@ class _ClaimRow extends StatelessWidget {
                     TextSpan(
                       children: [
                         TextSpan(
-                          text: '${claimStateLabel(claim.status, l10n)}. ',
+                          text: '${claimStateLabel(claim.mark, l10n)}. ',
                           style: TextStyle(fontWeight: FontWeight.w600, color: colour),
                         ),
                         TextSpan(text: claimReason(claim, l10n)),

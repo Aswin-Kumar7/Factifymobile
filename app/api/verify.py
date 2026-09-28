@@ -17,7 +17,7 @@ import json
 import logging
 import re
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -76,14 +76,20 @@ from app.knowledge.registry import authenticate_trigger
 from app.media.video import KeyframeExtractor
 from app.observability.logging import event
 from app.observability.middleware import REQUEST_ID_HEADER
+from app.orchestration.background import BackgroundChecks
 from app.orchestration.correction import correction_message
-from app.orchestration.deep import DeepChecks
-from app.orchestration.pipeline import SkippedCheck, VerificationResult, claim_progress
+from app.orchestration.pipeline import (
+    BACKGROUND_SECONDS,
+    SkippedCheck,
+    VerificationResult,
+    claim_progress,
+)
 from app.orchestration.progress import CheckProgress, current_progress, valid_key
 from app.orchestration.review import HumanLabel
 from app.orchestration.summary import case_summary
 from app.security.fetcher import FetchResult
-from app.sources.base import DEEP, current_depth
+from app.security.patience import PATIENT, current_patience
+from app.sources.base import check_seconds
 from app.sources.outlets import outlet_name
 from app.sources.reader import SourceViews, read_source
 from app.sources.verification import page_key
@@ -566,58 +572,72 @@ async def verify(payload: VerifyRequest, request: Request) -> VerifyResponse | J
     # and extracting its claims takes ten to twenty seconds, and starting the clock
     # after that let a four-claim link run to 68 seconds against an app that waits 75.
     arrived = time.perf_counter()
-    deep = payload.mode == "deep"
+    background = payload.mode in ("background", "deep")
     key = _followed_by(request)
 
-    # A deep check is followed by its case id, from the 202; see `_start_deep`.
-    async with _watched(request, None if deep else key) as watching:
+    # A check in the background is followed by its case id, from the 202.
+    async with _watched(request, None if background else key) as watching:
         # Who is asking, and whether they may: decided here, from the credit ledger.
         user = await signed_in(request)
-        cost = check_cost(request, deep=deep)
+        cost = check_cost(request)
         await require_credit(request, user, cost)
 
-        if deep:
-            return _start_deep(payload, request, user, cost)
+        if background:
+            case_id = uuid4()
+            return _in_background(
+                request,
+                case_id,
+                lambda: _checked(payload, request, time.perf_counter(), case_id=case_id),
+                user=user,
+                cost=cost,
+            )
 
         response = await with_receipt(request, await _checked(payload, request, arrived))
-        await charge(request, user, cost, deep=deep)
+        await charge(request, user, cost)
         if watching is not None:
             await watching.done(response.case_id)
     return _echo(response, key)
 
 
-def _start_deep(payload: VerifyRequest, request: Request, user: Any, cost: int) -> JSONResponse:
-    """Start a deep check in the background and answer with its case id at once.
+def _in_background(
+    request: Request,
+    case_id: UUID,
+    check: Callable[[], Awaitable[VerifyResponse]],
+    *,
+    user: Any,
+    cost: int,
+) -> JSONResponse:
+    """Run a check in the background and answer with its case id at once (202).
 
-    The same check as a normal one, run with the deep profile (`DEEP`): more claims,
-    queries and pages, and three minutes instead of fifty-five seconds. Charged only
-    when it finishes with an answer.
+    Every claim is searched and read, with up to `BACKGROUND_SECONDS` to do it and
+    patience with a busy provider, while the app shows "3 of 7 claims checked" from
+    `/v1/cases/{id}` and each source from the event stream. Charged only when it
+    finishes with an answer.
     """
-    runs: DeepChecks = request.app.state.deep_checks
-    case_id = uuid4()
+    runs: BackgroundChecks = request.app.state.background_checks
 
     async def work(progress: Any) -> VerifyResponse:
-        depth = current_depth.set(DEEP)
+        budget = check_seconds.set(BACKGROUND_SECONDS)
+        patience = current_patience.set(PATIENT)
         counting = claim_progress.set(progress)
         try:
             async with _watched(request, str(case_id)) as watching:
-                response = await with_receipt(
-                    request,
-                    await _checked(payload, request, time.perf_counter(), case_id=case_id),
-                )
-                await charge(request, user, cost, deep=True)
+                response = await with_receipt(request, await check())
+                await charge(request, user, cost)
                 if watching is not None:
                     await watching.done(str(case_id))
         finally:
             claim_progress.reset(counting)
-            current_depth.reset(depth)
+            current_patience.reset(patience)
+            check_seconds.reset(budget)
         return response
 
     runs.start(str(case_id), work)
     accepted = AcceptedResponse(
         case_id=str(case_id),
         poll_url=f"/v1/cases/{case_id}",
-        estimated_seconds=int(DEEP.seconds * 2 / 3),
+        # An article of seven claims measures two to three minutes; a forward, one.
+        estimated_seconds=90,
     )
     return JSONResponse(
         status_code=status.HTTP_202_ACCEPTED, content=accepted.model_dump(mode="json")
@@ -739,10 +759,10 @@ async def _checked(
     summary="Retrieve a previously computed case",
 )
 async def get_case(case_id: UUID, request: Request) -> VerifyResponse | JSONResponse:
-    # A deep check still running answers with its progress, and a finished one with
-    # its result, before the ledger is asked: a deep check that was served from the
-    # cache is stored under the original case, not this one.
-    runs: DeepChecks | None = getattr(request.app.state, "deep_checks", None)
+    # A check still running in the background answers with its progress, and a
+    # finished one with its result, before the ledger is asked: a check that was
+    # served from the cache is stored under the original case, not this one.
+    runs: BackgroundChecks | None = getattr(request.app.state, "background_checks", None)
     run = runs.get(str(case_id)) if runs is not None else None
     if run is not None and runs is not None:
         if run.status == "running":
@@ -775,8 +795,8 @@ async def get_case(case_id: UUID, request: Request) -> VerifyResponse | JSONResp
     return await with_receipt(request, stored)
 
 
-# How long one stream stays open: past a deep check's three minutes.
-_STREAM_SECONDS = 300.0
+# How long one stream stays open: past a background check's five minutes.
+_STREAM_SECONDS = BACKGROUND_SECONDS + 60.0
 # A comment line this often keeps proxies from closing a quiet stream.
 _HEARTBEAT_SECONDS = 15.0
 
@@ -803,7 +823,7 @@ def _progress_bus(request: Request, key: str) -> Any:
 async def case_events(key: str, request: Request) -> StreamingResponse:
     """What a check is doing, as it does it: steps, sources, the evidence count.
 
-    `key` is the `X-Request-ID` the app sent with a check, or a deep check's case id.
+    `key` is the `X-Request-ID` the app sent with a check, or a background check's case id.
     The stream may be opened before the check starts; everything already published is
     replayed first, and a reconnect with `Last-Event-ID` resumes after that event. It
     ends with `done` or `error`. Nothing in it is about the content being checked -
@@ -880,31 +900,49 @@ async def verify_file(
     file: Annotated[UploadFile, File()],
     consent_to_process_media: Annotated[bool, Form()] = False,
     recheck: Annotated[bool, Form()] = False,
+    background: Annotated[bool, Form()] = False,
 ) -> VerifyResponse | JSONResponse:
-    """Images and PDFs resolve synchronously; video returns 202.
+    """Images and PDFs resolve in this request unless `background` is set; video
+    always returns 202.
 
-    Video is split off because it cannot finish inside the 3-8 second budget. Holding
-    the request open would end in a gateway timeout, which tells the client nothing
-    it can act on — a case id it can poll does.
+    With `background` (what the app sends, 1.4) a picture or PDF is read and checked
+    like a background text check: 202 with a case id at once, every claim checked,
+    progress from `/v1/cases/{id}`. The upload is still read and vetted here first,
+    so a file that is too large or not a picture is refused at once, not after a wait.
     """
     key = _followed_by(request)
-    async with _watched(request, key) as watching:
+    async with _watched(request, None if background else key) as watching:
         user = await signed_in(request)
-        cost = check_cost(request, deep=False)
+        cost = check_cost(request)
         await require_credit(request, user, cost)
+
+        if background:
+            intake, data = await _read_upload(request, file, consent_to_process_media)
+            case_id = uuid4()
+            if intake.input_type is InputType.VIDEO:
+                accepted = _start_video(request, intake, data, case_id=case_id, recheck=recheck)
+                await charge(request, user, cost)
+                return accepted
+            return _in_background(
+                request,
+                case_id,
+                lambda: _checked_picture(request, intake, case_id=case_id, recheck=recheck),
+                user=user,
+                cost=cost,
+            )
 
         response = await _checked_file(request, file, consent_to_process_media, recheck)
         if isinstance(response, VerifyResponse):
             response = _echo(await with_receipt(request, response), key)
-        await charge(request, user, cost, deep=False)
+        await charge(request, user, cost)
         if watching is not None:
             # A video is answered with a case id to poll, which is where it ends too.
-            case_id = (
+            answered = (
                 response.case_id
                 if isinstance(response, VerifyResponse)
                 else json.loads(bytes(response.body))["case_id"]
             )
-            await watching.done(case_id)
+            await watching.done(str(answered))
     return response
 
 
@@ -912,6 +950,18 @@ async def _checked_file(
     request: Request, file: UploadFile, consent_to_process_media: bool, recheck: bool
 ) -> VerifyResponse | JSONResponse:
     """The upload check itself; `verify_file` above meters it."""
+    intake, data = await _read_upload(request, file, consent_to_process_media)
+    case_id = uuid4()
+
+    if intake.input_type is InputType.VIDEO:
+        return _start_video(request, intake, data, case_id=case_id, recheck=recheck)
+    return await _checked_picture(request, intake, case_id=case_id, recheck=recheck)
+
+
+async def _read_upload(
+    request: Request, file: UploadFile, consent_to_process_media: bool
+) -> tuple[NormalisedIntake, bytes]:
+    """The upload, read within the size limit and identified from its bytes."""
     # Unavailable is said before the upload is read, as for every check.
     get_orchestrator(request)
     settings = request.app.state.settings
@@ -936,12 +986,13 @@ async def _checked_file(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(rejected)
         ) from rejected
+    return intake, data
 
-    case_id = uuid4()
 
-    if intake.input_type is InputType.VIDEO:
-        return _start_video(request, intake, data, case_id=case_id, recheck=recheck)
-
+async def _checked_picture(
+    request: Request, intake: NormalisedIntake, *, case_id: UUID, recheck: bool
+) -> VerifyResponse:
+    """A picture or a PDF: read and checked, with the picture's own checks joined in."""
     # The picture's own checks - credentials, earlier copies, the AI and editing
     # signals - run alongside the reading and the fact-check, and join the answer.
     inspection = _inspect_picture(request, intake)
@@ -1140,18 +1191,27 @@ def _start_video(
     middle one read and fact-checked like a picture, and every one put through the
     picture checks - and the app collects the answer from `/v1/cases/{id}`.
     """
-    runs: DeepChecks = request.app.state.deep_checks
+    runs: BackgroundChecks = request.app.state.background_checks
 
     async def work(progress: Any) -> VerifyResponse:
-        del progress
-        # Followed by its case id, which the app has from the 202, like a deep check.
-        async with _watched(request, str(case_id)) as watching:
-            response = await with_receipt(
-                request,
-                await _checked_video(request, intake, data, case_id=case_id, recheck=recheck),
-            )
-            if watching is not None:
-                await watching.done(str(case_id))
+        # Every claim in its frames checked, with the time that takes, as any
+        # background check is.
+        budget = check_seconds.set(BACKGROUND_SECONDS)
+        patience = current_patience.set(PATIENT)
+        counting = claim_progress.set(progress)
+        try:
+            # Followed by its case id, which the app has from the 202.
+            async with _watched(request, str(case_id)) as watching:
+                response = await with_receipt(
+                    request,
+                    await _checked_video(request, intake, data, case_id=case_id, recheck=recheck),
+                )
+                if watching is not None:
+                    await watching.done(str(case_id))
+        finally:
+            claim_progress.reset(counting)
+            current_patience.reset(patience)
+            check_seconds.reset(budget)
         return response
 
     runs.start(str(case_id), work)

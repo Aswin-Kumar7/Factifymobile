@@ -39,13 +39,15 @@ from app.config import ProviderSettings
 from app.db.repositories import BudgetRepository, Conn
 from app.observability.logging import event
 from app.observability.metrics import metrics
+from app.security.patience import current_patience
 from app.security.ratelimit import RateLimit, SlidingWindowLimiter
 
 logger = logging.getLogger("factify.governor")
 
-# Longest a call waits for room under a provider's per-minute ceiling before it is
-# given up on. Inside the request's own deadline, which cancels a wait that outlasts it.
-_PACE_MAX_WAIT_SECONDS = 20.0
+# How long a call waits for room under a provider's per-minute ceiling before it is
+# given up on is the check's own patience (app/security/patience.py): twenty seconds
+# for a request someone waits on, longer for a check in the background. Always
+# inside the check's own deadline, which cancels a wait that outlasts it.
 
 
 async def pace(
@@ -53,7 +55,7 @@ async def pace(
     settings: ProviderSettings | None,
     burst: SlidingWindowLimiter,
     *,
-    max_wait: float = _PACE_MAX_WAIT_SECONDS,
+    max_wait: float | None = None,
 ) -> bool:
     """Wait for room under a provider's per-minute ceiling. False if none came in time.
 
@@ -64,6 +66,9 @@ async def pace(
     """
     if settings is None or not settings.per_minute_cap:
         return True
+    if max_wait is None:
+        # A check in the background may wait out a busy minute (app/security/patience).
+        max_wait = current_patience.get().pace_seconds
     limit = RateLimit(requests=settings.per_minute_cap, window_seconds=60)
     waited = 0.0
     while True:
@@ -144,7 +149,7 @@ class Governor:
         providers: dict[str, ProviderSettings],
         *,
         burst: SlidingWindowLimiter | None = None,
-        pace_max_wait: float = _PACE_MAX_WAIT_SECONDS,
+        pace_max_wait: float | None = None,
     ) -> None:
         self._budget = BudgetRepository(conn)
         self._pace_max_wait = pace_max_wait

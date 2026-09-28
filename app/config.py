@@ -166,7 +166,6 @@ class AuthSettings(BaseModel):
     required: bool = True
     signup_credits: int = Field(default=100, ge=0)
     check_cost: int = Field(default=1, ge=0)
-    deep_check_cost: int = Field(default=3, ge=0)
     # Off until plans exist: usage is recorded, nothing is refused.
     enforce_credits: bool = False
     # This server's own sign-in (app/accounts/local_auth.py).

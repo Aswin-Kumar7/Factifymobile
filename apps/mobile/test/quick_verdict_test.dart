@@ -138,7 +138,13 @@ Future<AppServices> _services({bool signedIn = true, http.Response Function()? v
         200,
       );
     }
-    if (path == '/v1/verify') return verify?.call() ?? http.Response(jsonEncode(_verdict()), 200);
+    // Started in the background (contract 1.4), then answered when the app asks.
+    if (path == '/v1/verify') {
+      return http.Response('{"case_id": "case-1", "poll_url": "/v1/cases/case-1"}', 202);
+    }
+    if (path == '/v1/cases/case-1') {
+      return verify?.call() ?? http.Response(jsonEncode(_verdict()), 200);
+    }
     if (path.endsWith('/correction-text')) {
       return http.Response(
         jsonEncode({
@@ -187,6 +193,9 @@ Future<(_Host, _Clipboard)> _open(WidgetTester tester, AppServices services) asy
       ),
     ),
   );
+  await tester.pumpAndSettle();
+  // The first poll of the check, a few seconds in.
+  await tester.pump(const Duration(seconds: 3));
   await tester.pumpAndSettle();
   return (host, clipboard);
 }

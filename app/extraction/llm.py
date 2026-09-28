@@ -41,7 +41,7 @@ PROVIDER = "llm"
 
 # Bumped whenever the prompt or the schema changes, because either changes what the
 # same document extracts to — and the extraction cache is keyed on it.
-EXTRACTOR_VERSION = "2026.09.27.2"
+EXTRACTOR_VERSION = "2026.09.28.1"
 
 MAX_CLAIMS_PER_DOCUMENT = 7
 
@@ -125,7 +125,16 @@ _SYSTEM_INSTRUCTION = (
     "('a teenager was assaulted, prompting the governor to order an audit') - extract "
     "them as separate claims, or only the one that matters. A claim is confirmed only "
     "when a source confirms all of it, so a claim carrying three facts stays "
-    "unconfirmed when every source confirms two. "
+    "unconfirmed when every source confirms two. Two facts joined by 'and' that could "
+    "each be true or false on its own are two claims, so a message that is half right "
+    "is shown as half right: 'India won the 2024 T20 World Cup and beat Australia in "
+    "the final' is 'India won the 2024 T20 World Cup' and 'India beat Australia in the "
+    "2024 T20 World Cup final'. "
+    "Every claim names its own subject and object, in full, as the document means "
+    "them: never a pronoun or 'this' standing for something said elsewhere. "
+    "'Chandrayaan-3 landed on the Moon and NASA launched it' gives 'Chandrayaan-3 "
+    "landed on the Moon' and 'NASA launched Chandrayaan-3', never 'NASA launched it' - "
+    "a claim that says 'it' matches whatever else NASA ever launched. "
     "Leave out the writer's own characterisation - the motives, adjectives and "
     "judgements an article wraps around a fact ('showed their disdain for', 'bloody', "
     "'in a desperate bid to', 'shocking'). Extract the fact they describe: 'hundreds "

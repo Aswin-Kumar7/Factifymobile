@@ -268,9 +268,21 @@ class SourceVerification:
             if reading.verdict == _expected(item) and (reading.addresses_claim or partly):
                 kept.append(item)
                 outcomes.append({"host": host, "outcome": f"kept ({item.direction.value})"})
-            elif partly and item.direction is Direction.SUPPORTS and reading.addresses_claim:
-                # Read as support, but it shows only part of the claim: the narrower
-                # version is what it is evidence of, not the claim.
+            elif (
+                reading.smaller_version
+                and reading.verdict != "TRUE"
+                and item.direction is not Direction.CONTRADICTS
+            ):
+                # Read as support (or as a narrower version), and the check says it
+                # shows only a smaller version of the claim: that version is what it
+                # is evidence of, not the claim - "partly true". Asked as its own
+                # question, because asked through the verdict the check called a
+                # one-time Rs 5,000 payment "FALSE, not about the claim" and it was
+                # thrown away (2026-09-28). The yes-or-no is required, not a PARTLY
+                # alone: for "Atal Free Pension Scheme" against the real Atal Pension
+                # Yojana the check said PARTLY and, rightly, "not a smaller version" -
+                # a scam's borrowed name. Never for a source read as contradicting the
+                # claim: a denial that mentions a smaller version is a denial.
                 kept.append(_as_narrower(item, reading.reason))
                 outcomes.append({"host": host, "outcome": "kept (narrower than the claim)"})
             else:

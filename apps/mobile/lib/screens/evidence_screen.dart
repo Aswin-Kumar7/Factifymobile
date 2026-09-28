@@ -164,10 +164,11 @@ class _ClaimCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
-    final colour = ActionStyle.forStatus(claim.status);
+    final colour = ActionStyle.forMark(claim.mark);
     final label = switch (claim.status) {
       ClaimStatus.supported => l10n.headlineSafeToShare,
       ClaimStatus.contradicted => l10n.headlineDoNotShare,
+      ClaimStatus.misleadingContext when claim.isPartlyTrue => l10n.headlineShareWithCorrection,
       ClaimStatus.misleadingContext => l10n.headlineShareWithContext,
       ClaimStatus.unverified when claim.wasNotSearched => l10n.statusNotChecked,
       ClaimStatus.unverified => l10n.headlineSendToReview,

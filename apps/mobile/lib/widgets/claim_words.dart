@@ -7,12 +7,13 @@ library;
 import '../l10n/app_localizations.dart';
 import '../models/verdict.dart';
 
-/// Supported, Contradicted, Missing context, Unconfirmed.
-String claimStateLabel(ClaimStatus status, AppLocalizations l10n) => switch (status) {
-  ClaimStatus.supported => l10n.claimStateSupported,
-  ClaimStatus.contradicted => l10n.claimStateContradicted,
-  ClaimStatus.misleadingContext => l10n.claimStateMissingContext,
-  ClaimStatus.unverified => l10n.claimStateUnconfirmed,
+/// Supported, Contradicted, Partly true, Missing context, Unconfirmed.
+String claimStateLabel(ClaimMark mark, AppLocalizations l10n) => switch (mark) {
+  ClaimMark.right => l10n.claimStateSupported,
+  ClaimMark.wrong => l10n.claimStateContradicted,
+  ClaimMark.partly => l10n.claimStatePartlyTrue,
+  ClaimMark.missingContext => l10n.claimStateMissingContext,
+  ClaimMark.unconfirmed => l10n.claimStateUnconfirmed,
 };
 
 /// One line on why a claim stands where it does. A decided claim gives the source

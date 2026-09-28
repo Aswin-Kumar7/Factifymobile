@@ -67,6 +67,8 @@ class CreditsResponse(BaseModel):
     used: int
     checks: int
     check_cost: int
+    # Kept for an app built before 1.4, which reads it; there is one kind of check
+    # now, so it is the same as `check_cost`.
     deep_check_cost: int
     # False while plans do not exist: usage is recorded and nothing is refused.
     limited: bool
@@ -124,9 +126,8 @@ async def signed_in(request: Request) -> AuthUser | None:
     return user
 
 
-def check_cost(request: Request, *, deep: bool) -> int:
-    auth = request.app.state.settings.auth
-    return int(auth.deep_check_cost if deep else auth.check_cost)
+def check_cost(request: Request) -> int:
+    return int(request.app.state.settings.auth.check_cost)
 
 
 async def require_credit(request: Request, user: AuthUser | None, cost: int) -> None:
@@ -156,13 +157,13 @@ async def require_credit(request: Request, user: AuthUser | None, cost: int) -> 
         )
 
 
-async def charge(request: Request, user: AuthUser | None, cost: int, *, deep: bool) -> None:
+async def charge(request: Request, user: AuthUser | None, cost: int) -> None:
     """Record what a finished check cost. Failed checks are never charged: this runs
     only after a check has produced its answer."""
     book = getattr(request.app.state, "credits", None)
     if user is None or book is None or cost == 0:
         return
-    await book.charge(user, cost, "deep_check" if deep else "check")
+    await book.charge(user, cost, "check")
 
 
 @router.get("/auth/config", response_model=AuthConfigResponse, summary="How to sign in")
@@ -357,7 +358,7 @@ def _account_response(request: Request, account: Account) -> AccountResponse:
             used=account.used,
             checks=account.checks,
             check_cost=auth.check_cost,
-            deep_check_cost=auth.deep_check_cost,
+            deep_check_cost=auth.check_cost,
             limited=book.enforced,
         ),
     )

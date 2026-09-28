@@ -324,6 +324,7 @@ class WeekSummary {
   /// The order a day's bar is stacked in, from the bottom.
   static const order = [
     FactVerdict.falseClaim,
+    FactVerdict.partlyTrue,
     FactVerdict.misleading,
     FactVerdict.trueClaim,
     FactVerdict.unconfirmed,
@@ -345,8 +346,11 @@ class WeekSummary {
   int count(FactVerdict verdict) =>
       byDay.fold(0, (sum, day) => sum + day.where((v) => v == verdict).length);
 
-  /// False and misleading forwards caught this week: the positive recap.
-  int get stopped => count(FactVerdict.falseClaim) + count(FactVerdict.misleading);
+  /// False, partly true and misleading forwards caught this week: the positive recap.
+  int get stopped =>
+      count(FactVerdict.falseClaim) +
+      count(FactVerdict.partlyTrue) +
+      count(FactVerdict.misleading);
 
   /// The busiest days, at most two, or none in an empty week.
   List<DateTime> get busiest {

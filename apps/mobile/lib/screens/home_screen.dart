@@ -69,7 +69,6 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// The shared file is a video: sent the same way, only named differently.
   bool _video = false;
   int? _fileSize;
-  bool _deep = false;
 
   /// Whether copied text is waiting. Asked with `Clipboard.hasStrings`, which does
   /// not read it: nothing on the clipboard is read until the person taps.
@@ -287,7 +286,6 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         builder: (_) => CheckingScreen(
           services: _services,
           submission: submission,
-          deep: _type == InputType.text && _deep,
           onFinished: clearInput,
         ),
       ),
@@ -354,10 +352,8 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   controller: _text,
                   isLink: _looksLikeLink,
                   clipboardOffer: _clipboardOffer && !_hasInput,
-                  deep: _deep,
                   onPaste: _paste,
                   onClear: clearInput,
-                  onToggleDeep: () => setState(() => _deep = !_deep),
                 ),
                 InputType.image when _file == null => _DropArea(
                   icon: FxIcons.addImage,
@@ -407,7 +403,7 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
             const SizedBox(height: 10),
             Text(
-              _type == InputType.text && _deep ? l10n.checkTakesDeep : l10n.checkTakes,
+              l10n.checkTakes,
               textAlign: TextAlign.center,
               style: t.caption.copyWith(color: k.ink3),
             ),
@@ -615,19 +611,15 @@ class _TextInput extends StatelessWidget {
     required this.controller,
     required this.isLink,
     required this.clipboardOffer,
-    required this.deep,
     required this.onPaste,
     required this.onClear,
-    required this.onToggleDeep,
   });
 
   final TextEditingController controller;
   final bool isLink;
   final bool clipboardOffer;
-  final bool deep;
   final VoidCallback onPaste;
   final VoidCallback onClear;
-  final VoidCallback onToggleDeep;
 
   @override
   Widget build(BuildContext context) {
@@ -699,26 +691,8 @@ class _TextInput extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(8, 0, 6, 6),
           child: ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 32),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Align(alignment: AlignmentDirectional.centerStart, child: left),
-                ),
-                const SizedBox(width: 8),
-                FxChip(
-                  label: l10n.deepChip,
-                  icon: FxIcons.deep,
-                  height: 30,
-                  fontSize: 12,
-                  iconSize: 14,
-                  selected: deep,
-                  background: deep ? k.accS : Colors.transparent,
-                  foreground: deep ? k.acc : k.ink3,
-                  border: deep ? null : k.line,
-                  onTap: onToggleDeep,
-                ),
-              ],
-            ),
+            // There is no Deep toggle: every check checks every claim (1.4).
+            child: Align(alignment: AlignmentDirectional.centerStart, child: left),
           ),
         ),
       ],

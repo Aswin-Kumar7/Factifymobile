@@ -250,8 +250,9 @@ _RESULT_1_2 = {
 
 
 class TestAdditiveOnly:
-    def test_the_version_is_1_3(self) -> None:
-        assert CONTRACT_VERSION == "1.3"
+    def test_the_version_is_1_4(self) -> None:
+        # 1.4 (2026-09-28): the PARTLY_TRUE verdict and checks in the background.
+        assert CONTRACT_VERSION == "1.4"
 
     def test_every_1_2_field_is_kept_and_the_new_ones_are_optional(self) -> None:
         for model, old, new in (

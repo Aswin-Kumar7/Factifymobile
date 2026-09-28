@@ -51,12 +51,11 @@ from app.intake.normalizer import NormalisedIntake
 from app.observability.logging import event
 from app.orchestration.progress import addresses_claim, current_progress, stance_of
 from app.sources.base import (
-    NORMAL,
     SourceCandidate,
     SourceResolver,
     build_evidence,
+    check_seconds,
     current_check,
-    current_depth,
 )
 from app.sources.corpus import CorroborationSignal
 from app.sources.reasoning import REASONER_VERSION
@@ -120,24 +119,11 @@ _RESOLVER_GRACE_SECONDS = 3.0
 # open forty sockets against six publishers.
 DEFAULT_CONCURRENCY = 8
 
-# How many claims in one verification may reach a fallback resolver — the metered,
-# open-web kind (`fallback = True`, today web search: a search-API call plus a model
-# read per source). The most important claims go first. A forwarded message carries
-# one to three claims and is unaffected; a long article can yield seven, and reading
-# the open web for every supporting detail multiplied the model calls per check
-# several times over for little change in the verdict.
-#
-# Five, not three: at three, one claim in every four-claim article was never searched
-# and still read "Unconfirmed" — on a Hindu analysis, the one claim that kept the
-# answer from True. Five covers most articles whole, for about ten more seconds and
-# two more searched claims' worth of model calls.
-#
-# Which five: first every claim that can hold the verdict back (`blocks_clearance`:
-# the headline, the main thesis, anything of critical severity), then by importance.
-# Ranked by importance alone, an NBC report's critical-severity detail sat sixth
-# behind a minor quotation, was never searched, and kept a confirmed headline at
-# "Unconfirmed" for a claim nobody had looked for.
-MAX_FALLBACK_CLAIMS = 3
+# A check someone runs in the background (see `check_seconds`) has this long,
+# at most, to search and read every claim. A seven-claim article reads about forty
+# pages through the model, paced to the provider's per-minute limits: two to three
+# minutes. Five is the ceiling for a provider having a slow day, not the plan.
+BACKGROUND_SECONDS = 300.0
 
 _IMPORTANCE_ORDER = {
     Importance.HEADLINE: 0,
@@ -341,19 +327,6 @@ def _not_own(evidence: list[Evidence], own_pages: frozenset[str]) -> list[Eviden
     ]
 
 
-def _not_checked(claim: Claim) -> ClaimOutcome:
-    """A claim a quick check lists and leaves for a deep one: decided on no evidence,
-    which the rules can only call unverified, and marked as never searched."""
-    return ClaimOutcome(
-        claim=claim,
-        decision=decide(claim, []),
-        strength=evidence_strength(
-            [], independent_origin_count=0, document_count=0, source_risk=claim.source_risk
-        ),
-        search="not_searched",
-    )
-
-
 class Orchestrator:
     """Runs the fixed order. The only place that order is expressed."""
 
@@ -422,13 +395,7 @@ class Orchestrator:
             # the canonicalised address, so two people sharing the same article with
             # different tracking parameters hit one entry instead of two.
             content_hash=intake.cache_identity,
-            # A deep check is stored apart: a normal answer must never be served to
-            # someone who asked (and paid) for a deep one, nor the reverse.
-            policy_profile=(
-                DEFAULT_POLICY_PROFILE
-                if current_depth.get() is NORMAL
-                else current_depth.get().name
-            ),
+            policy_profile=DEFAULT_POLICY_PROFILE,
             rule_version=RULE_VERSION,
             extractor_version=self._extractor_version,
             language=intake.language.language.value,
@@ -518,8 +485,10 @@ class Orchestrator:
         # source with a model measures 31 seconds; word overlap measures
         # milliseconds. One deadline for both would either cut every reasoned answer
         # off mid-call or let every lexical one dawdle.
-        depth = current_depth.get()
-        reading = REASONING_TARGET_SECONDS if depth is NORMAL else depth.seconds
+        # A check run in the background has the time to read everything; one a
+        # person waits on in a single request has what that request can hold.
+        background = check_seconds.get()
+        reading = background if background is not None else REASONING_TARGET_SECONDS
         deadline = started + (reading if self._reads_sources else TARGET_SECONDS)
         # Reading always gets its own time after the claims are found. Finding them
         # in a linked page takes about twenty seconds, and counting that against the
@@ -693,10 +662,11 @@ class Orchestrator:
     ) -> list[ClaimOutcome]:
         """Resolve every claim, bounded by the concurrency ceiling.
 
-        Only the `MAX_FALLBACK_CLAIMS` most important claims may reach a fallback
-        resolver: those that can block a True verdict first, then by importance. The
-        ranking is stable, so equally ranked claims keep the order the extractor gave
-        them.
+        Every claim is searched and read. They start in order of importance - first
+        each claim that can hold the verdict back (`blocks_clearance`: the headline,
+        the main thesis, anything of critical severity), then the rest - so when
+        slots are scarce the claims that decide the answer are not the ones waiting.
+        The ranking is stable, so equally ranked claims keep the extractor's order.
         """
         if not claims:
             return []
@@ -709,14 +679,6 @@ class Orchestrator:
                 _IMPORTANCE_ORDER.get(claims[index].importance, unranked),
             ),
         )
-        depth = current_depth.get()
-        cap = MAX_FALLBACK_CLAIMS if depth is NORMAL else depth.claims
-        may_fall_back = set(ranked[:cap])
-        # A quick check checks its most important claims fully, and lists the rest as
-        # not checked - a deep check checks every one. It used to start on all of
-        # them: a linked ISRO page gave seven claims, they queued for the same six
-        # slots, and six ran out of time with nothing to show (2026-09-28).
-        checked = may_fall_back if depth is NORMAL else set(range(len(claims)))
 
         watching = current_progress.get()
         if watching is not None:
@@ -728,28 +690,23 @@ class Orchestrator:
         if report is not None:
             report(0, len(claims))
 
-        async def _counted(index: int, claim: Claim) -> ClaimOutcome:
+        async def _counted(claim: Claim) -> ClaimOutcome:
             nonlocal finished
-            outcome = (
-                await self._resolve_claim(
-                    claim,
-                    skipped=skipped,
-                    deadline=deadline,
-                    allow_fallback=index in may_fall_back,
-                    own_pages=own_pages,
-                )
-                if index in checked
-                else _not_checked(claim)
+            outcome = await self._resolve_claim(
+                claim, skipped=skipped, deadline=deadline, own_pages=own_pages
             )
             finished += 1
             if report is not None:
                 report(finished, len(claims))
             return outcome
 
-        results = await asyncio.gather(
-            *(_counted(index, claim) for index, claim in enumerate(claims))
-        )
-        return list(results)
+        # Started most important first; answered in the extractor's order.
+        tasks = {index: asyncio.ensure_future(_counted(claims[index])) for index in ranked}
+        try:
+            return [await tasks[index] for index in range(len(claims))]
+        finally:
+            for task in tasks.values():
+                task.cancel()
 
     async def _in_english(self, claims: list[Claim]) -> list[Claim]:
         """Each claim not made in English, with its English translation beside it.
@@ -778,7 +735,6 @@ class Orchestrator:
         *,
         skipped: list[SkippedCheck],
         deadline: float | None = None,
-        allow_fallback: bool = True,
         own_pages: frozenset[str] = frozenset(),
     ) -> ClaimOutcome:
         """Gather evidence for one claim, then decide on it.
@@ -821,7 +777,7 @@ class Orchestrator:
         counted = await self._count_origins(claim, evidence=evidence, skipped=scratch)
 
         searched = False
-        if fallback and allow_fallback and not decide(counted, evidence).status.is_decisive:
+        if fallback and not decide(counted, evidence).status.is_decisive:
             evidence.extend(
                 await self._run_stage(
                     fallback, claim, skipped=mine, deadline=deadline, tally=looked
@@ -834,7 +790,7 @@ class Orchestrator:
                 "fallback resolvers not consulted",
                 module="orchestration",
                 outcome="ok",
-                reason="already decisive" if allow_fallback else "claim below the fallback cap",
+                reason="already decisive",
             )
 
         evidence = _not_own(evidence, own_pages)
@@ -849,7 +805,7 @@ class Orchestrator:
         # Verification can remove the very source that made the first stage look
         # decided, which is exactly when the open web was skipped. Search now rather
         # than answer from nothing.
-        if fallback and allow_fallback and not searched:
+        if fallback and not searched:
             counted = await self._count_origins(claim, evidence=evidence, skipped=[])
             if not decide(counted, evidence).status.is_decisive:
                 evidence.extend(
@@ -877,9 +833,7 @@ class Orchestrator:
         search_failed = searched and any(
             gap.check in search_names and "deadline" not in gap.reason for gap in mine
         )
-        if fallback and not searched and not allow_fallback:
-            search = "not_searched"
-        elif any("deadline" in gap.reason for gap in mine):
+        if any("deadline" in gap.reason for gap in mine):
             search = "timed_out"
         elif search_failed:
             search = "unavailable"

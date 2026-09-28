@@ -56,6 +56,15 @@ Map<String, dynamic> _verdictJson() => {
 
 CheckEvent _event(int seq, Map<String, dynamic> json) => CheckEvent.fromJson({...json, 'seq': seq});
 
+/// A server that starts the check at once in the background (contract 1.4) and
+/// answers the app's poll with [answer] once it completes.
+MockClient _server(Completer<http.Response> answer) => MockClient((request) {
+  if (request.method == 'POST' && request.url.path == '/v1/verify') {
+    return Future.value(http.Response('{"case_id": "case-1", "poll_url": "/v1/cases/case-1"}', 202));
+  }
+  return answer.future;
+});
+
 class _RecordingNotifier extends SilentNotifier {
   final announced = <String>[];
   var alive = 0;
@@ -328,7 +337,7 @@ void main() {
 
     testWidgets('shows the step, the sources and the evidence the server reports', (tester) async {
       final answer = Completer<http.Response>();
-      final services = _services(MockClient((_) => answer.future));
+      final services = _services(_server(answer));
       final events = await show(tester, services);
 
       expect(find.text('STEP 1 OF 3'), findsOneWidget);
@@ -408,6 +417,7 @@ void main() {
       expect(find.text('1 source held up when checked against the claim'), findsOneWidget);
 
       answer.complete(http.Response(jsonEncode(_verdictJson()), 200));
+      await tester.pump(const Duration(seconds: 3));
       await tester.pumpAndSettle();
       expect(find.text('Result'), findsOneWidget);
       unawaited(events.close());
@@ -415,17 +425,21 @@ void main() {
 
     testWidgets('a server that reports nothing is not given invented progress', (tester) async {
       final answer = Completer<http.Response>();
-      final services = _services(MockClient((_) => answer.future));
+      final services = _services(_server(answer));
       final events = await show(tester, services);
 
       await tester.pump(const Duration(seconds: 5));
 
       expect(find.textContaining('STEP'), findsNothing);
       expect(find.text('Looking for sources that address this'), findsOneWidget);
-      expect(find.text('A check usually takes 20–50 seconds.'), findsOneWidget);
+      expect(
+        find.text('Every claim is checked, so this usually takes 1–2 minutes.'),
+        findsOneWidget,
+      );
       expect(find.text('Evidence collected'), findsNothing);
 
       answer.complete(http.Response(jsonEncode(_verdictJson()), 200));
+      await tester.pump(const Duration(seconds: 3));
       await tester.pumpAndSettle();
       unawaited(events.close());
     });
@@ -434,11 +448,7 @@ void main() {
       final answer = Completer<http.Response>();
       final notifier = _RecordingNotifier();
       final history = HistoryStore();
-      final services = _services(
-        MockClient((_) => answer.future),
-        notifier: notifier,
-        history: history,
-      );
+      final services = _services(_server(answer), notifier: notifier, history: history);
       final events = await show(tester, services);
 
       await tester.tap(find.text('Notify me when ready'));
@@ -451,6 +461,7 @@ void main() {
       expect(find.text('go'), findsOneWidget);
 
       answer.complete(http.Response(jsonEncode(_verdictJson()), 200));
+      await tester.pump(const Duration(seconds: 3));
       await tester.pumpAndSettle();
 
       expect(history.records, hasLength(1));
@@ -462,11 +473,7 @@ void main() {
       final answer = Completer<http.Response>();
       final notifier = _RecordingNotifier();
       final history = HistoryStore();
-      final services = _services(
-        MockClient((_) => answer.future),
-        notifier: notifier,
-        history: history,
-      );
+      final services = _services(_server(answer), notifier: notifier, history: history);
       final events = await show(tester, services);
 
       await tester.tap(find.byTooltip('Stop waiting'));

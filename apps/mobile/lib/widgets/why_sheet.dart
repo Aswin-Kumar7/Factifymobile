@@ -22,6 +22,7 @@ Claim? decidingClaim(Verdict verdict) {
   final wanted = switch (verdict.factVerdict) {
     FactVerdict.trueClaim => {ClaimStatus.supported},
     FactVerdict.falseClaim => {ClaimStatus.contradicted},
+    FactVerdict.partlyTrue ||
     FactVerdict.misleading => {ClaimStatus.misleadingContext, ClaimStatus.contradicted},
     FactVerdict.unconfirmed => const <ClaimStatus>{},
   };
