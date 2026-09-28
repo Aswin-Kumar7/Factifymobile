@@ -249,7 +249,8 @@ def _shared_fact_check(
             # is sometimes another address for it.
             url=page_url,
             rating=review.rating,
-            publisher=review.publisher or outlet_name(urlsplit(page_url).hostname or ""),
+            # The outlet by its name: BOOM's markup names the writer as its author.
+            publisher=outlet_name(urlsplit(page_url).hostname or "") or review.publisher,
             published_at=review.published_at,
             retrieved_at=datetime.now(UTC),
         )

@@ -50,6 +50,16 @@ class TestClaimReview:
         assert review.publisher == "PIB Fact Check"
         assert review.published_at is not None and review.published_at.year == 2026
 
+    def test_the_organisation_is_the_publisher_not_the_writer(self) -> None:
+        # BOOM names the writer as the review's author; the outlet is its publisher.
+        boom = {
+            **PIB,
+            "author": {"@type": "Person", "name": "Anmol Alphonso"},
+            "publisher": {"@type": "Organization", "name": "BOOM"},
+        }
+        [review] = read_claim_reviews(_page(boom))
+        assert review.publisher == "BOOM"
+
     def test_inside_a_graph_or_a_list_and_with_other_markup(self) -> None:
         article = {"@type": "NewsArticle", "headline": "Fact check"}
         graph = {"@context": "https://schema.org", "@graph": [article, PIB]}

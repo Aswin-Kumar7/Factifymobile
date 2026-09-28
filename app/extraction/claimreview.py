@@ -108,7 +108,7 @@ def _review(node: dict[str, Any], page_url: str | None) -> ClaimReview | None:
     verdict = ""
     if isinstance(rating, dict):
         verdict = _text(rating.get("alternateName") or rating.get("name"))
-    publisher = _text(node.get("author") or node.get("publisher")) or None
+    publisher = _organisation(node) or None
     return ClaimReview(
         claim_reviewed=claim[:500],
         rating=verdict[:80] or None,
@@ -116,6 +116,19 @@ def _review(node: dict[str, Any], page_url: str | None) -> ClaimReview | None:
         published_at=_date(node.get("datePublished")),
         url=str(node.get("url") or page_url or "").strip() or None,
     )
+
+
+def _organisation(node: dict[str, Any]) -> str:
+    """Who published the verdict: an organisation among its authors, else its publisher.
+
+    The schema asks for the fact-checking organisation as the author; BOOM names the
+    writer there instead, and "a fact-check by Anmol Alphonso" is not who rated it.
+    """
+    author = node.get("author")
+    for item in author if isinstance(author, list) else [author]:
+        if isinstance(item, dict) and str(item.get("@type", "")).casefold() == "organization":
+            return _text(item)
+    return _text(node.get("publisher")) or _text(author)
 
 
 def _date(value: Any) -> datetime | None:
