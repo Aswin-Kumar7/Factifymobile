@@ -70,6 +70,21 @@ class TestAnotherOccurrence:
         target = claim(text="India won the 2024 T20 World Cup.")
         assert _other_occurrence(item, target) == "a later occurrence"  # type: ignore[arg-type]
 
+    def test_a_preview_from_before_the_day_is_not_a_report(self) -> None:
+        """ "ISRO will launch Aditya-L1 on September 2" was read as a smaller version of
+        "ISRO launched Aditya-L1 on 2 September 2023" (2026-09-28)."""
+        item = _report(
+            "ISRO will launch Aditya-L1 from Sriharikota on September 2.",
+            published=date(2023, 8, 28),
+        )
+        target = claim(text="ISRO launched Aditya-L1 on 2 September 2023 from Sriharikota.")
+        assert _other_occurrence(item, target) == "published before the event"  # type: ignore[arg-type]
+
+    def test_a_report_from_the_day_itself_stays(self) -> None:
+        item = _report("Aditya-L1 lifted off from Sriharikota.", published=date(2023, 9, 2))
+        target = claim(text="ISRO launched Aditya-L1 on September 2, 2023.")
+        assert _other_occurrence(item, target) is None  # type: ignore[arg-type]
+
     def test_a_later_look_back_at_a_one_off_event_stays(self) -> None:
         item = _report(
             "Two years after Chandrayaan-3 landed near the lunar south pole, ISRO is "

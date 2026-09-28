@@ -58,7 +58,7 @@ from app.sources.local_reading import local_reading, local_same_claim
 logger = logging.getLogger("factify.sources.reasoning")
 
 PROVIDER = "llm"
-REASONER_VERSION = "2026.09.28.7"
+REASONER_VERSION = "2026.09.28.8"
 
 # How many passages go to the model in one call. One call per source, not one per
 # passage: the model needs to see the alternatives to judge which actually bears on
@@ -601,6 +601,11 @@ _CHECK_SOURCES_SCHEMA: dict[str, Any] = {
                     # would not reconcile the two. As a yes-or-no of its own it is a
                     # description, which it gives reliably (2026-09-28).
                     "smaller_version": {"type": "boolean"},
+                    # What makes a version smaller rather than just shorter: a detail
+                    # stated differently. The check called India Today's report of the
+                    # Aditya-L1 launch, which did not name Sriharikota, a "smaller
+                    # version", and a true claim came back partly true (2026-09-28).
+                    "states_differently": {"type": "boolean"},
                     "addresses_claim": {"type": "boolean"},
                     "verdict": {
                         "type": "string",
@@ -611,6 +616,7 @@ _CHECK_SOURCES_SCHEMA: dict[str, Any] = {
                     "index",
                     "reason",
                     "smaller_version",
+                    "states_differently",
                     "addresses_claim",
                     "verdict",
                 ],
@@ -649,6 +655,12 @@ For each source:
   passage is about a differently named one. False, too, when the passage only says
   less than the claim - leaves a detail out, names no platform or date - but what it
   says fits the claim: that is UNCLEAR or TRUE, not a smaller version.
+- states_differently: true if the passage states one of the claim's own details
+  differently: a different amount, frequency, date, place, person or body acting,
+  or people it applies to - "once" where the claim says "every month", "Tamil Nadu"
+  where it says "the government", "Rs 1,000" where it says "Rs 5,000". False when the
+  passage only leaves details out: a report of the launch that does not name the
+  launch site states nothing differently.
 - addresses_claim: true only if the passage is about THIS claim - the same subject and
   the same assertion. Sharing a topic is not enough. A page about pensions in
   general does not address a claim about one named scheme. A page about a different
@@ -711,6 +723,8 @@ class SourceReading:
     reason: str
     # The passage reports a smaller version of the claim as real (see the schema).
     smaller_version: bool = False
+    # The passage states one of the claim's details differently, not merely leaves it out.
+    states_differently: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -1246,6 +1260,7 @@ class PassageReasoner:
                         verdict=str(item["verdict"]).upper(),
                         reason=str(item.get("reason") or "").strip(),
                         smaller_version=bool(item.get("smaller_version", False)),
+                        states_differently=bool(item.get("states_differently", False)),
                     )
             return SourceCheck(
                 readings=readings, explanation=str(payload.get("explanation") or "").strip()

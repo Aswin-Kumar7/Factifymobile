@@ -135,7 +135,13 @@ class _Checker:
     async def check_sources(self, _claim: str, sources: list[tuple[str, str]]) -> SourceCheck:
         return SourceCheck(
             readings={
-                i: SourceReading(addresses_claim=False, verdict="PARTLY", reason="one state")
+                i: SourceReading(
+                    addresses_claim=False,
+                    verdict="PARTLY",
+                    reason="one state",
+                    smaller_version=True,
+                    states_differently=True,
+                )
                 for i in range(len(sources))
             },
             explanation="",

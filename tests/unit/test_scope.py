@@ -144,10 +144,18 @@ class TestTheRules:
 
 
 class _Checker:
-    def __init__(self, verdicts: list[str], *, smaller: bool = True, about: bool = True) -> None:
+    def __init__(
+        self,
+        verdicts: list[str],
+        *,
+        smaller: bool = True,
+        about: bool = True,
+        differs: bool = True,
+    ) -> None:
         self.verdicts = verdicts
         self.smaller = smaller
         self.about = about
+        self.differs = differs
         self.sent: list[tuple[str, str]] = []
 
     async def check_sources(self, claim_text: str, sources: list[tuple[str, str]]) -> SourceCheck:
@@ -159,6 +167,7 @@ class _Checker:
                     verdict=v,
                     reason="one state only",
                     smaller_version=self.smaller and v != "TRUE",
+                    states_differently=self.differs and v != "TRUE",
                 )
                 for i, v in enumerate(self.verdicts)
             },
@@ -208,6 +217,20 @@ class TestTheSourceCheck:
         [kept] = verified.evidence
         assert kept.direction is Direction.CONTEXTUALIZES
         assert is_narrower_scope(kept.match_basis.metric)
+
+    def test_a_report_that_only_says_less_is_support(self) -> None:
+        """India Today on the Aditya-L1 launch, without naming the launch site: the
+        check said PARTLY, but states nothing differently. It supports the claim, and
+        the claim is not "partly true" for it (2026-09-28)."""
+        verified = asyncio.run(
+            SourceVerification(checker=_Checker(["PARTLY"], differs=False), ranker=_Ranker()).check(
+                claim(text="ISRO launched Aditya-L1 on 2 September 2023 from Sriharikota."),
+                [_support("indiatoday.in")],  # type: ignore[list-item]
+            )
+        )
+        [kept] = verified.evidence
+        assert kept.direction is Direction.SUPPORTS
+        assert not is_narrower_scope(kept.match_basis.metric)
 
     def test_saying_less_is_not_a_smaller_version(self) -> None:
         """ "The photographs were also shared", for a claim naming Facebook and X: the

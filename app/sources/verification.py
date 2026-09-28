@@ -35,6 +35,7 @@ import asyncio
 import logging
 import re
 from dataclasses import dataclass
+from datetime import date
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
@@ -280,10 +281,29 @@ class SourceVerification:
             # read as PARTLY twice and kept by neither (2026-09-27). When the reader
             # found a narrower version and the check agrees it is PARTLY, it is kept.
             partly = reading.verdict == "PARTLY"
-            if reading.verdict == _expected(item) and (reading.addresses_claim or partly):
+            # A smaller version states a detail of the claim differently; a page that
+            # only leaves details out is not one (`states_differently`).
+            smaller = (
+                partly
+                and reading.smaller_version
+                and reading.states_differently
+                and item.direction is not Direction.CONTRADICTS
+            )
+            if not partly and reading.verdict == _expected(item) and reading.addresses_claim:
                 kept.append(item)
                 outcomes.append({"host": host, "outcome": f"kept ({item.direction.value})"})
-            elif reading.smaller_version and partly and item.direction is not Direction.CONTRADICTS:
+            elif (
+                partly
+                and not reading.states_differently
+                and item.direction is Direction.SUPPORTS
+                and reading.addresses_claim
+            ):
+                # Read as support, and the check found nothing it states differently -
+                # only details it does not mention. What it says matches the claim:
+                # India Today on the Aditya-L1 launch, without naming the launch site.
+                kept.append(item)
+                outcomes.append({"host": host, "outcome": "kept (supports, says less)"})
+            elif smaller:
                 # Read as support (or as a narrower version), and the check says it
                 # shows only a smaller version of the claim: that version is what it
                 # is evidence of, not the claim - "partly true". Asked as its own
@@ -402,6 +422,54 @@ def _host(url: str) -> str:
 _YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
 
 
+# A full date in a claim's English: "2 September 2023" or "September 2, 2023".
+_MONTHS = {
+    name: number
+    for number, names in enumerate(
+        (
+            ("january", "jan"),
+            ("february", "feb"),
+            ("march", "mar"),
+            ("april", "apr"),
+            ("may",),
+            ("june", "jun"),
+            ("july", "jul"),
+            ("august", "aug"),
+            ("september", "sep", "sept"),
+            ("october", "oct"),
+            ("november", "nov"),
+            ("december", "dec"),
+        ),
+        start=1,
+    )
+    for name in names
+}
+_DAY_FIRST = re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]+)\.?,?\s+((?:19|20)\d{2})\b", re.I)
+_MONTH_FIRST = re.compile(r"\b([a-z]+)\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+((?:19|20)\d{2})\b", re.I)
+# A claim that something happened, not that it will.
+_HAPPENED = re.compile(
+    r"\b(?:launched|landed|won|beat|died|was|were|held|announced|withdrew|declared|"
+    r"passed|signed|arrested|released|killed|opened|inaugurated|took place)\b",
+    re.IGNORECASE,
+)
+
+
+def _claimed_day(text: str) -> date | None:
+    """The first full date a claim names, or None."""
+    for pattern, order in ((_DAY_FIRST, (0, 1)), (_MONTH_FIRST, (1, 0))):
+        for match in pattern.finditer(text):
+            parts = match.groups()
+            day_text, month_text = parts[order[0]], parts[order[1]]
+            month = _MONTHS.get(month_text.casefold())
+            if month is None or not day_text.isdigit():
+                continue
+            try:
+                return date(int(parts[2]), month, int(day_text))
+            except ValueError:
+                continue
+    return None
+
+
 # Stages of a tournament other than the final. A claim about the final is not
 # answered by a report of another match: "India beat Australia by 24 runs in the
 # Super Eight" was read as support for "India beat Australia in the 2024 T20 World Cup
@@ -442,6 +510,13 @@ def _other_occurrence(item: Evidence, claim: Claim) -> str | None:
     # reporting it. A 2025 report of a launch planned for 2027 names 2027, and stays.
     published = item.published_on
     if years and published is not None and published.year < min(years) and not named:
+        return "published before the event"
+
+    # Published before the day a claim says something happened: a preview, not a
+    # report. "ISRO will launch Aditya-L1 on September 2" read as a smaller version of
+    # "ISRO launched Aditya-L1 on 2 September 2023" (2026-09-28).
+    day = _claimed_day(said)
+    if day is not None and published is not None and published < day and _HAPPENED.search(said):
         return "published before the event"
 
     # Another match of the tournament, for a claim about the final.
