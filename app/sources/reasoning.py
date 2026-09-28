@@ -58,7 +58,7 @@ from app.sources.local_reading import local_reading, local_same_claim
 logger = logging.getLogger("factify.sources.reasoning")
 
 PROVIDER = "llm"
-REASONER_VERSION = "2026.09.28.8"
+REASONER_VERSION = "2026.09.29.1"
 
 # How many passages go to the model in one call. One call per source, not one per
 # passage: the model needs to see the alternatives to judge which actually bears on
@@ -606,6 +606,11 @@ _CHECK_SOURCES_SCHEMA: dict[str, Any] = {
                     # Aditya-L1 launch, which did not name Sriharikota, a "smaller
                     # version", and a true claim came back partly true (2026-09-28).
                     "states_differently": {"type": "boolean"},
+                    # Who the passage's version is for. "Eligible people" was read as a
+                    # smaller group of the claim's people, and the PM Internship
+                    # Scheme's Rs 5,000 a month for interns passed as a smaller version
+                    # of "every woman gets Rs 5,000 a month" (2026-09-28).
+                    "other_group": {"type": "boolean"},
                     "addresses_claim": {"type": "boolean"},
                     "verdict": {
                         "type": "string",
@@ -617,6 +622,7 @@ _CHECK_SOURCES_SCHEMA: dict[str, Any] = {
                     "reason",
                     "smaller_version",
                     "states_differently",
+                    "other_group",
                     "addresses_claim",
                     "verdict",
                 ],
@@ -661,6 +667,12 @@ For each source:
   where it says "the government", "Rs 1,000" where it says "Rs 5,000". False when the
   passage only leaves details out: a report of the launch that does not name the
   launch site states nothing differently.
+- other_group: true if what the passage reports is for a different group of people
+  than the claim names, rather than for all of them or some of them: interns,
+  students or employees of any gender for a claim about every woman; traders for a
+  claim about farmers. Women heads of families, pregnant women or the women of one
+  state are some of "every woman", so false for them. False, too, when the claim
+  names no group of people at all.
 - addresses_claim: true only if the passage is about THIS claim - the same subject and
   the same assertion. Sharing a topic is not enough. A page about pensions in
   general does not address a claim about one named scheme. A page about a different
@@ -725,6 +737,8 @@ class SourceReading:
     smaller_version: bool = False
     # The passage states one of the claim's details differently, not merely leaves it out.
     states_differently: bool = False
+    # What the passage reports is for a different group of people than the claim's.
+    other_group: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -1325,6 +1339,7 @@ class PassageReasoner:
                         reason=str(item.get("reason") or "").strip(),
                         smaller_version=bool(item.get("smaller_version", False)),
                         states_differently=bool(item.get("states_differently", False)),
+                        other_group=bool(item.get("other_group", False)),
                     )
             return SourceCheck(
                 readings=readings, explanation=str(payload.get("explanation") or "").strip()

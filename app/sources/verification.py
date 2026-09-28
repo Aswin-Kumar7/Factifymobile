@@ -301,7 +301,7 @@ class SourceVerification:
                 partly
                 and reading.smaller_version
                 and reading.states_differently
-                and item.direction is not Direction.CONTRADICTS
+                and not reading.other_group
             )
             if not partly and reading.verdict == _expected(item) and reading.addresses_claim:
                 kept.append(item)
@@ -328,9 +328,18 @@ class SourceVerification:
                 # the check said PARTLY and, rightly, "not a smaller version" - a
                 # scam's borrowed name. "Smaller version" alone: it was said of pages
                 # that merely said less ("the photographs were also shared", for a
-                # claim naming Facebook and X). Never for a source read as
-                # contradicting the claim: a denial that mentions a smaller version
-                # is a denial.
+                # claim naming Facebook and X). And for the claim's own people or
+                # some of them: the PM Internship Scheme's Rs 5,000 for interns is no
+                # smaller version of "every woman gets Rs 5,000" (`other_group`).
+                #
+                # Read as a contradiction too, when the check calls it a smaller
+                # version. Tamil Nadu's Rs 1,000 a month for women heads of families
+                # was read as denying "every woman gets Rs 5,000 a month" and dropped,
+                # four outlets on one card, while the check called each a smaller
+                # version; the user decided a real smaller version for the same
+                # people is what makes such a claim partly true (2026-09-28). A
+                # fact-check or official denial is still a contradiction: the check
+                # answers FALSE for those, and they are kept as that.
                 kept.append(_as_narrower(item, reading.reason))
                 outcomes.append(
                     {

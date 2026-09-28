@@ -151,11 +151,13 @@ class _Checker:
         smaller: bool = True,
         about: bool = True,
         differs: bool = True,
+        other_group: bool = False,
     ) -> None:
         self.verdicts = verdicts
         self.smaller = smaller
         self.about = about
         self.differs = differs
+        self.other_group = other_group
         self.sent: list[tuple[str, str]] = []
 
     async def check_sources(self, claim_text: str, sources: list[tuple[str, str]]) -> SourceCheck:
@@ -168,6 +170,7 @@ class _Checker:
                     reason="one state only",
                     smaller_version=self.smaller and v != "TRUE",
                     states_differently=self.differs and v != "TRUE",
+                    other_group=self.other_group,
                 )
                 for i, v in enumerate(self.verdicts)
             },
@@ -254,20 +257,51 @@ class TestTheSourceCheck:
         )
         assert verified.evidence == []
 
-    def test_a_denial_is_never_turned_into_a_smaller_version(self) -> None:
-        denial = evidence(
+    @staticmethod
+    def _read_as_denial(host: str) -> object:
+        return evidence(
             kind=EvidenceKind.CORROBORATION,
             direction=Direction.CONTRADICTS,
             tier=Tier.D,
             method=Method.PASSAGE_ENTAILMENT,
             basis=MatchBasis(metric="passage_entailment: r", value=0.9, threshold=0.0),
-            citation_url="https://pib.gov.in/fact-check",
-            publisher="PIB",
+            citation_url=f"https://{host}/story",
+            publisher=host,
         )
+
+    def test_a_smaller_version_read_as_a_denial_is_a_smaller_version(self) -> None:
+        """Tamil Nadu's Rs 1,000 a month for women heads of families, read as denying
+        "every woman gets Rs 5,000 a month" while the check called it a smaller
+        version: the user decided it makes the claim partly true (2026-09-28)."""
         verified = asyncio.run(
             SourceVerification(checker=_Checker(["PARTLY"]), ranker=_Ranker()).check(
                 claim(text=CLAIM),
-                [denial],  # type: ignore[list-item]
+                [self._read_as_denial("timesofindia.indiatimes.com")],  # type: ignore[list-item]
+            )
+        )
+        [kept] = verified.evidence
+        assert kept.direction is Direction.CONTEXTUALIZES
+        assert is_narrower_scope(kept.match_basis.metric)
+
+    def test_a_denial_the_check_confirms_is_still_a_contradiction(self) -> None:
+        verified = asyncio.run(
+            SourceVerification(checker=_Checker(["FALSE"]), ranker=_Ranker()).check(
+                claim(text=CLAIM),
+                [self._read_as_denial("pib.gov.in")],  # type: ignore[list-item]
+            )
+        )
+        [kept] = verified.evidence
+        assert kept.direction is Direction.CONTRADICTS
+
+    def test_the_same_amount_for_a_different_group_is_not_a_smaller_version(self) -> None:
+        """The PM Internship Scheme's Rs 5,000 a month for interns was kept as a smaller
+        version of "every woman gets Rs 5,000 a month" (2026-09-28)."""
+        verified = asyncio.run(
+            SourceVerification(
+                checker=_Checker(["PARTLY"], other_group=True), ranker=_Ranker()
+            ).check(
+                claim(text=CLAIM),
+                [_support("vishvasnews.com")],  # type: ignore[list-item]
             )
         )
         assert verified.evidence == []
