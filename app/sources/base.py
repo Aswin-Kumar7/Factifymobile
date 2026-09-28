@@ -400,7 +400,8 @@ def keyword_overlap(claim_text: str, source_text: str, *, minimum_length: int = 
         "after",
         "over",
     }
-    tokenise = re.compile(r"[a-z0-9ऀ-ॿ]+")
+    # Every Indian script and Arabic, as in corpus.py's word pattern.
+    tokenise = re.compile(r"[a-z0-9\u0900-\u0d7f\u0600-\u06ff\u0750-\u077f]+")
 
     claim_words = {
         word
@@ -411,4 +412,8 @@ def keyword_overlap(claim_text: str, source_text: str, *, minimum_length: int = 
         return 0.0
 
     source_words = set(tokenise.findall(source_text.lower()))
-    return len(claim_words & source_words) / len(claim_words)
+    shared = claim_words & source_words
+    # Numbers alone are not a match: "2023" is in half the news.
+    if all(word.isdigit() for word in shared):
+        return 0.0
+    return len(shared) / len(claim_words)

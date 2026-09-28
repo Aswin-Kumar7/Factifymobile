@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 from PIL import Image
 
 from app.media.detectors.common import model_path, normalised, onnx_session, rgb, sigmoid
@@ -43,6 +44,23 @@ SMALL_BELOW = 384
 # 58% of AI pictures caught at 128 px, 24% at 64 px. So a thumbnail is "too small to
 # judge", never a score.
 TOO_SMALL = 128
+
+# A picture this much one flat colour is a text card or a screenshot, not a
+# photograph - and the detector is not built for those: its makers list screenshots
+# among its known weak spots. Measured 2026-09-28: plain text cards drawn by software
+# scored 93% "AI-made"; no picture in the 108-picture test set, real or generated, was
+# flatter than 0.85, and none of those scored wrongly. Share of pixels in the single
+# commonest colour, at 8 levels per channel.
+FLAT_AT = 0.86
+
+
+def flatness(picture: Image.Image) -> float:
+    """Share of the picture in its single commonest colour (8 levels a channel)."""
+    small = picture.copy()
+    small.thumbnail((256, 256))
+    levels = np.asarray(small, dtype=np.uint16) // 32
+    keys = (levels[..., 0] * 64 + levels[..., 1] * 8 + levels[..., 2]).reshape(-1)
+    return float(np.bincount(keys, minlength=512).max() / max(1, keys.size))
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +141,15 @@ class AiPictureDetector:
             self._main = _load(self._directory, *MAIN, threads=self._threads)
             self._small = _load(self._directory, *SMALL, threads=self._threads)
             self._loaded = True
+
+    def unjudgeable(self, data: bytes) -> str | None:
+        """Why this picture cannot be judged, or None when it can."""
+        picture = rgb(data)
+        if min(picture.size) < TOO_SMALL:
+            return "the picture is too small to judge"
+        if flatness(picture) >= FLAT_AT:
+            return "the picture is mostly flat colour, like a text card or a screenshot"
+        return None
 
     def score(self, data: bytes) -> PictureScore | None:
         """The likelihood for one picture, or None when no model is loaded."""

@@ -32,7 +32,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 from app.observability.logging import event
-from app.security.fetcher import FetchResult
+from app.security.fetcher import FetchFailure, FetchResult
 
 logger = logging.getLogger("factify.extraction.translate")
 
@@ -128,7 +128,16 @@ class GoogleTranslator:
     async def _free(self, text: str, target: str, source: str) -> Translation | None:
         query = urlencode({"client": "gtx", "sl": source, "tl": target, "dt": "t", "q": text})
         result = await self._fetcher.fetch(f"{FREE_ENDPOINT}?{query}", provider=PROVIDER)
+        # Once more when it timed out or the connection dropped: an Urdu claim went
+        # untranslated on one slow answer (2026-09-28), and then matched English
+        # articles on nothing but a year.
+        if isinstance(result, FetchFailure) and result.kind in ("timeout", "transport"):
+            result = await self._fetcher.fetch(f"{FREE_ENDPOINT}?{query}", provider=PROVIDER)
         if not isinstance(result, FetchResult) or result.status_code != 200:
+            logger.warning(
+                "translation refused: %s",
+                result.kind if isinstance(result, FetchFailure) else result.status_code,
+            )
             return None
         return parse_free(result.text)
 

@@ -72,9 +72,12 @@ class LocalDetector:
 
     def _read_picture(self, image: bytes) -> SyntheticReading:
         with self._busy:
-            main = self._pictures.score(image)
+            unjudgeable = self._pictures.unjudgeable(image)
+            main = None if unjudgeable else self._pictures.score(image)
             if main is None:
-                return SyntheticReading(reason="not checked: the picture is too small to judge")
+                return SyntheticReading(
+                    reason=f"not checked: {unjudgeable or 'the picture could not be read'}"
+                )
             second = _safely(self._second, "score", image)
             faces = _safely(self._faces, "score", image)
         reading = self._reading(main=[main], second=[second] if second else [], faces=faces)
@@ -83,7 +86,10 @@ class LocalDetector:
 
     def _read_clip(self, video: bytes, frames: list[bytes]) -> SyntheticReading:
         with self._busy:
-            mains = [s for f in _spread(frames, PICTURE_FRAMES) if (s := self._pictures.score(f))]
+            judgeable = [f for f in frames if not self._pictures.unjudgeable(f)]
+            mains = [
+                s for f in _spread(judgeable, PICTURE_FRAMES) if (s := self._pictures.score(f))
+            ]
             seconds = [
                 s
                 for f in _spread(frames, SECOND_OPINION_FRAMES)

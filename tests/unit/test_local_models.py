@@ -164,6 +164,9 @@ class _Model:
 
     def load(self) -> None: ...
 
+    def unjudgeable(self, _: bytes) -> str | None:
+        return None if self._score is not None else "the picture is too small to judge"
+
     def score(self, _: bytes) -> Any:
         if self._fails:
             raise RuntimeError("broken model")
@@ -254,3 +257,29 @@ class TestLocalReading:
     def test_same_claim_only_rules_out_a_different_subject(self) -> None:
         assert local_same_claim(_Stance(0.001), CLAIM, "Something else entirely") is False
         assert local_same_claim(_Stance(0.9, entails=0.999), CLAIM, STATES) is None
+
+
+class TestFlatPictures:
+    """Text cards and screenshots are not what the AI-picture detector is for."""
+
+    def test_a_flat_text_card_is_not_judged(self) -> None:
+        from PIL import ImageDraw
+
+        from app.media.detectors.picture import AiPictureDetector
+
+        card = Image.new("RGB", (1080, 520), (250, 250, 245))
+        ImageDraw.Draw(card).text((50, 60), "Govt to pay Rs 5000 to every woman", fill=(20, 20, 20))
+        out = io.BytesIO()
+        card.save(out, "JPEG", quality=70)
+        reason = AiPictureDetector(directory="nowhere").unjudgeable(out.getvalue())
+        assert reason is not None and "flat colour" in reason
+
+    def test_a_photograph_like_picture_is(self) -> None:
+        import numpy as np
+
+        from app.media.detectors.picture import AiPictureDetector
+
+        noise = np.random.default_rng(3).integers(0, 255, (300, 400, 3), dtype=np.uint8)
+        out = io.BytesIO()
+        Image.fromarray(noise).save(out, "JPEG", quality=80)
+        assert AiPictureDetector(directory="nowhere").unjudgeable(out.getvalue()) is None

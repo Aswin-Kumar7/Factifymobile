@@ -107,3 +107,15 @@ class TestWording:
         assert line.startswith("PIB Fact Check")
         assert "This claim is fake." in line  # the source's own words, untranslated
         assert line != explain(ClaimStatus.CONTRADICTED, [check], (check.id,), language="en")
+
+
+def test_numbers_alone_are_not_a_match_in_any_script() -> None:
+    from app.sources.base import keyword_overlap
+    from app.sources.corpus import overlap
+
+    urdu = "بھارت نے 23 اگست 2023 کو چندریان 3 کو چاند کے جنوبی قطب کے قریب اتارا"
+    english = "Blood collection in India rose 12 per cent in 2023, the ministry said."
+    assert overlap(urdu, english) == 0.0
+    assert keyword_overlap(urdu, english) == 0.0
+    # An Urdu article about the same landing still matches on its words.
+    assert overlap(urdu, "چندریان 3 نے 23 اگست 2023 کو چاند کے جنوبی قطب پر لینڈنگ کی") > 0.3

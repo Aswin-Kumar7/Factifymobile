@@ -155,7 +155,11 @@ _STOP = frozenset(
 )
 
 _SENTENCE = re.compile(r"(?<=[.!?])\s+")
-_WORD = re.compile(r"[a-z0-9ऀ-ॿ]+")
+# Latin, digits, and the Indian scripts from Devanagari to Malayalam (U+0900-0D7F)
+# and Arabic for Urdu. It was Devanagari only, so a Tamil or Urdu claim had no words
+# but its numbers, and an Urdu claim about Chandrayaan-3 in 2023 "matched" every
+# English article that mentioned 2023 (2026-09-28).
+_WORD = re.compile(r"[a-z0-9\u0900-\u0d7f\u0600-\u06ff\u0750-\u077f]+")
 
 
 def significant_words(text: str) -> set[str]:
@@ -174,7 +178,11 @@ def overlap(claim_text: str, candidate_text: str) -> float:
     claim_words = significant_words(claim_text)
     if not claim_words:
         return 0.0
-    return len(claim_words & significant_words(candidate_text)) / len(claim_words)
+    shared = claim_words & significant_words(candidate_text)
+    # Numbers alone are not a match: "2023" is in half the news.
+    if all(word.isdigit() for word in shared):
+        return 0.0
+    return len(shared) / len(claim_words)
 
 
 def reciprocal_rank_fusion(rankings: list[list[str]], *, k: int = RRF_K) -> dict[str, float]:
