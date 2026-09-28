@@ -983,8 +983,16 @@ class PassageReasoner:
         language: Any | None = None,
         claim_type: str | None = None,
         published: date | None = None,
+        screen: bool = True,
     ) -> ReasoningOutcome:
         """Judge up to `MAX_PASSAGES` passages, returning only verified quotes.
+
+        `screen` lets our own relevance model skip a page none of whose passages is
+        about the claim. The corpus leaves it on - its candidates come from word
+        matching, and some are about something else. Web search turns it off: its
+        pages are already ranked by relevance, the screen spared one read in seven
+        there, and screening a whole search's pages at once on the CPU held every
+        read of a three-claim link past its deadline (2026-09-28).
 
         `title` is the headline of the article the passages came from, when the fetch
         recovered one. It is passed because a paragraph read in isolation loses the
@@ -1009,7 +1017,7 @@ class PassageReasoner:
 
         # Our own models first, for the two answers they are trusted with: this page
         # is not about the claim, or it states the claim outright in English.
-        if self._stance is not None:
+        if self._stance is not None and screen:
             try:
                 local = await asyncio.to_thread(
                     local_reading, self._stance, claim_text, selected, title, claim_type

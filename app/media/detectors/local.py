@@ -48,8 +48,13 @@ class LocalDetector:
         self._busy = threading.Lock()
 
     def warm(self) -> None:
-        """Load every model now, so the first picture does not wait for it."""
-        for model in (self._pictures, self._second, self._faces, self._voice):
+        """Load the picture models now, so the first picture does not wait for them.
+
+        Not the voice model: it holds 1.3 GB for videos alone, and a video is checked
+        in the background, so it loads on the first one (about ten seconds) rather
+        than sitting in memory beside everything else from the start.
+        """
+        for model in (self._pictures, self._second, self._faces):
             if model is None:
                 continue
             try:

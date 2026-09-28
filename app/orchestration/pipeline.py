@@ -101,6 +101,9 @@ TARGET_SECONDS = 8.0
 # promise is not quietly rewritten, it is measured against honestly.
 REASONING_TARGET_SECONDS = 55.0
 
+# The least time reading and checking sources gets, however long finding the claims took.
+MIN_READING_SECONDS = 40.0
+
 # Kept back from the reading deadline for the source check that follows it. Reading
 # used to run to the deadline itself, leaving the check no time at all — so it timed
 # out at once and every source reached the verdict unchecked. The check is one model
@@ -115,7 +118,7 @@ _RESOLVER_GRACE_SECONDS = 3.0
 # How many resolvers may run at once. Independent producers are concurrent because
 # they do not depend on each other; the ceiling exists so a burst of claims cannot
 # open forty sockets against six publishers.
-DEFAULT_CONCURRENCY = 6
+DEFAULT_CONCURRENCY = 8
 
 # How many claims in one verification may reach a fallback resolver — the metered,
 # open-web kind (`fallback = True`, today web search: a search-API call plus a model
@@ -134,7 +137,7 @@ DEFAULT_CONCURRENCY = 6
 # Ranked by importance alone, an NBC report's critical-severity detail sat sixth
 # behind a minor quotation, was never searched, and kept a confirmed headline at
 # "Unconfirmed" for a claim nobody had looked for.
-MAX_FALLBACK_CLAIMS = 4
+MAX_FALLBACK_CLAIMS = 3
 
 _IMPORTANCE_ORDER = {
     Importance.HEADLINE: 0,
@@ -518,6 +521,12 @@ class Orchestrator:
         depth = current_depth.get()
         reading = REASONING_TARGET_SECONDS if depth is NORMAL else depth.seconds
         deadline = started + (reading if self._reads_sources else TARGET_SECONDS)
+        # Reading always gets its own time after the claims are found. Finding them
+        # in a linked page takes about twenty seconds, and counting that against the
+        # same budget left too little to read anything: a fresh ISRO link came back
+        # with every web page unread (2026-09-28).
+        if self._reads_sources:
+            deadline = max(deadline, time.perf_counter() + MIN_READING_SECONDS)
 
         claims = await self._in_english(claims)
 
@@ -557,6 +566,8 @@ class Orchestrator:
             claims=len(outcomes),
             evidence=len(result.evidence),
             skipped=len(skipped),
+            # Which checks, and why: a count could not say what ran out of time.
+            skipped_checks=[f"{item.check}: {item.reason}" for item in skipped][:10],
             elapsed_ms=result.elapsed_ms,
             within_target=result.within_target,
         )

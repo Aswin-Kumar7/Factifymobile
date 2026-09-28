@@ -626,6 +626,8 @@ class WebSearchResolver:
             language=claim.language,
             claim_type=claim.claim_type.value,
             published=snapshot.published_on,
+            # Search already ranked these pages; see `PassageReasoner.judge`.
+            screen=False,
         )
         if not outcome.succeeded:
             return insufficient(NAME, VERSION, f"reasoning unavailable: {outcome.reason}")

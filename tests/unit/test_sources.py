@@ -649,6 +649,7 @@ class TestTheReaderIsToldWhatItIsReading:
                 language: object | None = None,
                 claim_type: str | None = None,
                 published: object | None = None,
+                screen: bool = True,
             ) -> ReasoningOutcome:
                 seen["title"] = title
                 seen["claim_type"] = claim_type

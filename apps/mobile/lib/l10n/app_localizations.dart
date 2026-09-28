@@ -263,7 +263,7 @@ abstract class AppLocalizations {
   /// No description provided for @claimNotSearched.
   ///
   /// In en, this message translates to:
-  /// **'A quick check looks at its four most important claims, and this wasn\'t one of them. Use Deep check to check every claim.'**
+  /// **'A quick check looks at its three most important claims, and this wasn\'t one of them. Use Deep check to check every claim.'**
   String get claimNotSearched;
 
   /// No description provided for @claimTimedOut.

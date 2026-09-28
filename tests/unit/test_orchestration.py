@@ -948,9 +948,9 @@ class TestTheFallbackStage:
             normalise_text("A long article with seven claims."), case_id=uuid4(), claims=claims
         )
 
-        assert len(web.asked) == MAX_FALLBACK_CLAIMS == 4
-        # the top four by importance; the tie between details keeps extraction order
-        assert set(web.asked) == {"headline", "thesis", "detail_1", "detail_2"}
+        assert len(web.asked) == MAX_FALLBACK_CLAIMS == 3
+        # the top three by importance; the tie between details keeps extraction order
+        assert set(web.asked) == {"headline", "thesis", "detail_1"}
 
     @pytest.mark.anyio
     async def test_a_critical_detail_is_searched_before_minor_ones(self) -> None:
@@ -982,7 +982,7 @@ class TestTheFallbackStage:
         )
 
         assert "critical" in web.asked
-        assert len(web.asked) == 4
+        assert len(web.asked) == 3
 
 
 class TestTheCacheIsAskedFirst:
@@ -1566,7 +1566,7 @@ class TestAnUnreportedNationalClaimIsSaidPlainly:
 @pytest.mark.anyio
 async def test_a_quick_check_lists_the_claims_past_its_cap_as_not_checked() -> None:
     """Seven claims from a linked page queued for the same slots and six ran out of
-    time (2026-09-28). A quick check now checks the most important four fully and
+    time (2026-09-28). A quick check now checks the most important three fully and
     lists the rest as not searched; a deep check checks every one."""
     from app.orchestration.pipeline import MAX_FALLBACK_CLAIMS
 
