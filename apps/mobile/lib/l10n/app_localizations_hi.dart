@@ -101,7 +101,7 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get claimNotSearched =>
-      'हर जाँच में सबसे अहम पाँच दावे खोजे जाते हैं, यह उनमें नहीं था।';
+      'जल्दी वाली जाँच अपने चार सबसे अहम दावों को देखती है, और यह उनमें से नहीं था। हर दावे की जाँच के लिए गहरी जाँच चुनें।';
 
   @override
   String get claimTimedOut =>

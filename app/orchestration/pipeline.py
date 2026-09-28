@@ -134,7 +134,7 @@ DEFAULT_CONCURRENCY = 6
 # Ranked by importance alone, an NBC report's critical-severity detail sat sixth
 # behind a minor quotation, was never searched, and kept a confirmed headline at
 # "Unconfirmed" for a claim nobody had looked for.
-MAX_FALLBACK_CLAIMS = 5
+MAX_FALLBACK_CLAIMS = 4
 
 _IMPORTANCE_ORDER = {
     Importance.HEADLINE: 0,
@@ -336,6 +336,19 @@ def _not_own(evidence: list[Evidence], own_pages: frozenset[str]) -> list[Eviden
         if page_key(item.citation_url) not in own_pages
         and registrable_domain(item.citation_url) not in own_outlets
     ]
+
+
+def _not_checked(claim: Claim) -> ClaimOutcome:
+    """A claim a quick check lists and leaves for a deep one: decided on no evidence,
+    which the rules can only call unverified, and marked as never searched."""
+    return ClaimOutcome(
+        claim=claim,
+        decision=decide(claim, []),
+        strength=evidence_strength(
+            [], independent_origin_count=0, document_count=0, source_risk=claim.source_risk
+        ),
+        search="not_searched",
+    )
 
 
 class Orchestrator:
@@ -688,6 +701,11 @@ class Orchestrator:
         depth = current_depth.get()
         cap = MAX_FALLBACK_CLAIMS if depth is NORMAL else depth.claims
         may_fall_back = set(ranked[:cap])
+        # A quick check checks its most important claims fully, and lists the rest as
+        # not checked - a deep check checks every one. It used to start on all of
+        # them: a linked ISRO page gave seven claims, they queued for the same six
+        # slots, and six ran out of time with nothing to show (2026-09-28).
+        checked = may_fall_back if depth is NORMAL else set(range(len(claims)))
 
         watching = current_progress.get()
         if watching is not None:
@@ -701,12 +719,16 @@ class Orchestrator:
 
         async def _counted(index: int, claim: Claim) -> ClaimOutcome:
             nonlocal finished
-            outcome = await self._resolve_claim(
-                claim,
-                skipped=skipped,
-                deadline=deadline,
-                allow_fallback=index in may_fall_back,
-                own_pages=own_pages,
+            outcome = (
+                await self._resolve_claim(
+                    claim,
+                    skipped=skipped,
+                    deadline=deadline,
+                    allow_fallback=index in may_fall_back,
+                    own_pages=own_pages,
+                )
+                if index in checked
+                else _not_checked(claim)
             )
             finished += 1
             if report is not None:

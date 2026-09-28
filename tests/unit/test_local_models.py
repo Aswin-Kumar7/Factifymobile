@@ -283,3 +283,44 @@ class TestFlatPictures:
         out = io.BytesIO()
         Image.fromarray(noise).save(out, "JPEG", quality=80)
         assert AiPictureDetector(directory="nowhere").unjudgeable(out.getvalue()) is None
+
+
+class TestScriptReaders:
+    """Tamil, Telugu and Urdu are read on our server when Hindi and English are not."""
+
+    def _ocr(self, engines: dict[str, Any]) -> Any:
+        from app.extraction.local_ocr import LocalOcr
+
+        ocr = LocalOcr(directory="nowhere")
+        ocr._engines = engines
+        ocr._loaded = True
+        return ocr
+
+    def test_a_script_reader_is_tried_only_when_hindi_and_english_are_unsure(self) -> None:
+        asked: list[str] = []
+
+        def engine(language: str, text: str, score: float) -> Any:
+            def read(_: Any) -> _Result:
+                asked.append(language)
+                return _Result(boxes=[_box(40, 100, 900, 150)], txts=[text], scores=[score])
+
+            return read
+
+        sure = self._ocr(
+            {
+                "hi": engine("hi", "सरकार हर महिला को हर महीने 5000 रुपये देगी", 0.99),
+                "ta": engine("ta", "unused", 0.99),
+            }
+        ).read(_jpeg())
+        assert sure.reader == "hi+en" and asked == ["hi"]
+
+        asked.clear()
+        tamil = self._ocr(
+            {
+                "hi": engine("hi", "भगम 66 LG0 5000 T 6 61 6OT6", 0.74),
+                "te": engine("te", "5000", 0.97),
+                "ta": engine("ta", "அரசு ஒவ்வொரு பெண்ணுக்கும் மாதம் 5000 ரூபாய்", 0.98),
+            }
+        ).read(_jpeg())
+        # The Telugu reader's confident "5000" does not beat a whole Tamil card.
+        assert tamil.reader == "ta" and tamil.enough

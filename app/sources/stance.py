@@ -66,7 +66,10 @@ class _Encoder:
         self.session = onnx_session(weights, threads=threads)
         self.inputs = {i.name for i in self.session.get_inputs()}
         self.tokenizer = Tokenizer.from_file(str(vocabulary))
-        self.tokenizer.enable_truncation(max_length=MAX_TOKENS, strategy="only_first")
+        # Longest first: the reranker is given (claim, passage) and the NLI models
+        # (passage, claim); "only_first" cut the claim, and a long passage then
+        # failed outright - common in the Indian scripts, which take more tokens.
+        self.tokenizer.enable_truncation(max_length=MAX_TOKENS, strategy="longest_first")
         self.tokenizer.enable_padding()
         self.name = folder
 

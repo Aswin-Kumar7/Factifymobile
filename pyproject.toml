@@ -38,6 +38,9 @@ models = [
     "safetensors>=0.4",
     # Text in pictures, read on the server: PaddleOCR's models through ONNX Runtime.
     "rapidocr>=3.9.2",
+    # Puts a right-to-left (Urdu) line RapidOCR read back into reading order. LGPL,
+    # used unmodified as a library.
+    "python-bidi>=0.6",
 ]
 
 [tool.uv.sources]

@@ -948,9 +948,9 @@ class TestTheFallbackStage:
             normalise_text("A long article with seven claims."), case_id=uuid4(), claims=claims
         )
 
-        assert len(web.asked) == MAX_FALLBACK_CLAIMS == 5
-        # the top five by importance; the tie between details keeps extraction order
-        assert set(web.asked) == {"headline", "thesis", "detail_1", "detail_2", "detail_3"}
+        assert len(web.asked) == MAX_FALLBACK_CLAIMS == 4
+        # the top four by importance; the tie between details keeps extraction order
+        assert set(web.asked) == {"headline", "thesis", "detail_1", "detail_2"}
 
     @pytest.mark.anyio
     async def test_a_critical_detail_is_searched_before_minor_ones(self) -> None:
@@ -982,7 +982,7 @@ class TestTheFallbackStage:
         )
 
         assert "critical" in web.asked
-        assert len(web.asked) == 5
+        assert len(web.asked) == 4
 
 
 class TestTheCacheIsAskedFirst:
@@ -1561,3 +1561,25 @@ class TestAnUnreportedNationalClaimIsSaidPlainly:
         supporting = evidence(direction=Direction.SUPPORTS)
 
         assert self._note(evidence=[supporting]) is None
+
+
+@pytest.mark.anyio
+async def test_a_quick_check_lists_the_claims_past_its_cap_as_not_checked() -> None:
+    """Seven claims from a linked page queued for the same slots and six ran out of
+    time (2026-09-28). A quick check now checks the most important four fully and
+    lists the rest as not searched; a deep check checks every one."""
+    from app.orchestration.pipeline import MAX_FALLBACK_CLAIMS
+
+    checked = _web_search()
+    claims = [_claim(claim_id=f"c{n}", importance=Importance.SUPPORTING_DETAIL) for n in range(7)]
+    result = await _economy_orchestrator([_fact_check(None), checked]).verify(
+        normalise_text("A linked page with seven claims."), case_id=uuid4(), claims=claims
+    )
+
+    searches = [outcome.search for outcome in result.claims]
+    assert searches.count("not_searched") == len(claims) - MAX_FALLBACK_CLAIMS
+    assert all(
+        outcome.decision.status.value == "UNVERIFIED"
+        for outcome in result.claims
+        if outcome.search == "not_searched"
+    )

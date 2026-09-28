@@ -32,19 +32,33 @@ from app.observability.logging import event
 
 logger = logging.getLogger("factify.extraction.local_ocr")
 
-MODEL_ID = "rapidocr/PP-OCRv5-devanagari+en"
+MODEL_ID = "rapidocr/PP-OCRv5"
 
 DETECTOR = ("ocr-det-mobile", "inference.onnx")
 READERS = {
     "hi": ("ocr-rec-devanagari", "inference.onnx"),
     "en": ("ocr-rec-en", "inference.onnx"),
 }
+# Read with when the two above are unsure: Tamil, Telugu, and Urdu (Arabic script),
+# PaddleOCR's own PP-OCRv5 readers (Apache-2.0). Bengali, Gujarati, Odia, Kannada,
+# Malayalam and Gurmukhi have no such reader yet, and go to the hosted reader.
+SCRIPT_READERS = {
+    "ta": ("ocr-rec-ta", "inference.onnx"),
+    "te": ("ocr-rec-te", "inference.onnx"),
+    "ur": ("ocr-rec-arabic", "inference.onnx"),
+}
+# Read right to left.
+_RIGHT_TO_LEFT = {"ur"}
 
 # Enough text, read with enough confidence, that the hosted reader is not asked.
 # A news card or a forward carries sentences; a photograph with a shop sign in it
 # carries a word or two, and is better described than transcribed.
+#
+# 0.88, not 0.80: the Devanagari reader "read" a Tamil card as garbage at 0.74 and a
+# Bengali one at 0.73 (2026-09-28), too close to 0.80 for comfort; real Hindi and
+# English cards and screenshots read at 0.96-1.00.
 ENOUGH_CHARACTERS = 24
-ENOUGH_CONFIDENCE = 0.80
+ENOUGH_CONFIDENCE = 0.88
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +84,8 @@ class OcrLine:
 class LocalReading:
     lines: tuple[OcrLine, ...]
     elapsed_ms: float
+    # Which reader it came from: "hi+en", or a script reader's language.
+    reader: str = "hi+en"
 
     @property
     def text(self) -> str:
@@ -82,6 +98,13 @@ class LocalReading:
         if not total:
             return 0.0
         return sum(line.confidence * len(line.text) for line in self.lines) / total
+
+    @property
+    def confident_characters(self) -> float:
+        """How much text was read, weighted by how sure: for choosing between readers.
+        Plain confidence let one reader win on "5000" alone over another that read the
+        whole Urdu card."""
+        return sum(line.confidence * len(line.text) for line in self.lines)
 
     @property
     def enough(self) -> bool:
@@ -132,23 +155,27 @@ class LocalOcr:
             from rapidocr import RapidOCR
 
             detector = model_path(self._directory, *DETECTOR)
-            for language, (folder, file) in READERS.items():
+            for language, (folder, file) in {**READERS, **SCRIPT_READERS}.items():
                 reader = model_path(self._directory, folder, file)
                 keys = _keys_file(self._directory, folder)
                 if detector is None or reader is None or keys is None:
                     continue
+                params: dict[str, Any] = {
+                    "Global.use_cls": False,
+                    "Global.log_level": "error",
+                    "Det.model_path": str(detector),
+                    "Rec.model_path": str(reader),
+                    "Rec.rec_keys_path": str(keys),
+                    "EngineConfig.onnxruntime.intra_op_num_threads": self._threads,
+                    "EngineConfig.onnxruntime.inter_op_num_threads": 1,
+                }
+                if language in _RIGHT_TO_LEFT:
+                    # RapidOCR puts an Arabic-script line back into reading order.
+                    from rapidocr import LangRec
+
+                    params["Rec.lang_type"] = LangRec.ARABIC
                 try:
-                    self._engines[language] = RapidOCR(
-                        params={
-                            "Global.use_cls": False,
-                            "Global.log_level": "error",
-                            "Det.model_path": str(detector),
-                            "Rec.model_path": str(reader),
-                            "Rec.rec_keys_path": str(keys),
-                            "EngineConfig.onnxruntime.intra_op_num_threads": self._threads,
-                            "EngineConfig.onnxruntime.inter_op_num_threads": 1,
-                        }
-                    )
+                    self._engines[language] = RapidOCR(params=params)
                 except Exception:
                     logger.exception("OCR reader %s could not be loaded", language)
             self._loaded = True
@@ -161,9 +188,33 @@ class LocalOcr:
         started = time.perf_counter()
         # BGR, as OpenCV and the models expect.
         image = np.asarray(rgb(data))[:, :, ::-1].copy()
-        readings = {language: engine(image) for language, engine in self._engines.items()}
-        lines = _best_of(readings)
-        return LocalReading(lines=lines, elapsed_ms=(time.perf_counter() - started) * 1000)
+        readings = {
+            language: engine(image)
+            for language, engine in self._engines.items()
+            if language in READERS
+        }
+        best = LocalReading(lines=_best_of(readings), elapsed_ms=0.0)
+        # Hindi and English first, as most pictures are; the other scripts only when
+        # those two were unsure - each is another pass over the picture.
+        if not best.enough:
+            for language in SCRIPT_READERS:
+                engine = self._engines.get(language)
+                if engine is None:
+                    continue
+                candidate = LocalReading(
+                    lines=_in_rows(_lines(engine(image)), right_to_left=language in _RIGHT_TO_LEFT),
+                    elapsed_ms=0.0,
+                    reader=language,
+                )
+                if candidate.confident_characters > best.confident_characters:
+                    best = candidate
+                if best.enough:
+                    break
+        return LocalReading(
+            lines=best.lines,
+            elapsed_ms=(time.perf_counter() - started) * 1000,
+            reader=best.reader,
+        )
 
 
 def _lines(result: Any) -> list[OcrLine]:
@@ -221,7 +272,7 @@ def _overlap(one: OcrLine, other: OcrLine) -> float:
     return shared / max(1.0, area - shared)
 
 
-def _in_rows(pieces: list[OcrLine]) -> tuple[OcrLine, ...]:
+def _in_rows(pieces: list[OcrLine], *, right_to_left: bool = False) -> tuple[OcrLine, ...]:
     """Pieces on the same row joined left to right, rows top to bottom.
 
     By the middle of each box rather than its top: a Devanagari word's headline sits
@@ -237,7 +288,7 @@ def _in_rows(pieces: list[OcrLine]) -> tuple[OcrLine, ...]:
             rows.append([piece])
     joined = []
     for row in rows:
-        row.sort(key=lambda p: p.left)
+        row.sort(key=lambda p: -p.right if right_to_left else p.left)
         characters = sum(len(p.text) for p in row)
         joined.append(
             OcrLine(
@@ -288,6 +339,7 @@ class LocalFirstOcr:
                 character_count=len(text),
                 confidence=round(reading.confidence, 3),
                 lines=len(reading.lines),
+                reader=reading.reader,
                 latency_ms=round(reading.elapsed_ms),
             )
             if not text.strip():
