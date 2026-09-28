@@ -80,9 +80,10 @@ class Claim(BaseModel):
     search_phrases: tuple[str, ...] = ()
     location: str | None = None
 
-    # The claim in English, machine-translated, when it was made in another language:
-    # for finding and reading English sources - most fact-checks and national reporting
-    # are published in English - and never shown to anyone as the claim.
+    # The claim as one self-contained English sentence: written by the extractor from
+    # the whole document (pronouns and shorthand resolved), or machine-translated when
+    # it gave none. For finding and reading sources - most fact-checks and national
+    # reporting are published in English - and never shown to anyone as the claim.
     english_text: str = ""
 
     # Set by the corroboration and source-risk tracks. They are inputs to the rules,
@@ -97,7 +98,10 @@ class Claim(BaseModel):
         """The claim as the source readers see it: its own words, with the English
         beside them when it was made in another language."""
         if self.english_text and self.english_text.casefold() != self.text.casefold():
-            return f"{self.text}\n(In English: {self.english_text})"
+            # For an English claim the line is its meaning in full ("NASA launched
+            # Chandrayaan-3" for "NASA launched it"), not a translation.
+            said = "In full" if (self.language or "en") == "en" else "In English"
+            return f"{self.text}\n({said}: {self.english_text})"
         return self.text
 
     @property

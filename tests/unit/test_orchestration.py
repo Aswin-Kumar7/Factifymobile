@@ -1535,8 +1535,18 @@ class TestAnUnreportedNationalClaimIsSaidPlainly:
 
         fields: dict[str, Any] = {"coverage_expectation": CoverageExpectation.HIGH}
         evidence_items = overrides.pop("evidence", [])
+        reported = overrides.pop("reported", False)
         fields.update(overrides)
-        return _unreported_note(_claim(**fields), evidence_items)
+        return _unreported_note(_claim(**fields), evidence_items, reported=reported)
+
+    def test_a_detail_is_never_called_likely_false_for_going_unreported(self) -> None:
+        """ISRO's own page: its launch-orbit numbers, repeated by no other outlet, were
+        called "likely false" (2026-09-28). Only a claim the message rests on is news."""
+        assert self._note(importance=Importance.SUPPORTING_DETAIL) is None
+
+    def test_nor_a_claim_the_shared_page_of_a_trusted_publisher_makes(self) -> None:
+        # The claim is reported: by the publisher of the page the person shared.
+        assert self._note(reported=True) is None
 
     def test_a_national_claim_nothing_supports_says_so(self) -> None:
         note = self._note()

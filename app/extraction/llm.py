@@ -41,7 +41,7 @@ PROVIDER = "llm"
 
 # Bumped whenever the prompt or the schema changes, because either changes what the
 # same document extracts to — and the extraction cache is keyed on it.
-EXTRACTOR_VERSION = "2026.09.28.1"
+EXTRACTOR_VERSION = "2026.09.28.3"
 
 MAX_CLAIMS_PER_DOCUMENT = 7
 
@@ -76,6 +76,9 @@ class ProposedClaim(BaseModel):
     dates: list[str] = Field(default_factory=list)
     location: str | None = None
     search_phrases: list[str] = Field(default_factory=list)
+    # The claim as one self-contained English sentence, pronouns and shorthand
+    # resolved from the whole document. What sources are searched and read against.
+    standalone_english: str = ""
     needs_human_review: bool = False
     source_anchor: ProposedAnchor = Field(default_factory=ProposedAnchor)
 
@@ -130,11 +133,6 @@ _SYSTEM_INSTRUCTION = (
     "is shown as half right: 'India won the 2024 T20 World Cup and beat Australia in "
     "the final' is 'India won the 2024 T20 World Cup' and 'India beat Australia in the "
     "2024 T20 World Cup final'. "
-    "Every claim names its own subject and object, in full, as the document means "
-    "them: never a pronoun or 'this' standing for something said elsewhere. "
-    "'Chandrayaan-3 landed on the Moon and NASA launched it' gives 'Chandrayaan-3 "
-    "landed on the Moon' and 'NASA launched Chandrayaan-3', never 'NASA launched it' - "
-    "a claim that says 'it' matches whatever else NASA ever launched. "
     "Leave out the writer's own characterisation - the motives, adjectives and "
     "judgements an article wraps around a fact ('showed their disdain for', 'bloody', "
     "'in a desperate bid to', 'shocking'). Extract the fact they describe: 'hundreds "
@@ -206,6 +204,27 @@ _SYSTEM_INSTRUCTION = (
     "ministry has denied reports that...', 'PIB Fact Check says the claim that ... is "
     "fake': there the reporting is the point, and what was denied is not something "
     "the document asserts. "
+    "When the document is itself a fact-check, the viral post it examines is not "
+    "something it asserts: never extract 'a user shared a video saying ...' or the "
+    "post's caption as a claim. Extract what the fact-check establishes - who is really "
+    "shown, when and where it was recorded, what actually happened - and its finding. "
+    "A statement that a government, company or other body WILL pay, give, ban, close "
+    "or launch something - 'the government will give every woman Rs 5,000 a month', "
+    "'banks will stay shut for five days from Monday' - claims that this has been "
+    "announced or decided: type it EVENT, because it can be checked today against what "
+    "was actually announced. PREDICTION is only a forecast of what nobody has decided: "
+    "who will win, what prices or the weather will do. "
+    "standalone_english: the claim as ONE self-contained English sentence that can be "
+    "checked with no other text at hand. Replace every pronoun and every shorthand "
+    "with what it stands for in the document, and carry over the event, date and place "
+    "the claim depends on: from 'Chandrayaan-3 landed on the Moon on 23 August 2023 "
+    "and NASA launched it', the second claim is 'NASA launched Chandrayaan-3' - never "
+    "'NASA launched it', which matches whatever else NASA ever launched; from 'India "
+    "won the 2024 T20 World Cup and beat Australia in the final', it is 'India beat "
+    "Australia in the 2024 T20 World Cup final' - never 'India beat Australia in the "
+    "final', which matches every final the two ever played. Write it for an English "
+    "document too. It asserts exactly what the claim asserts, nothing more: no "
+    "correction, no judgement, no detail the document does not give. "
     "search_phrases: two or three short web queries that would find published "
     "sources ADDRESSING this claim, in either direction. The claim's own sentence "
     "is already searched, and on its own it retrieves the topic rather than any "
@@ -292,6 +311,7 @@ _RESPONSE_SCHEMA: dict[str, Any] = {
                     "dates": {"type": "array", "items": {"type": "string"}},
                     "location": {"type": "string", "nullable": True},
                     "search_phrases": {"type": "array", "items": {"type": "string"}},
+                    "standalone_english": {"type": "string"},
                     "needs_human_review": {"type": "boolean"},
                     "source_anchor": {
                         "type": "object",
@@ -303,7 +323,13 @@ _RESPONSE_SCHEMA: dict[str, Any] = {
                         },
                     },
                 },
-                "required": ["text", "claim_type", "severity", "importance"],
+                "required": [
+                    "text",
+                    "claim_type",
+                    "severity",
+                    "importance",
+                    "standalone_english",
+                ],
             },
         }
     },

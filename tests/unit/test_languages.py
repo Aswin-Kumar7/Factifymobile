@@ -13,8 +13,10 @@ import asyncio
 import re
 from typing import Any
 
+import pytest
+
 from app.domain import ClaimStatus
-from app.extraction.language import CHECKED
+from app.extraction.language import CHECKED, Language, devanagari_language
 from app.extraction.translate import Translation, parse_free
 from app.orchestration.correction import _OPENING, _SAYS, _UNCONFIRMED
 from app.orchestration.pipeline import Orchestrator
@@ -161,3 +163,19 @@ class TestWhenGoogleRefuses:
 
         chain = FallbackTranslator(_Translator(None), _Translator(None))
         assert asyncio.run(chain.translate(TAMIL)) is None
+
+
+@pytest.mark.parametrize(
+    ("text", "language"),
+    [
+        # One grammar word ("आहेत"), four Marathi endings: answered in Hindi before.
+        ("रिझर्व्ह बँकेने ५०० रुपयांच्या नोटा चलनातून बंद केल्या आहेत", Language.MARATHI),
+        ("सरकार प्रत्येक महिलेला दरमहा ५००० रुपये देणार आहे", Language.MARATHI),
+        ("महिलांसाठी नवी योजना सुरू", Language.MARATHI),
+        ("सरकार हर महिला को हर महीने 5000 रुपये देगी", Language.HINDI),
+        ("रिज़र्व बैंक ने 500 रुपये के नोट बंद कर दिए हैं", Language.HINDI),
+        ("मोदी सरकार किसानों को हर साल 6000 रुपये देती है", Language.HINDI),
+    ],
+)
+def test_marathi_is_told_from_hindi_in_one_line(text: str, language: Language) -> None:
+    assert devanagari_language(text) is language

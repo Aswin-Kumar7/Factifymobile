@@ -98,18 +98,25 @@ _SCRIPT_LANGUAGE = {
 # languages use ("ने", "ही", "हे") are left out.
 _MARATHI_WORDS = frozenset(
     "आहे आहेत नाही नाहीत आणि होते होता होती केले केली करण्यात येणार असे आता मध्ये "
-    "पण तर त्यांनी त्याने झाले झाली दिले मिळणार सर्व करा".split()
+    "पण तर त्यांनी त्याने झाले झाली दिले मिळणार सर्व करा नवी सुरू".split()
 )
 _HINDI_WORDS = frozenset(
     "है हैं नहीं और का की के में से को था थी थे गया गई किया रहा रही लिए भी यह वह कहा करें होगा मिलेगा".split()
 )
 _DEVANAGARI_WORD = re.compile(r"[\u0900-\u097F]+")
 
+# Marathi endings Hindi does not use: "रुपयांच्या" (of the rupees), "चलनातून" (out of
+# circulation), "केल्या", "महिलांसाठी", "देणार" (will give). A one-line forward may
+# carry a single grammar word ("RBI ने ५०० रुपयांच्या नोटा चलनातून बंद केल्या आहेत" has
+# only "आहेत"), and was answered in Hindi (2026-09-28); its endings say Marathi four
+# times.
+_MARATHI_ENDINGS = ("च्या", "ल्या", "ातून", "ांना", "साठी", "मधील", "णार", "णाऱ्या")
+
 
 def devanagari_language(text: str) -> Language:
-    """Hindi or Marathi, from grammar words; Hindi when it cannot tell."""
+    """Hindi or Marathi, from grammar words and case endings; Hindi when it cannot tell."""
     words = _DEVANAGARI_WORD.findall(text)
-    marathi = sum(1 for word in words if word in _MARATHI_WORDS)
+    marathi = sum(1 for word in words if word in _MARATHI_WORDS or word.endswith(_MARATHI_ENDINGS))
     hindi = sum(1 for word in words if word in _HINDI_WORDS)
     return Language.MARATHI if marathi >= 2 and marathi > hindi else Language.HINDI
 

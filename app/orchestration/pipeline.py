@@ -289,7 +289,19 @@ _UNREPORTED = {
 }
 
 
-def _unreported_note(claim: Claim, evidence: list[Evidence]) -> str | None:
+def _unreported_note(
+    claim: Claim, evidence: list[Evidence], *, reported: bool = False
+) -> str | None:
+    """ "Nothing reports this, so treat it as likely false" - only where that follows.
+
+    It follows for a claim the message rests on, which would be news if it were true.
+    It does not for a detail, and not when the page the person shared is itself a
+    publisher we trust ([reported]): then the claim IS reported, by them. ISRO's own
+    Chandrayaan-3 page had its launch-orbit detail called "likely false" because no
+    other outlet repeated the numbers (2026-09-28).
+    """
+    if reported or not blocks_clearance(claim):
+        return None
     if claim.coverage_expectation is not CoverageExpectation.HIGH:
         return None
     if any(item.direction is Direction.SUPPORTS for item in evidence):
@@ -475,6 +487,12 @@ class Orchestrator:
         own = set(own_pages)
         if intake.primary.source_url:
             own.add(page_key(intake.primary.source_url))
+        # Whether a page the person shared comes from a publisher we trust: its claims
+        # are then reported, whatever else is found (see `_unreported_note`).
+        verification = self._verification
+        reported = verification is not None and any(
+            verification.trusted(f"https://{key}") for key in own
+        )
 
         # The budget becomes a deadline here, not a wish. It was declared and
         # measured but never enforced, and real requests ran to 90 seconds — past
@@ -502,7 +520,11 @@ class Orchestrator:
         check = current_check.set(str(case_id))
         try:
             outcomes = await self._resolve_all(
-                claims, skipped=skipped, deadline=deadline, own_pages=frozenset(own)
+                claims,
+                skipped=skipped,
+                deadline=deadline,
+                own_pages=frozenset(own),
+                reported=reported,
             )
         finally:
             current_check.reset(check)
@@ -659,6 +681,7 @@ class Orchestrator:
         skipped: list[SkippedCheck],
         deadline: float | None = None,
         own_pages: frozenset[str] = frozenset(),
+        reported: bool = False,
     ) -> list[ClaimOutcome]:
         """Resolve every claim, bounded by the concurrency ceiling.
 
@@ -693,7 +716,11 @@ class Orchestrator:
         async def _counted(claim: Claim) -> ClaimOutcome:
             nonlocal finished
             outcome = await self._resolve_claim(
-                claim, skipped=skipped, deadline=deadline, own_pages=own_pages
+                claim,
+                skipped=skipped,
+                deadline=deadline,
+                own_pages=own_pages,
+                reported=reported,
             )
             finished += 1
             if report is not None:
@@ -736,6 +763,7 @@ class Orchestrator:
         skipped: list[SkippedCheck],
         deadline: float | None = None,
         own_pages: frozenset[str] = frozenset(),
+        reported: bool = False,
     ) -> ClaimOutcome:
         """Gather evidence for one claim, then decide on it.
 
@@ -853,7 +881,9 @@ class Orchestrator:
         # means in its own words instead.
         if not decision.status.is_decisive:
             explanation = narrower_note(evidence, language=claim.language) or (
-                _unreported_note(claim, evidence) if search == "searched" else None
+                _unreported_note(claim, evidence, reported=reported)
+                if search == "searched"
+                else None
             )
         else:
             # Written from what decided the claim - its source, named and quoted - and

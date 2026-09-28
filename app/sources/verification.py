@@ -193,6 +193,10 @@ class SourceVerification:
         self._checker = checker
         self._ranker = ranker
 
+    def trusted(self, url: str) -> bool:
+        """Whether this page's publisher is one we rank: highly or moderately credible."""
+        return str(self._ranker.credibility(url)) in ("HIGH", "MEDIUM")
+
     async def check(
         self, claim: Claim, evidence: list[Evidence], *, budget: float | None = None
     ) -> Verified:
@@ -268,23 +272,28 @@ class SourceVerification:
             if reading.verdict == _expected(item) and (reading.addresses_claim or partly):
                 kept.append(item)
                 outcomes.append({"host": host, "outcome": f"kept ({item.direction.value})"})
-            elif (
-                reading.smaller_version
-                and reading.verdict != "TRUE"
-                and item.direction is not Direction.CONTRADICTS
-            ):
+            elif reading.smaller_version and partly and item.direction is not Direction.CONTRADICTS:
                 # Read as support (or as a narrower version), and the check says it
                 # shows only a smaller version of the claim: that version is what it
                 # is evidence of, not the claim - "partly true". Asked as its own
                 # question, because asked through the verdict the check called a
                 # one-time Rs 5,000 payment "FALSE, not about the claim" and it was
-                # thrown away (2026-09-28). The yes-or-no is required, not a PARTLY
-                # alone: for "Atal Free Pension Scheme" against the real Atal Pension
-                # Yojana the check said PARTLY and, rightly, "not a smaller version" -
-                # a scam's borrowed name. Never for a source read as contradicting the
-                # claim: a denial that mentions a smaller version is a denial.
+                # thrown away (2026-09-28). Both answers are required. PARTLY alone:
+                # for "Atal Free Pension Scheme" against the real Atal Pension Yojana
+                # the check said PARTLY and, rightly, "not a smaller version" - a
+                # scam's borrowed name. "Smaller version" alone: it was said of pages
+                # that merely said less ("the photographs were also shared", for a
+                # claim naming Facebook and X). Never for a source read as
+                # contradicting the claim: a denial that mentions a smaller version
+                # is a denial.
                 kept.append(_as_narrower(item, reading.reason))
-                outcomes.append({"host": host, "outcome": "kept (narrower than the claim)"})
+                outcomes.append(
+                    {
+                        "host": host,
+                        "outcome": "kept (narrower than the claim)",
+                        "reason": reading.reason[:200],
+                    }
+                )
             else:
                 outcomes.append(
                     {

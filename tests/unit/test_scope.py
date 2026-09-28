@@ -195,12 +195,12 @@ class TestTheSourceCheck:
         assert kept.direction is Direction.CONTEXTUALIZES
         assert is_narrower_scope(kept.match_basis.metric)
 
-    def test_a_smaller_version_the_check_calls_false_is_still_partly_true(self) -> None:
-        """The check answered FALSE and "not about the claim" for a one-time Rs 5,000
-        payment, three runs of three, while its reason described a smaller version.
-        Its own yes-or-no on "smaller version" decides (2026-09-28)."""
+    def test_a_smaller_version_is_partly_true_even_called_not_about_the_claim(self) -> None:
+        """The check called a one-time Rs 5,000 payment "not about the claim", three
+        runs of three, while its reason described a smaller version. Its own yes-or-no
+        on "smaller version", with PARTLY, decides (2026-09-28)."""
         verified = asyncio.run(
-            SourceVerification(checker=_Checker(["FALSE"], about=False), ranker=_Ranker()).check(
+            SourceVerification(checker=_Checker(["PARTLY"], about=False), ranker=_Ranker()).check(
                 claim(text=CLAIM),
                 [_support("timesofindia.indiatimes.com")],  # type: ignore[list-item]
             )
@@ -208,6 +208,17 @@ class TestTheSourceCheck:
         [kept] = verified.evidence
         assert kept.direction is Direction.CONTEXTUALIZES
         assert is_narrower_scope(kept.match_basis.metric)
+
+    def test_saying_less_is_not_a_smaller_version(self) -> None:
+        """ "The photographs were also shared", for a claim naming Facebook and X: the
+        check called it a smaller version, with UNCLEAR. Both answers are required."""
+        verified = asyncio.run(
+            SourceVerification(checker=_Checker(["UNCLEAR"]), ranker=_Ranker()).check(
+                claim(text="She shared the photos on her official Facebook and X accounts"),
+                [_support("newschecker.in")],  # type: ignore[list-item]
+            )
+        )
+        assert verified.evidence == []
 
     def test_partly_without_a_smaller_version_is_not_kept(self) -> None:
         """ "Atal Free Pension Scheme" against the real Atal Pension Yojana: PARTLY, but

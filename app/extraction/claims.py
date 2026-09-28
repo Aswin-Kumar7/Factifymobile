@@ -239,6 +239,11 @@ def _to_claim(
         search_phrases=tuple(proposal.search_phrases),
         location=proposal.location,
         language=language,
+        # Written by the extractor, which saw the whole document: "NASA launched
+        # Chandrayaan-3" where the claim's own words say "NASA launched it". A
+        # translation of the claim alone kept the "it", and a NASA page about Artemis
+        # II then "confirmed" it (2026-09-28).
+        english_text=_standalone(proposal.standalone_english),
         anchor=ClaimAnchor(
             input_kind=input_kind,
             content_hash=content_hash,
@@ -389,3 +394,14 @@ class ClaimPipeline:
             language=language,
         )
         return ExtractedClaims(claims=claims, from_cache=True, discarded=discarded)
+
+
+# Longest self-contained English sentence taken from the extractor. A claim is a
+# sentence; anything far longer is the model writing an essay, not restating it.
+_STANDALONE_CHARACTERS = 400
+
+
+def _standalone(text: str) -> str:
+    """The extractor's self-contained English version of a claim, tidied, or ""."""
+    line = " ".join(text.split())
+    return line if 0 < len(line) <= _STANDALONE_CHARACTERS else ""

@@ -58,7 +58,7 @@ from app.sources.local_reading import local_reading, local_same_claim
 logger = logging.getLogger("factify.sources.reasoning")
 
 PROVIDER = "llm"
-REASONER_VERSION = "2026.09.28.5"
+REASONER_VERSION = "2026.09.28.6"
 
 # How many passages go to the model in one call. One call per source, not one per
 # passage: the model needs to see the alternatives to judge which actually bears on
@@ -640,8 +640,11 @@ For each source:
   government gives every woman Rs 5,000 a month". False when the passage denies or
   debunks the claim, when it is about a different kind of thing, when it is an
   earlier or later event of the same kind (last year's fuel-price cut for a claim of a
-  new one), and when the claim names a particular scheme and the passage is about a
-  differently named one.
+  new one), when it is a different match, meeting, visit or event (a semi-final for a
+  claim about the final), and when the claim names a particular scheme and the
+  passage is about a differently named one. False, too, when the passage only says
+  less than the claim - leaves a detail out, names no platform or date - but what it
+  says fits the claim: that is UNCLEAR or TRUE, not a smaller version.
 - addresses_claim: true only if the passage is about THIS claim - the same subject and
   the same assertion. Sharing a topic is not enough. A page about pensions in
   general does not address a claim about one named scheme. A page about a different
