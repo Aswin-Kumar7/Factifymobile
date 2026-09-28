@@ -2003,7 +2003,8 @@ class TestReadingTheRelevantResultsFirst:
             ),
         )
 
-        assert scores.asked == ["NASA launched Chandrayaan-3."]
+        # In full, and in its own words: the better of the two decides.
+        assert scores.asked == ["NASA launched Chandrayaan-3.", "NASA launched it."]
 
     def test_the_outlet_of_a_shared_page_is_never_opened(self) -> None:
         from app.sources.base import current_own_pages
@@ -2067,3 +2068,37 @@ def test_an_english_claim_is_searched_with_its_context() -> None:
 
     assert asked[0] == "Chandrayaan-3's rover payloads include APXS and LIBS."
     assert "Rover payloads include APXS and LIBS." not in asked
+
+
+def test_a_fact_check_of_the_claim_is_read_before_a_page_on_its_topic() -> None:
+    """For "RBI will cancel Rs 500 notes from 1 October", Wikipedia and the RBI's
+    explainer site took the read slots from the debunks (2026-09-28)."""
+
+    class _Scores:
+        can_gate = True
+
+        def relevance(self, _claim: str, texts: list[str]) -> list[float]:
+            return [0.60 if "Wikipedia" in text else 0.55 for text in texts]
+
+    resolver = WebSearchResolver(
+        fetcher=None,  # type: ignore[arg-type]
+        reasoner=None,
+        provider="tavily",
+        endpoint="https://example.invalid/search",
+        api_key="k",
+        credibility=SourceCredibility(
+            frozenset({"wikipedia.org", "altnews.in"}), fact_checkers=frozenset({"altnews.in"})
+        ),
+        relevance=_Scores(),
+    )
+
+    async def _queries(_claim: object) -> list[dict]:
+        return [
+            {"url": "https://en.wikipedia.org/wiki/500_note", "title": "Wikipedia", "content": "x"},
+            {"url": "https://www.altnews.in/rs-500-fake", "title": "Rs 500 claim", "content": "x"},
+        ]
+
+    resolver._queries = _queries  # type: ignore[method-assign]
+    found = asyncio.run(resolver.candidates(claim(text="RBI will cancel Rs 500 notes.")))
+
+    assert next(urlsplit(c.url).hostname for c in found) == "www.altnews.in"

@@ -454,6 +454,20 @@ _HAPPENED = re.compile(
 )
 
 
+# A passage written before an outcome, and one that reports an outcome.
+_PREVIEW = re.compile(
+    r"\b(?:will (?:face|meet|play|launch|take on|be held|land)|set to|one (?:win|step) away|"
+    r"ahead of|gear(?:s|ing)? up|to face|to take on|are expected to|is expected to|"
+    r"scheduled to|preview|build-?up to|countdown)\b",
+    re.IGNORECASE,
+)
+_COMPLETED = re.compile(
+    r"\b(?:won|beat|beaten|defeated|lifted|clinched|landed|launched|lifted off|"
+    r"was held|were held|died|passed away|announced|declared|withdrew|signed)\b",
+    re.IGNORECASE,
+)
+
+
 def _claimed_day(text: str) -> date | None:
     """The first full date a claim names, or None."""
     for pattern, order in ((_DAY_FIRST, (0, 1)), (_MONTH_FIRST, (1, 0))):
@@ -518,6 +532,16 @@ def _other_occurrence(item: Evidence, claim: Claim) -> str | None:
     day = _claimed_day(said)
     if day is not None and published is not None and published < day and _HAPPENED.search(said):
         return "published before the event"
+
+    # A preview, whatever its date: written before the outcome, it neither confirms
+    # nor contradicts it. "India are just one win away ... as they face South Africa
+    # in the final" was read as contradicting "India won the 2024 T20 World Cup".
+    if (
+        _HAPPENED.search(said)
+        and _PREVIEW.search(item.source_excerpt)
+        and not _COMPLETED.search(item.source_excerpt)
+    ):
+        return "a preview, written before the outcome"
 
     # Another match of the tournament, for a claim about the final.
     claimed_final = _FINAL.search(_OTHER_STAGE.sub(" ", said)) is not None

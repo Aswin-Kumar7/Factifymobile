@@ -142,6 +142,11 @@ _FACT_CHECK_DOMAINS = (
 _RELEVANCE_FLOOR = 0.3
 _RELEVANCE_BELOW_BEST = 0.3
 _PROMINENT_BONUS = 0.05
+# A fact-check of a viral claim addresses it head on, where a general page on its
+# topic only shares its words: for "RBI will cancel Rs 500 notes from 1 October",
+# Wikipedia, the RBI's own explainer site and a finance ministry page took the read
+# slots and one news report was all that answered it (2026-09-28).
+_FACT_CHECK_BONUS = 0.1
 # The relevance model runs on the server's CPU: a check's claims are scored a few at
 # a time, not all at once.
 _SCORING = asyncio.Semaphore(2)
@@ -408,13 +413,29 @@ class WebSearchResolver:
         for candidate in shortlist:
             row = self._pages.get(candidate.url) or {}
             texts.append(f"{candidate.title or ''}. {(row.get('content') or '')[:500]}")
+        # Against the claim in English and in its own words, the better of the two: a
+        # Tamil page scored against the English claim alone came out low, and News18
+        # Tamil and Vikatan were left out of a Tamil claim's reading (2026-09-28).
+        wordings = list(dict.fromkeys(w for w in (claim.search_text, claim.text) if w.strip()))
         async with _SCORING:
-            scores = await asyncio.to_thread(scorer.relevance, claim.search_text, texts)
-        if not scores or len(scores) != len(shortlist):
+            runs = [
+                await asyncio.to_thread(scorer.relevance, wording, texts) for wording in wordings
+            ]
+        if any(not run or len(run) != len(shortlist) for run in runs):
             return sorted(shortlist, key=prominence)
+        scores = [max(values) for values in zip(*runs, strict=True)]
+
+        def bonus(candidate: SourceCandidate) -> float:
+            extra = _PROMINENT_BONUS if prominence(candidate) == 0 else 0.0
+            if self._credibility.is_fact_checker(candidate.url) or _reads_as_a_fact_check(
+                candidate.title, candidate.url
+            ):
+                extra += _FACT_CHECK_BONUS
+            return extra
+
         ranked = sorted(
             zip(scores, shortlist, strict=True),
-            key=lambda pair: -(pair[0] + (_PROMINENT_BONUS if prominence(pair[1]) == 0 else 0)),
+            key=lambda pair: -(pair[0] + bonus(pair[1])),
         )
         best = max(scores)
         floor = max(_RELEVANCE_FLOOR, best - _RELEVANCE_BELOW_BEST)
