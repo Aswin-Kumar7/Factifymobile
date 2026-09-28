@@ -139,8 +139,12 @@ class SourceCredibility:
         high: frozenset[str] = frozenset(),
         medium: frozenset[str] = frozenset(),
         prominent: frozenset[str] = frozenset(),
+        certified: frozenset[str] = frozenset(),
     ) -> None:
         self._trusted = trusted
+        # The fact-checkers verified by IFCN or EFCSN now: `fact_checkers` less the
+        # formerly verified.
+        self._certified = certified
         self._high = high
         self._medium = medium
         self._prominent = prominent
@@ -187,6 +191,7 @@ class SourceCredibility:
         high: set[str] = set()
         medium: set[str] = set()
         prominent: set[str] = set()
+        certified: set[str] = set()
         for key, value in raw.items():
             if key.startswith("_") or not isinstance(value, list):
                 continue
@@ -203,6 +208,8 @@ class SourceCredibility:
             # something else.
             if key.startswith("fact_checkers"):
                 fact_checkers.update(hosts)
+                if not key.startswith("fact_checkers_formerly"):
+                    certified.update(hosts)
 
         user_paths: dict[str, tuple[str, ...]] = {}
         declared = raw.get(_USER_CONTENT_KEY)
@@ -220,6 +227,7 @@ class SourceCredibility:
             frozenset(high),
             frozenset(medium),
             frozenset(prominent),
+            frozenset(certified),
         )
 
     def is_credible(self, url_or_domain: str | None) -> bool:
@@ -285,6 +293,13 @@ class SourceCredibility:
         if not domain:
             return False
         return any(name in self._fact_checkers for name in _suffixes(domain))
+
+    def is_certified_fact_checker(self, url_or_domain: str | None) -> bool:
+        """Whether this fact-checker is verified by IFCN or EFCSN now, as the list says."""
+        domain = self._domain_of(url_or_domain)
+        if not domain:
+            return False
+        return any(name in self._certified for name in _suffixes(domain))
 
     # Subdomains conventionally given over to individuals. A university is credible
     # about what the university did; a lecturer's own page on the same domain is one

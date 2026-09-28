@@ -35,6 +35,13 @@ ENGLISH = {
     "explain.factcheck": "{who} checked this claim and rated it false: “{quote}”",
     "explain.contradicts": "{who} reports otherwise: “{quote}”",
     "explain.supports": "{who} confirms it: “{quote}”",
+    "explain.shared_certified": (
+        "This link is a fact-check by {who}, a certified fact-checker. "
+        "Its rating of this claim: “{rating}”."
+    ),
+    "explain.shared_listed": (
+        "This link is a fact-check by {who}. Its rating of this claim: “{rating}”."
+    ),
     # "Narrower" came back as "brief" or "condensed" in four languages.
     "explain.narrower": (
         "Only a smaller, partial version of this claim is reported. {who}: “{quote}”"

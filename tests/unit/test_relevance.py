@@ -8,6 +8,7 @@ fact-check whose quoted viral post was checked as though the fact-check asserted
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
 
 import pytest
 
@@ -246,3 +247,222 @@ class TestStoredFactChecksByMeaning:
 
         assert "https://pib/1" in [c.url for c in found]
         assert resolver.asked == 1  # a match by meaning never skips the API
+
+
+class TestASharedFactCheckIsAnsweredByItsRating:
+    """Someone shares a certified fact-checker's check of a viral claim: the claim it
+    examines is answered by its rating, cross-checked against other fact-checkers, and
+    only its main finding is checked beside it (2026-09-29)."""
+
+    PAGE = "https://www.boomlive.in/fact-check/pm-scheme-fake-12345"
+    VIRAL = "Govt to pay Rs 5000 a month to every woman"
+
+    @staticmethod
+    def _review(text: str, rating: str | None = "False") -> Any:
+        from app.extraction.claimreview import ClaimReview
+
+        return ClaimReview(
+            claim_reviewed=text, rating=rating, publisher="BOOM", published_at=None, url=None
+        )
+
+    def _shared(self) -> Any:
+        from app.api.verify import _shared_fact_check
+
+        shared = _shared_fact_check((self._review(self.VIRAL),), self.PAGE)
+        assert shared is not None
+        return shared
+
+    def test_a_certified_fact_checker_s_one_rated_claim_is_what_answers(self) -> None:
+        shared = self._shared()
+
+        assert shared.certified
+        assert shared.record.url == self.PAGE
+        assert shared.record.rating == "False"
+
+    def test_not_for_a_news_site_a_roundup_or_a_rating_we_do_not_read(self) -> None:
+        from app.api.verify import _shared_fact_check
+
+        news = "https://www.ndtv.com/india-news/some-story-123"
+        assert _shared_fact_check((self._review(self.VIRAL),), news) is None
+        roundup = (self._review(self.VIRAL), self._review("A viral video is from 2019"))
+        assert _shared_fact_check(roundup, self.PAGE) is None
+        assert _shared_fact_check((self._review(self.VIRAL, "Satire"),), self.PAGE) is None
+
+    def test_a_formerly_certified_fact_checker_answers_but_is_not_called_certified(self) -> None:
+        from app.api.verify import _shared_fact_check
+
+        shared = _shared_fact_check(
+            (self._review(self.VIRAL),), "https://www.altnews.in/viral-claim-is-false/"
+        )
+
+        assert shared is not None
+        assert not shared.certified
+
+    def test_the_claim_it_examines_leads_and_only_its_main_finding_is_checked(self) -> None:
+        from app.api.verify import _answered_by_the_fact_check
+        from app.domain.enums import Importance, Severity
+        from app.sources.factcheck import SHARED_CLAIM_ID
+
+        main = claim(
+            claim_id="cl_1",
+            text="No such scheme exists, the ministry said.",
+            importance=Importance.HEADLINE,
+            severity=Severity.CRITICAL,
+        )
+        detail = claim(
+            claim_id="cl_2",
+            text="The message has circulated since 2023.",
+            importance=Importance.SUPPORTING_DETAIL,
+        )
+
+        answered = _answered_by_the_fact_check(
+            ExtractedClaims(claims=(detail, main)),
+            self._shared(),
+            restated=(),
+            source=f"Fact check: {self.VIRAL}? No.",
+            page_start=0,
+            content_hash="sha256:page",
+            input_kind="url",
+        )
+
+        examined, finding = answered.claims
+        assert examined.id == SHARED_CLAIM_ID
+        assert examined.text == self.VIRAL
+        assert examined.importance is Importance.HEADLINE
+        assert examined.anchor.char_start == len("Fact check: ")
+        # The main finding, checked as a detail: the rating carries the answer.
+        assert finding.id == "cl_1"
+        assert finding.importance is Importance.SUPPORTING_DETAIL
+        assert finding.severity is Severity.HIGH
+
+    def test_a_forwarded_message_keeps_its_own_claims(self) -> None:
+        from app.api.verify import _answered_by_the_fact_check
+        from app.domain.claim import ClaimAnchor
+
+        def at(claim_id: str, start: int) -> Any:
+            return claim(
+                claim_id=claim_id,
+                text=f"Claim {claim_id}.",
+                anchor=ClaimAnchor(
+                    input_kind="text", content_hash="sha256:x", char_start=start, char_end=start + 5
+                ),
+            )
+
+        answered = _answered_by_the_fact_check(
+            ExtractedClaims(claims=(at("cl_1", 3), at("cl_2", 60), at("cl_3", 90))),
+            self._shared(),
+            restated=(),
+            source="x" * 120,
+            page_start=50,
+            content_hash="sha256:x",
+            input_kind="text",
+        )
+
+        assert [c.id for c in answered.claims] == ["cl_reviewed", "cl_2", "cl_1"]
+
+    def test_the_fact_check_is_listed_first_and_the_api_asked_for_others(self) -> None:
+        import asyncio
+
+        from app.sources.factcheck import SHARED_CLAIM_ID, current_shared_review
+        from tests.unit.test_verdict_fixes import _record, _Resolver
+
+        # A stored record close enough to answer on its own, which would skip the API.
+        resolver = _Resolver([_record(self.VIRAL, "https://ours/2")])
+        token = current_shared_review.set(self._shared())
+        try:
+            found = asyncio.run(
+                resolver.candidates(claim(claim_id=SHARED_CLAIM_ID, text=self.VIRAL))
+            )
+        finally:
+            current_shared_review.reset(token)
+
+        assert found[0].url == self.PAGE
+        assert resolver.asked == 1  # cross-checked
+        assert "https://api/1" in [c.url for c in found]
+
+    @staticmethod
+    async def _verify(claim_id: str, shared: Any) -> Any:
+        from uuid import uuid4
+
+        from app.intake.normalizer import normalise_url
+        from app.sources.factcheck import current_shared_review
+        from app.sources.verification import page_key
+        from tests.unit.test_orchestration import _economy_orchestrator
+        from tests.unit.test_verdict_fixes import _Resolver
+
+        class _Kept(_Resolver):
+            # Keeps what the API returned, as the real query does, so it can be read.
+            async def _query_api(self, claim: Any) -> list[Any]:
+                records = await super()._query_api(claim)
+                self._api_cache.update({record.url: record for record in records})
+                return records
+
+        page = TestASharedFactCheckIsAnsweredByItsRating.PAGE
+        token = current_shared_review.set(shared)
+        try:
+            return await _economy_orchestrator([_Kept([])]).verify(
+                normalise_url(page),
+                case_id=uuid4(),
+                claims=[
+                    claim(claim_id=claim_id, text=TestASharedFactCheckIsAnsweredByItsRating.VIRAL)
+                ],
+                own_pages=frozenset({page_key(page)}),
+            )
+        finally:
+            current_shared_review.reset(token)
+
+    @pytest.mark.anyio
+    async def test_its_rating_decides_and_is_said_with_the_other_fact_checkers(self) -> None:
+        from app.domain.enums import Action, ClaimStatus
+        from app.domain.evidence import is_shared_review
+        from app.sources.factcheck import SHARED_CLAIM_ID
+
+        result = await self._verify(SHARED_CLAIM_ID, self._shared())
+
+        outcome = result.claims[0]
+        assert outcome.decision.status is ClaimStatus.CONTRADICTED
+        # The person's own page is this claim's evidence all the same: it rated it.
+        assert any(is_shared_review(e.match_basis.metric) for e in outcome.evidence)
+        assert outcome.explanation == (
+            "This link is a fact-check by BOOM, a certified fact-checker. Its rating of "
+            "this claim: “False”. 1 other source says the same."
+        )
+        assert result.action is Action.DO_NOT_SHARE
+
+    @pytest.mark.anyio
+    async def test_for_any_other_claim_the_page_is_still_the_person_s_own(self) -> None:
+        from app.domain.evidence import is_shared_review
+
+        result = await self._verify("cl_1", self._shared())
+
+        assert not any(is_shared_review(e.match_basis.metric) for e in result.claims[0].evidence)
+        assert self.PAGE not in [e.citation_url for e in result.claims[0].evidence]
+
+    def test_its_own_rating_is_not_re_read_by_the_source_check(self) -> None:
+        import asyncio
+
+        from app.domain.evidence import SHARED_REVIEW, MatchBasis
+        from app.sources.verification import SourceVerification
+
+        class _Checker:
+            asked = 0
+
+            async def check_sources(self, _claim: str, _sources: object) -> None:
+                _Checker.asked += 1
+
+        class _Ranker:
+            def credibility(self, _url: object) -> None:
+                return None
+
+        rating = evidence(
+            citation_url=self.PAGE,
+            basis=MatchBasis(metric=SHARED_REVIEW, value=1.0, threshold=0.95),
+        )
+        verified = asyncio.run(
+            SourceVerification(checker=_Checker(), ranker=_Ranker()).check(
+                claim(text=self.VIRAL), [rating]
+            )
+        )
+
+        assert _Checker.asked == 0
+        assert [e.citation_url for e in verified.evidence] == [self.PAGE]

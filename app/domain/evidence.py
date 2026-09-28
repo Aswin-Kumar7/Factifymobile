@@ -68,6 +68,17 @@ NARROWER_SCOPE = "passage_narrower"
 READING_RELEVANCE_THRESHOLD = 0.5
 
 
+# The match metric of a fact-check's rating read from the page the person shared: the
+# page's own ClaimReview markup names the claim it rates, so the claim is that claim
+# and there is nothing further to read (`app/sources/factcheck.py`).
+SHARED_REVIEW = "shared_claim_review"
+
+
+def is_shared_review(metric: str) -> bool:
+    """Whether a match metric records the shared fact-check's own rating."""
+    return metric == SHARED_REVIEW
+
+
 def is_narrower_scope(metric: str) -> bool:
     """Whether a match metric records a narrower version of the claim."""
     return metric.startswith(NARROWER_SCOPE)

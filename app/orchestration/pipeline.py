@@ -63,6 +63,7 @@ from app.sources.base import (
     current_reference_date,
 )
 from app.sources.corpus import CorroborationSignal
+from app.sources.factcheck import shared_review_for
 from app.sources.reasoning import REASONER_VERSION
 from app.sources.verification import SourceVerification, dedupe, page_key
 from app.verdict.engine import (
@@ -74,7 +75,7 @@ from app.verdict.engine import (
     roll_up,
     verdict_for,
 )
-from app.verdict.explain import explain, narrower_note
+from app.verdict.explain import explain, narrower_note, shared_fact_check_note
 from app.verdict.strength import Strength, evidence_strength
 from app.verdict.wording import WORDING
 
@@ -814,6 +815,13 @@ class Orchestrator:
         primary = [r for r in self._resolvers if not getattr(r, "fallback", False)]
         fallback = [r for r in self._resolvers if getattr(r, "fallback", False)]
 
+        # A shared fact-check is not the claimant of the claim it examines; it is that
+        # claim's adjudicator, and its rating is the evidence (`current_shared_review`).
+        # For every other claim it is still the person's own page.
+        shared = shared_review_for(claim)
+        if shared is not None:
+            own_pages = frozenset(own_pages - {page_key(shared.record.url)})
+
         # This claim's own gaps and page count, to say what was done for it.
         mine: list[SkippedCheck] = []
         looked = [0]
@@ -946,7 +954,17 @@ class Orchestrator:
         else:
             # Written from what decided the claim - its source, named and quoted - and
             # never by the model (app/verdict/explain.py).
-            explanation = explain(
+            explanation = (
+                shared_fact_check_note(
+                    evidence,
+                    decision.supporting_evidence_ids,
+                    rating=shared.record.rating or "",
+                    certified=shared.certified,
+                    language=claim.language,
+                )
+                if shared is not None
+                else None
+            ) or explain(
                 decision.status,
                 evidence,
                 decision.supporting_evidence_ids,

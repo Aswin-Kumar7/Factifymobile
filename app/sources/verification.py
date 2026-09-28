@@ -41,7 +41,13 @@ from urllib.parse import urlsplit
 
 from app.domain.claim import Claim
 from app.domain.enums import ClaimType, Direction, EvidenceKind
-from app.domain.evidence import NARROWER_SCOPE, Evidence, MatchBasis, is_narrower_scope
+from app.domain.evidence import (
+    NARROWER_SCOPE,
+    Evidence,
+    MatchBasis,
+    is_narrower_scope,
+    is_shared_review,
+)
 from app.domain.typography import fold
 from app.observability.logging import event
 from app.sources.base import current_reference_date
@@ -205,8 +211,15 @@ class SourceVerification:
     ) -> Verified:
         unique, duplicates = dedupe(evidence)
 
-        passthrough = [item for item in unique if item.kind in _NOT_TEXT]
-        text = [item for item in unique if item.kind not in _NOT_TEXT]
+        # A shared fact-check's own rating names this claim in the page's markup;
+        # there is no passage to check it against (`is_shared_review`).
+        held = {
+            id(item)
+            for item in unique
+            if item.kind in _NOT_TEXT or is_shared_review(item.match_basis.metric)
+        }
+        passthrough = [item for item in unique if id(item) in held]
+        text = [item for item in unique if id(item) not in held]
         # A report of another occurrence of the thing the claim is about - an earlier
         # or later year's, another match of the tournament - is not about this one,
         # whatever it says (`_other_occurrence`). Set aside before anyone reads it as

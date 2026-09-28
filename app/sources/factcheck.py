@@ -21,9 +21,11 @@ what happens on a free tier at the wrong moment.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -31,6 +33,7 @@ from urllib.parse import urlencode
 
 from app.domain.claim import Claim
 from app.domain.enums import EvidenceKind, Method, Relation, Tier
+from app.domain.evidence import SHARED_REVIEW
 from app.embeddings.image import cosine
 from app.embeddings.text import TextEmbedder
 from app.governor.governor import Governor, ProviderUnavailable, Skip, SkipReason
@@ -48,7 +51,7 @@ from app.sources.reasoning import PassageReasoner
 logger = logging.getLogger("factify.factcheck")
 
 NAME = "factcheck"
-VERSION = "2026.09.2"
+VERSION = "2026.09.29.1"
 PROVIDER = "factcheck"
 
 # A fact-check must be about *this* claim before its rating means anything. Below
@@ -165,6 +168,35 @@ class FactCheckRecord:
         return None
 
 
+@dataclass(frozen=True, slots=True)
+class SharedReview:
+    """The rating on a fact-check the person shared, read from the page's own markup."""
+
+    record: FactCheckRecord
+    # On the IFCN or EFCSN list of verified fact-checkers now, not only formerly.
+    certified: bool
+
+
+# The id of the claim a shared fact-check examines, as a claim of the case.
+SHARED_CLAIM_ID = "cl_reviewed"
+
+# When the person shared a fact-check: its rating of the claim it examines, for this
+# check (set in `app/api/verify.py`). Someone who shares a BOOM check of a viral video
+# is asking whether the video is what the post said, and BOOM has answered that; each
+# finding in the article, checked on its own, mostly came back Unconfirmed
+# (2026-09-28). The claim is answered by the fact-check's rating, and other
+# fact-checkers' ratings of the same claim are asked for beside it.
+current_shared_review: ContextVar[SharedReview | None] = ContextVar(
+    "current_shared_review", default=None
+)
+
+
+def shared_review_for(claim: Claim) -> SharedReview | None:
+    """The shared fact-check's rating, when this claim is the one it examines."""
+    shared = current_shared_review.get()
+    return shared if shared is not None and claim.id == SHARED_CLAIM_ID else None
+
+
 def _parse_review_date(value: object) -> datetime | None:
     """A ClaimReview's reviewDate (ISO-8601) as an aware datetime, or None."""
     if not isinstance(value, str) or not value.strip():
@@ -260,7 +292,40 @@ class FactCheckResolver:
         The local records are searched first and unconditionally. They cost nothing,
         and a hit here means the external call never needs to happen — which is the
         cache-before-provider rule applied to the cheapest evidence class.
+
+        The claim a shared fact-check examines has that fact-check first, and the API
+        is asked even so: what other fact-checkers rated the same claim is the
+        cross-check on the one the person shared.
         """
+        shared = shared_review_for(claim)
+        if shared is None:
+            return await self._candidates(claim)
+        record = shared.record
+        first = SourceCandidate(
+            url=record.url,
+            publisher=record.publisher,
+            title=record.claim_text,
+            published_at=record.published_at,
+            proposed_by="shared_fact_check",
+            prior_score=1.0,
+        )
+        try:
+            others = await self._candidates(claim, cross_check=True)
+        except ProviderUnavailable as unavailable:
+            # The shared check still answers; only the cross-check is missing.
+            event(
+                logger,
+                "shared fact-check not cross-checked",
+                module="sources.factcheck",
+                outcome="skipped",
+                failure_reason=unavailable.reason.value,
+            )
+            others = []
+        return [first, *(c for c in others if c.url != record.url)][:5]
+
+    async def _candidates(
+        self, claim: Claim, *, cross_check: bool = False
+    ) -> list[SourceCandidate]:
         shortlist = [
             SourceCandidate(
                 url=record.url,
@@ -282,7 +347,7 @@ class FactCheckResolver:
 
         # A close match of our own answers without the API. By shared words only: a
         # match by meaning is shortlisted, never trusted enough to skip the API.
-        if shortlist and shortlist[0].prior_score >= _LOCAL_MATCH:
+        if not cross_check and shortlist and shortlist[0].prior_score >= _LOCAL_MATCH:
             event(
                 logger,
                 "fact-check candidates from local corpus",
@@ -443,7 +508,11 @@ class FactCheckResolver:
         )
 
     def _record_for(self, url: str) -> FactCheckRecord | None:
-        """A record by URL, from either the ingested corpus or this run's API results."""
+        """A record by URL: the shared fact-check's, the ingested corpus's, or one of
+        this run's API results."""
+        shared = current_shared_review.get()
+        if shared is not None and shared.record.url == url:
+            return shared.record
         return next((r for r in self._records if r.url == url), None) or self._api_cache.get(url)
 
     async def snapshot(self, candidate: SourceCandidate) -> SourceSnapshot | None:
@@ -461,7 +530,12 @@ class FactCheckResolver:
             id=f"fc:{record.url}",
             url=record.url,
             final_url=record.url,
-            content_hash=f"claim:{record.normalized_text[:64]}",
+            # Of the page and the claim it rates. The claim's opening words were the
+            # hash, and the evidence id takes its first sixteen characters: BOOM's and
+            # PIB's checks of "Govt to pay Rs 5000 a month..." shared one id, and the
+            # second fact-checker agreeing was dropped as a duplicate of the first.
+            content_hash="sha256:"
+            + hashlib.sha256(f"{record.url} {record.normalized_text}".encode()).hexdigest(),
             fetched_at=record.retrieved_at or datetime.now(UTC),
             text=record.claim_text,
             title=record.claim_text,
@@ -474,6 +548,27 @@ class FactCheckResolver:
         record = self._record_for(snapshot.url)
         if record is None:
             return insufficient(NAME, VERSION, "record no longer available")
+
+        # The shared page's own rating of the claim its markup names: this claim, by
+        # construction, so there is nothing to match.
+        shared = shared_review_for(claim)
+        if shared is not None and shared.record.url == record.url:
+            verdict = record.verdict
+            if verdict is None:
+                return insufficient(
+                    NAME, VERSION, f"rating {record.rating!r} is not one we interpret"
+                )
+            return SourceRelation(
+                relation=verdict,
+                validator=NAME,
+                validator_version=VERSION,
+                excerpt=f"{record.publisher or 'A fact-checker'} rated this {record.rating}: "
+                f"{record.claim_text[:200]}",
+                anchor={"char_start": 0, "char_end": min(len(record.claim_text), 200)},
+                metric=SHARED_REVIEW,
+                value=1.0,
+                threshold=_CONFIDENT_MATCH,
+            )
 
         score, metric, threshold = await self._relevance(claim, record.claim_text)
         if score < threshold:

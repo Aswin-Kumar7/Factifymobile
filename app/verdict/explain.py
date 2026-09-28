@@ -17,7 +17,7 @@ page.
 from __future__ import annotations
 
 from app.domain.enums import ClaimStatus, Credibility, Direction, EvidenceKind, Tier
-from app.domain.evidence import Evidence, is_narrower_scope
+from app.domain.evidence import Evidence, is_narrower_scope, is_shared_review
 from app.domain.publishers import publishers_of
 from app.verdict.wording import WORDING
 
@@ -36,6 +36,13 @@ _TEXT = {
         "media": "The picture is real but older: {who} published it on {date}.",
         "others": " {n} other sources say the same.",
         "other": " 1 other source says the same.",
+        "shared_certified": (
+            "This link is a fact-check by {who}, a certified fact-checker. "
+            "Its rating of this claim: “{rating}”."
+        ),
+        "shared_listed": (
+            "This link is a fact-check by {who}. Its rating of this claim: “{rating}”."
+        ),
     },
     "hi": {
         "factcheck": "{who} ने इसकी फ़ैक्ट-चेक की है और इसे गलत पाया: “{quote}”",
@@ -45,6 +52,10 @@ _TEXT = {
         "media": "तस्वीर असली है पर पुरानी है: {who} ने इसे {date} को प्रकाशित किया था।",
         "others": " {n} और स्रोत भी यही कहते हैं।",
         "other": " 1 और स्रोत भी यही कहता है।",
+        "shared_certified": (
+            "यह लिंक {who} की फ़ैक्ट-चेक है, जो एक प्रमाणित फ़ैक्ट-चेकर है। इस दावे पर इसकी रेटिंग: “{rating}”।"
+        ),
+        "shared_listed": ("यह लिंक {who} की फ़ैक्ट-चेक है। इस दावे पर इसकी रेटिंग: “{rating}”।"),
     },
 }
 
@@ -94,6 +105,32 @@ def explain(
         return None
 
     line = text[template].format(who=_who(top), quote=_quoted(top.source_excerpt))
+    if others == 1:
+        line += text["other"]
+    elif others > 1:
+        line += text["others"].format(n=others)
+    return line
+
+
+def shared_fact_check_note(
+    evidence: list[Evidence],
+    carrying_ids: tuple[str, ...],
+    *,
+    rating: str,
+    certified: bool,
+    language: str | None,
+) -> str | None:
+    """For the claim a shared fact-check examines, decided with its rating: who rated
+    it and how, in the fact-checker's own word, and how many others agree. None when
+    the shared page's rating is not what carried the decision."""
+    text = _TEXT.get(language or "en", _TEXT["en"])
+    carrying = [e for e in evidence if e.id in carrying_ids]
+    own = next((e for e in carrying if is_shared_review(e.match_basis.metric)), None)
+    if own is None:
+        return None
+    template = "shared_certified" if certified else "shared_listed"
+    line = text[template].format(who=_who(own), rating=" ".join(rating.split())[:60])
+    others = len({_who(e) for e in carrying} - {_who(own)})
     if others == 1:
         line += text["other"]
     elif others > 1:

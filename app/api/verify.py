@@ -55,8 +55,9 @@ from app.api.schemas import (
     evidence_to_response,
     media_report_to_response,
 )
-from app.domain.claim import Claim
-from app.extraction.claimreview import read_claim_reviews
+from app.domain.claim import Claim, ClaimAnchor
+from app.domain.enums import ClaimType, Importance, Severity
+from app.extraction.claimreview import ClaimReview, read_claim_reviews
 from app.extraction.claims import ExtractedClaims
 from app.extraction.language import detect
 from app.extraction.model_wire import PDF_MIME
@@ -91,6 +92,13 @@ from app.orchestration.summary import case_summary
 from app.security.fetcher import FetchResult
 from app.security.patience import PATIENT, current_patience
 from app.sources.base import check_seconds, current_reference_date
+from app.sources.credibility import SourceCredibility
+from app.sources.factcheck import (
+    SHARED_CLAIM_ID,
+    FactCheckRecord,
+    SharedReview,
+    current_shared_review,
+)
 from app.sources.outlets import outlet_name
 from app.sources.reader import SourceViews, read_source
 from app.sources.verification import page_key
@@ -142,14 +150,21 @@ async def extract_claims_for(request: Request, intake: NormalisedIntake) -> Extr
     # keeps whatever the message itself claims.
     partial: str | None = None
     reviewed: tuple[str, ...] = ()
+    reviews: tuple[ClaimReview, ...] = ()
+    # The linked page's address, and where its text starts in what is extracted.
+    page_url: str | None = None
+    page_start = 0
     if intake.input_type is InputType.TEXT:
         link = _first_link(text)
         if link is not None:
             page = await _read_linked_article(request, link)
             if page is not None:
+                page_start = len(text) + 2
                 text = f"{text}\n\n{page.text}"
                 partial = page.partial
                 reviewed = page.reviewed
+                reviews = page.reviews
+                page_url = link
 
     if not text.strip() and intake.input_type is InputType.URL:
         # A submitted link carries no text of its own — normalisation is local and
@@ -162,6 +177,8 @@ async def extract_claims_for(request: Request, intake: NormalisedIntake) -> Extr
         text = page.text
         partial = page.partial
         reviewed = page.reviewed
+        reviews = page.reviews
+        page_url = intake.primary.source_url
         # What "on Monday" in its claims means (`current_reference_date`).
         current_reference_date.set(page.published)
         # The article's own language, detected on its body — not the URL's, which
@@ -179,9 +196,165 @@ async def extract_claims_for(request: Request, intake: NormalisedIntake) -> Extr
     )
     if partial and extracted.claims:
         extracted = replace(extracted, partial_source=partial)
+    restated: tuple[Claim, ...] = ()
     if reviewed and extracted.claims:
+        before = extracted.claims
         extracted = _without_the_reviewed_claim(extracted, reviewed)
+        restated = tuple(claim for claim in before if claim not in extracted.claims)
+
+    shared = _shared_fact_check(reviews, page_url)
+    if shared is not None:
+        extracted = _answered_by_the_fact_check(
+            extracted,
+            shared,
+            restated=restated,
+            source=text,
+            page_start=page_start,
+            content_hash=intake.primary.sha256,
+            input_kind=intake.input_type.value,
+        )
+        current_shared_review.set(shared)
     return extracted
+
+
+def _credibility() -> SourceCredibility:
+    """The source list, read once."""
+    global _CREDIBILITY
+    if _CREDIBILITY is None:
+        _CREDIBILITY = SourceCredibility.load()
+    return _CREDIBILITY
+
+
+_CREDIBILITY: SourceCredibility | None = None
+
+
+def _shared_fact_check(
+    reviews: tuple[ClaimReview, ...], page_url: str | None
+) -> SharedReview | None:
+    """The rating a shared fact-check gives, when the page is one we can answer by.
+
+    A page of a listed fact-checker whose markup rates one claim, in a word we read
+    (`FactCheckRecord.verdict`). Not a roundup rating several claims - which of them
+    the person meant cannot be told - and not a news site's markup, whose "rating" no
+    fact-checker put their name to.
+    """
+    if not reviews or not page_url or not _credibility().is_fact_checker(page_url):
+        return None
+    rated: dict[str, FactCheckRecord] = {}
+    for review in reviews:
+        record = FactCheckRecord(
+            claim_text=review.claim_reviewed,
+            normalized_text=review.claim_reviewed.casefold(),
+            # The page the person shared, as its own page: the markup's own URL field
+            # is sometimes another address for it.
+            url=page_url,
+            rating=review.rating,
+            publisher=review.publisher or outlet_name(urlsplit(page_url).hostname or ""),
+            published_at=review.published_at,
+            retrieved_at=datetime.now(UTC),
+        )
+        if record.verdict is not None:
+            rated.setdefault(record.normalized_text, record)
+    if len(rated) != 1:
+        return None
+    return SharedReview(
+        record=next(iter(rated.values())),
+        certified=_credibility().is_certified_fact_checker(page_url),
+    )
+
+
+# Which of a shared fact-check's findings is its main one: the first by rank.
+_RANK = {
+    Importance.HEADLINE: 0,
+    Importance.MAIN_THESIS: 1,
+    Importance.SUPPORTING_DETAIL: 2,
+    Importance.BACKGROUND: 3,
+}
+
+
+def _answered_by_the_fact_check(
+    extracted: ExtractedClaims,
+    shared: SharedReview,
+    *,
+    restated: tuple[Claim, ...],
+    source: str,
+    page_start: int,
+    content_hash: str,
+    input_kind: str,
+) -> ExtractedClaims:
+    """A shared fact-check's claims: the claim it examines, and its main finding.
+
+    The claim it examines is answered by its rating, cross-checked against what other
+    fact-checkers rated (`current_shared_review`). Of what it finds, only the main
+    finding is checked, as a detail: a certified fact-checker's reading of a video
+    against the original footage is more than our search of the open web can match,
+    and each finding checked on its own came back Unconfirmed and outvoted the rating
+    (2026-09-28). A message forwarded with the link keeps its own claims.
+    """
+    record = shared.record
+    like = restated[0] if restated else None
+    at = source.casefold().find(record.claim_text.casefold())
+    anchor = ClaimAnchor(
+        input_kind=input_kind,
+        content_hash=content_hash,
+        # Named in the page's ClaimReview markup, and in its text too when it is there.
+        section="claim_review",
+        char_start=at if at >= 0 else None,
+        char_end=at + len(record.claim_text) if at >= 0 else None,
+        paragraph_index=None if at >= 0 else 0,
+    )
+    examined = Claim(
+        id=SHARED_CLAIM_ID,
+        text=record.claim_text,
+        normalized_text=" ".join(record.claim_text.casefold().split()),
+        claim_type=(
+            like.claim_type
+            if like is not None and like.claim_type not in (ClaimType.OPINION, ClaimType.PREDICTION)
+            else ClaimType.EVENT
+        ),
+        severity=(
+            Severity.CRITICAL
+            if like is not None and like.severity is Severity.CRITICAL
+            else Severity.HIGH
+        ),
+        importance=Importance.HEADLINE,
+        entities=like.entities if like is not None else (),
+        language=detect(record.claim_text).language.value,
+        anchor=anchor,
+    )
+
+    on_page = [c for c in extracted.claims if (c.anchor.char_start or 0) >= page_start]
+    from_message = [c for c in extracted.claims if c not in on_page]
+    main = min(on_page, key=lambda c: _RANK[c.importance], default=None)
+    kept: list[Claim] = [examined]
+    if main is not None:
+        kept.append(
+            main.model_copy(
+                update={
+                    "importance": Importance.SUPPORTING_DETAIL,
+                    "severity": (
+                        Severity.HIGH if main.severity is Severity.CRITICAL else main.severity
+                    ),
+                }
+            )
+        )
+    kept.extend(from_message)
+    event(
+        logger,
+        "shared fact-check answered by its rating",
+        module="api.verify",
+        outcome="ok",
+        certified=shared.certified,
+        findings_not_checked=max(0, len(on_page) - 1),
+    )
+    return replace(
+        extracted,
+        claims=tuple(kept),
+        discarded=(
+            *extracted.discarded,
+            *(c.text[:120] for c in on_page if c is not main),
+        ),
+    )
 
 
 def _in_full(claim: Claim) -> str | None:
@@ -286,6 +459,8 @@ class LinkedPage:
     reviewed: tuple[str, ...] = ()
     # The day the page says it was published, when it says.
     published: date | None = None
+    # Those reviews in full: the claim, the rating, who gave it (`_shared_fact_check`).
+    reviews: tuple[ClaimReview, ...] = ()
 
 
 async def _read_linked_article(request: Request, url: str) -> LinkedPage | None:
@@ -362,12 +537,13 @@ async def _read_linked_article(request: Request, url: str) -> LinkedPage | None:
     body = (body or "")[:_MAX_ARTICLE_CHARS]
     _log_link_read(url, route=route, title=title, body=body, total=total)
     parts = [part for part in (title, body) if part and part.strip()]
-    reviewed = tuple(
-        review.claim_reviewed
+    reviews = tuple(
+        review
         for review in read_claim_reviews(html or "", page_url=url)
         if review.claim_reviewed.strip()
     )
-    return LinkedPage("\n\n".join(parts), partial, reviewed, published) if parts else None
+    reviewed = tuple(review.claim_reviewed for review in reviews)
+    return LinkedPage("\n\n".join(parts), partial, reviewed, published, reviews) if parts else None
 
 
 async def _search_listing(request: Request, url: str) -> tuple[str | None, str] | None:
