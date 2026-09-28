@@ -63,6 +63,12 @@ check_seconds: ContextVar[float | None] = ContextVar("check_seconds", default=No
 # took read slots from other sources only to be thrown away after being read.
 current_own_pages: ContextVar[frozenset[str]] = ContextVar("current_own_pages", default=frozenset())
 
+# The date of the news page the person shared, when it carries one: what "on Monday"
+# and "this week" in its claims mean. A claim from it that names no year is about
+# that moment, not the same kind of thing years earlier (see verification's
+# `_other_occurrence`). Set for the length of one check.
+current_reference_date: ContextVar[date | None] = ContextVar("current_reference_date", default=None)
+
 
 @dataclass(frozen=True, slots=True)
 class SourceCandidate:

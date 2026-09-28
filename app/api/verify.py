@@ -20,7 +20,7 @@ import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Annotated, Any
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
@@ -90,7 +90,7 @@ from app.orchestration.review import HumanLabel
 from app.orchestration.summary import case_summary
 from app.security.fetcher import FetchResult
 from app.security.patience import PATIENT, current_patience
-from app.sources.base import check_seconds
+from app.sources.base import check_seconds, current_reference_date
 from app.sources.outlets import outlet_name
 from app.sources.reader import SourceViews, read_source
 from app.sources.verification import page_key
@@ -162,6 +162,8 @@ async def extract_claims_for(request: Request, intake: NormalisedIntake) -> Extr
         text = page.text
         partial = page.partial
         reviewed = page.reviewed
+        # What "on Monday" in its claims means (`current_reference_date`).
+        current_reference_date.set(page.published)
         # The article's own language, detected on its body — not the URL's, which
         # was detected on an empty string and is always the default.
         language = detect(text).language.value
@@ -282,6 +284,8 @@ class LinkedPage:
     # When the page is a fact-check: the claims it examines, from its own ClaimReview
     # markup. What it debunks is not what it asserts (`_without_the_reviewed_claim`).
     reviewed: tuple[str, ...] = ()
+    # The day the page says it was published, when it says.
+    published: date | None = None
 
 
 async def _read_linked_article(request: Request, url: str) -> LinkedPage | None:
@@ -298,6 +302,7 @@ async def _read_linked_article(request: Request, url: str) -> LinkedPage | None:
 
     body: str | None = None
     title: str | None = None
+    published: date | None = None
     route = "fetched"
     html: str | None = None
     partial: str | None = None
@@ -313,6 +318,8 @@ async def _read_linked_article(request: Request, url: str) -> LinkedPage | None:
         article = extract_article(html, url=url)
         if article.is_usable and len((article.body or "").strip()) >= _MIN_LINK_ARTICLE_CHARS:
             body, title = article.body, article.title
+        if article.published_at is not None:
+            published = article.published_at.date()
 
     if body is None:
         # Second rung, the same ladder a retrieved source climbs.
@@ -360,7 +367,7 @@ async def _read_linked_article(request: Request, url: str) -> LinkedPage | None:
         for review in read_claim_reviews(html or "", page_url=url)
         if review.claim_reviewed.strip()
     )
-    return LinkedPage("\n\n".join(parts), partial, reviewed) if parts else None
+    return LinkedPage("\n\n".join(parts), partial, reviewed, published) if parts else None
 
 
 async def _search_listing(request: Request, url: str) -> tuple[str | None, str] | None:

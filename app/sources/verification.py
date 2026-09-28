@@ -40,10 +40,11 @@ from typing import Any, Protocol
 from urllib.parse import urlsplit
 
 from app.domain.claim import Claim
-from app.domain.enums import Direction, EvidenceKind
+from app.domain.enums import ClaimType, Direction, EvidenceKind
 from app.domain.evidence import NARROWER_SCOPE, Evidence, MatchBasis, is_narrower_scope
 from app.domain.typography import fold
 from app.observability.logging import event
+from app.sources.base import current_reference_date
 
 logger = logging.getLogger("factify.sources.verification")
 
@@ -454,6 +455,38 @@ _HAPPENED = re.compile(
 )
 
 
+# How much older than a shared news page a report must be to be about an earlier
+# occurrence of what the page reports.
+_EARLIER_DAYS = 60
+
+_ORDINALS = {
+    word: number
+    for number, word in enumerate(
+        (
+            "first second third fourth fifth sixth seventh eighth ninth tenth eleventh "
+            "twelfth thirteenth fourteenth fifteenth sixteenth seventeenth eighteenth "
+            "nineteenth twentieth"
+        ).split(),
+        start=1,
+    )
+}
+_ROUND = re.compile(
+    r"\b(?:rounds?\s+(\d{1,2})|(\d{1,2})(?:st|nd|rd|th)?\s+rounds?|([a-z]+)\s+rounds?)\b",
+    re.IGNORECASE,
+)
+
+
+def _rounds(text: str) -> set[int]:
+    """The round numbers a text names: "round 11", "11 rounds", "the eighth round"."""
+    found: set[int] = set()
+    for number, before, word in _ROUND.findall(text):
+        if number or before:
+            found.add(int(number or before))
+        elif word.casefold() in _ORDINALS:
+            found.add(_ORDINALS[word.casefold()])
+    return found
+
+
 # A passage written before an outcome, and one that reports an outcome.
 _PREVIEW = re.compile(
     r"\b(?:will (?:face|meet|play|launch|take on|be held|land)|set to|one (?:win|step) away|"
@@ -532,6 +565,28 @@ def _other_occurrence(item: Evidence, claim: Claim) -> str | None:
     day = _claimed_day(said)
     if day is not None and published is not None and published < day and _HAPPENED.search(said):
         return "published before the event"
+
+    # Another round of the same event: "after the eighth round" is not "after 11
+    # rounds". The Chess Olympiad's standings after rounds seven and eight
+    # contradicted the final standings (2026-09-28).
+    claimed_rounds = _rounds(said)
+    reported_rounds = _rounds(passage)
+    if claimed_rounds and reported_rounds and not claimed_rounds & reported_rounds:
+        return "another round"
+
+    # A claim from a dated news page that names no year is about that page's moment.
+    # News from months before it is about an earlier one: a 2020 report of a different
+    # Supreme Court petition "supported" a 2026 report that the court issued notices
+    # to the Centre, the RBI and NPCI (2026-09-28).
+    reference = current_reference_date.get()
+    if (
+        reference is not None
+        and not years
+        and published is not None
+        and (reference - published).days > _EARLIER_DAYS
+        and claim.claim_type is ClaimType.EVENT
+    ):
+        return "an earlier occurrence"
 
     # A preview, whatever its date: written before the outcome, it neither confirms
     # nor contradicts it. "India are just one win away ... as they face South Africa

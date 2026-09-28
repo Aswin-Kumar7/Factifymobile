@@ -94,6 +94,34 @@ class TestAnotherOccurrence:
         target = claim(text="India won the 2024 T20 World Cup.")
         assert _other_occurrence(item, target) is None  # type: ignore[arg-type]
 
+    def test_standings_after_another_round_are_not_the_final_standings(self) -> None:
+        item = _report(
+            "After the eighth round, Uzbekistan and Germany share the top spot with 14 "
+            "match points, with India in the joint second spot."
+        )
+        target = claim(
+            text="After 11 rounds, India and Germany shared second place with 18 points."
+        )
+        assert _other_occurrence(item, target) == "another round"  # type: ignore[arg-type]
+
+    def test_a_year_less_claim_from_a_news_page_is_about_that_page_s_moment(self) -> None:
+        from app.sources.base import current_reference_date
+
+        item = _report(
+            "The Supreme Court sought responses from the Centre, the RBI and NPCI on a PIL.",
+            published=date(2020, 10, 15),
+        )
+        target = claim(text="The Supreme Court issued notices to the Centre, RBI and NPCI.")
+        token = current_reference_date.set(date(2026, 9, 28))
+        try:
+            assert _other_occurrence(item, target) == "an earlier occurrence"  # type: ignore[arg-type]
+            recent = _report("Notices issued.", published=date(2026, 9, 28))
+            assert _other_occurrence(recent, target) is None  # type: ignore[arg-type]
+        finally:
+            current_reference_date.reset(token)
+        # A message with no date of its own is not held to one.
+        assert _other_occurrence(item, target) is None  # type: ignore[arg-type]
+
     def test_a_report_from_the_day_itself_stays(self) -> None:
         item = _report("Aditya-L1 lifted off from Sriharikota.", published=date(2023, 9, 2))
         target = claim(text="ISRO launched Aditya-L1 on September 2, 2023.")
