@@ -119,3 +119,45 @@ def test_numbers_alone_are_not_a_match_in_any_script() -> None:
     assert keyword_overlap(urdu, english) == 0.0
     # An Urdu article about the same landing still matches on its words.
     assert overlap(urdu, "چندریان 3 نے 23 اگست 2023 کو چاند کے جنوبی قطب پر لینڈنگ کی") > 0.3
+
+
+class TestWhenGoogleRefuses:
+    """The free endpoint rate-limits (seen 2026-09-28); a claim is still translated."""
+
+    def test_after_too_many_requests_google_is_left_alone_and_the_model_translates(
+        self,
+    ) -> None:
+        from app.extraction.translate import FallbackTranslator, GoogleTranslator
+        from app.security.fetcher import FetchResult
+
+        class _Fetcher:
+            calls = 0
+
+            async def fetch(self, url: str, **_: Any) -> FetchResult:
+                _Fetcher.calls += 1
+                from datetime import UTC, datetime
+
+                return FetchResult(
+                    url=url,
+                    final_url=url,
+                    status_code=429,
+                    content_type="text/html",
+                    body=b"",
+                    byte_count=0,
+                    fetched_at=datetime.now(UTC),
+                )
+
+        google = GoogleTranslator(fetcher=_Fetcher())
+        chain = FallbackTranslator(google, _Translator(ENGLISH))
+        first = asyncio.run(chain.translate(TAMIL))
+        second = asyncio.run(chain.translate(TAMIL + " இன்று"))
+        assert first is not None and first.text == ENGLISH
+        assert second is not None
+        # Asked once; after the 429 it is not asked again during the cool-off.
+        assert _Fetcher.calls == 1
+
+    def test_when_both_refuse_the_claim_stays_untranslated(self) -> None:
+        from app.extraction.translate import FallbackTranslator
+
+        chain = FallbackTranslator(_Translator(None), _Translator(None))
+        assert asyncio.run(chain.translate(TAMIL)) is None

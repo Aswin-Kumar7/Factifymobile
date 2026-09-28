@@ -42,7 +42,7 @@ from app.extraction.llm import LLMExtractor
 from app.extraction.local_ocr import LocalFirstOcr, LocalOcr
 from app.extraction.model_wire import WireFormat
 from app.extraction.ocr import OcrExtractor
-from app.extraction.translate import GoogleTranslator
+from app.extraction.translate import FallbackTranslator, GoogleTranslator, ModelTranslator
 from app.intake.normalizer import NormalisedIntake
 from app.knowledge.factchecks import FactCheckKeeper, load_factcheck_records
 from app.knowledge.memory import EvidenceMemory
@@ -359,12 +359,28 @@ async def build(settings: Settings) -> dict[str, Any]:
         ),
         # Claims in the ten newer Indian languages are translated into English to find
         # and read English sources (app/extraction/translate.py).
+        # Google first; when it refuses (it rate-limits the free endpoint), the
+        # configured model translates instead, one small metered call per claim.
         translator=(
-            GoogleTranslator(
-                fetcher=SecureFetcher(timeout_seconds=8.0),
-                api_key=(
-                    settings.translation_key.get_secret_value()
-                    if settings.translation == "google_cloud" and settings.translation_key
+            FallbackTranslator(
+                GoogleTranslator(
+                    fetcher=SecureFetcher(timeout_seconds=8.0),
+                    api_key=(
+                        settings.translation_key.get_secret_value()
+                        if settings.translation == "google_cloud" and settings.translation_key
+                        else None
+                    ),
+                ),
+                (
+                    ModelTranslator(
+                        fetcher=SecureFetcher(timeout_seconds=MODEL_TIMEOUT_SECONDS),
+                        governor=governor,
+                        endpoint=settings.llm.endpoint,
+                        api_key=settings.llm.api_key.get_secret_value(),
+                        model_id=settings.models.extraction,
+                        api_format=WireFormat(settings.llm.api_format),
+                    )
+                    if settings.llm.enabled and settings.llm.api_key
                     else None
                 ),
             )
