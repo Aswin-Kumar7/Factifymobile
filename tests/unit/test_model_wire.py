@@ -105,3 +105,40 @@ def test_response_text_raises_on_a_malformed_envelope() -> None:
         response_text(WireFormat.GEMINI, {"choices": []})
     with pytest.raises((KeyError, IndexError, TypeError)):
         response_text(WireFormat.OPENAI, {"candidates": []})
+
+
+@pytest.mark.parametrize("model", ["gpt-5.6-luna", "gpt-5.4-mini", "o4-mini"])
+def test_a_reasoning_model_gets_no_temperature_and_room_to_think(model: str) -> None:
+    """GPT-5 and the o-series refuse a set temperature and `max_tokens`."""
+    _, _, body = build_call(
+        fmt=WireFormat.OPENAI,
+        endpoint="https://host/openai/v1/chat/completions",
+        model_id=model,
+        api_key="k",
+        system="s",
+        user_block="u",
+        response_schema=_SCHEMA,
+        max_output_tokens=600,
+    )
+
+    assert "temperature" not in body
+    assert "max_tokens" not in body
+    assert body["max_completion_tokens"] > 600
+    assert body["reasoning_effort"] == "low"
+
+
+def test_gpt_4_1_mini_keeps_its_settings() -> None:
+    _, _, body = build_call(
+        fmt=WireFormat.OPENAI,
+        endpoint="https://host/openai/v1/chat/completions",
+        model_id="gpt-4.1-mini",
+        api_key="k",
+        system="s",
+        user_block="u",
+        response_schema=_SCHEMA,
+        max_output_tokens=600,
+    )
+
+    assert body["temperature"] == 0.0
+    assert body["max_tokens"] == 600
+    assert "reasoning_effort" not in body

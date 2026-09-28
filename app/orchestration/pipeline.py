@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from collections.abc import Callable
 from contextvars import ContextVar
@@ -38,6 +39,7 @@ from app.domain.claim import Claim
 from app.domain.enums import (
     Action,
     ClaimStatus,
+    ClaimType,
     CoverageExpectation,
     Direction,
     EvidenceKind,
@@ -57,6 +59,7 @@ from app.sources.base import (
     check_seconds,
     current_check,
     current_own_pages,
+    current_reference_date,
 )
 from app.sources.corpus import CorroborationSignal
 from app.sources.reasoning import REASONER_VERSION
@@ -288,6 +291,27 @@ _UNREPORTED = {
         "आधिकारिक स्रोत इसकी पुष्टि न करे, इसे संभवतः झूठा मानें।"
     ),
 }
+
+
+# How recent a shared news page must be for what it reports to be "too recent to
+# confirm yet": published today or yesterday.
+_FRESH_DAYS = 1
+
+
+def _fresh_news(claim: Claim) -> bool:
+    """A claim about an event, from a news page the person shared that was published
+    in the last day or so, and naming no earlier year."""
+    published = current_reference_date.get()
+    if published is None or claim.claim_type is not ClaimType.EVENT:
+        return False
+    today = datetime.now(UTC).date()
+    if not 0 <= (today - published).days <= _FRESH_DAYS:
+        return False
+    years = {int(year) for year in _YEAR.findall(claim.search_text)}
+    return all(year >= today.year for year in years)
+
+
+_YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
 
 
 def _unreported_note(
@@ -872,6 +896,16 @@ class Orchestrator:
             search = "searched"
 
         decision = decide(counted, evidence)
+
+        # News too fresh for others to have reported it yet. A claim from a news page
+        # the person shared, published today or yesterday, that nothing confirms or
+        # contradicts is "too recent to confirm", not "unconfirmed": Hindustan Times on
+        # a scheme launched that morning had four claims confirmed and its headline
+        # read Unconfirmed (2026-09-28). Only after deciding, and only an undecided
+        # claim, so nothing already confirmed is held back by it.
+        if not decision.status.is_decisive and _fresh_news(counted):
+            counted = counted.model_copy(update={"within_developing_window": True})
+            decision = decide(counted, evidence)
 
         # A plain explanation is shown only under a verdict it can agree with.
         #

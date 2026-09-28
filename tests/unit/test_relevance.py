@@ -171,3 +171,46 @@ class TestASharedFactCheck:
             ExtractedClaims(claims=(only,)), ("Sitharaman went to meet her father",)
         )
         assert kept.claims == (only,)
+
+
+class TestNewsTooFreshToConfirm:
+    """Hindustan Times on a scheme launched that morning: four claims confirmed, the
+    headline Unconfirmed, because nobody else had reported it yet (2026-09-28)."""
+
+    @staticmethod
+    async def _check(published: date) -> object:
+        from datetime import UTC, datetime  # noqa: F401
+        from uuid import uuid4
+
+        from app.intake.normalizer import normalise_text
+        from app.sources.base import current_reference_date
+        from tests.unit.test_orchestration import _claim, _economy_orchestrator, _fact_check
+
+        token = current_reference_date.set(published)
+        try:
+            return await _economy_orchestrator([_fact_check(None)]).verify(
+                normalise_text("A scheme launched this morning."),
+                case_id=uuid4(),
+                claims=[_claim()],
+            )
+        finally:
+            current_reference_date.reset(token)
+
+    @pytest.mark.anyio
+    async def test_an_unconfirmed_claim_from_today_s_news_is_too_recent(self) -> None:
+        from datetime import UTC, datetime
+
+        from app.domain.enums import Action
+
+        result = await self._check(datetime.now(UTC).date())
+
+        assert result.claims[0].decision.rule_id == "rule.developing_window"  # type: ignore[attr-defined]
+        assert result.action is Action.WAIT_AND_RECHECK  # type: ignore[attr-defined]
+
+    @pytest.mark.anyio
+    async def test_last_month_s_news_is_not(self) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        result = await self._check(datetime.now(UTC).date() - timedelta(days=30))
+
+        assert result.claims[0].decision.rule_id != "rule.developing_window"  # type: ignore[attr-defined]

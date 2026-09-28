@@ -151,11 +151,34 @@ def build_call(
             {"role": "user", "content": user_content},
         ],
         "response_format": {"type": "json_object"},
-        "temperature": temperature,
     }
-    if max_output_tokens is not None:
-        body["max_tokens"] = max_output_tokens
+    if reasoning_model(model_id):
+        # GPT-5 and the o-series think before they answer. They refuse a set
+        # temperature and `max_tokens`; the cap is `max_completion_tokens`, and it
+        # counts the thinking too, so it is given room for that. The effort is low:
+        # every call here classifies or copies, none composes.
+        body["reasoning_effort"] = "low"
+        if max_output_tokens is not None:
+            body["max_completion_tokens"] = max_output_tokens + _REASONING_ROOM
+    else:
+        body["temperature"] = temperature
+        if max_output_tokens is not None:
+            body["max_tokens"] = max_output_tokens
     return url, _openai_headers(api_key), body
+
+
+# Tokens a reasoning model may spend thinking on top of its answer's own cap.
+_REASONING_ROOM = 4_000
+
+
+def reasoning_model(model_id: str) -> bool:
+    """Whether a deployment is a reasoning model (GPT-5, o1/o3/o4), by its name.
+
+    On Azure the model is reached by its deployment's name, so the deployment must be
+    named after the model ("gpt-5.6-luna"), as the setup instructions say.
+    """
+    name = model_id.strip().casefold()
+    return name.startswith(("gpt-5", "gpt-6", "o1", "o3", "o4"))
 
 
 def _base64(data: bytes) -> str:

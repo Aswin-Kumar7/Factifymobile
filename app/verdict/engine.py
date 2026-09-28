@@ -34,7 +34,7 @@ from app.domain.publishers import publishers_of
 
 # Stamped on every verdict. A cached verdict produced under older rules is therefore
 # identifiable, and the cache can refuse to serve it (M13).
-RULE_VERSION = "2026.09.28.1"
+RULE_VERSION = "2026.09.29.1"
 
 # Default number of genuinely independent origins required before corroboration can
 # support a claim. Tenant-configurable later; never below two, because one origin is
@@ -250,6 +250,14 @@ def _decide_status(
     # Rule 7 (hoisted): no citable evidence means no verdict. Checked first because
     # every decisive branch below assumes at least one citation exists.
     if not evidence:
+        # Nothing yet, for news too fresh for anyone else to have reported it: that
+        # silence is about time, not the claim (rule 5 below, for the same reason).
+        if claim.within_developing_window:
+            return Decision(
+                status=ClaimStatus.UNVERIFIED,
+                rule_id="rule.developing_window",
+                reason="Too recent to corroborate; scheduled for re-check.",
+            )
         return Decision(
             status=ClaimStatus.UNVERIFIED,
             rule_id="rule.no_evidence",
