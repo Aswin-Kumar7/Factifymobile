@@ -267,6 +267,11 @@ class ClaimPipeline:
     def __init__(self, extractor: Extractor, cache: CacheService | None = None) -> None:
         self._extractor = extractor
         self._cache = cache
+        # Stored readings are the model's, so they are kept per model: switching from
+        # gpt-4.1-mini to gpt-5.6-luna would otherwise go on serving the old model's
+        # claims for every text it had read before.
+        model = getattr(extractor, "model_id", None)
+        self._version = f"{EXTRACTOR_VERSION}+{model}" if model else EXTRACTOR_VERSION
 
     async def extract(
         self,
@@ -286,7 +291,7 @@ class ClaimPipeline:
 
         if self._cache is not None:
             cached = await self._cache.get_extraction(
-                content_hash=content_hash, extractor_version=EXTRACTOR_VERSION
+                content_hash=content_hash, extractor_version=self._version
             )
             if cached is not None:
                 return self._from_cache(
@@ -317,7 +322,7 @@ class ClaimPipeline:
         if self._cache is not None:
             await self._cache.put_extraction(
                 content_hash=content_hash,
-                extractor_version=EXTRACTOR_VERSION,
+                extractor_version=self._version,
                 payload={"claims": [claim.model_dump(mode="json") for claim in outcome.claims]},
                 model_id=outcome.model_id,
             )

@@ -41,7 +41,7 @@ PROVIDER = "llm"
 
 # Bumped whenever the prompt or the schema changes, because either changes what the
 # same document extracts to — and the extraction cache is keyed on it.
-EXTRACTOR_VERSION = "2026.09.28.5"
+EXTRACTOR_VERSION = "2026.09.29.1"
 
 MAX_CLAIMS_PER_DOCUMENT = 7
 
@@ -224,7 +224,9 @@ _SYSTEM_INSTRUCTION = (
     "Australia in the 2024 T20 World Cup final' - never 'India beat Australia in the "
     "final', which matches every final the two ever played. Write it for an English "
     "document too. It asserts exactly what the claim asserts, nothing more: no "
-    "correction, no judgement, no detail the document does not give. "
+    "correction, no judgement, no detail the document does not give. Money is in "
+    "rupees unless the document names another country: in Bengali and Assamese "
+    "'টাকা' is the rupee, and 'taka' would send the search to Bangladesh. "
     "search_phrases: two or three short web queries that would find published "
     "sources ADDRESSING this claim, in either direction. The claim's own sentence "
     "is already searched, and on its own it retrieves the topic rather than any "
@@ -358,6 +360,11 @@ class LLMExtractor:
         self._model_id = model_id
         self._escalation_model_id = escalation_model_id
         self._api_format = api_format
+
+    @property
+    def model_id(self) -> str:
+        """The model that reads claims, which keys what is stored of its readings."""
+        return self._model_id
 
     async def extract_claims(self, text: str) -> ExtractionOutcome:
         """One call. One document. Every field at once.

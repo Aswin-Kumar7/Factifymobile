@@ -330,3 +330,37 @@ class TestWhatTheExtractorIsTold:
         assert "names an authority only to lend it weight" in _SYSTEM_INSTRUCTION
         # ...and the exclusion that keeps a PIB fact-check from being called false.
         assert "Never do this for a report of a denial, a debunk" in _SYSTEM_INSTRUCTION
+
+
+class TestStoredReadingsArePerModel:
+    """Switching the model must not go on serving the old model's claims."""
+
+    class _Cache:
+        def __init__(self) -> None:
+            self.rows: dict[tuple[str, str], dict[str, object]] = {}
+
+        async def get_extraction(self, *, content_hash: str, extractor_version: str) -> object:
+            return self.rows.get((content_hash, extractor_version))
+
+        async def put_extraction(
+            self, *, content_hash: str, extractor_version: str, payload: object, model_id: object
+        ) -> None:
+            del model_id
+            self.rows[(content_hash, extractor_version)] = payload  # type: ignore[assignment]
+
+    class _Model(FakeExtractor):
+        def __init__(self, outcome: ExtractionOutcome, model_id: str) -> None:
+            super().__init__(outcome)
+            self.model_id = model_id
+
+    async def test_another_model_reads_the_text_again(self) -> None:
+        cache = self._Cache()
+        outcome = ExtractionOutcome(claims=(_proposal("The government announced a relief scheme"),))
+        old = self._Model(outcome, "gpt-4.1-mini")
+        new = self._Model(outcome, "gpt-5.6-luna")
+
+        await ClaimPipeline(old, cache).extract(DOCUMENT, content_hash="sha256:doc")  # type: ignore[arg-type]
+        await ClaimPipeline(old, cache).extract(DOCUMENT, content_hash="sha256:doc")  # type: ignore[arg-type]
+        await ClaimPipeline(new, cache).extract(DOCUMENT, content_hash="sha256:doc")  # type: ignore[arg-type]
+
+        assert (old.calls, new.calls) == (1, 1)
