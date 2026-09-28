@@ -1345,6 +1345,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get claimStateUnconfirmed => 'Unconfirmed';
 
   @override
+  String claimInFull(String text) {
+    return 'In full: $text';
+  }
+
+  @override
   String get rightWrongTitle => 'What\'s right, what\'s wrong';
 
   @override

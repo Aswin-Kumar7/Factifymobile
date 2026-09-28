@@ -192,6 +192,16 @@ class _ClaimCard extends StatelessWidget {
                 height: 1.35,
               ),
             ),
+            if (claim.inFull case final full?)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  l10n.claimInFull(full),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: FactifyTokens.of(context).ink3,
+                  ),
+                ),
+              ),
             if (anchor != null) _InputAnchorBlock(anchor: anchor, submission: submission),
             const SizedBox(height: 10),
             Row(

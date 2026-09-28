@@ -2066,6 +2066,12 @@ abstract class AppLocalizations {
   /// **'Unconfirmed'**
   String get claimStateUnconfirmed;
 
+  /// Under a claim made in another language: the claim as one self-contained English sentence.
+  ///
+  /// In en, this message translates to:
+  /// **'In full: {text}'**
+  String claimInFull(String text);
+
   /// No description provided for @rightWrongTitle.
   ///
   /// In en, this message translates to:

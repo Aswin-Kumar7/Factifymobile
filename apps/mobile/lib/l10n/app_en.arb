@@ -786,6 +786,15 @@
   "claimStateMissingContext": "Missing context",
   "claimStatePartlyTrue": "Partly true",
   "claimStateUnconfirmed": "Unconfirmed",
+  "claimInFull": "In full: {text}",
+  "@claimInFull": {
+    "description": "Under a claim made in another language: the claim as one self-contained English sentence.",
+    "placeholders": {
+      "text": {
+        "type": "String"
+      }
+    }
+  },
   "rightWrongTitle": "What's right, what's wrong",
   "rightWrongRight": "Right",
   "rightWrongWrong": "Wrong",

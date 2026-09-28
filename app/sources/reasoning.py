@@ -58,7 +58,7 @@ from app.sources.local_reading import local_reading, local_same_claim
 logger = logging.getLogger("factify.sources.reasoning")
 
 PROVIDER = "llm"
-REASONER_VERSION = "2026.09.28.6"
+REASONER_VERSION = "2026.09.28.7"
 
 # How many passages go to the model in one call. One call per source, not one per
 # passage: the model needs to see the alternatives to judge which actually bears on
@@ -629,6 +629,10 @@ it came from when that is known. Judge the passage, read as its article presents
 a publisher's headline states what the article reports, so a passage and its headline
 together can establish a claim that the passage alone words more loosely. A headline
 never makes a passage about a different subject into one about this claim.
+
+Judge each source on its own, against the claim alone - never against the other
+sources. Two sources that disagree are two answers to record, not a reason to call
+either of them UNCLEAR.
 
 For each source:
 - reason: one short sentence naming what in the passage decides it.

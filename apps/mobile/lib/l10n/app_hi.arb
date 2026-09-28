@@ -328,6 +328,7 @@
   "claimStateMissingContext": "संदर्भ अधूरा",
   "claimStatePartlyTrue": "आंशिक रूप से सच",
   "claimStateUnconfirmed": "अपुष्ट",
+  "claimInFull": "पूरा दावा: {text}",
   "rightWrongTitle": "क्या सही है, क्या गलत",
   "rightWrongRight": "सही",
   "rightWrongWrong": "गलत",

@@ -29,6 +29,9 @@ The first change that is not purely additive: `verdict` has a new value.
   request, and now also checks every claim, inside what one request can hold.
 - **`POST /v1/verify/file` `background=true`**: the same for a picture or a PDF. A
   video is always checked in the background, as before.
+- **`claims[].in_full`**: a claim not made in English, as one self-contained English
+  sentence - "NASA launched Chandrayaan-3" for a Bengali claim whose words say "NASA
+  launched it". Optional; absent for English claims, which are shown self-contained.
 - There is no quick or deep check any more: `claims[].search` is never
   `not_searched` from 1.4 on (an older stored answer may still carry it), and every
   check costs `check_cost`. `credits.deep_check_cost` is kept, equal to `check_cost`,

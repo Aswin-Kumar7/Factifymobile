@@ -38,6 +38,7 @@ from urllib.parse import urlsplit
 from app.domain.claim import Claim
 from app.domain.enums import ClaimType, EvidenceKind, Method, Relation, Tier
 from app.domain.evidence import NARROWER_SCOPE, READING_RELEVANCE_THRESHOLD
+from app.domain.publishers import registrable_domain
 from app.extraction.web import extract, plain_text
 from app.governor.governor import ProviderUnavailable, Skip, SkipReason
 from app.observability.logging import event
@@ -47,6 +48,7 @@ from app.sources.base import (
     SourceRelation,
     SourceSnapshot,
     current_check,
+    current_own_pages,
     insufficient,
     locate_excerpt,
 )
@@ -67,7 +69,7 @@ _MAX_QUERIES = 4
 _READ_TTL_SECONDS = 90.0
 
 NAME = "web_search"
-VERSION = "2026.09.26.3"
+VERSION = "2026.09.28.1"
 PROVIDER = "web_search"
 
 # How many credible sources to read. Each is a metered model call, and corroboration
@@ -87,6 +89,62 @@ _MIN_ARTICLE_CHARS = 600
 # credibility gate drops most open-web results — a query where four of five hits are
 # blogs would otherwise leave a single credible source, too few to corroborate.
 _SEARCH_COUNT = 10
+
+
+# Where the fact-check query looks: India's fact-checkers, the government's own
+# (PIB Fact Check), and the international ones that check Indian claims. Asked of the
+# whole web, "<claim> fact check" returned whatever mentioned the words - a Gujarati
+# free-laptop scam found one business page and no debunk; asked of these, it reaches
+# the debunks, in English, whatever language the forward was in. News desks with a
+# fact-check section (India Today, The Quint, Reuters, AFP) are named by their domain.
+_FACT_CHECK_DOMAINS = (
+    "pib.gov.in",
+    "altnews.in",
+    "boomlive.in",
+    "factly.in",
+    "newschecker.in",
+    "vishvasnews.com",
+    "factcrescendo.com",
+    "newsmeter.in",
+    "newsmobile.in",
+    "digiteye.in",
+    "youturn.in",
+    "thip.media",
+    "dfrac.org",
+    "factchecker.in",
+    "firstcheck.in",
+    "thelogicalindian.com",
+    "thequint.com",
+    "indiatoday.in",
+    "factcheck.afp.com",
+    "reuters.com",
+    "sochfactcheck.com",
+    "rumorscanner.com",
+    "snopes.com",
+    "politifact.com",
+    "fullfact.org",
+    "factcheck.org",
+    "leadstories.com",
+    "checkyourfact.com",
+    "science.feedback.org",
+)
+
+# Which search results get the read slots, by how much they are about the claim.
+#
+# They were chosen by how well known the publisher was, and the six slots went to
+# whatever national outlet the search returned: for "the government will give every
+# woman Rs 5,000 a month", Reuters and CNN on Trump's "$5,000 checks" were opened while
+# Dinamalar and Dinamani on Tamil Nadu's Rs 5,000 were not (2026-09-28). Our relevance
+# model reads the claim against each result's headline and snippet: relevant pages
+# measured 0.39-0.77, the unrelated ones 0.24-0.43. So results are read most relevant
+# first, a well-known publisher breaks a near tie, and one far below the best result
+# (or below the floor) is not opened at all.
+_RELEVANCE_FLOOR = 0.3
+_RELEVANCE_BELOW_BEST = 0.3
+_PROMINENT_BONUS = 0.05
+# The relevance model runs on the server's CPU: a check's claims are scored a few at
+# a time, not all at once.
+_SCORING = asyncio.Semaphore(2)
 
 
 class _SearchFailed(Exception):
@@ -139,8 +197,12 @@ class WebSearchResolver:
         max_results: int = _MAX_RESULTS,
         keeper: Any | None = None,
         memory: Any | None = None,
+        relevance: Any | None = None,
     ) -> None:
         self._governor = governor
+        # Scores how much a search result is about the claim (app/sources/stance.py),
+        # to choose which results are read. Optional: without it, by publisher.
+        self._relevance = relevance
         # The pages this claim was cited against before (app/knowledge/memory.py).
         self._memory = memory
         # Keeps a fact-checker's page this search read (app/knowledge/factchecks.py).
@@ -164,6 +226,8 @@ class WebSearchResolver:
         self._pages_by_check: dict[str, dict[str, dict[str, Any]]] = {}
         # url -> (when it was read, what the ladder returned). See `_read`.
         self._reads_by_check: dict[str, dict[str, tuple[float, tuple[str, str, str]]]] = {}
+        # url -> the date the page itself says it was published (its own metadata).
+        self._dates_by_check: dict[str, dict[str, datetime]] = {}
 
     @property
     def reads_sources(self) -> bool:
@@ -193,6 +257,11 @@ class WebSearchResolver:
         return self._pages_by_check.setdefault(current_check.get(), {})
 
     @property
+    def _dates(self) -> dict[str, datetime]:
+        """This check's page dates, from each page's own metadata."""
+        return self._dates_by_check.setdefault(current_check.get(), {})
+
+    @property
     def _reads(self) -> dict[str, tuple[float, tuple[str, str, str]]]:
         """This check's page reads."""
         return self._reads_by_check.setdefault(current_check.get(), {})
@@ -211,6 +280,7 @@ class WebSearchResolver:
         """
         self._pages_by_check.pop(check_id, None)
         self._reads_by_check.pop(check_id, None)
+        self._dates_by_check.pop(check_id, None)
 
     async def candidates(self, claim: Claim) -> list[SourceCandidate]:
         # A media provenance claim is not searchable text, and must never be treated as
@@ -255,9 +325,15 @@ class WebSearchResolver:
         dropped = 0
         dropped_hosts: list[str] = []
         seen: set[str] = set()
+        own = current_own_pages.get()
+        own_outlets = {registrable_domain(key) for key in own} - {None}
         for row in rows:
             url = row.get("url")
             if not url or not (row.get("content") or "").strip():
+                continue
+            # The page the person shared, or another page of its outlet: never evidence
+            # for itself, so never worth a read.
+            if page_key(url) in own or registrable_domain(url) in own_outlets:
                 continue
             # One read per page. Two queries returned www.politifact.com and
             # politifact.com for the same article, and both were read — a model call
@@ -302,15 +378,12 @@ class WebSearchResolver:
         )
         limit = self._max_results
 
-        # Which pages get the read slots. Search rank alone gave them to whatever the
-        # provider ranked first: on "CJP threatens 'Jantar Mantar 2.0' if CEC Gyanesh
-        # Kumar does not resign" — a story PTI, The Hindu and the Times of India all
-        # carried that day — two of six slots went to Wikipedia and a Nagaland
-        # regional paper while four candidates were never opened. The wires, the
-        # national press, broadcasters, official bodies and fact-checkers are read
-        # first; search order is kept within each group, and the rest still fill any
-        # slot left over.
-        shortlist.sort(key=lambda c: 0 if self._credibility.is_prominent(c.url) else 1)
+        # Which pages get the read slots: the most relevant first (see
+        # `_RELEVANCE_FLOOR`). Without the relevance model, as before: the wires, the
+        # national press, broadcasters, official bodies and fact-checkers first, search
+        # order kept within each group. On "CJP threatens 'Jantar Mantar 2.0'..." search
+        # rank alone gave two of six slots to Wikipedia and a Nagaland regional paper.
+        shortlist = await self._most_relevant(claim, shortlist)
         shortlist = shortlist[:limit]
 
         # The pages this claim was cited against before are read again, first, beside
@@ -319,6 +392,48 @@ class WebSearchResolver:
         for remembered in await self._remembered(claim, {page_key(c.url) for c in shortlist}):
             shortlist.insert(0, remembered)
         return shortlist
+
+    async def _most_relevant(
+        self, claim: Claim, shortlist: list[SourceCandidate]
+    ) -> list[SourceCandidate]:
+        """The candidates in the order they are worth reading; the unrelated left out."""
+
+        def prominence(candidate: SourceCandidate) -> int:
+            return 0 if self._credibility.is_prominent(candidate.url) else 1
+
+        scorer = self._relevance
+        if scorer is None or not shortlist or not getattr(scorer, "can_gate", False):
+            return sorted(shortlist, key=prominence)
+        texts = []
+        for candidate in shortlist:
+            row = self._pages.get(candidate.url) or {}
+            texts.append(f"{candidate.title or ''}. {(row.get('content') or '')[:500]}")
+        async with _SCORING:
+            scores = await asyncio.to_thread(scorer.relevance, claim.search_text, texts)
+        if not scores or len(scores) != len(shortlist):
+            return sorted(shortlist, key=prominence)
+        ranked = sorted(
+            zip(scores, shortlist, strict=True),
+            key=lambda pair: -(pair[0] + (_PROMINENT_BONUS if prominence(pair[1]) == 0 else 0)),
+        )
+        best = max(scores)
+        floor = max(_RELEVANCE_FLOOR, best - _RELEVANCE_BELOW_BEST)
+        kept = [candidate for score, candidate in ranked if score >= floor]
+        event(
+            logger,
+            "web-search candidates ranked",
+            module="sources.websearch",
+            outcome="ok",
+            provider=PROVIDER,
+            candidates=len(shortlist),
+            kept=len(kept),
+            best=round(best, 3),
+            floor=round(floor, 3),
+            left_out=[
+                urlsplit(candidate.url).hostname for score, candidate in ranked if score < floor
+            ],
+        )
+        return kept
 
     async def _remembered(self, claim: Claim, seen: set[str]) -> list[SourceCandidate]:
         if self._memory is None or not claim.normalized_text:
@@ -413,7 +528,9 @@ class WebSearchResolver:
             text=text,
             title=page.get("title"),
             publisher=page.get("publisher"),
-            published_at=page.get("published_at"),
+            # The page's own date first: the search engine gives one for few pages,
+            # and a source's date is what tells another year's final from this one's.
+            published_at=self._dates.get(candidate.url) or page.get("published_at"),
             extraction_route=route,
         )
 
@@ -463,6 +580,8 @@ class WebSearchResolver:
         if isinstance(fetched, FetchResult):
             article = extract(fetched.text, url=url)
             body = (article.body or "").strip()
+            if article.published_at is not None:
+                self._dates[url] = article.published_at
             if len(body) >= _MIN_ARTICLE_CHARS:
                 self._read_event("web.fetched", url, len(body))
                 return body, "web.fetched", fetched.final_url or url
@@ -755,23 +874,26 @@ class WebSearchResolver:
         def _comparable(value: str) -> str:
             return " ".join(value.split()).strip(" .!?।").casefold()
 
-        claim_text = _comparable(claim.text)
-
         max_queries = _MAX_QUERIES
 
-        queries = [claim.text]
-        # Translated as well as in its own words, for a claim not made in English:
-        # the English press and the fact-checkers write about Tamil and Bengali
-        # forwards too, in English.
-        if claim.english_text and _comparable(claim.english_text) != claim_text:
-            queries.append(claim.english_text)
+        # The claim with its context first. An article's sentence "Rover payloads
+        # include APXS and LIBS" searched as written found Mars rover pages; its
+        # self-contained version names Chandrayaan-3. For a claim not made in English,
+        # its own words too: the regional press writes in them. And in English as
+        # well: the national press and the fact-checkers write about Tamil and Bengali
+        # forwards in English.
+        queries = [claim.search_text]
+        if (claim.language or "en") != "en" and _comparable(claim.text) != _comparable(
+            claim.search_text
+        ):
+            queries.append(claim.text)
         for raw in claim.search_phrases:
             phrase = " ".join(raw.split())
             # A phrase that merely restates the claim buys nothing and costs a call.
             # Compared without trailing punctuation, since the claim is a sentence
             # and a phrase is not: "the sky is green" and "The sky is green." are
             # the same query.
-            if len(phrase) < 8 or _comparable(phrase) == claim_text:
+            if len(phrase) < 8 or _comparable(phrase) in {_comparable(query) for query in queries}:
                 continue
             queries.append(phrase)
             if len(queries) >= max_queries - 1:
@@ -789,11 +911,15 @@ class WebSearchResolver:
         # publish in English. The extractor's English phrase names the same claim.
         english = claim.english_text or next((p for p in queries[1:] if p.isascii()), None)
         subject = claim.text if claim.text.isascii() or not english else english
-        queries.append(f"{subject} fact check")
+        # Asked of the fact-checkers only (`_FACT_CHECK_DOMAINS`).
+        checks = f"{subject} fact check"
 
         gathered = await asyncio.gather(
-            *(self._search(query) for query in queries), return_exceptions=True
+            *(self._search(query) for query in queries),
+            self._search(checks, domains=_FACT_CHECK_DOMAINS),
+            return_exceptions=True,
         )
+        queries.append(checks)
 
         # Interleaved, not concatenated: one row from each query in turn.
         #
@@ -848,8 +974,9 @@ class WebSearchResolver:
         )
         return list(merged.values())
 
-    async def _search(self, query: str) -> list[dict[str, Any]]:
-        """Normalised results from whichever provider is configured.
+    async def _search(self, query: str, *, domains: tuple[str, ...] = ()) -> list[dict[str, Any]]:
+        """Normalised results from whichever provider is configured, from [domains]
+        only when any are given.
 
         Each row is ``{url, title, content, published_at, publisher, score}``. A
         transport, provider or parse failure raises: one failed query is absorbed by
@@ -857,18 +984,23 @@ class WebSearchResolver:
         the search a skipped check rather than an empty one.
         """
         if self._provider == "exa":
-            return await self._search_exa(query)
-        return await self._search_tavily(query)
+            return await self._search_exa(query, domains=domains)
+        return await self._search_tavily(query, domains=domains)
 
-    async def _search_tavily(self, query: str) -> list[dict[str, Any]]:
+    async def _search_tavily(
+        self, query: str, *, domains: tuple[str, ...] = ()
+    ) -> list[dict[str, Any]]:
+        body: dict[str, Any] = {
+            "query": query,
+            "max_results": _SEARCH_COUNT,
+            "search_depth": "basic",
+            "include_raw_content": False,
+        }
+        if domains:
+            body["include_domains"] = list(domains)
         result = await self._fetcher.post_json(
             self._endpoint,
-            {
-                "query": query,
-                "max_results": _SEARCH_COUNT,
-                "search_depth": "basic",
-                "include_raw_content": False,
-            },
+            body,
             provider=PROVIDER,
             headers={"authorization": f"Bearer {self._api_key}"},
         )
@@ -887,14 +1019,19 @@ class WebSearchResolver:
             for row in data.get("results", [])
         ]
 
-    async def _search_exa(self, query: str) -> list[dict[str, Any]]:
+    async def _search_exa(
+        self, query: str, *, domains: tuple[str, ...] = ()
+    ) -> list[dict[str, Any]]:
+        body: dict[str, Any] = {
+            "query": query,
+            "numResults": _SEARCH_COUNT,
+            "contents": {"text": {"maxCharacters": 1200}},
+        }
+        if domains:
+            body["includeDomains"] = list(domains)
         result = await self._fetcher.post_json(
             self._endpoint,
-            {
-                "query": query,
-                "numResults": _SEARCH_COUNT,
-                "contents": {"text": {"maxCharacters": 1200}},
-            },
+            body,
             provider=PROVIDER,
             headers={"x-api-key": self._api_key},
         )

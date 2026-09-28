@@ -56,6 +56,7 @@ from app.api.schemas import (
     media_report_to_response,
 )
 from app.domain.claim import Claim
+from app.extraction.claimreview import read_claim_reviews
 from app.extraction.claims import ExtractedClaims
 from app.extraction.language import detect
 from app.extraction.model_wire import PDF_MIME
@@ -140,6 +141,7 @@ async def extract_claims_for(request: Request, intake: NormalisedIntake) -> Extr
     # news went unread. The article is read and checked alongside the message, which
     # keeps whatever the message itself claims.
     partial: str | None = None
+    reviewed: tuple[str, ...] = ()
     if intake.input_type is InputType.TEXT:
         link = _first_link(text)
         if link is not None:
@@ -147,6 +149,7 @@ async def extract_claims_for(request: Request, intake: NormalisedIntake) -> Extr
             if page is not None:
                 text = f"{text}\n\n{page.text}"
                 partial = page.partial
+                reviewed = page.reviewed
 
     if not text.strip() and intake.input_type is InputType.URL:
         # A submitted link carries no text of its own — normalisation is local and
@@ -158,6 +161,7 @@ async def extract_claims_for(request: Request, intake: NormalisedIntake) -> Extr
             return ExtractedClaims(reason="the linked page could not be read")
         text = page.text
         partial = page.partial
+        reviewed = page.reviewed
         # The article's own language, detected on its body — not the URL's, which
         # was detected on an empty string and is always the default.
         language = detect(text).language.value
@@ -173,7 +177,64 @@ async def extract_claims_for(request: Request, intake: NormalisedIntake) -> Extr
     )
     if partial and extracted.claims:
         extracted = replace(extracted, partial_source=partial)
+    if reviewed and extracted.claims:
+        extracted = _without_the_reviewed_claim(extracted, reviewed)
     return extracted
+
+
+def _in_full(claim: Claim) -> str | None:
+    """The self-contained English of a claim made in another language, when it says
+    more than a word-for-word reading would show; None for an English claim."""
+    english = claim.english_text.strip()
+    if not english or (claim.language or "en") == "en" or english == claim.text.strip():
+        return None
+    return english
+
+
+# Words a claim must share with the claim a fact-check examines to be that claim
+# restated - a viral post's caption, quoted - rather than one of its findings.
+_RESTATES = 0.6
+# Latin, digits and the Indian scripts, less the danda; "\w" splits a Hindi word at
+# its vowel signs.
+_WORD = re.compile(r"[a-z0-9ऀ-ॣ०-ൿ؀-ۿݐ-ݿ]{3,}")
+
+
+def _without_the_reviewed_claim(
+    extracted: ExtractedClaims, reviewed: tuple[str, ...]
+) -> ExtractedClaims:
+    """A shared fact-check's claims, less the claim it examines.
+
+    A fact-check quotes the post it debunks, and the post is not something it asserts.
+    Vishvas News' check of "Sitharaman went to meet her father" gave the claim "X user
+    Promila shared a video captioned that the Finance Minister met her father", which
+    Alt News' check of the caption then contradicted - and a fact-check that holds up
+    came back "partly true" (2026-09-28). The page names the claim it examines in its
+    own ClaimReview markup; a claim that restates it is set aside, and what the page
+    finds is what is checked.
+    """
+    reviewed_words = [set(_WORD.findall(text.casefold())) for text in reviewed]
+
+    def restates(claim: Claim) -> bool:
+        said = set(_WORD.findall(f"{claim.text} {claim.english_text}".casefold()))
+        return any(
+            words and len(words & said) / len(words) >= _RESTATES for words in reviewed_words
+        )
+
+    kept = tuple(claim for claim in extracted.claims if not restates(claim))
+    if len(kept) == len(extracted.claims) or not kept:
+        return extracted
+    event(
+        logger,
+        "claim a shared fact-check examines set aside",
+        module="api.verify",
+        outcome="ok",
+        set_aside=len(extracted.claims) - len(kept),
+    )
+    return replace(
+        extracted,
+        claims=kept,
+        discarded=(*extracted.discarded, "the claim the shared fact-check examines"),
+    )
 
 
 # A link inside a message: with a scheme, or starting "www." as people type them.
@@ -218,6 +279,9 @@ class LinkedPage:
     text: str
     # Why this is less than the article, when it is: said in the response.
     partial: str | None = None
+    # When the page is a fact-check: the claims it examines, from its own ClaimReview
+    # markup. What it debunks is not what it asserts (`_without_the_reviewed_claim`).
+    reviewed: tuple[str, ...] = ()
 
 
 async def _read_linked_article(request: Request, url: str) -> LinkedPage | None:
@@ -291,7 +355,12 @@ async def _read_linked_article(request: Request, url: str) -> LinkedPage | None:
     body = (body or "")[:_MAX_ARTICLE_CHARS]
     _log_link_read(url, route=route, title=title, body=body, total=total)
     parts = [part for part in (title, body) if part and part.strip()]
-    return LinkedPage("\n\n".join(parts), partial) if parts else None
+    reviewed = tuple(
+        review.claim_reviewed
+        for review in read_claim_reviews(html or "", page_url=url)
+        if review.claim_reviewed.strip()
+    )
+    return LinkedPage("\n\n".join(parts), partial, reviewed) if parts else None
 
 
 async def _search_listing(request: Request, url: str) -> tuple[str | None, str] | None:
@@ -483,6 +552,7 @@ def to_response(result: VerificationResult, *, receipt_url: str | None = None) -
         ClaimResponse(
             id=outcome.claim.id,
             text=outcome.claim.text,
+            in_full=_in_full(outcome.claim),
             language=outcome.claim.language,
             claim_type=outcome.claim.claim_type,
             status=outcome.decision.status,

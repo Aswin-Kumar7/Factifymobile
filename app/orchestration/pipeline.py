@@ -56,6 +56,7 @@ from app.sources.base import (
     build_evidence,
     check_seconds,
     current_check,
+    current_own_pages,
 )
 from app.sources.corpus import CorroborationSignal
 from app.sources.reasoning import REASONER_VERSION
@@ -518,6 +519,7 @@ class Orchestrator:
         claims = await self._in_english(claims)
 
         check = current_check.set(str(case_id))
+        shared = current_own_pages.set(frozenset(own))
         try:
             outcomes = await self._resolve_all(
                 claims,
@@ -527,6 +529,7 @@ class Orchestrator:
                 reported=reported,
             )
         finally:
+            current_own_pages.reset(shared)
             current_check.reset(check)
             for resolver in self._resolvers:
                 end_check = getattr(resolver, "end_check", None)

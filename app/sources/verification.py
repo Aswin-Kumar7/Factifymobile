@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any, Protocol
 from urllib.parse import urlsplit
@@ -204,6 +205,13 @@ class SourceVerification:
 
         passthrough = [item for item in unique if item.kind in _NOT_TEXT]
         text = [item for item in unique if item.kind not in _NOT_TEXT]
+        # A report of another occurrence of the thing the claim is about - an earlier
+        # or later year's, another match of the tournament - is not about this one,
+        # whatever it says (`_other_occurrence`). Set aside before anyone reads it as
+        # support or contradiction.
+        elsewhere = {id(item): why for item in text if (why := _other_occurrence(item, claim))}
+        early = [item for item in text if id(item) in elsewhere]
+        text = [item for item in text if id(item) not in elsewhere]
         sided = [item for item in text if _expected(item) is not None]
         context_only = len(text) - len(sided)
         # What happened to each source, by host, for the log. Counts alone could not
@@ -212,6 +220,9 @@ class SourceVerification:
             {"host": _host(item.citation_url), "outcome": "context", "reason": item.finding[:200]}
             for item in text
             if _expected(item) is None
+        ] + [
+            {"host": _host(item.citation_url), "outcome": f"set aside: {elsewhere[id(item)]}"}
+            for item in early
         ]
 
         if not sided:
@@ -385,3 +396,73 @@ def _under_headline(item: Evidence) -> str:
 
 def _host(url: str) -> str:
     return (urlsplit(url).hostname or url).removeprefix("www.")
+
+
+# A year a claim names: 1900-2099.
+_YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
+
+
+# Stages of a tournament other than the final. A claim about the final is not
+# answered by a report of another match: "India beat Australia by 24 runs in the
+# Super Eight" was read as support for "India beat Australia in the 2024 T20 World Cup
+# final", and the model, asked outright whether it was the same match, said yes while
+# its own reason said "not the final" (2026-09-28).
+_OTHER_STAGE = re.compile(
+    r"\b(?:semi[- ]?finals?|quarter[- ]?finals?|super[- ](?:eights?|8|six|6|fours?|4)|"
+    r"group[- ]stage|group [a-h]\b|league (?:stage|match|game)|qualifiers?|"
+    r"warm[- ]?up|eliminator|play[- ]?offs?)",
+    re.IGNORECASE,
+)
+_FINAL = re.compile(r"\bfinals?\b", re.IGNORECASE)
+# Things that happen again and again, where a later report is about a later one.
+_RECURRING = re.compile(
+    r"\b(?:world cup|t20|odi|ipl|olympics?|asian games|commonwealth games|elections?|"
+    r"budget|census|championships?|tournament|trophy|finals?|summit|awards?|nobel)\b",
+    re.IGNORECASE,
+)
+
+
+def _other_occurrence(item: Evidence, claim: Claim) -> str | None:
+    """Why a news report is about another occurrence than the claim's, or None.
+
+    Rules, not the model: asked "is this the same occurrence?" as a question of its
+    own, gpt-4.1-mini said yes to the 2023 ODI World Cup final and to a Super Eight
+    match for a claim about the 2024 T20 final (2026-09-28). Only for a news report: a
+    fact-check or an earlier copy of a picture is exactly what speaks to a claim's
+    date, and must never be set aside for it.
+    """
+    if item.kind is not EvidenceKind.CORROBORATION:
+        return None
+    said = claim.search_text
+    passage = f"{item.title or ''} {item.source_excerpt}"
+    years = {int(year) for year in _YEAR.findall(said)}
+    named = any(str(year) in passage for year in years)
+
+    # Published before the year the claim is about, and not naming it: it cannot be
+    # reporting it. A 2025 report of a launch planned for 2027 names 2027, and stays.
+    published = item.published_on
+    if years and published is not None and published.year < min(years) and not named:
+        return "published before the event"
+
+    # Another match of the tournament, for a claim about the final.
+    claimed_final = _FINAL.search(_OTHER_STAGE.sub(" ", said)) is not None
+    if (
+        claimed_final
+        and _OTHER_STAGE.search(said) is None
+        and _OTHER_STAGE.search(passage) is not None
+        and _FINAL.search(_OTHER_STAGE.sub(" ", passage)) is None
+    ):
+        return "another match"
+
+    # A report from years later about something that recurs, not naming the claim's
+    # year: about a later one. "India won the T20 World Cup for a record third time"
+    # is not the 2024 title.
+    if (
+        years
+        and published is not None
+        and published.year > max(years) + 1
+        and _RECURRING.search(said) is not None
+        and not named
+    ):
+        return "a later occurrence"
+    return None

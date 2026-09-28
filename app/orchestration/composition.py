@@ -318,6 +318,8 @@ async def build(settings: Settings) -> dict[str, Any]:
             keeper=keeper,
             # And the pages a claim was cited against before are read again.
             memory=EvidenceMemory(database),
+            # Which results are read: the most relevant, by our own model.
+            relevance=local_stance,
         )
         resolvers.append(web_search)
 

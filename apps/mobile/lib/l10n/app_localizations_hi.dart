@@ -1344,6 +1344,11 @@ class AppLocalizationsHi extends AppLocalizations {
   String get claimStateUnconfirmed => 'अपुष्ट';
 
   @override
+  String claimInFull(String text) {
+    return 'पूरा दावा: $text';
+  }
+
+  @override
   String get rightWrongTitle => 'क्या सही है, क्या गलत';
 
   @override

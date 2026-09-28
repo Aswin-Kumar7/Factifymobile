@@ -57,6 +57,12 @@ current_check: ContextVar[str] = ContextVar("current_check", default="")
 # as a verdict problem when it was a time limit (2026-09-28). There is one check now.
 check_seconds: ContextVar[float | None] = ContextVar("check_seconds", default=None)
 
+# The pages the person shared (page keys), for the length of a check. A search skips
+# them, and every page of their outlet, before reading: they can never be evidence for
+# themselves (see the orchestrator's `_not_own`), and ISRO's own Chandrayaan-3 pages
+# took read slots from other sources only to be thrown away after being read.
+current_own_pages: ContextVar[frozenset[str]] = ContextVar("current_own_pages", default=frozenset())
+
 
 @dataclass(frozen=True, slots=True)
 class SourceCandidate:
@@ -388,8 +394,8 @@ def keyword_overlap(claim_text: str, source_text: str, *, minimum_length: int = 
         "after",
         "over",
     }
-    # Every Indian script and Arabic, as in corpus.py's word pattern.
-    tokenise = re.compile(r"[a-z0-9\u0900-\u0d7f\u0600-\u06ff\u0750-\u077f]+")
+    # Every Indian script and Arabic, less the danda, as in corpus.py's word pattern.
+    tokenise = re.compile(r"[a-z0-9\u0900-\u0963\u0966-\u0d7f\u0600-\u06ff\u0750-\u077f]+")
 
     claim_words = {
         word

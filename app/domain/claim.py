@@ -105,6 +105,13 @@ class Claim(BaseModel):
         return self.text
 
     @property
+    def search_text(self) -> str:
+        """The claim to search the web with and to rank results against: its
+        self-contained English version when there is one - context and all, "NASA
+        launched Chandrayaan-3" for "NASA launched it" - else its own words."""
+        return self.english_text or self.text
+
+    @property
     def matching_text(self) -> str:
         """For matching by words or embeddings against mostly English sources: the
         English translation for the ten newer languages, the claim itself otherwise.

@@ -272,6 +272,10 @@ class ClaimResponse(BaseModel):
     confidence: int | None = None
     # One or two plain sentences on what the sources show, in the claim's language.
     explanation: str | None = None
+    # A claim not made in English, as one self-contained English sentence (1.4): what
+    # its words mean in full - "NASA launched Chandrayaan-3" for "নাসা এটি উৎক্ষেপণ
+    # করেছিল" (NASA launched it). What its sources were found and read against.
+    in_full: str | None = None
     # The language the claim was made in (1.3 addition, 2026-09-28): en, hi, or one of
     # bn mr te ta gu ur kn or ml pa. Lets the app offer the note to the chat in it.
     language: str | None = None

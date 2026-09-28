@@ -544,6 +544,11 @@ class _Body extends StatelessWidget {
     for (final claim in verdict.claims) {
       for (final e in claim.evidence) {
         if (e.direction == 'risk_signal' || e.isMediaMatch) continue;
+        // Only sources that say something about a claim: a page read for background
+        // decided nothing, and listed beside the ones that did it looked like a search
+        // gone wrong. A smaller version of a claim ("partly true") is what it says.
+        final narrower = e.matchBasis.metric.startsWith('passage_narrower');
+        if (!e.supports && !e.contradicts && !narrower) continue;
         if (seen.add(e.citationUrl)) all.add(e);
       }
     }
@@ -1083,6 +1088,14 @@ class RightAndWrong extends StatelessWidget {
                   style: FactifyText.sans(13.5, color: k.ink).copyWith(height: 1.4),
                 ),
               ),
+              if (claim.inFull case final full?)
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(start: 22, top: 2),
+                  child: Text(
+                    l10n.claimInFull(full),
+                    style: FactifyText.sans(12, color: k.ink3).copyWith(height: 1.35),
+                  ),
+                ),
               if (mark == ClaimMark.partly)
                 if (claim.smallerVersion.firstOrNull case final said?)
                   _SourcesReport(evidence: said),
@@ -1182,6 +1195,14 @@ class _ClaimRow extends StatelessWidget {
                       color: k.ink,
                     ).copyWith(height: 1.4),
                   ),
+                  if (claim.inFull case final full?)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        l10n.claimInFull(full),
+                        style: FactifyText.sans(12, color: k.ink3).copyWith(height: 1.35),
+                      ),
+                    ),
                   const SizedBox(height: 4),
                   Text.rich(
                     TextSpan(

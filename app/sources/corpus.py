@@ -158,8 +158,10 @@ _SENTENCE = re.compile(r"(?<=[.!?])\s+")
 # Latin, digits, and the Indian scripts from Devanagari to Malayalam (U+0900-0D7F)
 # and Arabic for Urdu. It was Devanagari only, so a Tamil or Urdu claim had no words
 # but its numbers, and an Urdu claim about Chandrayaan-3 in 2023 "matched" every
-# English article that mentioned 2023 (2026-09-28).
-_WORD = re.compile(r"[a-z0-9\u0900-\u0d7f\u0600-\u06ff\u0750-\u077f]+")
+# English article that mentioned 2023 (2026-09-28). The danda (U+0964-0965) is
+# punctuation, not a letter: it stuck to the last word of every Hindi, Marathi,
+# Bengali, Odia and Punjabi sentence, and that word then matched nothing.
+_WORD = re.compile(r"[a-z0-9\u0900-\u0963\u0966-\u0d7f\u0600-\u06ff\u0750-\u077f]+")
 
 
 def significant_words(text: str) -> set[str]:

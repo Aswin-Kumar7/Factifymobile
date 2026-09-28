@@ -229,7 +229,13 @@ def _to_claim(
 
     return Claim(
         id=claim_id,
-        text=proposal.text,
+        # An English claim is shown self-contained - "Chandrayaan-3's rover payloads
+        # include APXS and LIBS" where the article says "Rover payloads include ..." -
+        # since a claim listed as wrong has to say what it is about. Located, above,
+        # by the document's exact words, which is what the anchor points at. A claim
+        # in another language keeps its own words, and the app shows the English in
+        # full beside it (`in_full` in the response).
+        text=_shown(proposal, language),
         normalized_text=_normalise(proposal.text),
         claim_type=proposal.claim_type,
         severity=proposal.severity,
@@ -405,3 +411,20 @@ def _standalone(text: str) -> str:
     """The extractor's self-contained English version of a claim, tidied, or ""."""
     line = " ".join(text.split())
     return line if 0 < len(line) <= _STANDALONE_CHARACTERS else ""
+
+
+def _shown(proposal: ProposedClaim, language: str | None) -> str:
+    """The claim as a person reads it: for an English document, its self-contained
+    version when the extractor wrote one; otherwise the document's own words."""
+    standalone = _standalone(proposal.standalone_english)
+    if not standalone or (language or "en") != "en":
+        return proposal.text
+    # A translation instead of the document's language, or a sentence about something
+    # else, is not shown: it must share words with what the document says.
+    own = set(_WORDS.findall(_normalise(proposal.text)))
+    shared = own & set(_WORDS.findall(_normalise(standalone)))
+    return standalone if own and len(shared) / len(own) >= 0.5 else proposal.text
+
+
+# Words in Latin, digits and the Indian and Arabic scripts, less the danda.
+_WORDS = re.compile(r"[a-z0-9ऀ-ॣ०-ൿ؀-ۿݐ-ݿ]+")

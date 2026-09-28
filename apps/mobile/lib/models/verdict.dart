@@ -395,11 +395,16 @@ class Claim {
     this.technique,
     this.language,
     this.ruleId,
+    this.inFull,
   });
 
   final String id;
   final String text;
   final String claimType;
+
+  /// A claim not made in English, as one self-contained English sentence (1.4):
+  /// "NASA launched Chandrayaan-3" for a claim whose words say "NASA launched it".
+  final String? inFull;
 
   /// The rule that decided this claim. `rule.narrower_scope` is a claim sources
   /// confirm only in a smaller version: partly true (contract 1.4).
@@ -454,6 +459,7 @@ class Claim {
     technique: json['technique'] as String?,
     language: json['language'] as String?,
     ruleId: json['rule_id'] as String?,
+    inFull: json['in_full'] as String?,
   );
 
   bool get isDecisive => status.isDecisive;

@@ -10,6 +10,7 @@ import asyncio
 import json
 from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -1281,7 +1282,7 @@ class TestSearchingTheQuestionBehindTheClaim:
     def _run(self, subject: WebSearchResolver, target: object) -> tuple[list[str], list[dict]]:
         asked: list[str] = []
 
-        async def _search(query: str) -> list[dict]:
+        async def _search(query: str, *, domains: tuple[str, ...] = ()) -> list[dict]:
             asked.append(query)
             return [{"url": f"https://example.test/{len(asked)}", "content": "x"}]
 
@@ -1349,7 +1350,7 @@ class TestSearchingTheQuestionBehindTheClaim:
         subject = self._resolver()
         asked: list[str] = []
 
-        async def _search(query: str) -> list[dict]:
+        async def _search(query: str, *, domains: tuple[str, ...] = ()) -> list[dict]:
             asked.append(query)
             if "boom" in query:
                 raise RuntimeError("provider fell over")
@@ -1367,7 +1368,7 @@ class TestSearchingTheQuestionBehindTheClaim:
         """A Tavily plan limit (432 on every query) read as "no source addresses this"."""
         subject = self._resolver()
 
-        async def _search(_query: str) -> list[dict]:
+        async def _search(_query: str, *, domains: tuple[str, ...] = ()) -> list[dict]:
             raise RuntimeError("provider returned 432")
 
         subject._search = _search  # type: ignore[method-assign]
@@ -1379,7 +1380,7 @@ class TestSearchingTheQuestionBehindTheClaim:
     def test_the_same_url_from_two_queries_is_one_candidate(self) -> None:
         subject = self._resolver()
 
-        async def _search(_query: str) -> list[dict]:
+        async def _search(_query: str, *, domains: tuple[str, ...] = ()) -> list[dict]:
             return [{"url": "https://example.test/same", "content": "x"}]
 
         subject._search = _search  # type: ignore[method-assign]
@@ -1399,7 +1400,7 @@ class TestSearchingTheQuestionBehindTheClaim:
         """
         subject = self._resolver()
 
-        async def _search(query: str) -> list[dict]:
+        async def _search(query: str, *, domains: tuple[str, ...] = ()) -> list[dict]:
             if query.endswith("fact check"):
                 tag = "factcheck"
             else:
@@ -1922,3 +1923,147 @@ class TestOldNewsIsNotEvidence:
         assert not _reads_as_a_fact_check(
             "India beat Iran to win kabaddi gold", "https://www.thehindu.com/sport/kabaddi"
         )
+
+
+class TestReadingTheRelevantResultsFirst:
+    """The read slots went to well-known publishers, not to relevant pages: for "the
+    government will give every woman Rs 5,000 a month", Reuters and CNN on Trump's
+    "$5,000 checks" were opened while Tamil papers on Tamil Nadu's Rs 5,000 were not
+    (2026-09-28). Results are now read in order of how much they are about the claim.
+    """
+
+    class _Scores:
+        can_gate = True
+
+        def __init__(self, scores: dict[str, float]) -> None:
+            self.scores = scores
+            self.asked: list[str] = []
+
+        def relevance(self, claim_text: str, texts: list[str]) -> list[float]:
+            self.asked.append(claim_text)
+            return [next(v for k, v in self.scores.items() if k in text) for text in texts]
+
+    def _resolver(self, scores: _Scores) -> WebSearchResolver:
+        hosts = {"reuters.com", "cnn.com", "dinamalar.com", "dinamani.com", "isro.gov.in"}
+        return WebSearchResolver(
+            fetcher=None,  # type: ignore[arg-type]
+            reasoner=None,
+            provider="tavily",
+            endpoint="https://example.invalid/search",
+            api_key="k",
+            credibility=SourceCredibility(
+                frozenset(hosts), prominent=frozenset({"reuters.com", "cnn.com"})
+            ),
+            relevance=scores,
+        )
+
+    @staticmethod
+    def _rows() -> list[dict]:
+        return [
+            {
+                "url": "https://www.reuters.com/trump-5000",
+                "title": "Trump $5,000 checks",
+                "content": "x",
+            },
+            {"url": "https://www.cnn.com/trump-pledge", "title": "Trump pledge", "content": "x"},
+            {
+                "url": "https://www.dinamalar.com/rs-5000",
+                "title": "TN Rs 5000 women",
+                "content": "x",
+            },
+            {"url": "https://www.dinamani.com/rs-5000", "title": "Urimai Rs 5000", "content": "x"},
+        ]
+
+    def _candidates(self, resolver: WebSearchResolver, target: object) -> list[str]:
+        async def _queries(_claim: object) -> list[dict]:
+            return self._rows()
+
+        resolver._queries = _queries  # type: ignore[method-assign]
+        found = asyncio.run(resolver.candidates(target))  # type: ignore[arg-type]
+        return [urlsplit(c.url).hostname or "" for c in found]
+
+    def test_the_most_relevant_are_read_first_and_the_unrelated_not_at_all(self) -> None:
+        scores = self._Scores(
+            {"Trump $5,000": 0.24, "Trump pledge": 0.32, "TN Rs 5000": 0.56, "Urimai": 0.50}
+        )
+        hosts = self._candidates(
+            self._resolver(scores),
+            claim(text="The government will give every woman Rs 5,000 a month."),
+        )
+
+        # Reuters is far below the best result and is never opened; CNN is kept, last.
+        assert hosts == ["www.dinamalar.com", "www.dinamani.com", "www.cnn.com"]
+
+    def test_results_are_ranked_against_the_claim_in_full(self) -> None:
+        scores = self._Scores({"Trump": 0.3, "TN": 0.5, "Urimai": 0.5})
+        self._candidates(
+            self._resolver(scores),
+            claim(text="NASA launched it.").model_copy(
+                update={"english_text": "NASA launched Chandrayaan-3."}
+            ),
+        )
+
+        assert scores.asked == ["NASA launched Chandrayaan-3."]
+
+    def test_the_outlet_of_a_shared_page_is_never_opened(self) -> None:
+        from app.sources.base import current_own_pages
+
+        scores = self._Scores({"Trump": 0.5, "TN": 0.5, "Urimai": 0.5})
+        token = current_own_pages.set(frozenset({"dinamalar.com/story"}))
+        try:
+            hosts = self._candidates(self._resolver(scores), claim(text="A claim."))
+        finally:
+            current_own_pages.reset(token)
+
+        assert "www.dinamalar.com" not in hosts
+
+
+def test_the_fact_check_query_is_asked_of_fact_checkers_only() -> None:
+    """Asked of the whole web, "<claim> fact check" found a business page for a
+    free-laptop scam and no debunk."""
+    from app.sources.websearch import _FACT_CHECK_DOMAINS
+
+    subject = WebSearchResolver(
+        fetcher=None,  # type: ignore[arg-type]
+        reasoner=None,
+        provider="tavily",
+        endpoint="https://example.invalid/search",
+        api_key="k",
+    )
+    asked: dict[str, tuple[str, ...]] = {}
+
+    async def _search(query: str, *, domains: tuple[str, ...] = ()) -> list[dict]:
+        asked[query] = domains
+        return []
+
+    subject._search = _search  # type: ignore[method-assign]
+    asyncio.run(subject._queries(claim(text="Free laptops for every student.")))
+
+    assert asked["Free laptops for every student. fact check"] == _FACT_CHECK_DOMAINS
+    assert "pib.gov.in" in _FACT_CHECK_DOMAINS
+    assert asked["Free laptops for every student."] == ()
+
+
+def test_an_english_claim_is_searched_with_its_context() -> None:
+    """ "Rover payloads include APXS and LIBS", searched as written, found Mars rovers."""
+    subject = WebSearchResolver(
+        fetcher=None,  # type: ignore[arg-type]
+        reasoner=None,
+        provider="tavily",
+        endpoint="https://example.invalid/search",
+        api_key="k",
+    )
+    asked: list[str] = []
+
+    async def _search(query: str, *, domains: tuple[str, ...] = ()) -> list[dict]:
+        asked.append(query)
+        return []
+
+    subject._search = _search  # type: ignore[method-assign]
+    target = claim(text="Rover payloads include APXS and LIBS.", language="en").model_copy(
+        update={"english_text": "Chandrayaan-3's rover payloads include APXS and LIBS."}
+    )
+    asyncio.run(subject._queries(target))
+
+    assert asked[0] == "Chandrayaan-3's rover payloads include APXS and LIBS."
+    assert "Rover payloads include APXS and LIBS." not in asked
