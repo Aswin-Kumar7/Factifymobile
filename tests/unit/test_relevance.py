@@ -466,3 +466,100 @@ class TestASharedFactCheckIsAnsweredByItsRating:
 
         assert _Checker.asked == 0
         assert [e.citation_url for e in verified.evidence] == [self.PAGE]
+
+
+class TestAFactCheckPageThatWillNotServeUs:
+    """bangla.boomlive.in answers our fetcher with 403: its rating is looked up where
+    the fact-checker filed it, the fact-check index, by the page's address."""
+
+    PAGE = "https://bangla.boomlive.in/fact-check/some-viral-claim-32197"
+
+    class _Fetcher:
+        def __init__(self, payload: dict[str, Any]) -> None:
+            self.payload = payload
+            self.asked: list[str] = []
+
+        async def fetch(self, url: str, **_: Any) -> Any:
+            import json
+            from datetime import UTC, datetime
+
+            from app.security.fetcher import FetchResult
+
+            self.asked.append(url)
+            body = json.dumps(self.payload).encode()
+            return FetchResult(
+                url=url,
+                final_url=url,
+                status_code=200,
+                content_type="application/json",
+                body=body,
+                byte_count=len(body),
+                fetched_at=datetime.now(UTC),
+            )
+
+    def _resolver(self, payload: dict[str, Any]) -> Any:
+        from app.sources.factcheck import FactCheckResolver
+        from tests.unit.test_verdict_fixes import _Governor
+
+        return FactCheckResolver(
+            records=[],
+            governor=_Governor(),
+            api_available=True,
+            fetcher=self._Fetcher(payload),  # type: ignore[arg-type]
+            endpoint="https://index.example/claims:search",
+            api_key="test-key",
+        )
+
+    def test_the_page_s_own_rating_is_found_by_its_address(self) -> None:
+        import asyncio
+
+        resolver = self._resolver(
+            {
+                "claims": [
+                    {
+                        "text": "Another claim",
+                        "claimReview": [{"url": "https://bangla.boomlive.in/fact-check/x-1"}],
+                    },
+                    {
+                        "text": "ভিডিও দাবি করে স্মৃতি ইরানি দেবী দুর্গাকে অসম্মান করেছেন",
+                        "claimReview": [
+                            {
+                                "url": "http://www.bangla.boomlive.in/fact-check/some-viral-claim-32197/",
+                                "textualRating": "মিথ্যা",
+                                "publisher": {"name": "BOOM", "site": "boomlive.in"},
+                            }
+                        ],
+                    },
+                ]
+            }
+        )
+
+        [record] = asyncio.run(resolver.published_ratings(self.PAGE))
+
+        assert record.url == self.PAGE
+        assert record.publisher == "BOOM"
+        # A Bengali rating is read as the false rating it is.
+        from app.domain.enums import Relation
+
+        assert record.verdict is Relation.CONTRADICTS
+        assert "reviewPublisherSiteFilter=bangla.boomlive.in" in resolver._fetcher.asked[0]
+
+    def test_nothing_when_the_index_does_not_list_the_page(self) -> None:
+        import asyncio
+
+        resolver = self._resolver({"claims": []})
+
+        assert asyncio.run(resolver.published_ratings(self.PAGE)) == []
+
+    @pytest.mark.parametrize(
+        "rating",
+        ["মিথ্যা", "தவறு", "తప్పు", "ಸುಳ್ಳು", "തെറ്റ്", "ਝੂਠ", "ખોટું", "खोटे", "ମିଥ୍ୟା", "جھوٹ"],
+    )
+    def test_a_false_rating_in_each_language_is_read(self, rating: str) -> None:
+        from app.domain.enums import Relation
+        from app.sources.factcheck import FactCheckRecord
+
+        record = FactCheckRecord(
+            claim_text="x", normalized_text="x", url="https://f/1", rating=rating, publisher=None
+        )
+        assert record.verdict is Relation.CONTRADICTS

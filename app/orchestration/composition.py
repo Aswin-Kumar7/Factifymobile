@@ -439,6 +439,9 @@ async def build(settings: Settings) -> dict[str, Any]:
         # to the vendor's extract when the publisher will not serve us — the second
         # rung of the ladder a retrieved source already climbs.
         "web_search_resolver": web_search,
+        # And the fact-check index, for a shared fact-check that will not serve us its
+        # page: its rating as the fact-checker published it there.
+        "factcheck_resolver": factchecks,
         "case_reader": CaseReader(database, ranker=SourceCredibility.load()),
         "ingestion": ingestion,
         "factcheck_keeper": keeper,

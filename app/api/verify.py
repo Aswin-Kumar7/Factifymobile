@@ -543,8 +543,34 @@ async def _read_linked_article(request: Request, url: str) -> LinkedPage | None:
         for review in read_claim_reviews(html or "", page_url=url)
         if review.claim_reviewed.strip()
     )
+    if not reviews and _credibility().is_fact_checker(url):
+        reviews = await _indexed_reviews(request, url)
     reviewed = tuple(review.claim_reviewed for review in reviews)
     return LinkedPage("\n\n".join(parts), partial, reviewed, published, reviews) if parts else None
+
+
+async def _indexed_reviews(request: Request, url: str) -> tuple[ClaimReview, ...]:
+    """A fact-check page's ratings as its publisher filed them with the fact-check
+    index, for a page whose own markup we could not read."""
+    resolver = getattr(request.app.state, "factcheck_resolver", None)
+    lookup = getattr(resolver, "published_ratings", None)
+    if lookup is None:
+        return ()
+    try:
+        records = await lookup(url)
+    except Exception:
+        logger.exception("the fact-check index could not be asked about a shared page")
+        return ()
+    return tuple(
+        ClaimReview(
+            claim_reviewed=record.claim_text,
+            rating=record.rating,
+            publisher=record.publisher,
+            published_at=record.published_at,
+            url=record.url,
+        )
+        for record in records
+    )
 
 
 async def _search_listing(request: Request, url: str) -> tuple[str | None, str] | None:

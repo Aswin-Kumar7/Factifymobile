@@ -29,7 +29,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 from app.domain.claim import Claim
 from app.domain.enums import EvidenceKind, Method, Relation, Tier
@@ -133,6 +133,46 @@ _FALSE_RATINGS = {
     "फर्जी",
     "भ्रामक",
     "गलत",
+    "असत्य",
+    "गुमराह",
+    # The other ten languages' words for false, fake and misleading, as their
+    # fact-checkers write them in a rating: only the English and Hindi ones were
+    # read, and a Tamil or Bengali site's rating in its own script was ignored.
+    "মিথ্যা",
+    "অসত্য",
+    "ভুয়ো",
+    "ভুয়া",
+    "বিভ্রান্তিকর",
+    "खोटा",
+    "खोटी",
+    "खोटे",
+    "दिशाभूल",
+    "తప్పు",
+    "నకిలీ",
+    "అబద్ధం",
+    "தவறு",
+    "தவறான",
+    "போலி",
+    "பொய்",
+    "ખોટું",
+    "ખોટો",
+    "ખોટી",
+    "નકલી",
+    "ભ્રામક",
+    "ಸುಳ್ಳು",
+    "ನಕಲಿ",
+    "ತಪ್ಪು",
+    "ମିଥ୍ୟା",
+    "ଭ୍ରାମକ",
+    "തെറ്റ്",
+    "വ്യാജം",
+    "ਝੂਠ",
+    "ਫਰਜ਼ੀ",
+    "ਗਲਤ",
+    "جھوٹ",
+    "غلط",
+    "جعلی",
+    "گمراہ کن",
 }
 
 _TRUE_RATINGS = {"true", "correct", "accurate", "verified", "mostly true", "सही", "सच"}
@@ -472,6 +512,69 @@ class FactCheckResolver:
             if (record := self._to_record(entry)) is not None
         ]
 
+    async def published_ratings(self, url: str) -> list[FactCheckRecord]:
+        """A fact-checker's own ratings on one of its pages, from the fact-check index.
+
+        For a shared fact-check that will not serve us its page: bangla.boomlive.in
+        answers our honestly named fetcher with 403, and the text a reader service
+        returns in its place carries no ClaimReview markup (2026-09-28). The
+        fact-checker publishes the same ratings to the index, where its recent reviews
+        are listed by site and this page's are picked out by address. One call; empty
+        when the index cannot be asked or does not list the page.
+        """
+        host = (urlsplit(url).hostname or "").casefold().removeprefix("www.")
+        if not host or not self._api_available or self._governor is None:
+            return []
+        if isinstance(await self._governor.try_acquire(PROVIDER), Skip):
+            return []
+        assert self._fetcher is not None
+        query = urlencode(
+            {
+                "reviewPublisherSiteFilter": host,
+                # The recent ones: unfiltered, the index lists a site's reviews by its
+                # own ranking, and last week's page was not among BOOM Bangla's 100.
+                "maxAgeDays": _SITE_REVIEW_DAYS,
+                "pageSize": _SITE_REVIEWS,
+                "key": self._api_key,
+            }
+        )
+        result = await self._fetcher.fetch(f"{self._endpoint}?{query}", provider=PROVIDER)
+        if not isinstance(result, FetchResult) or not 200 <= result.status_code < 300:
+            return []
+        try:
+            payload = json.loads(result.text)
+        except json.JSONDecodeError:
+            return []
+        entries = payload.get("claims", []) if isinstance(payload, dict) else []
+        found: list[FactCheckRecord] = []
+        for entry in entries:
+            text = " ".join(str(entry.get("text") or "").split())
+            for review in entry.get("claimReview") or []:
+                if not text or _address(str(review.get("url") or "")) != _address(url):
+                    continue
+                publisher = review.get("publisher") or {}
+                found.append(
+                    FactCheckRecord(
+                        claim_text=text,
+                        normalized_text=text.lower(),
+                        url=url,
+                        rating=review.get("textualRating") or None,
+                        publisher=publisher.get("name") or publisher.get("site") or None,
+                        published_at=_parse_review_date(review.get("reviewDate")),
+                        retrieved_at=datetime.now(UTC),
+                    )
+                )
+        event(
+            logger,
+            "shared fact-check looked up in the index",
+            module="sources.factcheck",
+            outcome="ok" if found else "empty",
+            provider=PROVIDER,
+            listed=len(entries),
+            found=len(found),
+        )
+        return found
+
     def add_records(self, records: list[FactCheckRecord]) -> None:
         """Fact-checks kept since boot, searched from the next check on."""
         known = {(r.url, r.normalized_text) for r in self._records}
@@ -678,6 +781,19 @@ class FactCheckResolver:
                 logger.debug("semantic relevance unavailable; falling back to overlap")
 
         return _overlap(claim, adjudicated), "claim_overlap", MIN_CLAIM_OVERLAP
+
+
+# A fact-checker's recent reviews listed to find one page among: a few days of a
+# busy site's output.
+_SITE_REVIEWS = 100
+_SITE_REVIEW_DAYS = 90
+
+
+def _address(url: str) -> str:
+    """A page's address without its scheme, "www.", query or trailing slash."""
+    parts = urlsplit(url.strip())
+    host = (parts.hostname or "").casefold().removeprefix("www.")
+    return f"{host}{parts.path.rstrip('/')}"
 
 
 def _overlap(claim: Claim, reviewed: str) -> float:
