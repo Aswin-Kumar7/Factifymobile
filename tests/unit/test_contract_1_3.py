@@ -255,7 +255,7 @@ class TestAdditiveOnly:
 
     def test_every_1_2_field_is_kept_and_the_new_ones_are_optional(self) -> None:
         for model, old, new in (
-            (ClaimResponse, _CLAIM_1_2, {"input_anchor", "technique"}),
+            (ClaimResponse, _CLAIM_1_2, {"input_anchor", "technique", "language"}),
             (VerifyResponse, _RESULT_1_2, {"receipt", "request_id", "media_report"}),
         ):
             fields = model.model_fields

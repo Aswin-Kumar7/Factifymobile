@@ -48,6 +48,32 @@ Future<void> showCorrectionSheet(BuildContext context, Verdict verdict, {Correct
 /// English interface is scanning for "हिन्दी" (as in the language menu).
 const Map<String, String> _languages = {'en': 'English', 'hi': 'हिन्दी'};
 
+/// The ten more languages a claim can be checked in. The note to the chat is offered
+/// in the claim's own language too; the app's screens stay English and Hindi, so
+/// that note is written by the server alone.
+const Map<String, String> claimLanguages = {
+  'bn': 'বাংলা',
+  'mr': 'मराठी',
+  'te': 'తెలుగు',
+  'ta': 'தமிழ்',
+  'gu': 'ગુજરાતી',
+  'ur': 'اردو',
+  'kn': 'ಕನ್ನಡ',
+  'or': 'ଓଡ଼ିଆ',
+  'ml': 'മലയാളം',
+  'pa': 'ਪੰਜਾਬੀ',
+};
+
+/// English and Hindi, and the claims' own language when it is another one.
+Map<String, String> noteLanguages(Verdict verdict) {
+  final own = verdict.claims
+      .map((claim) => claim.language)
+      .firstWhere((code) => claimLanguages.containsKey(code), orElse: () => null);
+  final languages = {..._languages};
+  if (own != null) languages[own] = claimLanguages[own]!;
+  return languages;
+}
+
 /// The picture is drawn at three times its size.
 const double _scale = 3;
 
@@ -121,9 +147,13 @@ class _CorrectionSheetState extends State<CorrectionSheet> {
 
   void _choose(String language) {
     if (!_notes.containsKey(language)) {
-      final local = correctionMessage(widget.verdict, lookupAppLocalizations(Locale(language)));
-      _notes[language] = local.message;
-      _links[language] = local.links;
+      // A draft from the app's own strings where it has them; the server writes the
+      // note in the other languages, and it fills in when it arrives.
+      final local = _languages.containsKey(language)
+          ? correctionMessage(widget.verdict, lookupAppLocalizations(Locale(language)))
+          : null;
+      _notes[language] = local?.message ?? '';
+      _links[language] = local?.links ?? const [];
     }
     setState(() {
       _language = language;
@@ -306,7 +336,11 @@ class _CorrectionSheetState extends State<CorrectionSheet> {
                             style: FactifyText.sans(13, weight: FontWeight.w600, color: k.ink),
                           ),
                         ),
-                        _LanguageSwitch(selected: _language ?? 'en', onChanged: _choose),
+                        _LanguageSwitch(
+                          selected: _language ?? 'en',
+                          onChanged: _choose,
+                          languages: noteLanguages(widget.verdict),
+                        ),
                       ],
                     ),
                   ),
@@ -394,10 +428,15 @@ class _CorrectionSheetState extends State<CorrectionSheet> {
 
 /// English | हिन्दी, as a small segmented control.
 class _LanguageSwitch extends StatelessWidget {
-  const _LanguageSwitch({required this.selected, required this.onChanged});
+  const _LanguageSwitch({
+    required this.selected,
+    required this.onChanged,
+    this.languages = _languages,
+  });
 
   final String selected;
   final ValueChanged<String> onChanged;
+  final Map<String, String> languages;
 
   @override
   Widget build(BuildContext context) {
@@ -419,8 +458,8 @@ class _LanguageSwitch extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              for (final MapEntry(key: code, value: name) in _languages.entries) ...[
-                if (code != _languages.keys.first) const SizedBox(width: 2),
+              for (final MapEntry(key: code, value: name) in languages.entries) ...[
+                if (code != languages.keys.first) const SizedBox(width: 2),
                 FxTapArea(
                   selected: code == selected,
                   // The chosen half stays a button a screen reader can reach.

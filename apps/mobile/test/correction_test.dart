@@ -17,6 +17,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:share_plus/share_plus.dart';
 
+import 'support/screens.dart';
+
 const _url = 'https://pib.gov.in/factcheck/1';
 
 Verdict _false() => Verdict.fromJson({
@@ -180,5 +182,14 @@ void main() {
   testWidgets("a server that can't be reached leaves the phone's note", (tester) async {
     await _open(tester, load: (_) async => throw Exception('offline'));
     expect(_note(tester), endsWith('PIB Fact Check: $_url'));
+  });
+
+  test("the note is offered in the claim's own language when it is not English or Hindi", () {
+    final tamil = sampleVerdictJson(FactVerdict.falseClaim);
+    for (final claim in (tamil['claims'] as List)) {
+      (claim as Map)['language'] = 'ta';
+    }
+    expect(noteLanguages(Verdict.fromJson(tamil)).keys, ['en', 'hi', 'ta']);
+    expect(noteLanguages(sampleVerdict(FactVerdict.falseClaim)).keys, ['en', 'hi']);
   });
 }

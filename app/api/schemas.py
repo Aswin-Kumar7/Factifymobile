@@ -85,7 +85,8 @@ class CorrectionTextRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    language: str = Field(default="en", pattern="^(en|hi)$")
+    # English, Hindi, or one of the ten newer languages (app/extraction/language.py).
+    language: str = Field(default="en", pattern="^(en|hi|bn|mr|te|ta|gu|ur|kn|or|ml|pa)$")
 
 
 class ReviewLabelRequest(BaseModel):
@@ -267,6 +268,9 @@ class ClaimResponse(BaseModel):
     confidence: int | None = None
     # One or two plain sentences on what the sources show, in the claim's language.
     explanation: str | None = None
+    # The language the claim was made in (1.3 addition, 2026-09-28): en, hi, or one of
+    # bn mr te ta gu ur kn or ml pa. Lets the app offer the note to the chat in it.
+    language: str | None = None
     # Whether the web was searched for this claim - "searched", "not_searched",
     # "timed_out" or "unavailable" - and how many pages were read for it. None on
     # cases stored before this was recorded.

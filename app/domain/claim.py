@@ -80,12 +80,35 @@ class Claim(BaseModel):
     search_phrases: tuple[str, ...] = ()
     location: str | None = None
 
+    # The claim in English, machine-translated, when it was made in another language:
+    # for finding and reading English sources - most fact-checks and national reporting
+    # are published in English - and never shown to anyone as the claim.
+    english_text: str = ""
+
     # Set by the corroboration and source-risk tracks. They are inputs to the rules,
     # not evidence themselves — an origin count is a property of the evidence set.
     independent_origin_count: int = Field(default=0, ge=0)
     document_count: int = Field(default=0, ge=0)
     source_risk: SourceRisk = SourceRisk.UNKNOWN
     within_developing_window: bool = False
+
+    @property
+    def reading_text(self) -> str:
+        """The claim as the source readers see it: its own words, with the English
+        beside them when it was made in another language."""
+        if self.english_text and self.english_text.casefold() != self.text.casefold():
+            return f"{self.text}\n(In English: {self.english_text})"
+        return self.text
+
+    @property
+    def matching_text(self) -> str:
+        """For matching by words or embeddings against mostly English sources: the
+        English translation for the ten newer languages, the claim itself otherwise.
+        Hindi keeps its own words, which the multilingual embeddings were measured on.
+        """
+        if self.english_text and (self.language or "en") not in ("en", "hi", "hi-Latn"):
+            return self.english_text
+        return self.text
 
     @property
     def is_checkable(self) -> bool:

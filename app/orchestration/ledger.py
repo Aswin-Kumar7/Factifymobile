@@ -326,6 +326,7 @@ class CaseReader:
                     ClaimResponse(
                         id=str(claim_id),
                         text=str(row["text"]),
+                        language=row.get("language") if isinstance(row, dict) else None,
                         claim_type=str(row["claim_type"]),
                         status=str(row_verdict["status"]),
                         severity=str(row["severity"]),

@@ -5,6 +5,12 @@ The shape both clients read is defined in `app/api/schemas.py` and versioned by
 nothing that was there changes name, type or meaning. A client built against an older
 version keeps working and simply does not show the new fields.
 
+## 1.3, addition (2026-09-28): languages
+
+- **`claims[].language`**: the language the claim was made in - `en`, `hi`, or one of
+  `bn mr te ta gu ur kn or ml pa`. Its `explanation` is written in that language.
+- **`POST /v1/cases/{id}/correction-text`** accepts the same twelve codes.
+
 ## 1.3, addition (2026-09-28)
 
 Our own detectors replace the hosted one. All new fields are optional.

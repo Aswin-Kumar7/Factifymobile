@@ -42,6 +42,7 @@ from app.extraction.llm import LLMExtractor
 from app.extraction.local_ocr import LocalFirstOcr, LocalOcr
 from app.extraction.model_wire import WireFormat
 from app.extraction.ocr import OcrExtractor
+from app.extraction.translate import GoogleTranslator
 from app.intake.normalizer import NormalisedIntake
 from app.knowledge.factchecks import FactCheckKeeper, load_factcheck_records
 from app.knowledge.memory import EvidenceMemory
@@ -354,6 +355,20 @@ async def build(settings: Settings) -> dict[str, Any]:
         verification=(
             SourceVerification(checker=reasoner, ranker=SourceCredibility.load())
             if reasoner is not None
+            else None
+        ),
+        # Claims in the ten newer Indian languages are translated into English to find
+        # and read English sources (app/extraction/translate.py).
+        translator=(
+            GoogleTranslator(
+                fetcher=SecureFetcher(timeout_seconds=8.0),
+                api_key=(
+                    settings.translation_key.get_secret_value()
+                    if settings.translation == "google_cloud" and settings.translation_key
+                    else None
+                ),
+            )
+            if settings.translation != "off"
             else None
         ),
     )

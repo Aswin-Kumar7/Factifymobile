@@ -290,6 +290,14 @@ class Settings(BaseSettings):
     # and auth header, exactly as api_format does for the LLM.
     websearch_provider: str = Field(default="tavily", pattern="^(tavily|exa)$")
 
+    # Translation of claims made in the ten newer Indian languages into English, to
+    # find and read English sources (app/extraction/translate.py). "google_free" is
+    # Google's undocumented widget endpoint - no key, not covered by Google's terms,
+    # can be refused without notice; "google_cloud" is the official API and needs
+    # FACTIFY_TRANSLATION_KEY; "off" searches claims in their own words only.
+    translation: str = Field(default="google_free", pattern="^(google_free|google_cloud|off)$")
+    translation_key: SecretStr | None = None
+
     # Whether the ingested local corpus is searched for evidence - our own stored
     # articles, searched before the paid web search, which then runs only when they
     # do not settle the claim.

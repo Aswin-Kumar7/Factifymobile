@@ -228,7 +228,7 @@ class SourceVerification:
         try:
             answer = await asyncio.wait_for(
                 self._checker.check_sources(
-                    claim.text,
+                    claim.reading_text,
                     [
                         (item.publisher or _host(item.citation_url), _under_headline(item))
                         for item in sided

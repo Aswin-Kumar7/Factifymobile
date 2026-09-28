@@ -23,13 +23,20 @@ class TestScriptDetection:
         assert result.language is Language.ENGLISH
         assert result.confident
 
-    def test_a_script_we_cannot_evaluate_is_named_not_guessed(self) -> None:
-        """Honest: identify the script, decline to claim a language."""
+    def test_each_indian_script_names_its_language(self) -> None:
+        """Ten more languages since 2026-09-28: the script names the language."""
         result = detect("সরকার নতুন প্রকল্প ঘোষণা করেছে")
 
         assert result.script is Script.BENGALI
-        assert result.language is Language.UNKNOWN
+        assert result.language is Language.BENGALI
         assert result.confident
+        assert detect("அரசு புதிய திட்டத்தை அறிவித்துள்ளது").language is Language.TAMIL
+        assert detect("حکومت نے نئی اسکیم کا اعلان کیا ہے۔").language is Language.URDU
+        assert detect("ਸਰਕਾਰ ਨੇ ਨਵੀਂ ਯੋਜਨਾ ਦਾ ਐਲਾਨ ਕੀਤਾ").language is Language.PUNJABI
+
+    def test_marathi_and_hindi_are_told_apart_by_grammar_words(self) -> None:
+        assert detect("ही बातमी खरी नाही आणि फसवी आहे").language is Language.MARATHI
+        assert detect("यह खबर सच नहीं है और फर्जी है").language is Language.HINDI
 
     def test_mixed_script_with_devanagari_routes_to_hindi(self) -> None:
         """Common in real forwards: Hindi commentary quoting an English headline."""

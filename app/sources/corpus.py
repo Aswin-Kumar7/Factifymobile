@@ -385,7 +385,7 @@ class CorpusResolver:
         # event loop for every embedding — and on the first request, for the model
         # load too — stalling every other in-flight request behind this one.
         result = await asyncio.to_thread(
-            self._embedder.embed_one, claim.text, language=claim.language
+            self._embedder.embed_one, claim.matching_text, language=_matching_language(claim)
         )
         if not result.vectors:
             event(
@@ -419,7 +419,7 @@ class CorpusResolver:
         gracefully on the punctuation and stray quoting that arrives with forwarded
         messages instead of erroring on it.
         """
-        terms = " ".join(sorted(significant_words(claim.text)))
+        terms = " ".join(sorted(significant_words(claim.matching_text)))
         if not terms:
             return []
 
@@ -517,7 +517,7 @@ class CorpusResolver:
             return None
 
         outcome = await self._reasoner.judge(
-            claim.text,
+            claim.reading_text,
             passages,
             title=snapshot.title,
             language=claim.language,
@@ -584,7 +584,7 @@ class CorpusResolver:
         since the two share every significant word. Reporting contradiction from this
         signal would invent the finding most likely to be acted on.
         """
-        sentence, score = best_sentence(claim.text, snapshot.text)
+        sentence, score = best_sentence(claim.matching_text, snapshot.text)
         if not sentence or score < CONTEXT_OVERLAP:
             return insufficient(
                 NAME,
@@ -642,7 +642,9 @@ class CorpusResolver:
             return None
 
         result = await asyncio.to_thread(
-            self._embedder.embed, [claim.text, sentence], language=claim.language
+            self._embedder.embed,
+            [claim.matching_text, sentence],
+            language=_matching_language(claim),
         )
         if len(result.vectors) != 2:
             return None
@@ -795,3 +797,8 @@ class CorpusCorroboration:
             cursor = await conn.execute("SELECT count(*) AS n FROM facify.corpus_item")
             row = await cursor.fetchone()
         return int(row["n"]) if row else 0
+
+
+def _matching_language(claim: Claim) -> str | None:
+    """The language of `claim.matching_text`: English when it is the translation."""
+    return "en" if claim.matching_text is not claim.text else claim.language

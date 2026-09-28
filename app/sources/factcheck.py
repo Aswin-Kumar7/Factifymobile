@@ -257,7 +257,7 @@ class FactCheckResolver:
                 title=record.claim_text,
                 published_at=record.published_at,
                 proposed_by="local_factcheck_corpus",
-                prior_score=keyword_overlap(claim.text, record.claim_text),
+                prior_score=_overlap(claim, record.claim_text),
             )
             for record in self._records
         ]
@@ -306,7 +306,7 @@ class FactCheckResolver:
                     title=record.claim_text,
                     published_at=record.published_at,
                     proposed_by="factcheck_api",
-                    prior_score=keyword_overlap(claim.text, record.claim_text),
+                    prior_score=_overlap(claim, record.claim_text),
                 )
                 for record in fetched
             ]
@@ -339,8 +339,30 @@ class FactCheckResolver:
         failed request raises `ProviderUnavailable`: the check is reported as skipped
         rather than as "no fact-check exists", and the result is not cached.
         """
+        records = await self._query_one(claim.text)
+        # And in English, for a claim made in another language: a Tamil forward's
+        # fact-check is as likely to be in English. The English query failing is not
+        # the check failing - the claim's own words were asked.
+        if claim.english_text and claim.english_text.casefold() != claim.text.casefold():
+            try:
+                seen = {record.url for record in records}
+                records += [
+                    record
+                    for record in await self._query_one(claim.english_text)
+                    if record.url not in seen
+                ]
+            except ProviderUnavailable:
+                logger.warning("fact-check API: the English query failed; own words kept")
+        for record in records:
+            self._api_cache[record.url] = record
+        if self._keeper is not None and records:
+            self._keeper.remember([record.url for record in records])
+        return records
+
+    async def _query_one(self, text: str) -> list[FactCheckRecord]:
+        """One query to the API; raises `ProviderUnavailable` when it did not answer."""
         assert self._fetcher is not None
-        query = urlencode({"query": claim.text[:300], "pageSize": 10, "key": self._api_key})
+        query = urlencode({"query": text[:300], "pageSize": 10, "key": self._api_key})
         result = await self._fetcher.fetch(f"{self._endpoint}?{query}", provider=PROVIDER)
         # Once more when the connection itself failed: a dropped connection is not an
         # answer, and failing on it skips the fact-checks for the whole check
@@ -362,16 +384,11 @@ class FactCheckResolver:
         if not isinstance(payload, dict) or "error" in payload:
             raise ProviderUnavailable(PROVIDER, SkipReason.PROVIDER_ERROR)
 
-        records = [
+        return [
             record
             for entry in payload.get("claims", [])
             if (record := self._to_record(entry)) is not None
         ]
-        for record in records:
-            self._api_cache[record.url] = record
-        if self._keeper is not None and records:
-            self._keeper.remember([record.url for record in records])
-        return records
 
     def add_records(self, records: list[FactCheckRecord]) -> None:
         """Fact-checks kept since boot, searched from the next check on."""
@@ -492,7 +509,7 @@ class FactCheckResolver:
         if self._reasoner is None:
             return True
 
-        verdict = await self._reasoner.same_claim(claim.text, record.claim_text)
+        verdict = await self._reasoner.same_claim(claim.reading_text, record.claim_text)
         # `None` is "could not ask", not "no". Falling back to the score alone keeps a
         # brief provider outage from dropping every published adjudication.
         return verdict is not False
@@ -509,7 +526,9 @@ class FactCheckResolver:
         if self._embedder is not None:
             try:
                 result = await asyncio.to_thread(
-                    self._embedder.embed, [claim.text, adjudicated], language=claim.language
+                    self._embedder.embed,
+                    [claim.matching_text, adjudicated],
+                    language="en" if claim.matching_text is not claim.text else claim.language,
                 )
                 if len(result.vectors) == 2:
                     similarity = cosine(result.vectors[0], result.vectors[1])
@@ -519,4 +538,12 @@ class FactCheckResolver:
                 # than rejecting the claim outright.
                 logger.debug("semantic relevance unavailable; falling back to overlap")
 
-        return keyword_overlap(claim.text, adjudicated), "claim_overlap", MIN_CLAIM_OVERLAP
+        return _overlap(claim, adjudicated), "claim_overlap", MIN_CLAIM_OVERLAP
+
+
+def _overlap(claim: Claim, reviewed: str) -> float:
+    """Word overlap with a fact-check's claim, in the claim's words or its English."""
+    own = keyword_overlap(claim.text, reviewed)
+    if not claim.english_text:
+        return own
+    return max(own, keyword_overlap(claim.english_text, reviewed))

@@ -26,6 +26,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from app.domain.enums import ClaimStatus, Verdict
+from app.verdict.wording import WORDING
 
 # The summary is cut here, at a word boundary.
 _SUMMARY_CHARACTERS = 280
@@ -64,6 +65,19 @@ _UNCONFIRMED = {
         "बेहतर होगा।"
     ),
 }
+
+# The ten newer languages, from the generated wording (app/verdict/wording.py).
+for _language, _lines in WORDING.items():
+    if "correction.opening" not in _lines:
+        continue
+    _STOP[_language] = _lines.get("correction.stop", ".")
+    _OPENING[_language] = _lines["correction.opening"]
+    _SAYS[_language] = {
+        Verdict.FALSE: _lines.get("correction.false", _SAYS["en"][Verdict.FALSE]),
+        Verdict.MISLEADING: _lines.get("correction.misleading", _SAYS["en"][Verdict.MISLEADING]),
+        Verdict.TRUE: _lines.get("correction.true", _SAYS["en"][Verdict.TRUE]),
+    }
+    _UNCONFIRMED[_language] = _lines.get("correction.unconfirmed", _UNCONFIRMED["en"])
 
 # The claim statuses and source directions that carry each verdict.
 _CARRIED_BY: dict[Verdict, tuple[set[ClaimStatus], set[str]]] = {

@@ -72,6 +72,7 @@ from app.verdict.engine import (
 )
 from app.verdict.explain import explain, narrower_note
 from app.verdict.strength import Strength, evidence_strength
+from app.verdict.wording import WORDING
 
 logger = logging.getLogger("factify.orchestration")
 
@@ -304,7 +305,10 @@ def _unreported_note(claim: Claim, evidence: list[Evidence]) -> str | None:
         return None
     if any(item.direction is Direction.SUPPORTS for item in evidence):
         return None
-    return _UNREPORTED.get(claim.language or "en", _UNREPORTED["en"])
+    language = claim.language or "en"
+    return _UNREPORTED.get(language) or WORDING.get(language, {}).get(
+        "pipeline.unreported", _UNREPORTED["en"]
+    )
 
 
 def _not_own(evidence: list[Evidence], own_pages: frozenset[str]) -> list[Evidence]:
@@ -348,8 +352,13 @@ class Orchestrator:
         concurrency: int = DEFAULT_CONCURRENCY,
         corroboration: Corroboration | None = None,
         verification: SourceVerification | None = None,
+        translator: Any | None = None,
     ) -> None:
         self._cache = cache
+        # Translates a claim made in another language into English before its sources
+        # are sought (app/extraction/translate.py). Optional: without it, a claim is
+        # searched in its own words only.
+        self._translator = translator
         # Optional for the same reason as corroboration. Without it, sources are still
         # deduplicated but not checked for relevance.
         self._verification = verification
@@ -496,6 +505,8 @@ class Orchestrator:
         depth = current_depth.get()
         reading = REASONING_TARGET_SECONDS if depth is NORMAL else depth.seconds
         deadline = started + (reading if self._reads_sources else TARGET_SECONDS)
+
+        claims = await self._in_english(claims)
 
         check = current_check.set(str(case_id))
         try:
@@ -706,6 +717,27 @@ class Orchestrator:
             *(_counted(index, claim) for index, claim in enumerate(claims))
         )
         return list(results)
+
+    async def _in_english(self, claims: list[Claim]) -> list[Claim]:
+        """Each claim not made in English, with its English translation beside it.
+
+        A Tamil forward searched only in Tamil finds Tamil pages; the fact-check of it
+        is as likely to be in English. The translation is used to search and to read,
+        never shown as the claim. A translation that fails leaves the claim as it was.
+        """
+        translator = self._translator
+        if translator is None:
+            return claims
+
+        async def translated(claim: Claim) -> Claim:
+            if claim.english_text or (claim.language or "en") in ("en", "hi-Latn", "und"):
+                return claim
+            english = await translator.translate(claim.text, target="en")
+            if english is None or not english.text.strip():
+                return claim
+            return claim.model_copy(update={"english_text": english.text.strip()})
+
+        return list(await asyncio.gather(*(translated(claim) for claim in claims)))
 
     async def _resolve_claim(
         self,

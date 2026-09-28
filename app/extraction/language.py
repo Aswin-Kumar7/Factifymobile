@@ -18,12 +18,33 @@ from enum import StrEnum
 
 
 class Language(StrEnum):
-    """Scope is what we can evaluate. Anything else is named and abstained on."""
+    """Scope is what we can evaluate. Anything else is named and abstained on.
+
+    English, Hindi and ten more Indian languages (2026-09-28): a claim in any of them
+    is checked in its own words and, translated, in English - where most fact-checks
+    and national reporting are published - and its explanation is written back in it.
+    """
 
     ENGLISH = "en"
     HINDI = "hi"
     HINGLISH = "hi-Latn"
+    BENGALI = "bn"
+    MARATHI = "mr"
+    TELUGU = "te"
+    TAMIL = "ta"
+    GUJARATI = "gu"
+    URDU = "ur"
+    KANNADA = "kn"
+    ODIA = "or"
+    MALAYALAM = "ml"
+    PUNJABI = "pa"
     UNKNOWN = "und"
+
+
+# The languages a claim can be checked in, as their ISO 639-1 codes.
+CHECKED = frozenset(
+    language.value for language in Language if language not in (Language.HINGLISH, Language.UNKNOWN)
+)
 
 
 class Script(StrEnum):
@@ -33,6 +54,11 @@ class Script(StrEnum):
     TAMIL = "Taml"
     TELUGU = "Telu"
     ARABIC = "Arab"
+    GUJARATI = "Gujr"
+    GURMUKHI = "Guru"
+    ODIA = "Orya"
+    KANNADA = "Knda"
+    MALAYALAM = "Mlym"
     MIXED = "Zyyy"
     UNKNOWN = "Zzzz"
 
@@ -40,10 +66,53 @@ class Script(StrEnum):
 _SCRIPT_RANGES: tuple[tuple[Script, int, int], ...] = (
     (Script.DEVANAGARI, 0x0900, 0x097F),
     (Script.BENGALI, 0x0980, 0x09FF),
+    (Script.GURMUKHI, 0x0A00, 0x0A7F),
+    (Script.GUJARATI, 0x0A80, 0x0AFF),
+    (Script.ODIA, 0x0B00, 0x0B7F),
     (Script.TAMIL, 0x0B80, 0x0BFF),
     (Script.TELUGU, 0x0C00, 0x0C7F),
+    (Script.KANNADA, 0x0C80, 0x0CFF),
+    (Script.MALAYALAM, 0x0D00, 0x0D7F),
     (Script.ARABIC, 0x0600, 0x06FF),
+    (Script.ARABIC, 0x0750, 0x077F),
 )
+
+# One language per script, as Indian forwards use them. Bengali script also writes
+# Assamese, and Arabic script Kashmiri and Sindhi; the larger language is named, and
+# the check itself does not depend on the guess - it searches in the claim's own
+# words as well as in English.
+_SCRIPT_LANGUAGE = {
+    Script.BENGALI: "bn",
+    Script.GURMUKHI: "pa",
+    Script.GUJARATI: "gu",
+    Script.ODIA: "or",
+    Script.TAMIL: "ta",
+    Script.TELUGU: "te",
+    Script.KANNADA: "kn",
+    Script.MALAYALAM: "ml",
+    Script.ARABIC: "ur",
+}
+
+# Hindi and Marathi share Devanagari, so their commonest grammar words tell them
+# apart: "आहे", "नाही", "आणि" are Marathi, "है", "नहीं", "और" Hindi. Words both
+# languages use ("ने", "ही", "हे") are left out.
+_MARATHI_WORDS = frozenset(
+    "आहे आहेत नाही नाहीत आणि होते होता होती केले केली करण्यात येणार असे आता मध्ये "
+    "पण तर त्यांनी त्याने झाले झाली दिले मिळणार सर्व करा".split()
+)
+_HINDI_WORDS = frozenset(
+    "है हैं नहीं और का की के में से को था थी थे गया गई किया रहा रही लिए भी यह वह कहा करें होगा मिलेगा".split()
+)
+_DEVANAGARI_WORD = re.compile(r"[\u0900-\u097F]+")
+
+
+def devanagari_language(text: str) -> Language:
+    """Hindi or Marathi, from grammar words; Hindi when it cannot tell."""
+    words = _DEVANAGARI_WORD.findall(text)
+    marathi = sum(1 for word in words if word in _MARATHI_WORDS)
+    hindi = sum(1 for word in words if word in _HINDI_WORDS)
+    return Language.MARATHI if marathi >= 2 and marathi > hindi else Language.HINDI
+
 
 # Hindi function words as they are actually typed in Latin script. Function words
 # rather than nouns on purpose: nouns are borrowed in both directions and prove
@@ -188,14 +257,18 @@ def detect(text: str) -> Detection:
 
     if script is Script.DEVANAGARI:
         return Detection(
-            language=Language.HINDI, script=script, confident=True, method="script_range"
+            language=devanagari_language(stripped),
+            script=script,
+            confident=True,
+            method="script_range",
         )
 
-    if script in {Script.BENGALI, Script.TAMIL, Script.TELUGU, Script.ARABIC}:
-        # Correctly identified and honestly out of scope: naming the script is more
-        # useful than guessing a language we cannot evaluate.
+    if script in _SCRIPT_LANGUAGE:
         return Detection(
-            language=Language.UNKNOWN, script=script, confident=True, method="script_out_of_scope"
+            language=Language(_SCRIPT_LANGUAGE[script]),
+            script=script,
+            confident=True,
+            method="script_range",
         )
 
     # Devanagari presence decides before script dominance does. A sentence that is
@@ -206,8 +279,24 @@ def detect(text: str) -> Detection:
     devanagari = counts.get(Script.DEVANAGARI, 0)
     if total_alpha and devanagari / total_alpha >= _DEVANAGARI_PRESENCE:
         return Detection(
-            language=Language.HINDI, script=script, confident=True, method="devanagari_present"
+            language=devanagari_language(stripped),
+            script=script,
+            confident=True,
+            method="devanagari_present",
         )
+
+    # The same for the other Indian scripts: an English headline quoted inside a
+    # Tamil forward is a Tamil forward.
+    indian = {k: v for k, v in counts.items() if k in _SCRIPT_LANGUAGE}
+    if total_alpha and indian:
+        leading = max(indian, key=lambda k: indian[k])
+        if indian[leading] / total_alpha >= _DEVANAGARI_PRESENCE:
+            return Detection(
+                language=Language(_SCRIPT_LANGUAGE[leading]),
+                script=script,
+                confident=True,
+                method="script_present",
+            )
 
     if script is Script.LATIN:
         ratio = hinglish_ratio(stripped)

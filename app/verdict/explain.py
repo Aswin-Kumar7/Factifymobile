@@ -19,6 +19,7 @@ from __future__ import annotations
 from app.domain.enums import ClaimStatus, Credibility, Direction, EvidenceKind, Tier
 from app.domain.evidence import Evidence, is_narrower_scope
 from app.domain.publishers import publishers_of
+from app.verdict.wording import WORDING
 
 # The quote is cut here, at a word.
 _QUOTE = 170
@@ -46,6 +47,21 @@ _TEXT = {
         "other": " 1 और स्रोत भी यही कहता है।",
     },
 }
+
+
+# The ten newer languages, from the generated wording (app/verdict/wording.py);
+# a line missing there falls back to English.
+for _language, _lines in WORDING.items():
+    _TEXT[_language] = {
+        **_TEXT["en"],
+        **{
+            key.removeprefix("explain."): (
+                " " + text if key in ("explain.others", "explain.other") else text
+            )
+            for key, text in _lines.items()
+            if key.startswith("explain.")
+        },
+    }
 
 
 def explain(

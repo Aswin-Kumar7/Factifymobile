@@ -477,6 +477,7 @@ def to_response(result: VerificationResult, *, receipt_url: str | None = None) -
         ClaimResponse(
             id=outcome.claim.id,
             text=outcome.claim.text,
+            language=outcome.claim.language,
             claim_type=outcome.claim.claim_type,
             status=outcome.decision.status,
             severity=outcome.claim.severity,

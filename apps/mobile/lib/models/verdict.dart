@@ -365,11 +365,15 @@ class Claim {
     this.sourcesLookedAt,
     this.ownAnchor,
     this.technique,
+    this.language,
   });
 
   final String id;
   final String text;
   final String claimType;
+
+  /// The language the claim was made in: en, hi, or bn mr te ta gu ur kn or ml pa.
+  final String? language;
   final ClaimStatus status;
   final String severity;
   final String importance;
@@ -414,6 +418,7 @@ class Claim {
         ? null
         : InputAnchor.fromJson((json['input_anchor'] as Map).cast<String, dynamic>()),
     technique: json['technique'] as String?,
+    language: json['language'] as String?,
   );
 
   bool get isDecisive => status.isDecisive;

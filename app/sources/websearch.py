@@ -620,7 +620,7 @@ class WebSearchResolver:
             return insufficient(NAME, VERSION, "the page returned no readable passages")
 
         outcome = await self._reasoner.judge(
-            claim.text,
+            claim.reading_text,
             passages,
             title=snapshot.title,
             language=claim.language,
@@ -704,7 +704,7 @@ class WebSearchResolver:
             or _reads_as_a_fact_check(snapshot.title, snapshot.final_url or snapshot.url)
         ):
             reviewed = (snapshot.title or "").strip() or best.quote
-            if await self._reasoner.same_claim(claim.text, reviewed) is False:
+            if await self._reasoner.same_claim(claim.reading_text, reviewed) is False:
                 relation = Relation.CONTEXTUALIZES
                 note = " (a fact-check of a different claim)"
 
@@ -763,6 +763,11 @@ class WebSearchResolver:
         max_queries = _MAX_QUERIES if depth is NORMAL else depth.queries
 
         queries = [claim.text]
+        # Translated as well as in its own words, for a claim not made in English:
+        # the English press and the fact-checkers write about Tamil and Bengali
+        # forwards too, in English.
+        if claim.english_text and _comparable(claim.english_text) != claim_text:
+            queries.append(claim.english_text)
         for raw in claim.search_phrases:
             phrase = " ".join(raw.split())
             # A phrase that merely restates the claim buys nothing and costs a call.
@@ -785,8 +790,8 @@ class WebSearchResolver:
         # pension schemes, a scholarship notice and an explainer on WhatsApp groups -
         # never a fact-checker, because PIB Fact Check, BOOM and Factly mostly
         # publish in English. The extractor's English phrase names the same claim.
-        english = next((p for p in queries[1:] if p.isascii()), None)
-        subject = claim.text if claim.text.isascii() or english is None else english
+        english = claim.english_text or next((p for p in queries[1:] if p.isascii()), None)
+        subject = claim.text if claim.text.isascii() or not english else english
         queries.append(f"{subject} fact check")
 
         gathered = await asyncio.gather(
