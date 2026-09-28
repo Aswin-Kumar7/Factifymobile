@@ -364,3 +364,22 @@ class TestStoredReadingsArePerModel:
         await ClaimPipeline(new, cache).extract(DOCUMENT, content_hash="sha256:doc")  # type: ignore[arg-type]
 
         assert (old.calls, new.calls) == (1, 1)
+
+
+class TestASplitClaimInAnIndianScriptStillAnchors:
+    """gpt-5.6-luna split a compound Kannada sentence and wrote the second half in
+    full; its case endings differ from the text's, and it was discarded (2026-09-28)."""
+
+    SOURCE = "ಭಾರತ 2024ರಲ್ಲಿ ಟಿ20 ವಿಶ್ವಕಪ್ ಗೆದ್ದಿತು ಮತ್ತು ಫೈನಲ್‌ನಲ್ಲಿ ಆಸ್ಟ್ರೇಲಿಯಾವನ್ನು ಸೋಲಿಸಿತು."
+
+    def test_the_second_half_written_in_full_is_found(self) -> None:
+        from app.extraction.claims import _locate
+
+        second = "ಭಾರತ 2024ರ ಟಿ20 ವಿಶ್ವಕಪ್ ಫೈನಲ್ನಲ್ಲಿ ಆಸ್ಟ್ರೇಲಿಯಾವನ್ನು ಸೋಲಿಸಿತು."
+        assert _locate(second, self.SOURCE) is not None
+
+    def test_a_claim_the_text_does_not_make_is_not(self) -> None:
+        from app.extraction.claims import _locate
+
+        invented = "ಪಾಕಿಸ್ತಾನ 2022ರ ಏಷ್ಯಾಕಪ್ ಫೈನಲ್ನಲ್ಲಿ ಶ್ರೀಲಂಕಾವನ್ನು ಸೋಲಿಸಿತು."
+        assert _locate(invented, self.SOURCE) is None

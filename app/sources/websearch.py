@@ -933,6 +933,21 @@ class WebSearchResolver:
             gathered = await asyncio.gather(
                 *(self._search(query) for query in follow_up), return_exceptions=True
             )
+            # Every query failed: not "found nothing", or the run looks complete and
+            # is stored. A Tavily limit reached during this round (HTTP 432) left an
+            # answer that was served again once search worked (2026-09-28).
+            if all(isinstance(result, BaseException) for result in gathered):
+                event(
+                    logger,
+                    "web search failed",
+                    module="sources.websearch",
+                    outcome="error",
+                    provider=PROVIDER,
+                    queries=len(follow_up),
+                    failure_reason="follow-up round",
+                    level=logging.WARNING,
+                )
+                raise ProviderUnavailable(PROVIDER, SkipReason.PROVIDER_ERROR)
             found: dict[str, dict[str, Any]] = {}
             for result in gathered:
                 if isinstance(result, BaseException):

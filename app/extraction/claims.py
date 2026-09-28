@@ -138,13 +138,33 @@ _COVERAGE_THRESHOLD = 0.8
 _YEAR = re.compile(r"(19|20)\d\d")
 
 
+# How much of a word in an Indian script is its stem, in characters (code points).
+_STEM = 5
+# Joiners that shape a script's letters but carry no meaning of their own.
+_JOINERS = str.maketrans("", "", "‌‍")
+
+
 def _fact_words(text: str) -> list[str]:
     """The fact-bearing words of folded text: no function words, months abbreviated,
-    and a plain suffix trimmed, so "arrested" matches "arrests" and "January" "Jan"."""
+    and a plain suffix trimmed, so "arrested" matches "arrests" and "January" "Jan".
+
+    In the Indian scripts a word carries its case ending: Kannada "2024ರ" (of 2024)
+    and "2024ರಲ್ಲಿ" (in 2024), "ಆಸ್ಟ್ರೇಲಿಯಾವನ್ನು" and "ಆಸ್ಟ್ರೇಲಿಯಾ". gpt-5.6-luna split
+    "India won the 2024 T20 World Cup and beat Australia in the final" into two claims
+    and wrote the second in full, and it was discarded as not in the text (2026-09-28).
+    So a number there is its digits and a word its first few letters.
+    """
     words: list[str] = []
     for raw in text.split():
-        word = raw.strip(".,;:!?()[]\"'")
+        word = raw.strip(".,;:!?()[]\"'।").translate(_JOINERS)
         if not word or word in _FUNCTION_WORDS:
+            continue
+        if not word.isascii():
+            if any(ch.isdigit() for ch in word):
+                word = "".join(ch for ch in word if ch.isdigit())
+            else:
+                word = word[:_STEM]
+            words.append(word)
             continue
         word = _MONTHS.get(word, word)
         if not word.isdigit() and len(word) > 4:

@@ -2130,3 +2130,28 @@ def test_a_follow_up_round_asks_its_own_queries_only() -> None:
         current_follow_up.reset(token)
 
     assert asked == ["central govt Rs 5000 women scheme", "PIB fact check"]
+
+
+def test_a_follow_up_round_whose_every_search_failed_is_not_found_nothing() -> None:
+    """A search limit reached during the second round (HTTP 432) was taken for "found
+    nothing", the run looked complete, and it was stored (2026-09-28)."""
+    from app.sources.base import current_follow_up
+
+    subject = WebSearchResolver(
+        fetcher=None,  # type: ignore[arg-type]
+        reasoner=None,
+        provider="tavily",
+        endpoint="https://example.invalid/search",
+        api_key="k",
+    )
+
+    async def _search(query: str, *, domains: tuple[str, ...] = ()) -> list[dict]:
+        raise RuntimeError("provider returned 432")
+
+    subject._search = _search  # type: ignore[method-assign]
+    token = current_follow_up.set(("central govt Rs 5000 women scheme",))
+    try:
+        with pytest.raises(ProviderUnavailable):
+            asyncio.run(subject._queries(claim(text="Govt gives every woman Rs 5000 a month.")))
+    finally:
+        current_follow_up.reset(token)
