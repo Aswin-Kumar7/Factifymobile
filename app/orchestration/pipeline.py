@@ -58,6 +58,7 @@ from app.sources.base import (
     build_evidence,
     check_seconds,
     current_check,
+    current_follow_up,
     current_own_pages,
     current_reference_date,
 )
@@ -292,6 +293,9 @@ _UNREPORTED = {
     ),
 }
 
+
+# Time a follow-up round needs to be worth starting: a search and a few reads.
+_FOLLOW_UP_MIN_SECONDS = 45.0
 
 # How recent a shared news page must be for what it reports to be "too recent to
 # confirm yet": published today or yesterday.
@@ -874,6 +878,23 @@ class Orchestrator:
                     claim, evidence, skipped=skipped, deadline=deadline
                 )
 
+        # One more, sharper round for a claim the piece rests on that the first round
+        # left undecided: the model writes up to two queries from what the pages said,
+        # and a few more pages are read (`current_follow_up`). Only for such claims, so
+        # the extra searches go where they can change the answer.
+        if fallback and searched and blocks_clearance(claim):
+            counted = await self._count_origins(claim, evidence=evidence, skipped=[])
+            if not decide(counted, evidence).status.is_decisive:
+                more = await self._follow_up(
+                    fallback, claim, evidence, skipped=mine, deadline=deadline, tally=looked
+                )
+                if more:
+                    evidence.extend(more)
+                    evidence = _not_own(evidence, own_pages)
+                    evidence, explanation = await self._verify_sources(
+                        claim, evidence, skipped=skipped, deadline=deadline
+                    )
+
         scratch = []
         counted = await self._count_origins(claim, evidence=evidence, skipped=scratch)
         skipped.extend(scratch)
@@ -983,6 +1004,45 @@ class Orchestrator:
             search=search,
             looked_at=looked[0],
         )
+
+    async def _follow_up(
+        self,
+        fallback: list[SourceResolver],
+        claim: Claim,
+        evidence: list[Evidence],
+        *,
+        skipped: list[SkippedCheck],
+        deadline: float | None,
+        tally: list[int],
+    ) -> list[Evidence]:
+        """The second round's evidence, or nothing when no better search was found."""
+        if deadline is not None and deadline - time.perf_counter() < _FOLLOW_UP_MIN_SECONDS:
+            return []
+        writer = next((r for r in fallback if hasattr(r, "follow_up_queries")), None)
+        if writer is None:
+            return []
+        notes = [item.finding for item in evidence if item.finding][:6]
+        try:
+            queries = await writer.follow_up_queries(claim, notes)
+        except Exception:
+            logger.exception("follow-up queries could not be written")
+            return []
+        if not queries:
+            return []
+        event(
+            logger,
+            "follow-up search",
+            module="orchestration",
+            outcome="ok",
+            queries=len(queries),
+        )
+        token = current_follow_up.set(tuple(queries))
+        try:
+            return await self._run_stage(
+                fallback, claim, skipped=skipped, deadline=deadline, tally=tally
+            )
+        finally:
+            current_follow_up.reset(token)
 
     async def _verify_sources(
         self,

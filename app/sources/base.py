@@ -67,6 +67,10 @@ current_own_pages: ContextVar[frozenset[str]] = ContextVar("current_own_pages", 
 # and "this week" in its claims mean. A claim from it that names no year is about
 # that moment, not the same kind of thing years earlier (see verification's
 # `_other_occurrence`). Set for the length of one check.
+# A second, sharper search for a claim the first left undecided: when set, the web
+# search asks these queries and nothing else (the orchestrator's follow-up round).
+current_follow_up: ContextVar[tuple[str, ...]] = ContextVar("current_follow_up", default=())
+
 current_reference_date: ContextVar[date | None] = ContextVar("current_reference_date", default=None)
 
 

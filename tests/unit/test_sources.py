@@ -1305,8 +1305,10 @@ class TestSearchingTheQuestionBehindTheClaim:
             "does cow urine cure cancer",
             "cow urine cancer evidence",
             "Doctors confirm that drinking cow urine daily cures cancer. fact check",
+            # A health claim is asked of the health authorities as well.
+            "Doctors confirm that drinking cow urine daily cures cancer. evidence",
         ]
-        assert len(rows) == 4
+        assert len(rows) == 5
 
     def test_the_fan_out_is_capped(self) -> None:
         """Each query is a metered call, and the marginal result falls off fast."""
@@ -2102,3 +2104,29 @@ def test_a_fact_check_of_the_claim_is_read_before_a_page_on_its_topic() -> None:
     found = asyncio.run(resolver.candidates(claim(text="RBI will cancel Rs 500 notes.")))
 
     assert next(urlsplit(c.url).hostname for c in found) == "www.altnews.in"
+
+
+def test_a_follow_up_round_asks_its_own_queries_only() -> None:
+    from app.sources.base import current_follow_up
+
+    subject = WebSearchResolver(
+        fetcher=None,  # type: ignore[arg-type]
+        reasoner=None,
+        provider="tavily",
+        endpoint="https://example.invalid/search",
+        api_key="k",
+    )
+    asked: list[str] = []
+
+    async def _search(query: str, *, domains: tuple[str, ...] = ()) -> list[dict]:
+        asked.append(query)
+        return [{"url": f"https://example.test/{len(asked)}", "content": "x"}]
+
+    subject._search = _search  # type: ignore[method-assign]
+    token = current_follow_up.set(("central govt Rs 5000 women scheme", "PIB fact check"))
+    try:
+        asyncio.run(subject._queries(claim(text="Govt gives every woman Rs 5000 a month.")))
+    finally:
+        current_follow_up.reset(token)
+
+    assert asked == ["central govt Rs 5000 women scheme", "PIB fact check"]

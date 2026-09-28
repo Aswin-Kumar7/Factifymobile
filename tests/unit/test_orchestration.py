@@ -1582,3 +1582,80 @@ async def test_every_claim_of_a_long_page_is_checked_and_answered_in_order() -> 
     assert [outcome.claim.id for outcome in result.claims] == [c.id for c in claims]
     assert "not_searched" not in [outcome.search for outcome in result.claims]
     assert sorted(checked.asked) == sorted(c.id for c in claims)
+
+
+@pytest.mark.anyio
+async def test_an_undecided_central_claim_gets_one_sharper_search() -> None:
+    """FIRE (NAACL 2025): search again, aimed by what the first round found, only
+    when the answer is still open."""
+    from app.sources.base import current_follow_up
+
+    class _Search:
+        name = "web_search"
+        fallback = True
+        reads_sources = True  # reading pages gets the longer budget a second round needs
+
+        def __init__(self) -> None:
+            self.rounds: list[tuple[str, ...]] = []
+
+        async def candidates(self, claim: Any) -> list[Any]:
+            self.rounds.append(current_follow_up.get())
+            return []
+
+        async def follow_up_queries(self, claim: Any, notes: list[str]) -> list[str]:
+            return ["central government Rs 5000 women scheme"]
+
+    search = _Search()
+    orchestrator = Orchestrator(
+        cache=NullCache(),  # type: ignore[arg-type]
+        governor=RecordingGovernor(),  # type: ignore[arg-type]
+        resolvers=[search],  # type: ignore[list-item]
+        extractor_version="test",
+    )
+    await orchestrator.verify(
+        normalise_text("Govt gives every woman Rs 5000 a month."),
+        case_id=uuid4(),
+        claims=[claim(importance=Importance.HEADLINE)],
+    )
+
+    assert search.rounds == [(), ("central government Rs 5000 women scheme",)]
+
+
+@pytest.mark.anyio
+async def test_a_minor_detail_gets_no_second_search() -> None:
+    from app.sources.base import current_follow_up
+
+    class _Search:
+        name = "web_search"
+        fallback = True
+        reads_sources = True
+
+        def __init__(self) -> None:
+            self.rounds: list[tuple[str, ...]] = []
+
+        async def candidates(self, claim: Any) -> list[Any]:
+            self.rounds.append(current_follow_up.get())
+            return []
+
+        async def follow_up_queries(self, claim: Any, notes: list[str]) -> list[str]:
+            return ["another query"]
+
+    search = _Search()
+    orchestrator = Orchestrator(
+        cache=NullCache(),  # type: ignore[arg-type]
+        governor=RecordingGovernor(),  # type: ignore[arg-type]
+        resolvers=[search],  # type: ignore[list-item]
+        extractor_version="test",
+    )
+    await orchestrator.verify(
+        normalise_text("A background detail."),
+        case_id=uuid4(),
+        claims=[
+            claim(
+                importance=Importance.BACKGROUND,
+                severity=Severity.LOW,
+            )
+        ],
+    )
+
+    assert search.rounds == [()]

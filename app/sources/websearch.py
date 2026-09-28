@@ -48,6 +48,7 @@ from app.sources.base import (
     SourceRelation,
     SourceSnapshot,
     current_check,
+    current_follow_up,
     current_own_pages,
     insufficient,
     locate_excerpt,
@@ -69,7 +70,7 @@ _MAX_QUERIES = 4
 _READ_TTL_SECONDS = 90.0
 
 NAME = "web_search"
-VERSION = "2026.09.28.1"
+VERSION = "2026.09.29.1"
 PROVIDER = "web_search"
 
 # How many credible sources to read. Each is a metered model call, and corroboration
@@ -128,6 +129,29 @@ _FACT_CHECK_DOMAINS = (
     "checkyourfact.com",
     "science.feedback.org",
 )
+
+# Health authorities, asked once more for a claim about a disease or a remedy. A
+# health myth is answered by what medicine says, and a general search for "turmeric
+# milk cures diabetes" returns recipes and wellness blogs.
+_HEALTH_DOMAINS = (
+    "who.int",
+    "icmr.gov.in",
+    "mohfw.gov.in",
+    "pib.gov.in",
+    "nhs.uk",
+    "cdc.gov",
+    "nih.gov",
+    "mayoclinic.org",
+    "clevelandclinic.org",
+)
+_HEALTH_WORDS = re.compile(
+    r"\b(?:cures?|cured|heals?|remed(?:y|ies)|cancer|diabetes|covid|corona(?:virus)?|"
+    r"vaccines?|disease|infection|virus|blood pressure|kidney|heart attack|immunity|"
+    r"medicine|treatment|doctors?)\b",
+    re.IGNORECASE,
+)
+# Pages read for a follow-up search: fewer than the first round, which was wider.
+_FOLLOW_UP_RESULTS = 4
 
 # Which search results get the read slots, by how much they are about the claim.
 #
@@ -381,7 +405,7 @@ class WebSearchResolver:
             # and those need opposite responses.
             dropped_hosts=sorted(set(dropped_hosts)),
         )
-        limit = self._max_results
+        limit = _FOLLOW_UP_RESULTS if current_follow_up.get() else self._max_results
 
         # Which pages get the read slots: the most relevant first (see
         # `_RELEVANCE_FLOOR`). Without the relevance model, as before: the wires, the
@@ -397,6 +421,12 @@ class WebSearchResolver:
         for remembered in await self._remembered(claim, {page_key(c.url) for c in shortlist}):
             shortlist.insert(0, remembered)
         return shortlist
+
+    async def follow_up_queries(self, claim: Claim, notes: list[str]) -> list[str]:
+        """Sharper queries for a second round, written from what the first found."""
+        if self._reasoner is None:
+            return []
+        return await self._reasoner.follow_up_queries(claim.search_text, notes)
 
     async def _most_relevant(
         self, claim: Claim, shortlist: list[SourceCandidate]
@@ -897,6 +927,22 @@ class WebSearchResolver:
 
         max_queries = _MAX_QUERIES
 
+        # A second, sharper round: its own queries and nothing else.
+        follow_up = current_follow_up.get()
+        if follow_up:
+            gathered = await asyncio.gather(
+                *(self._search(query) for query in follow_up), return_exceptions=True
+            )
+            found: dict[str, dict[str, Any]] = {}
+            for result in gathered:
+                if isinstance(result, BaseException):
+                    continue
+                for row in result:
+                    url = row.get("url")
+                    if isinstance(url, str) and url not in found:
+                        found[url] = row
+            return list(found.values())
+
         # The claim with its context first. An article's sentence "Rover payloads
         # include APXS and LIBS" searched as written found Mars rover pages; its
         # self-contained version names Chandrayaan-3. For a claim not made in English,
@@ -935,12 +981,17 @@ class WebSearchResolver:
         # Asked of the fact-checkers only (`_FACT_CHECK_DOMAINS`).
         checks = f"{subject} fact check"
 
+        # A health claim is asked of the health authorities too.
+        health = f"{subject} evidence" if _HEALTH_WORDS.search(claim.search_text) else None
         gathered = await asyncio.gather(
             *(self._search(query) for query in queries),
             self._search(checks, domains=_FACT_CHECK_DOMAINS),
+            *([self._search(health, domains=_HEALTH_DOMAINS)] if health else []),
             return_exceptions=True,
         )
         queries.append(checks)
+        if health:
+            queries.append(health)
 
         # Interleaved, not concatenated: one row from each query in turn.
         #
