@@ -98,6 +98,15 @@ _CANDIDATE_PREFILTER = 0.15
 # woman" at all (2026-09-27). Half the claim's significant words is the bar.
 _LOCAL_MATCH = 0.5
 
+# A stored fact-check this close in meaning to the claim is shortlisted even when it
+# shares few of its words: "Centre giving laptops to all students" and "free laptop
+# scheme for every student" are one fake, and word overlap alone can miss it - more so
+# across languages. Shortlisting only: whether it is about this claim is still decided
+# in `relate`, by the stricter `_SEMANTIC_GATE` and the reader. Retrieve, then verify,
+# as the strongest systems at SemEval-2025's multilingual fact-checked-claim retrieval
+# task did.
+_SEMANTIC_CANDIDATE = 0.55
+
 # Ratings that constitute a contradiction. Deliberately explicit rather than
 # "anything that isn't true": fact-checkers use a wide vocabulary and a rating we do
 # not recognise must not be guessed at.
@@ -242,6 +251,8 @@ class FactCheckResolver:
         # Adjudications fetched live this run, keyed by their URL, so `snapshot` and
         # `relate` can find a record the API produced without persisting it first.
         self._api_cache: dict[str, FactCheckRecord] = {}
+        # Each stored fact-check's claim, embedded once (`_by_meaning`).
+        self._vectors: dict[str, tuple[float, ...]] = {}
 
     async def candidates(self, claim: Claim) -> list[SourceCandidate]:
         """Shortlist adjudications that might be about this claim.
@@ -261,10 +272,16 @@ class FactCheckResolver:
             )
             for record in self._records
         ]
-        shortlist = [c for c in shortlist if c.prior_score >= _CANDIDATE_PREFILTER]
-        shortlist.sort(key=lambda candidate: -candidate.prior_score)
+        close = await self._by_meaning(claim)
+        shortlist = [
+            c
+            for c in shortlist
+            if c.prior_score >= _CANDIDATE_PREFILTER or close.get(c.url, 0.0) >= _SEMANTIC_CANDIDATE
+        ]
+        shortlist.sort(key=lambda c: -max(c.prior_score, close.get(c.url, 0.0)))
 
-        # A close match of our own answers without the API.
+        # A close match of our own answers without the API. By shared words only: a
+        # match by meaning is shortlisted, never trusted enough to skip the API.
         if shortlist and shortlist[0].prior_score >= _LOCAL_MATCH:
             event(
                 logger,
@@ -513,6 +530,33 @@ class FactCheckResolver:
         # `None` is "could not ask", not "no". Falling back to the score alone keeps a
         # brief provider outage from dropping every published adjudication.
         return verdict is not False
+
+    async def _by_meaning(self, claim: Claim) -> dict[str, float]:
+        """Each stored fact-check's closeness in meaning to the claim, by its URL.
+
+        The stored claims are embedded once and kept; the claim, in its self-contained
+        English when it has one, once per check. Empty without an embedder.
+        """
+        if self._embedder is None or not self._records:
+            return {}
+        try:
+            missing = [r for r in self._records if r.url not in self._vectors]
+            if missing:
+                result = await asyncio.to_thread(
+                    self._embedder.embed, [r.claim_text for r in missing], language=None
+                )
+                for record, vector in zip(missing, result.vectors, strict=False):
+                    self._vectors[record.url] = vector
+            asked = await asyncio.to_thread(
+                self._embedder.embed, [claim.search_text], language=None
+            )
+        except Exception:
+            logger.debug("stored fact-checks not matched by meaning")
+            return {}
+        if not asked.vectors:
+            return {}
+        target = asked.vectors[0]
+        return {url: cosine(target, vector) for url, vector in self._vectors.items()}
 
     async def _relevance(self, claim: Claim, adjudicated: str) -> tuple[float, str, float]:
         """How well an adjudicated claim matches this one — semantic, or lexical.

@@ -214,3 +214,35 @@ class TestNewsTooFreshToConfirm:
         result = await self._check(datetime.now(UTC).date() - timedelta(days=30))
 
         assert result.claims[0].decision.rule_id != "rule.developing_window"  # type: ignore[attr-defined]
+
+
+class TestStoredFactChecksByMeaning:
+    """A stored debunk that shares few words with the claim - more so across
+    languages - is shortlisted by meaning, and still verified before use."""
+
+    class _Embedder:
+        def embed(self, texts: list[str], *, language: object = None) -> object:
+            from app.embeddings.text import EmbeddingResult
+
+            def vector(text: str) -> tuple[float, ...]:
+                lowered = text.casefold()
+                return (1.0, 0.0) if "laptop" in lowered else (0.0, 1.0)
+
+            return EmbeddingResult(vectors=tuple(vector(t) for t in texts))
+
+    def test_a_paraphrased_debunk_is_shortlisted_and_the_api_still_asked(self) -> None:
+        import asyncio
+
+        from tests.unit.test_verdict_fixes import _record, _Resolver
+
+        resolver = _Resolver(
+            [_record("PIB: message about the PM Laptop Yojana is fake", "https://pib/1")]
+        )
+        resolver._embedder = self._Embedder()  # type: ignore[assignment]
+
+        found = asyncio.run(
+            resolver.candidates(claim(text="Centre giving free laptops to every student."))
+        )
+
+        assert "https://pib/1" in [c.url for c in found]
+        assert resolver.asked == 1  # a match by meaning never skips the API
