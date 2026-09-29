@@ -1222,6 +1222,14 @@ class AppLocalizationsHi extends AppLocalizations {
       'लेकिन इसके कंटेंट क्रेडेंशियल्स के अनुसार इसे AI टूल से बनाया गया है। नीचे जाँच देखें।';
 
   @override
+  String get nothingToCheckVoice =>
+      'लेकिन हमारी जाँच के अनुसार इस वीडियो की आवाज़ संभवतः कंप्यूटर से बनी है, किसी व्यक्ति की रिकॉर्डिंग नहीं। नीचे वीडियो की जाँच देखें।';
+
+  @override
+  String get nothingToCheckVoiceToo =>
+      'इसकी आवाज़ भी संभवतः कंप्यूटर से बनी है।';
+
+  @override
   String get searchUnavailableNote =>
       'हमारी समाचार खोज से संपर्क नहीं हो सका, इसलिए इसे समाचार रिपोर्टों से नहीं मिलाया गया। थोड़ी देर बाद फिर से जाँचें दबाएँ।';
 

@@ -185,6 +185,31 @@ void main() {
     );
   });
 
+  testWidgets('a video with nothing to check and a computer voice says so at the top', (
+    tester,
+  ) async {
+    await _show(
+      tester,
+      _verdict(
+        _report(
+          kind: 'video',
+          frames: 4,
+          credentials: {'status': 'none'},
+          history: {'status': 'none'},
+          detector: {
+            'status': 'checked',
+            'generated': 0.02,
+            'agreement': 'no_sign',
+            'voice': 0.9998,
+            'machine_voice': true,
+          },
+        ),
+      ),
+    );
+
+    expect(find.textContaining('the voice in this video was likely made by a computer'), findsOneWidget);
+  });
+
   testWidgets('nothing is said at the top when the checks found no sign of AI', (tester) async {
     await _show(
       tester,

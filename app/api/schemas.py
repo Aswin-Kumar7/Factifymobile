@@ -437,6 +437,9 @@ class DetectorResponse(BaseModel):
     faces: int | None = None
     # A video's sound: likelihood the voice was made by a speech generator.
     voice: float | None = None
+    # Added in 1.5: whether that is past the voice model's own line - the app does
+    # not hold the model's threshold, so it is told. None when there was no voice.
+    machine_voice: bool | None = None
     # These detectors ran on our own server. Other checks (the hosted text reader,
     # reverse image search) may still send the picture to their providers.
     on_server: bool = False
@@ -770,6 +773,9 @@ def media_report_to_response(report: Any, *, thumbnails: str) -> MediaReportResp
             agreement=synthetic.outcome,
             faces=synthetic.faces,
             voice=synthetic.voice,
+            machine_voice=(
+                synthetic.voice >= synthetic.voice_at if synthetic.voice is not None else None
+            ),
             on_server=synthetic.on_server,
         ),
         editing=EditingResponse(

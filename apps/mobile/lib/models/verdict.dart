@@ -705,7 +705,12 @@ class MediaDetector {
     this.voice,
     this.onServer = false,
     this.why,
+    this.machineVoice,
   });
+
+  /// A video's voice is past the voice model's own line (contract 1.5); null when
+  /// there was no voice, or from an older server.
+  final bool? machineVoice;
 
   /// checked or not_checked.
   final String status;
@@ -738,6 +743,7 @@ class MediaDetector {
   factory MediaDetector.fromJson(Map<String, dynamic> json) => MediaDetector(
     status: json['status'] as String? ?? 'not_checked',
     why: json['why'] as String?,
+    machineVoice: json['machine_voice'] as bool?,
     generated: (json['generated'] as num?)?.toDouble(),
     faceSwap: (json['face_swap'] as num?)?.toDouble(),
     secondOpinion: (json['second_opinion'] as num?)?.toDouble(),

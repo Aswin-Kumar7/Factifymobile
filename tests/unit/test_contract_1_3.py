@@ -255,6 +255,28 @@ class TestAdditiveOnly:
         # 1.5 (2026-09-29): why a picture check did not run.
         assert CONTRACT_VERSION == "1.5"
 
+    def test_a_computer_voice_is_said_against_the_model_s_own_line(self) -> None:
+        from app.api.schemas import media_report_to_response
+        from app.media.discovery import DiscoveryResult
+        from app.media.forensics import ForensicPanel
+        from app.media.provenance import ProvenanceReport
+        from app.media.report import MediaReport
+        from app.media.synthetic import SyntheticReading
+
+        def detector(voice: float | None) -> object:
+            report = MediaReport(
+                kind="video",
+                credentials=ProvenanceReport(present=False),
+                history=DiscoveryResult(reason="no matching pages found"),
+                synthetic=SyntheticReading(generated=0.02, voice=voice, voice_at=0.951),
+                editing=ForensicPanel(reason="x"),
+            )
+            return media_report_to_response(report, thumbnails="/t/").detector
+
+        assert detector(0.9998).machine_voice is True  # type: ignore[attr-defined]
+        assert detector(0.0176).machine_voice is False  # type: ignore[attr-defined]
+        assert detector(None).machine_voice is None  # type: ignore[attr-defined]
+
     def test_a_picture_check_that_did_not_run_says_why(self) -> None:
         from app.api.schemas import _detector_why, _history_why
 

@@ -1223,6 +1223,14 @@ class AppLocalizationsEn extends AppLocalizations {
       'But its content credentials say it was made with an AI tool. See the checks below.';
 
   @override
+  String get nothingToCheckVoice =>
+      'But our checks say the voice in this video was likely made by a computer, not recorded from a person. See the video checks below.';
+
+  @override
+  String get nothingToCheckVoiceToo =>
+      'Its voice was also likely made by a computer.';
+
+  @override
   String get searchUnavailableNote =>
       'Our news search couldn\'t be reached, so this wasn\'t checked against news reports. Tap Check again in a little while.';
 

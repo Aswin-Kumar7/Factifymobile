@@ -19,6 +19,9 @@ shows `not_checked`, so the app can say it rather than a bare "Not checked":
 
 Both are absent when the check ran.
 
+`media_report.detector.machine_voice` says whether a video's voice is past the voice
+model's own line (the app does not hold the threshold); absent when there was no voice.
+
 ## 1.4 (2026-09-28): one full check, and "partly true"
 
 The first change that is not purely additive: `verdict` has a new value.

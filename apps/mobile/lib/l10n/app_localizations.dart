@@ -1892,6 +1892,18 @@ abstract class AppLocalizations {
   /// **'But its content credentials say it was made with an AI tool. See the checks below.'**
   String get nothingToCheckAiDeclared;
 
+  /// No description provided for @nothingToCheckVoice.
+  ///
+  /// In en, this message translates to:
+  /// **'But our checks say the voice in this video was likely made by a computer, not recorded from a person. See the video checks below.'**
+  String get nothingToCheckVoice;
+
+  /// No description provided for @nothingToCheckVoiceToo.
+  ///
+  /// In en, this message translates to:
+  /// **'Its voice was also likely made by a computer.'**
+  String get nothingToCheckVoiceToo;
+
   /// No description provided for @searchUnavailableNote.
   ///
   /// In en, this message translates to:

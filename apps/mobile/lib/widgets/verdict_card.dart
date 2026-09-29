@@ -1474,9 +1474,15 @@ class _DashedBorder extends CustomPainter {
 String? _aiNote(Verdict verdict, AppLocalizations l10n) {
   final report = verdict.mediaReport;
   if (!verdict.nothingToCheck || report == null) return null;
-  if (report.credentials.declaresAi) return l10n.nothingToCheckAiDeclared;
-  if (report.detector.agreement == 'likely_ai') {
-    return report.isVideo ? l10n.nothingToCheckAiVideo : l10n.nothingToCheckAiPicture;
+  final notes = <String>[
+    if (report.credentials.declaresAi)
+      l10n.nothingToCheckAiDeclared
+    else if (report.detector.agreement == 'likely_ai')
+      report.isVideo ? l10n.nothingToCheckAiVideo : l10n.nothingToCheckAiPicture,
+  ];
+  // A video's voice: a computer voice over real footage is its own finding.
+  if (report.isVideo && report.detector.machineVoice == true) {
+    notes.add(notes.isEmpty ? l10n.nothingToCheckVoice : l10n.nothingToCheckVoiceToo);
   }
-  return null;
+  return notes.isEmpty ? null : notes.join(' ');
 }
