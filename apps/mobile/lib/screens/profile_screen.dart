@@ -399,7 +399,9 @@ class _Credits extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Semantics(
-                  label: l10n.creditsLeft(account.balance),
+                  // The clamped balance, as shown: TalkBack read "-106 credits left"
+                  // while the screen said 0 (2026-09-29).
+                  label: l10n.creditsLeft(balance),
                   excludeSemantics: true,
                   child: Wrap(
                     crossAxisAlignment: WrapCrossAlignment.end,
