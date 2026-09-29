@@ -6,6 +6,19 @@ nothing that was there changes name, type or meaning. A client built against an 
 version keeps working and simply does not show the new fields. 1.4 adds a value to
 `verdict`; see below for how an older client reads it.
 
+## 1.5 (2026-09-29): why a picture check did not run
+
+Additive. `media_report.detector.why` and `media_report.history.why` say why a check
+shows `not_checked`, so the app can say it rather than a bare "Not checked":
+
+- `detector.why`: `text_card` (the picture is mostly flat colour, a text card or a
+  screenshot: the AI-picture models misread those, and the words in it are checked
+  instead), `too_small`, `unreadable`, `off` (no detector on this server), `failed`.
+- `history.why`: `off` (reverse image search is not set up here, or its provider
+  refuses us, as Google Vision does until billing is enabled) or `failed`.
+
+Both are absent when the check ran.
+
 ## 1.4 (2026-09-28): one full check, and "partly true"
 
 The first change that is not purely additive: `verdict` has a new value.

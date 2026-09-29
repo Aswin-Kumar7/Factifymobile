@@ -305,6 +305,12 @@ class Settings(BaseSettings):
     # ingestion). On again now that ingestion runs on a schedule (below).
     corpus_retrieval: bool = True
 
+    # Whether stored answers are served: a repeat of a checked text, picture or link
+    # answered from the verdict cache, and a document's claims from the extraction
+    # cache. Off for a test run that must check everything afresh; the fresh
+    # answers are still stored.
+    cache_reads: bool = True
+
     # How often, in seconds, the news is collected while the service runs: a small
     # batch of due feeds from data/feeds.json each time. 0 turns the schedule off;
     # `/internal/ingest-tick` still runs a batch when an outside scheduler calls it.

@@ -208,6 +208,18 @@ class _History extends StatelessWidget {
       lines.add(_line(context, l10n.pcHistoryNone));
     } else {
       lines.add(_line(context, l10n.pcNotChecked, quiet: true));
+      // Why, when the server says (contract 1.5): a search that is not set up here
+      // reads differently from one that failed this time.
+      final why = switch (history.why) {
+        'off' => l10n.pcWhyHistoryOff,
+        'failed' => l10n.pcWhyFailed,
+        _ => null,
+      };
+      if (why != null) {
+        lines
+          ..add(const SizedBox(height: 4))
+          ..add(_line(context, why, quiet: true));
+      }
     }
 
     return Semantics(
@@ -294,10 +306,22 @@ class _Detector extends StatelessWidget {
       _ => null,
     };
     final nothing = generated == null && faceSwap == null && voice == null;
+    // Why it did not run, when the server says (contract 1.5). A text card is
+    // skipped on purpose - its words are what gets checked - and must not read
+    // like a detector that broke (2026-09-29).
+    final why = switch (detector.why) {
+      'text_card' => l10n.pcWhyTextCard,
+      'too_small' => l10n.pcWhyTooSmall,
+      'unreadable' => l10n.pcWhyUnreadable,
+      'off' => l10n.pcWhyDetectorOff,
+      'failed' => l10n.pcWhyFailed,
+      _ => null,
+    };
     final lines = <Widget>[
-      if (!detector.checked || nothing)
-        _line(context, l10n.pcNotChecked, quiet: true)
-      else ...[
+      if (!detector.checked || nothing) ...[
+        _line(context, l10n.pcNotChecked, quiet: true),
+        if (why != null) ...[const SizedBox(height: 4), _line(context, why, quiet: true)],
+      ] else ...[
         if (agreement != null) ...[
           _line(context, agreement, raised: likelyAi),
           const SizedBox(height: 8),

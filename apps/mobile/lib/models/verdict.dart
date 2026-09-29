@@ -636,7 +636,13 @@ class MediaCredentials {
 }
 
 class MediaHistory {
-  const MediaHistory({required this.status, this.pages = 0, this.dated = 0, this.earliest});
+  const MediaHistory({
+    required this.status,
+    this.pages = 0,
+    this.dated = 0,
+    this.earliest,
+    this.why,
+  });
 
   /// found, none or not_checked.
   final String status;
@@ -644,8 +650,13 @@ class MediaHistory {
   final int dated;
   final EarlierCopy? earliest;
 
+  /// Why it was not checked (contract 1.5): off (not set up on this server) or
+  /// failed. Null when it was checked, or from an older server.
+  final String? why;
+
   factory MediaHistory.fromJson(Map<String, dynamic> json) => MediaHistory(
     status: json['status'] as String? ?? 'not_checked',
+    why: json['why'] as String?,
     pages: (json['pages'] as num?)?.toInt() ?? 0,
     dated: (json['dated'] as num?)?.toInt() ?? 0,
     earliest: json['earliest'] is Map
@@ -693,10 +704,15 @@ class MediaDetector {
     this.faces,
     this.voice,
     this.onServer = false,
+    this.why,
   });
 
   /// checked or not_checked.
   final String status;
+
+  /// Why it was not checked (contract 1.5): text_card, too_small, unreadable, off
+  /// or failed. Null when it was checked, or from an older server.
+  final String? why;
 
   /// 0-1 likelihoods from an AI-image detector: an estimate, never a finding.
   final double? generated;
@@ -721,6 +737,7 @@ class MediaDetector {
 
   factory MediaDetector.fromJson(Map<String, dynamic> json) => MediaDetector(
     status: json['status'] as String? ?? 'not_checked',
+    why: json['why'] as String?,
     generated: (json['generated'] as num?)?.toDouble(),
     faceSwap: (json['face_swap'] as num?)?.toDouble(),
     secondOpinion: (json['second_opinion'] as num?)?.toDouble(),

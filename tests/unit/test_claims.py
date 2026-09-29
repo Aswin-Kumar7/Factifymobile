@@ -383,3 +383,19 @@ class TestASplitClaimInAnIndianScriptStillAnchors:
 
         invented = "ಪಾಕಿಸ್ತಾನ 2022ರ ಏಷ್ಯಾಕಪ್ ಫೈನಲ್ನಲ್ಲಿ ಶ್ರೀಲಂಕಾವನ್ನು ಸೋಲಿಸಿತು."
         assert _locate(invented, self.SOURCE) is None
+
+
+class TestATestRunCanSkipStoredAnswers:
+    """`cache_reads` off: nothing stored is served, so a test run checks afresh."""
+
+    async def test_no_stored_verdict_or_claims_are_read(self) -> None:
+        from app.orchestration.adapters import PoolCacheService
+
+        class _NoDatabase:
+            def connection(self) -> object:
+                raise AssertionError("the database was asked")
+
+        cache = PoolCacheService(_NoDatabase(), reads=False)  # type: ignore[arg-type]
+
+        assert await cache.get_verdict(object()) is None  # type: ignore[arg-type]
+        assert await cache.get_extraction(content_hash="h", extractor_version="v") is None

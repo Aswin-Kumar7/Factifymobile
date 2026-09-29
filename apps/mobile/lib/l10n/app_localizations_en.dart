@@ -1690,6 +1690,28 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pcNotChecked => 'Not checked';
 
   @override
+  String get pcWhyTextCard =>
+      'Not needed: this is a text card or a screenshot, so the words in it are checked instead.';
+
+  @override
+  String get pcWhyTooSmall => 'The picture is too small to judge.';
+
+  @override
+  String get pcWhyUnreadable => 'The picture could not be read.';
+
+  @override
+  String get pcWhyDetectorOff =>
+      'The AI-picture check is not set up on this server.';
+
+  @override
+  String get pcWhyHistoryOff =>
+      'Searching for earlier copies is not set up on this server.';
+
+  @override
+  String get pcWhyFailed =>
+      'It could not be checked this time. Try again later.';
+
+  @override
   String get pcHistory => 'Earlier copies online';
 
   @override

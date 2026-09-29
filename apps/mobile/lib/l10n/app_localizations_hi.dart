@@ -1690,6 +1690,26 @@ class AppLocalizationsHi extends AppLocalizations {
   String get pcNotChecked => 'जाँच नहीं हुई';
 
   @override
+  String get pcWhyTextCard =>
+      'ज़रूरी नहीं: यह टेक्स्ट कार्ड या स्क्रीनशॉट है, इसलिए इसमें लिखी बातों की जाँच की जाती है।';
+
+  @override
+  String get pcWhyTooSmall => 'तस्वीर जाँचने के लिए बहुत छोटी है।';
+
+  @override
+  String get pcWhyUnreadable => 'तस्वीर पढ़ी नहीं जा सकी।';
+
+  @override
+  String get pcWhyDetectorOff => 'इस सर्वर पर AI-तस्वीर की जाँच चालू नहीं है।';
+
+  @override
+  String get pcWhyHistoryOff =>
+      'इस सर्वर पर पुरानी कॉपियाँ खोजने की सुविधा चालू नहीं है।';
+
+  @override
+  String get pcWhyFailed => 'इस बार जाँच नहीं हो सकी। बाद में फिर कोशिश करें।';
+
+  @override
   String get pcHistory => 'ऑनलाइन पुरानी प्रतियाँ';
 
   @override

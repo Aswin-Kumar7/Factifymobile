@@ -2522,6 +2522,42 @@ abstract class AppLocalizations {
   /// **'Not checked'**
   String get pcNotChecked;
 
+  /// No description provided for @pcWhyTextCard.
+  ///
+  /// In en, this message translates to:
+  /// **'Not needed: this is a text card or a screenshot, so the words in it are checked instead.'**
+  String get pcWhyTextCard;
+
+  /// No description provided for @pcWhyTooSmall.
+  ///
+  /// In en, this message translates to:
+  /// **'The picture is too small to judge.'**
+  String get pcWhyTooSmall;
+
+  /// No description provided for @pcWhyUnreadable.
+  ///
+  /// In en, this message translates to:
+  /// **'The picture could not be read.'**
+  String get pcWhyUnreadable;
+
+  /// No description provided for @pcWhyDetectorOff.
+  ///
+  /// In en, this message translates to:
+  /// **'The AI-picture check is not set up on this server.'**
+  String get pcWhyDetectorOff;
+
+  /// No description provided for @pcWhyHistoryOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Searching for earlier copies is not set up on this server.'**
+  String get pcWhyHistoryOff;
+
+  /// No description provided for @pcWhyFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'It could not be checked this time. Try again later.'**
+  String get pcWhyFailed;
+
   /// No description provided for @pcHistory.
   ///
   /// In en, this message translates to:

@@ -250,9 +250,22 @@ _RESULT_1_2 = {
 
 
 class TestAdditiveOnly:
-    def test_the_version_is_1_4(self) -> None:
+    def test_the_version_is_1_5(self) -> None:
         # 1.4 (2026-09-28): the PARTLY_TRUE verdict and checks in the background.
-        assert CONTRACT_VERSION == "1.4"
+        # 1.5 (2026-09-29): why a picture check did not run.
+        assert CONTRACT_VERSION == "1.5"
+
+    def test_a_picture_check_that_did_not_run_says_why(self) -> None:
+        from app.api.schemas import _detector_why, _history_why
+
+        flat = "not checked: the picture is mostly flat colour, like a text card or a screenshot"
+        assert _detector_why(flat) == "text_card"
+        assert _detector_why("not checked: the picture is too small to judge") == "too_small"
+        assert _detector_why("unavailable: no AI-image detector is configured") == "off"
+        assert _detector_why("failed: RuntimeError") == "failed"
+        assert _history_why("provider failed: provider returned 403") == "off"
+        assert _history_why("unavailable: reverse image discovery is not configured") == "off"
+        assert _history_why("provider failed: request timed out") == "failed"
 
     def test_every_1_2_field_is_kept_and_the_new_ones_are_optional(self) -> None:
         for model, old, new in (

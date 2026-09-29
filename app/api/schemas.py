@@ -49,7 +49,7 @@ from app.domain.enums import (
 # `receipt`, so the seal shows without a second call; and progress events for a check
 # the app follows by `request_id`. Additive: a 1.2 client ignores all of it. See
 # docs/contract-changelog.md.
-CONTRACT_VERSION = "1.4"
+CONTRACT_VERSION = "1.5"
 
 
 # ------------------------------------------------------------------------ requests
@@ -409,6 +409,9 @@ class HistoryResponse(BaseModel):
     pages: int = 0
     dated: int = 0
     earliest: EarlierCopyResponse | None = None
+    # Added in 1.5: why it was not checked - off (not set up on this server) or
+    # failed (it was asked and did not answer). Absent when it was checked.
+    why: str | None = None
 
 
 class DetectorResponse(BaseModel):
@@ -418,6 +421,10 @@ class DetectorResponse(BaseModel):
 
     # checked | not_checked
     status: str
+    # Added in 1.5: why it was not checked - text_card (mostly flat colour: a text
+    # card or a screenshot, whose words are checked instead), too_small, unreadable,
+    # off (no detector on this server) or failed. Absent when it was checked.
+    why: str | None = None
     generated: float | None = None
     # Only when there was a face to judge.
     face_swap: float | None = None
@@ -735,6 +742,7 @@ def media_report_to_response(report: Any, *, thumbnails: str) -> MediaReportResp
         ),
         history=HistoryResponse(
             status=history_status,
+            why=_history_why(history.reason) if history_status == "not_checked" else None,
             pages=len(history.pages),
             dated=len(history.instances),
             earliest=(
@@ -755,6 +763,7 @@ def media_report_to_response(report: Any, *, thumbnails: str) -> MediaReportResp
         ),
         detector=DetectorResponse(
             status="checked" if synthetic.checked else "not_checked",
+            why=None if synthetic.checked else _detector_why(synthetic.reason),
             generated=synthetic.generated,
             face_swap=synthetic.face_swap,
             second_opinion=synthetic.second_opinion,
@@ -770,6 +779,36 @@ def media_report_to_response(report: Any, *, thumbnails: str) -> MediaReportResp
         ),
         frames=report.frames,
     )
+
+
+def _detector_why(reason: str | None) -> str:
+    """Why the AI-picture detector did not judge a picture, as a code the app words.
+
+    The app said only "Not checked", so a text card the detector skips on purpose
+    read the same as a detector that broke (2026-09-29).
+    """
+    text = (reason or "").casefold()
+    if "flat colour" in text:
+        return "text_card"
+    if "too small" in text:
+        return "too_small"
+    if "could not be read" in text:
+        return "unreadable"
+    if text.startswith("unavailable"):
+        return "off"
+    return "failed"
+
+
+def _history_why(reason: str | None) -> str:
+    """Why reverse image search did not run: not set up here, or it failed.
+
+    A provider refusing us outright - Google Vision answers 403 until billing is on
+    for its project - is "not set up", not a passing failure.
+    """
+    text = (reason or "").casefold()
+    if text.startswith("unavailable") or "403" in text or "401" in text:
+        return "off"
+    return "failed"
 
 
 def claim_anchor_response(anchor: Any) -> InputAnchorResponse | None:

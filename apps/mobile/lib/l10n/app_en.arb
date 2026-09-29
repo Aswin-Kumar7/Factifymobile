@@ -1017,6 +1017,12 @@
   "pcCredInvalid": "Present, but they don't check out",
   "pcCredNone": "None. That's normal: most pictures carry none.",
   "pcNotChecked": "Not checked",
+  "pcWhyTextCard": "Not needed: this is a text card or a screenshot, so the words in it are checked instead.",
+  "pcWhyTooSmall": "The picture is too small to judge.",
+  "pcWhyUnreadable": "The picture could not be read.",
+  "pcWhyDetectorOff": "The AI-picture check is not set up on this server.",
+  "pcWhyHistoryOff": "Searching for earlier copies is not set up on this server.",
+  "pcWhyFailed": "It could not be checked this time. Try again later.",
   "pcHistory": "Earlier copies online",
   "pcHistorySince": "Online since {date} · {source}",
   "@pcHistorySince": {

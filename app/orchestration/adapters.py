@@ -71,10 +71,14 @@ class PoolGovernor:
 class PoolCacheService:
     """The cache surfaces, one short-lived connection per operation."""
 
-    def __init__(self, database: Database) -> None:
+    def __init__(self, database: Database, *, reads: bool = True) -> None:
         self._database = database
+        # Off: nothing stored is served, so every check runs afresh (`cache_reads`).
+        self._reads = reads
 
     async def get_verdict(self, parts: CacheKeyParts) -> CachedVerdict | None:
+        if not self._reads:
+            return None
         async with self._database.connection() as conn:
             return await CacheService(conn).get_verdict(parts)
 
@@ -97,6 +101,8 @@ class PoolCacheService:
             )
 
     async def get_extraction(self, *, content_hash: str, extractor_version: str) -> Any:
+        if not self._reads:
+            return None
         async with self._database.connection() as conn:
             return await CacheService(conn).get_extraction(
                 content_hash=content_hash, extractor_version=extractor_version

@@ -234,7 +234,7 @@ async def build(settings: Settings) -> dict[str, Any]:
     # semaphore only limit anything if there is exactly one of each; per-request
     # copies counted every request against itself and nothing against the process.
     governor = PoolGovernor(database, settings.providers)
-    cache = PoolCacheService(database)
+    cache = PoolCacheService(database, reads=settings.cache_reads)
 
     # The reasoner reads fetched passages and judges them against the claim. Only
     # built when a model is configured; without it the corpus resolver falls back to
