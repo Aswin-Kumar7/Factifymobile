@@ -152,7 +152,11 @@ class _Header extends StatelessWidget {
     final summary = decided
         ? (verdict.summary ?? verdict.actionReason)
         : nothing
-        ? (verdict.imageReading != null ? l10n.nothingToCheckPicture : l10n.nothingToCheckText)
+        ? (verdict.mediaReport?.isVideo == true
+              ? l10n.nothingToCheckVideo
+              : verdict.imageReading != null
+              ? l10n.nothingToCheckPicture
+              : l10n.nothingToCheckText)
         : l10n.unconfirmedBody;
 
     return Padding(

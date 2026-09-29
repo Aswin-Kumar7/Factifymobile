@@ -687,6 +687,7 @@
   "headlineNothingToCheck": "Nothing to fact-check",
   "subheadNothingToCheck": "No claim found in it",
   "nothingToCheckPicture": "We read this picture and found no claim in it that can be checked - no news, figure or announcement, just an image. There's nothing here to confirm or rule out.",
+  "nothingToCheckVideo": "We checked this video's frames and found no claim in them that can be checked - no news, figure or announcement. There's nothing here to confirm or rule out.",
   "nothingToCheckText": "We didn't find a factual claim in this - it reads as opinion, a joke or conversation, so there's nothing here to confirm or rule out.",
   "nothingToCheckAiPicture": "But our AI-picture check says this picture was likely made by AI. See the picture checks below.",
   "nothingToCheckAiVideo": "But our checks say this video was likely made by AI. See the video checks below.",

@@ -1868,6 +1868,12 @@ abstract class AppLocalizations {
   /// **'We read this picture and found no claim in it that can be checked - no news, figure or announcement, just an image. There\'s nothing here to confirm or rule out.'**
   String get nothingToCheckPicture;
 
+  /// No description provided for @nothingToCheckVideo.
+  ///
+  /// In en, this message translates to:
+  /// **'We checked this video\'s frames and found no claim in them that can be checked - no news, figure or announcement. There\'s nothing here to confirm or rule out.'**
+  String get nothingToCheckVideo;
+
   /// No description provided for @nothingToCheckText.
   ///
   /// In en, this message translates to:

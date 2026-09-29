@@ -1207,6 +1207,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'We read this picture and found no claim in it that can be checked - no news, figure or announcement, just an image. There\'s nothing here to confirm or rule out.';
 
   @override
+  String get nothingToCheckVideo =>
+      'We checked this video\'s frames and found no claim in them that can be checked - no news, figure or announcement. There\'s nothing here to confirm or rule out.';
+
+  @override
   String get nothingToCheckText =>
       'We didn\'t find a factual claim in this - it reads as opinion, a joke or conversation, so there\'s nothing here to confirm or rule out.';
 

@@ -238,7 +238,13 @@ class _ResultScreenState extends State<ResultScreen> {
                     ),
                     FxCircleButton(
                       icon: FxIcons.share,
-                      tooltip: l10n.shareCorrection,
+                      // Named for what it shares, as the button below is: a true
+                      // result is not a correction.
+                      tooltip: switch (_verdict.factVerdict) {
+                        FactVerdict.trueClaim => l10n.shareResult,
+                        FactVerdict.misleading => l10n.shareContext,
+                        _ => l10n.shareCorrection,
+                      },
                       iconSize: 19,
                       onPressed: nothing ? null : _share,
                     ),
