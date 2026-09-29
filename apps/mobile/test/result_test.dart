@@ -164,6 +164,23 @@ void main() {
     });
   });
 
+  test('an opinion, and nothing else, is nothing to fact-check (2026-09-30)', () {
+    final opinion = _verdict('SEND_TO_REVIEW', [
+      _claim('Cricket is the best sport in the world.', status: 'UNVERIFIED')
+        ..['claim_type'] = 'OPINION',
+    ]);
+    final l10n = lookupAppLocalizations(const Locale('en'));
+
+    expect(opinion.nothingToCheck, isTrue);
+    expect(ActionStyle.label(opinion, l10n), 'Nothing to check');
+    // A checkable claim beside it still makes it a check.
+    final mixed = _verdict('SEND_TO_REVIEW', [
+      _claim('Cricket is the best sport.', status: 'UNVERIFIED')..['claim_type'] = 'OPINION',
+      _claim('India won the 2011 World Cup.', status: 'UNVERIFIED'),
+    ]);
+    expect(mixed.nothingToCheck, isFalse);
+  });
+
   group('a picture with nothing to check (2026-09-27, on the phone)', () {
     final landscape = Verdict.fromJson({
       'case_id': 'case-2',

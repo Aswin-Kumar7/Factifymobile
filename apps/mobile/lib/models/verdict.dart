@@ -950,7 +950,13 @@ class Verdict {
   /// read, not that nothing was said.
   bool get nothingToCheck =>
       factVerdict == FactVerdict.unconfirmed &&
-      claims.every((c) => c.claimType == 'MEDIA' && !c.isDecisive && c.evidence.isEmpty) &&
+      // A picture with no claim in it, or only opinion: "I think cricket is the best
+      // sport" read "Unconfirmed", as though sources had been looked for (2026-09-30).
+      claims.every(
+        (c) =>
+            (c.claimType == 'MEDIA' && !c.isDecisive && c.evidence.isEmpty) ||
+            c.claimType == 'OPINION',
+      ) &&
       !skipped.any((s) => _readingChecks.contains(s.check));
 
   static const _readingChecks = {'claim_extraction', 'image_text', 'document_text'};
