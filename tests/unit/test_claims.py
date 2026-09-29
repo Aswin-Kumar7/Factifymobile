@@ -399,3 +399,38 @@ class TestATestRunCanSkipStoredAnswers:
 
         assert await cache.get_verdict(object()) is None  # type: ignore[arg-type]
         assert await cache.get_extraction(content_hash="h", extractor_version="v") is None
+
+
+class TestAShortMessageIsItsOwnClaim:
+    """gpt-5.6-luna wrote a Hinglish forward's claim in other words, it was not found
+    in the message, and the check had nothing to check (2026-09-30)."""
+
+    HINGLISH = "Modi ji ne bola hai ki kal se desh ke sab petrol pump band rahenge."
+
+    async def test_the_message_stands_as_the_claim_when_its_reading_is_not_found(self) -> None:
+        reworded = _proposal(
+            "मोदी जी ने कहा है कि कल से देश के सभी पेट्रोल पंप बंद रहेंगे।",
+            claim_type="ATTRIBUTION",
+            importance="HEADLINE",
+            standalone_english=(
+                "Modi said all petrol pumps in the country will be closed from tomorrow."
+            ),
+        )
+        pipeline = ClaimPipeline(FakeExtractor(ExtractionOutcome(claims=(reworded,))))
+
+        result = await pipeline.extract(self.HINGLISH, content_hash="sha256:hinglish")
+
+        [claim] = result.claims
+        assert claim.text == self.HINGLISH
+        assert claim.english_text.startswith("Modi said all petrol pumps")
+
+    async def test_an_invented_claim_still_does_not_reach_storage(self) -> None:
+        invented = _proposal(
+            "Aliens landed in Delhi yesterday",
+            standalone_english="Aliens landed in Delhi yesterday.",
+        )
+        pipeline = ClaimPipeline(FakeExtractor(ExtractionOutcome(claims=(invented,))))
+
+        result = await pipeline.extract(self.HINGLISH, content_hash="sha256:invented")
+
+        assert result.claims == ()

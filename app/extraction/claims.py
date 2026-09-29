@@ -47,6 +47,18 @@ class Extractor(Protocol):
 # cannot pass.
 _ANCHOR_MATCH_THRESHOLD = 0.6
 
+# A message this short that yields a claim is that claim, when no reading of it can be
+# found in it word for word (`ClaimPipeline._verify`).
+_WHOLE_MESSAGE = 400
+# A sentence ending inside a message: the fallback is for one-sentence forwards only.
+_SENTENCE_END = re.compile(r"[.!?।|]\s+\S")
+_RANK = {
+    Importance.HEADLINE: 0,
+    Importance.MAIN_THESIS: 1,
+    Importance.SUPPORTING_DETAIL: 2,
+    Importance.BACKGROUND: 3,
+}
+
 
 @dataclass(frozen=True, slots=True)
 class ExtractedClaims:
@@ -174,6 +186,15 @@ def _fact_words(text: str) -> list[str]:
                     break
         words.append(word)
     return words
+
+
+def _shares_a_fact(source: str, reading: str) -> bool:
+    """Whether a reading of a message names something the message itself does: a
+    number, or a word of four letters or more. What guards the whole-message fallback
+    against a claim the model invented - which shares nothing with the message."""
+    ours = set(_fact_words(fold(source)))
+    theirs = set(_fact_words(fold(reading)))
+    return any(any(ch.isdigit() for ch in word) or len(word) >= 4 for word in ours & theirs)
 
 
 def _locate_by_coverage(needle: str, haystack: str) -> tuple[int, int] | None:
@@ -399,6 +420,33 @@ class ClaimPipeline:
                 )
                 continue
             claims.append(claim)
+
+        # A short message whose one claim was read but not found word for word: the
+        # message itself is the claim. gpt-5.6-luna sometimes writes a Hinglish
+        # forward's claim in Devanagari or English, and "Modi ji ne bola hai ki kal
+        # se desh ke sab petrol pump band rahenge" came back with nothing to check
+        # (2026-09-30). The person's own words are shown, so nothing invented can
+        # reach storage; the model's English still drives the search.
+        first = min(proposals, key=lambda p: _RANK.get(p.importance, 9), default=None)
+        if (
+            not claims
+            and first is not None
+            and len(proposals) == 1
+            and len(source.strip()) <= _WHOLE_MESSAGE
+            and len(_SENTENCE_END.findall(source.strip().rstrip(".!?।|"))) == 0
+            and _shares_a_fact(source, f"{first.text} {first.standalone_english}")
+        ):
+            whole = _to_claim(
+                first.model_copy(update={"text": source.strip()}),
+                claim_id="cl_1",
+                source=source,
+                content_hash=content_hash,
+                input_kind=input_kind,
+                language=language,
+            )
+            if whole is not None:
+                claims.append(whole)
+                discarded = [text for text in discarded if text != first.text[:120]]
 
         return tuple(claims), tuple(discarded)
 
