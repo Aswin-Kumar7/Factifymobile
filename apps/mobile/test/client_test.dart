@@ -80,4 +80,35 @@ void main() {
       throwsA(isA<ApiFailure>().having((f) => f.kind, 'kind', FailureKind.tooLarge)),
     );
   });
+
+  test('a connection the server had just closed is tried once more on a fresh one', () async {
+    var calls = 0;
+    final client = FactifyClient(
+      baseUrl: 'http://factify.test',
+      httpClient: MockClient((_) async {
+        calls += 1;
+        if (calls == 1) {
+          throw http.ClientException('Connection closed before full header was received');
+        }
+        return http.Response(jsonEncode(_verdictJson()), 200);
+      }),
+    );
+
+    final verdict = await client.getCase('case-1');
+
+    expect(calls, 2);
+    expect(verdict, isNotNull);
+  });
+
+  test('a connection that drops twice is reported as interrupted', () async {
+    final client = FactifyClient(
+      baseUrl: 'http://factify.test',
+      httpClient: MockClient((_) async => throw http.ClientException('Connection reset')),
+    );
+
+    await expectLater(
+      client.getCase('case-1'),
+      throwsA(isA<ApiFailure>().having((f) => f.kind, 'kind', FailureKind.interrupted)),
+    );
+  });
 }

@@ -410,7 +410,13 @@ class FactifyClient {
   /// check simply stopped with nothing on screen. The text path fared little
   /// better: a timeout reached a catch-all and rendered, verbatim, as
   /// "Something went wrong: TimeoutException after 0:00:45.000000".
-  Future<T> _guard<T>(Future<T> Function() call) async {
+  ///
+  /// A dropped connection is tried once more first. The server closes a connection
+  /// that has sat idle, and a check started just as it did failed as "The connection
+  /// to Factify was interrupted" - three times in an evening of checks, each time the
+  /// request never having reached the server (2026-09-30). Every call builds its
+  /// request inside [call], so the retry sends a fresh one.
+  Future<T> _guard<T>(Future<T> Function() call, {bool again = true}) async {
     try {
       return await call();
     } on ApiFailure {
@@ -420,6 +426,7 @@ class FactifyClient {
     } on SocketException {
       throw const ApiFailure(FailureKind.unreachable, retryable: true);
     } on http.ClientException {
+      if (again) return _guard(call, again: false);
       throw const ApiFailure(FailureKind.interrupted, retryable: true);
     } on FileSystemException {
       throw const ApiFailure(FailureKind.unreadableFile);

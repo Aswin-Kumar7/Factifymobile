@@ -48,6 +48,10 @@ async def main() -> None:
         log_level="info",
         # Never "auto" here: see the module docstring.
         loop="asyncio",
+        # Idle connections kept for 75 s, not uvicorn's 5: the app reuses its
+        # connection, and a check started as the server closed it failed as
+        # "connection interrupted" (2026-09-30).
+        timeout_keep_alive=75,
     )
     await uvicorn.Server(config).serve()
 
