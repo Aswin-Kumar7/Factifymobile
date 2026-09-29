@@ -16,6 +16,7 @@ import 'api/client.dart';
 import 'app_services.dart';
 import 'auth/auth_links.dart';
 import 'auth/auth_service.dart';
+import 'debug/error_log.dart';
 import 'history/history_store.dart';
 import 'l10n/app_localizations.dart';
 import 'l10n/language_preference.dart';
@@ -31,6 +32,8 @@ import 'theme/theme_mode_preference.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Debug builds only: a red error screen can be read in full afterwards.
+  await keepFrameworkErrors();
   // Read before the first frame, so a reader who chose Hindi never sees a frame
   // of English first.
   final language = await LanguagePreference.load();
