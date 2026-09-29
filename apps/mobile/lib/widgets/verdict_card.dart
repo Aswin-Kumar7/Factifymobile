@@ -232,6 +232,16 @@ class _Header extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(summary, style: FactifyText.sans(13.5, color: k.ink2).copyWith(height: 1.5)),
+          // A picture or video with no claim in it, that our checks say was likely
+          // made by AI: said here, at the top, not only in the checks below. It is a
+          // note, never the verdict - detectors do not decide one (2026-09-29).
+          if (_aiNote(verdict, l10n) case final note?) ...[
+            const SizedBox(height: 10),
+            Text(
+              note,
+              style: FactifyText.sans(13.5, weight: FontWeight.w600, color: k.ink),
+            ),
+          ],
           // Summaries and quotes arrive in the language of the claim, not the app's;
           // a Hindi reader is told so rather than surprised.
           const EnglishOnlyNote(padding: EdgeInsets.only(top: 8)),
@@ -1457,4 +1467,16 @@ class _DashedBorder extends CustomPainter {
 
   @override
   bool shouldRepaint(_DashedBorder old) => old.colour != colour;
+}
+
+/// For a picture or video with nothing to fact-check: the line saying our checks
+/// found it likely AI-made, or null when they did not.
+String? _aiNote(Verdict verdict, AppLocalizations l10n) {
+  final report = verdict.mediaReport;
+  if (!verdict.nothingToCheck || report == null) return null;
+  if (report.credentials.declaresAi) return l10n.nothingToCheckAiDeclared;
+  if (report.detector.agreement == 'likely_ai') {
+    return report.isVideo ? l10n.nothingToCheckAiVideo : l10n.nothingToCheckAiPicture;
+  }
+  return null;
 }

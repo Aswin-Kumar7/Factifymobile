@@ -1211,6 +1211,18 @@ class AppLocalizationsEn extends AppLocalizations {
       'We didn\'t find a factual claim in this - it reads as opinion, a joke or conversation, so there\'s nothing here to confirm or rule out.';
 
   @override
+  String get nothingToCheckAiPicture =>
+      'But our AI-picture check says this picture was likely made by AI. See the picture checks below.';
+
+  @override
+  String get nothingToCheckAiVideo =>
+      'But our checks say this video was likely made by AI. See the video checks below.';
+
+  @override
+  String get nothingToCheckAiDeclared =>
+      'But its content credentials say it was made with an AI tool. See the checks below.';
+
+  @override
   String get searchUnavailableNote =>
       'Our news search couldn\'t be reached, so this wasn\'t checked against news reports. Tap Check again in a little while.';
 

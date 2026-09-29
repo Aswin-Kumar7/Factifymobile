@@ -1210,6 +1210,18 @@ class AppLocalizationsHi extends AppLocalizations {
       'इसमें हमें कोई तथ्यात्मक दावा नहीं मिला - यह राय, मज़ाक या बातचीत जैसा है, इसलिए इसमें पुष्टि करने या नकारने को कुछ नहीं है।';
 
   @override
+  String get nothingToCheckAiPicture =>
+      'लेकिन हमारी AI-तस्वीर जाँच के अनुसार यह तस्वीर संभवतः AI से बनी है। नीचे तस्वीर की जाँच देखें।';
+
+  @override
+  String get nothingToCheckAiVideo =>
+      'लेकिन हमारी जाँच के अनुसार यह वीडियो संभवतः AI से बना है। नीचे वीडियो की जाँच देखें।';
+
+  @override
+  String get nothingToCheckAiDeclared =>
+      'लेकिन इसके कंटेंट क्रेडेंशियल्स के अनुसार इसे AI टूल से बनाया गया है। नीचे जाँच देखें।';
+
+  @override
   String get searchUnavailableNote =>
       'हमारी समाचार खोज से संपर्क नहीं हो सका, इसलिए इसे समाचार रिपोर्टों से नहीं मिलाया गया। थोड़ी देर बाद फिर से जाँचें दबाएँ।';
 

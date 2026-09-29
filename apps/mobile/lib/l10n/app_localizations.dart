@@ -1874,6 +1874,24 @@ abstract class AppLocalizations {
   /// **'We didn\'t find a factual claim in this - it reads as opinion, a joke or conversation, so there\'s nothing here to confirm or rule out.'**
   String get nothingToCheckText;
 
+  /// No description provided for @nothingToCheckAiPicture.
+  ///
+  /// In en, this message translates to:
+  /// **'But our AI-picture check says this picture was likely made by AI. See the picture checks below.'**
+  String get nothingToCheckAiPicture;
+
+  /// No description provided for @nothingToCheckAiVideo.
+  ///
+  /// In en, this message translates to:
+  /// **'But our checks say this video was likely made by AI. See the video checks below.'**
+  String get nothingToCheckAiVideo;
+
+  /// No description provided for @nothingToCheckAiDeclared.
+  ///
+  /// In en, this message translates to:
+  /// **'But its content credentials say it was made with an AI tool. See the checks below.'**
+  String get nothingToCheckAiDeclared;
+
   /// No description provided for @searchUnavailableNote.
   ///
   /// In en, this message translates to:

@@ -136,6 +136,70 @@ void main() {
     expect(find.textContaining('likely made by'), findsNothing);
   });
 
+  testWidgets('a check that did not run says why (contract 1.5)', (tester) async {
+    await _show(
+      tester,
+      _verdict(
+        _report(
+          credentials: {'status': 'none'},
+          history: {'status': 'not_checked', 'why': 'off'},
+          detector: {'status': 'not_checked', 'why': 'text_card'},
+        ),
+      ),
+    );
+
+    expect(find.text('Not checked'), findsNWidgets(2));
+    expect(
+      find.text(
+        'Not needed: this is a text card or a screenshot, so the words in it are checked instead.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Searching for earlier copies is not set up on this server.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a picture with nothing to check that looks AI-made says so at the top', (
+    tester,
+  ) async {
+    await _show(
+      tester,
+      _verdict(
+        _report(
+          credentials: {'status': 'none'},
+          history: {'status': 'none'},
+          detector: {'status': 'checked', 'generated': 0.97, 'agreement': 'likely_ai'},
+        ),
+      ),
+    );
+
+    expect(find.text('Nothing to fact-check'), findsOneWidget);
+    expect(
+      find.text(
+        'But our AI-picture check says this picture was likely made by AI. '
+        'See the picture checks below.',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('nothing is said at the top when the checks found no sign of AI', (tester) async {
+    await _show(
+      tester,
+      _verdict(
+        _report(
+          credentials: {'status': 'none'},
+          history: {'status': 'none'},
+          detector: {'status': 'checked', 'generated': 0.02, 'agreement': 'no_sign'},
+        ),
+      ),
+    );
+
+    expect(find.textContaining('likely made by AI'), findsNothing);
+  });
+
   testWidgets('no earlier copy is its own answer', (tester) async {
     await _show(tester, _verdict(_report(history: {'status': 'none'})));
     expect(find.text('No earlier copies found online'), findsOneWidget);
