@@ -26,7 +26,9 @@ from app.observability.logging import event
 logger = logging.getLogger("factify.media.detectors")
 
 # Frames of a clip the picture models read; the face model reads every keyframe.
-PICTURE_FRAMES = 3
+# Eight, not three: a clip is judged by most of its frames (`_clip_score`), which
+# needs enough of them to be a majority of something.
+PICTURE_FRAMES = 8
 SECOND_OPINION_FRAMES = 2
 
 
@@ -110,7 +112,7 @@ class LocalDetector:
                 on_server=True,
                 models=self.models,
             )
-        reading = self._reading(main=mains, second=seconds, faces=faces, voice=voice)
+        reading = self._reading(main=[_clip_score(mains)], second=seconds, faces=faces, voice=voice)
         _log("video", reading)
         return reading
 
@@ -140,6 +142,19 @@ class LocalDetector:
             on_server=True,
             models=self.models,
         )
+
+
+def _clip_score(frames: list[Any]) -> Any:
+    """What a clip's frames say together: the frame at the middle of their scores.
+
+    The clip took its most AI-looking frame, and one frame decided it. A real photo of
+    a receipt that scored 14-47% as a picture scored 92% as a 480p frame of an H.264
+    video, and a slideshow of real photos read "likely AI-made" (2026-09-29). A clip
+    is now likely AI-made only when at least half its frames look it: the upper
+    median, which is the highest score for one or two frames.
+    """
+    ordered = sorted(frames, key=lambda score: score.likelihood)
+    return ordered[len(ordered) // 2]
 
 
 def _safely(model: Any | None, method: str, *args: Any) -> Any | None:

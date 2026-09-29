@@ -210,6 +210,28 @@ class TestLocalDetector:
         assert reading.voice == 0.8
         assert reading.generated == 0.4
 
+    async def test_one_ai_looking_frame_does_not_make_a_clip_ai_made(self) -> None:
+        """A real photo of a receipt scored 92% as a frame of an H.264 video, and one
+        frame made a slideshow of real photos "likely AI-made" (2026-09-29)."""
+
+        class _Frames(_Model):
+            def __init__(self, scores: list[float]) -> None:
+                super().__init__(_Score(0.0))
+                self._left = list(scores)
+
+            def score(self, _: bytes) -> Any:
+                return _Score(self._left.pop(0), 0.65)
+
+        real = LocalDetector(pictures=_Frames([0.001, 0.008, 0.04, 0.917]))
+        reading = await real.read_video(b"video", [_jpeg()] * 4)
+        assert reading.generated == 0.04
+        assert reading.outcome == NO_SIGN
+
+        made = LocalDetector(pictures=_Frames([0.312, 0.993, 0.842, 0.994]))
+        reading = await made.read_video(b"video", [_jpeg()] * 4)
+        assert reading.generated == 0.993
+        assert reading.outcome == LIKELY_AI
+
 
 # ---------------------------------------------------------------- reading pages
 
