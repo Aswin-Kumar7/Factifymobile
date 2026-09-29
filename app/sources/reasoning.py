@@ -58,7 +58,7 @@ from app.sources.local_reading import local_reading, local_same_claim
 logger = logging.getLogger("factify.sources.reasoning")
 
 PROVIDER = "llm"
-REASONER_VERSION = "2026.09.29.1"
+REASONER_VERSION = "2026.09.29.2"
 
 # How many passages go to the model in one call. One call per source, not one per
 # passage: the model needs to see the alternatives to judge which actually bears on
@@ -717,7 +717,10 @@ For each source:
     gives a figure for a different day or period, debunks a different claim about
     the same people, reports how things stood before a change the claim says has
     since happened (an arrest, for a claim of release), or describes a different
-    scheme or programme than the one claimed.
+    scheme or programme than the one claimed. A figure given as "at least", "more
+    than", "over", "about" or "nearly" the claim's own number agrees with it, and a
+    toll that rose after the claim's report is the same count: "more than 170 people
+    died" confirms "the floods killed 170 people" - TRUE, not FALSE.
   * UNCLEAR if it only reports that others believe it, only makes it likelier or less
     likely, describes a study without its result, or answers a different question.
 
@@ -844,7 +847,10 @@ For each judgement:
     as the claim: the same event, place, period or person, with a different
     outcome - another winner, a different total for the same count over the same
     period, a different date for the same event. Ask whether both could be true at
-    once; if they could, it is not INCOMPATIBLE.
+    once; if they could, it is not INCOMPATIBLE. "At least 170", "more than 170",
+    "over 170" or "about 170" can be true at the same time as "170 people died": a
+    rounded or approximate figure, or a toll reported later after it rose, is the
+    same count and supports the claim.
   * DIFFERENT_DETAILS - the passage is about the same event but names other or
     additional details, or leaves some of the claim's details out, without saying
     that any detail in the claim is wrong. A report that the dinner menu included

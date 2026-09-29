@@ -225,6 +225,15 @@ class SourceVerification:
         # whatever it says (`_other_occurrence`). Set aside before anyone reads it as
         # support or contradiction.
         elsewhere = {id(item): why for item in text if (why := _other_occurrence(item, claim))}
+        # A "contradiction" that gives the claim's own figure as "more than" or "at
+        # least" it agrees with the claim instead (`_same_figure`).
+        elsewhere |= {
+            id(item): "the same figure, given as approximate"
+            for item in text
+            if id(item) not in elsewhere
+            and item.direction is Direction.CONTRADICTS
+            and _same_figure(item, claim)
+        }
         early = [item for item in text if id(item) in elsewhere]
         text = [item for item in text if id(item) not in elsewhere]
         sided = [item for item in text if _expected(item) is not None]
@@ -557,6 +566,30 @@ _RECURRING = re.compile(
     r"budget|census|championships?|tournament|trophy|finals?|summit|awards?|nobel)\b",
     re.IGNORECASE,
 )
+
+
+# A figure given as approximate: "more than 170", "at least 1,300".
+_APPROXIMATE = re.compile(
+    r"\b(?:at least|more than|over|nearly|about|around|almost|roughly|upwards of|"
+    r"in excess of|some)\s+(\d[\d,]*)",
+    re.IGNORECASE,
+)
+_NUMBER = re.compile(r"\d[\d,]*")
+
+
+def _same_figure(item: Evidence, claim: Claim) -> bool:
+    """Whether a contradicting passage gives the claim's own number as approximate.
+
+    "More than 170 people died in last week's flooding" was read as contradicting "the
+    floods killed 170 people", and a true claim read False (2026-09-29): a rounded
+    figure, or a toll that rose after the claim's report, is the same count.
+    """
+    wanted = {n.replace(",", "") for n in _NUMBER.findall(f"{claim.text} {claim.search_text}")}
+    if not wanted:
+        return False
+    return any(
+        m.group(1).replace(",", "") in wanted for m in _APPROXIMATE.finditer(item.source_excerpt)
+    )
 
 
 def _other_occurrence(item: Evidence, claim: Claim) -> str | None:

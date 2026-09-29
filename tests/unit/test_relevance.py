@@ -563,3 +563,36 @@ class TestAFactCheckPageThatWillNotServeUs:
             claim_text="x", normalized_text="x", url="https://f/1", rating=rating, publisher=None
         )
         assert record.verdict is Relation.CONTRADICTS
+
+
+class TestTheSameFigureGivenAsApproximate:
+    """Reuters' "more than 170 people died" was read as contradicting "the floods
+    killed 170 people", and a true claim read False (2026-09-29)."""
+
+    @staticmethod
+    def _contradicting(excerpt: str) -> Any:
+        return evidence(
+            kind=EvidenceKind.CORROBORATION,
+            direction=Direction.CONTRADICTS,
+            tier=Tier.D,
+            method=Method.PASSAGE_ENTAILMENT,
+            source_excerpt=excerpt,
+        )
+
+    def test_more_than_the_claim_s_own_figure_is_not_a_contradiction(self) -> None:
+        from app.sources.verification import _same_figure
+
+        target = claim(text="The floods killed 170 people.")
+        assert _same_figure(
+            self._contradicting("More than 170 people died in the flooding."), target
+        )
+        assert _same_figure(
+            self._contradicting("The toll rose to at least 1,300."), claim(text="1300 died.")
+        )
+
+    def test_a_different_figure_still_contradicts(self) -> None:
+        from app.sources.verification import _same_figure
+
+        target = claim(text="The floods killed 170 people.")
+        assert not _same_figure(self._contradicting("Officials said 12 people died."), target)
+        assert not _same_figure(self._contradicting("More than 1,700 people died."), target)
