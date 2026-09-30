@@ -45,8 +45,12 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Non-root: the process never needs to write outside its own tmp.
+# /srv/.models is created here because /srv belongs to root: the pre-warm below runs
+# as factify and could not create it (the step is allowed to fail, so the image was
+# built without the weights and the first request fell over on the same error).
 RUN groupadd --system --gid 1001 factify \
-    && useradd --system --uid 1001 --gid factify --create-home factify
+    && useradd --system --uid 1001 --gid factify --create-home factify \
+    && mkdir -p /srv/.models && chown factify:factify /srv/.models
 
 WORKDIR /srv
 
@@ -80,4 +84,6 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
     CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2).status==200 else 1)"
 
 # Idle connections kept 75 s (uvicorn: 5): the app reuses its connection.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--timeout-keep-alive", "75"]
+# `python -m`: the venv was built in /build, so its uvicorn script's first line
+# names /build/.venv/bin/python, which this image does not have.
+CMD ["python", "-m", "uvicorn","app.main:app", "--host", "0.0.0.0", "--port", "8080", "--timeout-keep-alive", "75"]
