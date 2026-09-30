@@ -1,0 +1,3 @@
+# False positive: an example Idempotency-Key in the API docs (a retry label, not a
+# secret), since replaced by $(uuidgen).
+2114af1b018325bb27331d54a5ee9716eb8aa811:web/app/docs/page.tsx:generic-api-key:40

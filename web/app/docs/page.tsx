@@ -37,7 +37,7 @@ export default function Docs() {
         <Code>{`curl ${BASE}/v1/verify \\
   -H "Authorization: Bearer $FACTIFY_KEY" \\
   -H "Content-Type: application/json" \\
-  -H "Idempotency-Key: 6f1c2a9e-order-4411" \\
+  -H "Idempotency-Key: $(uuidgen)" \\
   -d '{"text": "Govt to pay ₹5,000 a month to every woman from 1 July."}'`}</Code>
         <p>
           For a long check, send <code>&quot;mode&quot;: &quot;background&quot;</code>: you get <code>202</code> with a{" "}
