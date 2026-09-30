@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+from dataclasses import replace
 from typing import Any
 
 from app.media.synthetic import FACE_SWAP_AT, SECOND_AT, VOICE_AT, SyntheticReading
@@ -29,6 +30,13 @@ logger = logging.getLogger("factify.media.detectors")
 # Eight, not three: a clip is judged by most of its frames (`_clip_score`), which
 # needs enough of them to be a majority of something.
 PICTURE_FRAMES = 8
+# A clip is likely AI-made past this, whatever the picture model's own line for a
+# single picture: real camera footage of a podium speech read 63% and 71% "AI-made"
+# frame by frame, and a video made by AI reads 95% and more (2026-09-30).
+VIDEO_PICTURE_AT = 0.9
+# A face in a clip is likely swapped past this: on 25 real videos GenD's clip score
+# never reached it (the model's own line, 0.5, flagged 4), and 13 of 25 swaps did.
+VIDEO_FACE_SWAP_AT = 0.8
 SECOND_OPINION_FRAMES = 2
 
 
@@ -42,8 +50,12 @@ class LocalDetector:
         second: Any | None = None,
         faces: Any | None = None,
         voice: Any | None = None,
+        faces_in_pictures: bool = True,
     ) -> None:
         self._pictures = pictures
+        # The face model is used on videos only when this is off: on photos it called
+        # real faces swapped (`LocalModelSettings.faces`).
+        self._faces_in_pictures = faces_in_pictures
         self._second = second
         self._faces = faces
         self._voice = voice
@@ -56,7 +68,8 @@ class LocalDetector:
         in the background, so it loads on the first one (about ten seconds) rather
         than sitting in memory beside everything else from the start.
         """
-        for model in (self._pictures, self._second, self._faces):
+        faces = self._faces if self._faces_in_pictures else None
+        for model in (self._pictures, self._second, faces):
             if model is None:
                 continue
             try:
@@ -86,7 +99,7 @@ class LocalDetector:
                     reason=f"not checked: {unjudgeable or 'the picture could not be read'}"
                 )
             second = _safely(self._second, "score", image)
-            faces = _safely(self._faces, "score", image)
+            faces = _safely(self._faces, "score", image) if self._faces_in_pictures else None
         reading = self._reading(main=[main], second=[second] if second else [], faces=faces)
         _log("picture", reading)
         return reading
@@ -104,6 +117,8 @@ class LocalDetector:
             ]
             faces = _safely(self._faces, "score_frames", frames)
             voice = _safely(self._voice, "score_video", video)
+        if faces is not None:
+            faces = replace(faces, threshold=max(faces.threshold, VIDEO_FACE_SWAP_AT))
         if not mains:
             return SyntheticReading(
                 reason="not checked: no frame of the video could be read",
@@ -112,7 +127,9 @@ class LocalDetector:
                 on_server=True,
                 models=self.models,
             )
-        reading = self._reading(main=[_clip_score(mains)], second=seconds, faces=faces, voice=voice)
+        clip = _clip_score(mains)
+        clip = replace(clip, threshold=max(clip.threshold, VIDEO_PICTURE_AT))
+        reading = self._reading(main=[clip], second=seconds, faces=faces, voice=voice)
         _log("video", reading)
         return reading
 
@@ -218,6 +235,7 @@ def build(settings: Any) -> LocalDetector | None:
     return LocalDetector(
         pictures=pictures,
         second=optional("dda", "DdaDetector", local.second_opinion),
-        faces=optional("faces", "FaceSwapDetector", local.faces),
+        faces=optional("faces", "FaceSwapDetector", local.faces or local.video_faces),
         voice=optional("voice", "VoiceDetector", local.voice),
+        faces_in_pictures=local.faces,
     )

@@ -346,3 +346,36 @@ class TestScriptReaders:
         ).read(_jpeg())
         # The Telugu reader's confident "5000" does not beat a whole Tamil card.
         assert tamil.reader == "ta" and tamil.enough
+
+
+class TestVideosAreJudgedOnVideosOwnLines:
+    """2026-09-30, on 25 real and 25 face-swapped videos."""
+
+    class _Frames(_Model):
+        def __init__(self, scores: list[float], threshold: float = 0.65) -> None:
+            super().__init__(_Score(0.0))
+            self._left = list(scores)
+            self._threshold = threshold
+
+        def score(self, _: bytes) -> Any:
+            return _Score(self._left.pop(0), self._threshold)
+
+    async def test_real_footage_that_reads_somewhat_ai_made_is_not_flagged(self) -> None:
+        """A podium speech read 63-71% "AI-made" frame by frame; AI video reads 95%+."""
+        detector = LocalDetector(pictures=self._Frames([0.66, 0.71, 0.75]))
+        reading = await detector.read_video(b"video", [_jpeg()] * 3)
+        assert reading.generated == 0.71
+        assert reading.outcome == NO_SIGN
+
+    async def test_faces_are_judged_in_videos_only_and_on_a_stricter_line(self) -> None:
+        faces = _Model(_Score(0.85, 0.5, faces=1))
+        detector = LocalDetector(
+            pictures=_Model(_Score(0.1, 0.65)), faces=faces, faces_in_pictures=False
+        )
+
+        picture = await detector.read(_jpeg())
+        assert picture.face_swap is None
+
+        clip = await detector.read_video(b"video", [_jpeg()] * 3)
+        assert clip.face_swap == 0.85
+        assert clip.face_swap_at == 0.8
