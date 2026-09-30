@@ -17,8 +17,11 @@ WORKDIR /build
 
 # Dependency layer — cached until the lockfile changes.
 COPY pyproject.toml uv.lock ./
+# With the `models` extra: the detectors, readers and speech-to-text that run on our
+# own server (PyTorch CPU wheels only, see [tool.uv.sources]). Their weights are not
+# in the image; they are mounted at /srv/models (docs/deployment-azure.md).
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-install-project --no-dev
+    uv sync --frozen --no-install-project --no-dev --extra models
 
 # Application layer.
 COPY app ./app
@@ -28,7 +31,7 @@ COPY migrations ./migrations
 # the first ingestion tick rather than at build time.
 COPY data ./data
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev
+    uv sync --frozen --no-dev --extra models
 
 
 FROM python:3.12-slim-bookworm AS runtime
@@ -36,7 +39,10 @@ FROM python:3.12-slim-bookworm AS runtime
 # ffmpeg for the video keyframe path (M35). Without it KeyframeExtractor reports
 # itself unavailable and every video abstains — honest, but silently useless.
 # --no-install-recommends keeps this to the codecs rather than a desktop stack.
-RUN apt-get update     && apt-get install --no-install-recommends -y ffmpeg     && rm -rf /var/lib/apt/lists/*
+# libgl1 and libglib2.0-0: OpenCV (face finding, text in pictures) links against them.
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y ffmpeg libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Non-root: the process never needs to write outside its own tmp.
 RUN groupadd --system --gid 1001 factify \
@@ -50,7 +56,8 @@ COPY --from=builder --chown=factify:factify /build/migrations /srv/migrations
 
 ENV PATH="/srv/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    FACTIFY_LOCAL__DIRECTORY=/srv/models
 
 COPY --from=builder --chown=factify:factify /build/data /srv/data
 

@@ -1,0 +1,44 @@
+# Factify on one virtual machine: the API, and Caddy in front of it for HTTPS.
+#
+#   cd ~/factify/deploy && docker compose up -d --build
+#
+# Caddy gets and renews a Let's Encrypt certificate for FACTIFY_DOMAIN on its own; the
+# domain must point at this machine and ports 80 and 443 must be open. The database
+# is Supabase, outside this machine; the secrets are in ../.env, never in the image.
+# See docs/deployment-azure.md.
+
+services:
+  app:
+    build:
+      context: ..
+    env_file: ../.env
+    environment:
+      # A deployed server serves stored answers: a repeat of a checked forward is
+      # answered at once rather than searched again.
+      FACTIFY_CACHE_READS: "true"
+      FACTIFY_LOCAL__DIRECTORY: /srv/models
+    volumes:
+      # The local models' weights (about 5 GB), uploaded once to ~/factify/models.
+      - ../models:/srv/models:ro
+    expose:
+      - "8080"
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    depends_on:
+      - app
+    environment:
+      FACTIFY_DOMAIN: ${FACTIFY_DOMAIN:?set FACTIFY_DOMAIN in deploy/.env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

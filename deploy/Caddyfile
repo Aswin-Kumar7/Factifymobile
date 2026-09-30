@@ -1,0 +1,16 @@
+# HTTPS for the Factify API. Caddy fetches and renews the certificate itself.
+{$FACTIFY_DOMAIN} {
+	encode gzip
+	# Uploads (pictures, PDFs, videos) up to the API's own limit.
+	request_body {
+		max_size 60MB
+	}
+	reverse_proxy app:8080 {
+		# A check in the background is followed over a long-lived stream.
+		flush_interval -1
+		transport http {
+			read_timeout 10m
+			write_timeout 10m
+		}
+	}
+}
