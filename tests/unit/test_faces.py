@@ -182,25 +182,36 @@ def test_an_unreadable_picture_is_not_checked(fake_models: Install) -> None:
 # --- video keyframes ------------------------------------------------------------------
 
 
-def test_frames_read_as_the_mean_of_the_three_highest(fake_models: Install) -> None:
-    detector, _ = fake_models(found=[_face(100, 100, 100)], scores=[0.1, 0.9, 0.8, 0.2, 0.7])
-    result = detector.score_frames([_png() for _ in range(5)])
+def test_frames_read_as_the_mean_of_the_five_highest(fake_models: Install) -> None:
+    """Each face read as it is and mirrored, the higher kept; then the top five frames."""
+    pairs = [(0.1, 0.2), (0.9, 0.3), (0.8, 0.85), (0.2, 0.1), (0.7, 0.6), (0.05, 0.0)]
+    detector, _ = fake_models(found=[_face(100, 100, 100)], scores=[x for p in pairs for x in p])
+    result = detector.score_frames([_png() for _ in range(6)])
     assert result is not None
-    assert result.faces == 5
-    assert result.likelihood == pytest.approx(0.8)
+    assert result.faces == 6
+    # Per frame: 0.2, 0.9, 0.85, 0.2, 0.7, 0.05 -> the top five average 0.57.
+    assert result.likelihood == pytest.approx(0.57)
 
 
-def test_fewer_than_three_faces_are_averaged_as_they_are(fake_models: Install) -> None:
-    detector, _ = fake_models(found=[_face(100, 100, 100)], scores=[0.2, 0.6])
+def test_fewer_than_five_frames_are_averaged_as_they_are(fake_models: Install) -> None:
+    detector, _ = fake_models(found=[_face(100, 100, 100)], scores=[0.2, 0.1, 0.6, 0.3])
     result = detector.score_frames([_png(), _png()])
     assert result is not None
     assert result.likelihood == pytest.approx(0.4)
 
 
-def test_only_the_largest_face_in_each_frame_is_judged(fake_models: Install) -> None:
-    detector, judge = fake_models(found=[_face(10, 10, 80), _face(200, 100, 160)])
-    detector.score_frames([_png() for _ in range(3)])
-    assert [crop.width for crop in judge.shown] == [crop_size(_face(0, 0, 160).landmarks)] * 3
+def test_every_face_up_to_three_is_judged_and_the_most_swapped_looking_counts(
+    fake_models: Install,
+) -> None:
+    """The swapped face is not always the largest (DeepFakeDetection, 2026-09-30)."""
+    found = [_face(10, 10, 80), _face(200, 100, 160), _face(400, 100, 120), _face(600, 100, 90)]
+    # One frame: four faces, three judged (largest first), each twice.
+    detector, judge = fake_models(found=found, scores=[0.1, 0.1, 0.95, 0.9, 0.2, 0.3])
+    result = detector.score_frames([_png()])
+    assert result is not None
+    assert len(judge.shown) == 6
+    assert result.faces == 3
+    assert result.likelihood == pytest.approx(0.95)
 
 
 def test_at_most_twelve_frames_are_judged(fake_models: Install) -> None:
@@ -208,7 +219,7 @@ def test_at_most_twelve_frames_are_judged(fake_models: Install) -> None:
     result = detector.score_frames([_png() for _ in range(30)])
     assert result is not None
     assert result.faces == MAX_FRAMES
-    assert len(judge.shown) == MAX_FRAMES
+    assert len(judge.shown) == 2 * MAX_FRAMES
 
 
 def test_frames_without_faces_have_no_likelihood(fake_models: Install) -> None:

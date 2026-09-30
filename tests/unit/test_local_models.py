@@ -378,7 +378,7 @@ class TestVideosAreJudgedOnVideosOwnLines:
 
         clip = await detector.read_video(b"video", [_jpeg()] * 3)
         assert clip.face_swap == 0.85
-        assert clip.face_swap_at == 0.8
+        assert clip.face_swap_at == 0.9
 
 
 def test_the_video_models_can_be_loaded_ahead_of_the_first_video() -> None:

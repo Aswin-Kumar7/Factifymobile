@@ -36,7 +36,7 @@ PICTURE_FRAMES = 8
 VIDEO_PICTURE_AT = 0.9
 # A face in a clip is likely swapped past this: on 25 real videos GenD's clip score
 # never reached it (the model's own line, 0.5, flagged 4), and 13 of 25 swaps did.
-VIDEO_FACE_SWAP_AT = 0.8
+VIDEO_FACE_SWAP_AT = 0.9
 SECOND_OPINION_FRAMES = 2
 
 
@@ -97,8 +97,12 @@ class LocalDetector:
         del mime
         return await asyncio.to_thread(self._read_picture, image)
 
-    async def read_video(self, video: bytes, frames: list[bytes]) -> SyntheticReading:
-        return await asyncio.to_thread(self._read_clip, video, frames)
+    async def read_video(
+        self, video: bytes, frames: list[bytes], faces: list[bytes] | None = None
+    ) -> SyntheticReading:
+        """A clip: `frames` for the picture models, `faces` (evenly spaced frames)
+        for the face model when there are any."""
+        return await asyncio.to_thread(self._read_clip, video, frames, faces or frames)
 
     def _read_picture(self, image: bytes) -> SyntheticReading:
         with self._busy:
@@ -114,7 +118,9 @@ class LocalDetector:
         _log("picture", reading)
         return reading
 
-    def _read_clip(self, video: bytes, frames: list[bytes]) -> SyntheticReading:
+    def _read_clip(
+        self, video: bytes, frames: list[bytes], face_frames: list[bytes]
+    ) -> SyntheticReading:
         with self._busy:
             judgeable = [f for f in frames if not self._pictures.unjudgeable(f)]
             mains = [
@@ -125,7 +131,7 @@ class LocalDetector:
                 for f in _spread(frames, SECOND_OPINION_FRAMES)
                 if (s := _safely(self._second, "score", f))
             ]
-            faces = _safely(self._faces, "score_frames", frames)
+            faces = _safely(self._faces, "score_frames", face_frames)
             voice = _safely(self._voice, "score_video", video)
         if faces is not None:
             faces = replace(faces, threshold=max(faces.threshold, VIDEO_FACE_SWAP_AT))

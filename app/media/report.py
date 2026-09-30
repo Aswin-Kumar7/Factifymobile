@@ -156,7 +156,9 @@ class MediaInspector:
             artifact_ref="upload",
         )
 
-    async def inspect_video(self, video: bytes, frames: list[bytes]) -> MediaReport:
+    async def inspect_video(
+        self, video: bytes, frames: list[bytes], face_frames: list[bytes] | None = None
+    ) -> MediaReport:
         """A video, from its still frames: the opening, middle and end of the clip."""
         picked = _spread(frames, FRAMES_SEARCHED)
         credentials = await _guarded(
@@ -167,7 +169,7 @@ class MediaInspector:
         # sound - in one pass; a per-picture detector reads a couple of frames.
         read_video = getattr(self._detector, "read_video", None)
         if read_video is not None:
-            synthetic = await _guarded(read_video(video, frames), _no_reading)
+            synthetic = await _guarded(read_video(video, frames, face_frames), _no_reading)
         else:
             readings = await asyncio.gather(
                 *(

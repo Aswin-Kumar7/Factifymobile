@@ -31,6 +31,13 @@ logger = logging.getLogger("factify.media.video")
 
 DEFAULT_MAX_SECONDS = 90
 DEFAULT_MAX_KEYFRAMES = 12
+# Frames spread evenly across a clip for the face model (`ExtractedVideo.even_frames`).
+# Eight: on 100 videos, sixteen caught one more face swap in fifty at twice the time.
+EVEN_FRAMES = 8
+# At up to this height, not the keyframes' 480: the face model judges a face, and at
+# 480 lines a 1080p face lost enough that 2 of 50 real videos read swapped and 7 more
+# swaps were missed than at full size (2026-09-30).
+EVEN_MAX_HEIGHT = 1080
 DEFAULT_MAX_HEIGHT = 480
 
 # Scene-change sensitivity. Lower catches more cuts; too low returns twelve frames of
@@ -83,6 +90,9 @@ class ExtractedVideo:
 
     probe: VideoProbe | None
     keyframes: tuple[Keyframe, ...] = ()
+    # Frames spread evenly across the clip, for the face model: a talking head has no
+    # scene changes, and three keyframes gave a face swap three chances to show.
+    even_frames: tuple[Keyframe, ...] = ()
     truncated: bool = False
     limitations: tuple[str, ...] = field(default_factory=tuple)
     reason: str | None = None
@@ -230,12 +240,16 @@ class KeyframeExtractor:
                     reason="no scene-change frames could be extracted",
                 )
 
+            seconds = min(description.duration_seconds, self._max_seconds)
+            even = await self._even_frames(source, root, seconds)
+
             event(
                 logger,
                 "keyframes extracted",
                 module="media.video",
                 outcome="ok",
                 frames=len(frames),
+                even_frames=len(even),
                 duration_s=round(description.duration_seconds, 1),
                 truncated=truncated,
             )
@@ -243,6 +257,7 @@ class KeyframeExtractor:
             return ExtractedVideo(
                 probe=description,
                 keyframes=frames,
+                even_frames=even,
                 truncated=truncated,
                 limitations=tuple(limitations),
             )
@@ -281,6 +296,46 @@ class KeyframeExtractor:
             )
 
         return await asyncio.to_thread(self._collect, workspace)
+
+    async def _even_frames(
+        self, source: Path, workspace: Path, seconds: float
+    ) -> tuple[Keyframe, ...]:
+        """`EVEN_FRAMES` frames spread evenly across the clip, in one pass."""
+        if seconds <= 0:
+            return ()
+        folder = workspace / "even"
+        folder.mkdir()
+        code, _, _ = await _run(
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-t",
+                str(self._max_seconds),
+                "-i",
+                str(source),
+                "-vf",
+                f"fps={EVEN_FRAMES / seconds:.5f},scale=-2:'min({EVEN_MAX_HEIGHT},ih)'",
+                "-frames:v",
+                str(EVEN_FRAMES),
+                "-q:v",
+                "3",
+                str(folder / "even-%03d.jpg"),
+            ],
+            timeout=90.0,
+        )
+        if code != 0:
+            return ()
+
+        def collect() -> tuple[Keyframe, ...]:
+            paths = sorted(folder.glob("even-*.jpg"))
+            step = seconds / max(len(paths), 1)
+            return tuple(
+                Keyframe(index=index, timestamp_ms=int(index * step * 1000), data=path.read_bytes())
+                for index, path in enumerate(paths)
+            )
+
+        return await asyncio.to_thread(collect)
 
     async def _spread_frames(
         self, source: Path, workspace: Path, seconds: float

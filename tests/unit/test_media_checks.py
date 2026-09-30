@@ -406,6 +406,8 @@ def test_a_single_shot_video_still_gives_frames(tmp_path: Path) -> None:
     assert extracted.succeeded
     assert len(extracted.keyframes) == 3
     assert any("evenly spaced" in note for note in extracted.limitations)
+    # And eight frames spread evenly across it, for the face model.
+    assert len(extracted.even_frames) == 8
 
 
 def test_an_old_copy_is_measured_in_days_before_the_check() -> None:

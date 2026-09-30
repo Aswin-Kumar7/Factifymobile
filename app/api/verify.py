@@ -1548,7 +1548,11 @@ async def _checked_video(
         consent=True,
     )
     inspector = getattr(request.app.state, "media_inspector", None)
-    inspection = asyncio.create_task(inspector.inspect_video(data, frames)) if inspector else None
+    # The face model reads frames spread evenly across the clip (`even_frames`).
+    even = [frame.data for frame in extracted.even_frames]
+    inspection = (
+        asyncio.create_task(inspector.inspect_video(data, frames, even)) if inspector else None
+    )
     # What is said in it, read while the frames are checked (`app/media/speech.py`).
     speech = await _spoken(request, data)
     response = await _checked_upload(
