@@ -1234,7 +1234,7 @@ class LoginRepository(_Repository):
         return await self._one(
             """
             SELECT l.user_id, l.email, l.password_hash, l.google_sub,
-                   u.display_name, u.avatar_url
+                   u.display_name, u.avatar_url, u.disabled
               FROM user_login l JOIN app_user u ON u.id = l.user_id
              WHERE lower(l.email) = lower(%s)
             """,
@@ -1245,7 +1245,7 @@ class LoginRepository(_Repository):
         return await self._one(
             """
             SELECT l.user_id, l.email, l.password_hash, l.google_sub,
-                   u.display_name, u.avatar_url
+                   u.display_name, u.avatar_url, u.disabled
               FROM user_login l JOIN app_user u ON u.id = l.user_id
              WHERE l.google_sub = %s
             """,
@@ -1306,7 +1306,7 @@ class LoginRepository(_Repository):
             """
             SELECT s.user_id, u.email, u.display_name, u.avatar_url
               FROM auth_session s JOIN app_user u ON u.id = s.user_id
-             WHERE s.token_hash = %s AND s.expires_at > %s
+             WHERE s.token_hash = %s AND s.expires_at > %s AND NOT u.disabled
             """,
             (token_hash, now),
         )

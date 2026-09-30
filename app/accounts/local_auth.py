@@ -145,6 +145,8 @@ class LocalAuth:
             # the timing does not reveal which addresses have accounts.
             await asyncio.to_thread(hash_password, password)
             raise AuthRefused("wrong_credentials")
+        if row.get("disabled"):
+            raise AuthRefused("wrong_credentials")
         if row.get("password_hash") is None:
             raise AuthRefused("use_google")
         if not await asyncio.to_thread(verify_password, password, row["password_hash"]):
@@ -160,9 +162,13 @@ class LocalAuth:
         Google has verified the address, which is what owning the account means.
         """
         row = await self._store.login_by_google(sub)
+        if row is not None and row.get("disabled"):
+            raise AuthRefused("wrong_credentials")
         if row is None:
             address = _normalise_email(email)
             row = await self._store.login_by_email(address)
+            if row is not None and row.get("disabled"):
+                raise AuthRefused("wrong_credentials")
             if row is not None:
                 await self._store.link_google(user_id=str(row["user_id"]), sub=sub)
             else:

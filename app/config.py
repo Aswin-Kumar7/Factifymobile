@@ -177,6 +177,23 @@ class AuthSettings(BaseModel):
     google_client_id: str | None = None
     google_client_secret: SecretStr | None = None
     public_url: str | None = None
+    # A video check (speech read, frames checked) costs more than one of text.
+    video_check_cost: int = Field(default=3, ge=0)
+    # The website, where a Google sign-in started on the web returns. Defaults to
+    # public_url (the same address, with Caddy sending /v1 to the API).
+    web_url: str | None = None
+    # Factify's own admins, besides accounts marked is_staff in the database.
+    staff_emails: tuple[str, ...] = ()
+
+
+class BillingSettings(BaseModel):
+    """Razorpay, for organisations buying credits. Test keys move no real money."""
+
+    model_config = {"frozen": True}
+
+    razorpay_key_id: str | None = None
+    razorpay_key_secret: SecretStr | None = None
+    razorpay_webhook_secret: SecretStr | None = None
 
 
 class LimitSettings(BaseModel):
@@ -286,6 +303,7 @@ class Settings(BaseSettings):
     models: ModelSettings = ModelSettings()
     limits: LimitSettings = LimitSettings()
     auth: AuthSettings = AuthSettings()
+    billing: BillingSettings = BillingSettings()
     local: LocalModelSettings = LocalModelSettings()
 
     # Optional providers. Every default is off, and no default enables anything

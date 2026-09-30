@@ -415,8 +415,11 @@ async def build(settings: Settings) -> dict[str, Any]:
         if settings.auth.google_client_id and google_secret and settings.auth.public_url
         else None
     )
+    from app.orgs.store import OrgStore
+
     state: dict[str, Any] = {
         "database": database,
+        "orgs": OrgStore(database),
         "local_auth": local_auth,
         "google_oauth": google_oauth,
         # A request's session: this server's own first, then a Supabase session from

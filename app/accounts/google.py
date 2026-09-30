@@ -65,13 +65,17 @@ class GoogleOAuth:
         self._clock = clock
         # state -> when it expires. One-time: a state is used once, then forgotten.
         self._states: dict[str, float] = {}
+        # state -> where the sign-in returns: "app" (factify://) or "web".
+        self._targets: dict[str, str] = {}
 
-    def start(self) -> str:
+    def start(self, target: str = "app") -> str:
         """Google's consent page for a new sign-in, with a one-time state."""
         now = self._clock()
         self._states = {s: t for s, t in self._states.items() if t > now}
+        self._targets = {s: t for s, t in self._targets.items() if s in self._states}
         state = secrets.token_urlsafe(24)
         self._states[state] = now + _STATE_SECONDS
+        self._targets[state] = target
         query = urlencode(
             {
                 "client_id": self._client_id,
@@ -83,6 +87,10 @@ class GoogleOAuth:
             }
         )
         return f"{_AUTHORIZE}?{query}"
+
+    def target(self, state: str) -> str:
+        """Where the sign-in that began with this state should return."""
+        return self._targets.pop(state, "app")
 
     async def finish(self, *, code: str, state: str) -> GoogleProfile:
         """The person Google says this is. Raises when it cannot say so for certain."""

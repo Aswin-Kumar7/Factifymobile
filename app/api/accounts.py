@@ -8,6 +8,7 @@ run.
 from __future__ import annotations
 
 import logging
+from typing import Any
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Request, status
@@ -18,6 +19,8 @@ from app.accounts import Account, AuthUser, IdentityUnavailable
 from app.accounts.credits import SurveyAnswers
 from app.accounts.google import APP_REDIRECT, GoogleSignInFailed
 from app.accounts.local_auth import AuthRefused, IssuedSession
+from app.orgs.errors import ApiError
+from app.orgs.store import Payer
 from app.security.ratelimit import RateLimit, SlidingWindowLimiter
 
 logger = logging.getLogger("factify.api.accounts")
@@ -88,6 +91,8 @@ class AccountResponse(BaseModel):
     # True for a new account that has not answered or skipped the survey: the app
     # asks its four questions once, then never again on any phone.
     survey_due: bool = False
+    # Factify's own admins see the admin panel.
+    is_staff: bool = False
 
 
 class RenameRequest(BaseModel):
@@ -104,7 +109,66 @@ class SurveyRequest(BaseModel):
     heard: str | None = None
 
 
+# API keys: a per-key and a per-organisation budget of requests, separate from credits.
+_KEY_RATE = RateLimit(requests=60, window_seconds=60)
+_ORG_RATE = RateLimit(requests=300, window_seconds=60)
+_key_limiter = SlidingWindowLimiter()
+_ANONYMOUS = object()
+
+
+def client_ip(request: Request) -> str | None:
+    """The caller's address: Caddy's X-Forwarded-For first, else the socket."""
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else None
+
+
 async def signed_in(request: Request) -> AuthUser | None:
+    """The person making this request, or None when it is anonymous. Asked once per
+    request; later calls get the same answer."""
+    known = getattr(request.state, "signed_in_user", None)
+    if known is not None:
+        return None if known is _ANONYMOUS else known
+    user = await _signed_in(request)
+    request.state.signed_in_user = user if user is not None else _ANONYMOUS
+    return user
+
+
+async def _key_user(request: Request, token: str) -> AuthUser:
+    """An API key: the organisation pays, and the key's creator is who is asking."""
+    orgs = getattr(request.app.state, "orgs", None)
+    if orgs is None:
+        raise ApiError(503, "unavailable", "API keys are not available on this server")
+    payer, row = await orgs.authenticate_key(token, client_ip(request))
+    for bucket, limit in ((f"key:{payer.key_id}", _KEY_RATE), (f"org:{payer.org_id}", _ORG_RATE)):
+        decision = _key_limiter.check(bucket, limit)
+        if not decision.allowed:
+            raise ApiError(
+                429,
+                "rate_limited",
+                "too many requests; slow down and try again",
+                headers=decision.headers(),
+            )
+    request.state.payer = payer
+    request.state.via_key = True
+    return AuthUser(id=payer.user_id, email=row.get("email") or "", name=row.get("display_name"))
+
+
+async def _paying_org(request: Request, user: AuthUser) -> None:
+    """A signed-in person checking for an organisation (the website's account
+    switcher sends `X-Factify-Account: <organisation id>`)."""
+    account = request.headers.get("x-factify-account", "").strip()
+    orgs = getattr(request.app.state, "orgs", None)
+    if not account or account == "personal" or orgs is None:
+        return
+    member = await orgs.member(account, user.id)
+    if member is None:
+        raise ApiError(403, "forbidden", "you are not a member of this organisation")
+    request.state.payer = Payer(org_id=account, user_id=user.id, role=member["role"])
+
+
+async def _signed_in(request: Request) -> AuthUser | None:
     """The person making this request, or None when it is anonymous.
 
     Called inside a route body rather than as a dependency, for the reason
@@ -119,6 +183,9 @@ async def signed_in(request: Request) -> AuthUser | None:
         if settings.auth.required:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="sign in to check")
         return None
+
+    if token.startswith("fct_"):
+        return await _key_user(request, token)
 
     identity = getattr(request.app.state, "identity", None)
     if identity is None:
@@ -137,17 +204,28 @@ async def signed_in(request: Request) -> AuthUser | None:
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED, detail="your session has ended; sign in again"
         )
+    await _paying_org(request, user)
     return user
 
 
-def check_cost(request: Request) -> int:
-    return int(request.app.state.settings.auth.check_cost)
+def check_cost(request: Request, *, video: bool = False) -> int:
+    auth = request.app.state.settings.auth
+    return int(auth.video_check_cost if video else auth.check_cost)
 
 
 async def require_credit(request: Request, user: AuthUser | None, cost: int) -> None:
     """Refuse the check if this person cannot pay for it. Anonymous checks are not
     metered. While credits are not enforced this never refuses — and a ledger that
     cannot be read does not block a check either."""
+    payer = getattr(request.state, "payer", None)
+    orgs = getattr(request.app.state, "orgs", None)
+    if payer is not None and orgs is not None and cost > 0:
+        # An organisation's pool: held now, settled when the check has its answer.
+        hold = await orgs.hold(payer, cost)
+        request.state.credit_hold = hold
+        request.state.credits_used = cost
+        request.state.credits_remaining = hold.remaining
+        return
     book = getattr(request.app.state, "credits", None)
     if user is None or book is None or cost == 0:
         return
@@ -171,13 +249,49 @@ async def require_credit(request: Request, user: AuthUser | None, cost: int) -> 
         )
 
 
-async def charge(request: Request, user: AuthUser | None, cost: int) -> None:
+async def charge(
+    request: Request, user: AuthUser | None, cost: int, *, response: Any = None
+) -> None:
     """Record what a finished check cost. Failed checks are never charged: this runs
     only after a check has produced its answer."""
+    hold = getattr(request.state, "credit_hold", None)
+    orgs = getattr(request.app.state, "orgs", None)
+    if hold is not None and orgs is not None:
+        request.state.credit_hold = None
+        await orgs.settle(hold)
+        case_id = getattr(response, "case_id", None)
+        if case_id:
+            try:
+                claims = getattr(response, "claims", ()) or ()
+                verdict = getattr(response, "verdict", None)
+                await orgs.record_check(
+                    hold.payer,
+                    case_id=str(case_id),
+                    input_type=None,
+                    title=claims[0].text if claims else getattr(response, "summary", None),
+                    verdict=getattr(verdict, "value", verdict),
+                )
+            except Exception:
+                logger.exception("could not record the organisation's check")
+        return
     book = getattr(request.app.state, "credits", None)
     if user is None or book is None or cost == 0:
         return
     await book.charge(user, cost, "check")
+
+
+async def release_credit(request: Request) -> None:
+    """A check that failed: give its held credits back to the pool at once."""
+    hold = getattr(request.state, "credit_hold", None)
+    orgs = getattr(request.app.state, "orgs", None)
+    if hold is None or orgs is None:
+        return
+    request.state.credit_hold = None
+    try:
+        await orgs.release(hold)
+    except Exception:
+        # Not fatal: an unreleased hold stops counting when it expires.
+        logger.exception("could not release a credit hold")
 
 
 @router.get("/auth/config", response_model=AuthConfigResponse, summary="How to sign in")
@@ -291,12 +405,21 @@ async def logout(request: Request) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+def _web_callback(request: Request) -> str:
+    auth = request.app.state.settings.auth
+    base = (auth.web_url or auth.public_url or "").rstrip("/")
+    return f"{base}/auth/callback"
+
+
 @router.get("/auth/google/start", summary="Begin signing in with Google, in the browser")
-async def google_start(request: Request) -> RedirectResponse:
+async def google_start(request: Request, to: str = "app") -> RedirectResponse:
+    """`?to=web` returns to the website instead of the app."""
+    target = "web" if to == "web" else "app"
     google = getattr(request.app.state, "google_oauth", None)
+    back = _web_callback(request) if target == "web" else APP_REDIRECT
     if google is None:
-        return RedirectResponse(f"{APP_REDIRECT}#{urlencode({'error': 'google_unavailable'})}")
-    return RedirectResponse(google.start())
+        return RedirectResponse(f"{back}#{urlencode({'error': 'google_unavailable'})}")
+    return RedirectResponse(google.start(target))
 
 
 @router.get("/auth/google/callback", include_in_schema=False)
@@ -306,9 +429,14 @@ async def google_callback(
     """Where Google sends the browser back. Ends at the app, signed in or not."""
     google = getattr(request.app.state, "google_oauth", None)
     auth = getattr(request.app.state, "local_auth", None)
+    back = (
+        _web_callback(request)
+        if google is not None and google.target(state) == "web"
+        else APP_REDIRECT
+    )
     if error or google is None or auth is None or not code:
         reason = "google_cancelled" if error == "access_denied" else "google_failed"
-        return RedirectResponse(f"{APP_REDIRECT}#{urlencode({'error': reason})}")
+        return RedirectResponse(f"{back}#{urlencode({'error': reason})}")
     try:
         profile = await google.finish(code=code, state=state)
         session = await auth.sign_in_google(
@@ -316,7 +444,7 @@ async def google_callback(
         )
     except (GoogleSignInFailed, AuthRefused) as failure:
         logger.warning("google sign-in failed: %s", failure)
-        return RedirectResponse(f"{APP_REDIRECT}#{urlencode({'error': 'google_failed'})}")
+        return RedirectResponse(f"{back}#{urlencode({'error': 'google_failed'})}")
     await _welcome(request, session.user)
     # In the fragment, so the session never reaches any server's logs on the way.
     fragment = urlencode(
@@ -327,13 +455,24 @@ async def google_callback(
             "email": session.user.email,
         }
     )
-    return RedirectResponse(f"{APP_REDIRECT}#{fragment}")
+    return RedirectResponse(f"{back}#{fragment}")
 
 
 @router.get("/me", response_model=AccountResponse, summary="The signed-in person")
 async def me(request: Request) -> AccountResponse:
     user = await _require_person(request)
-    return _account_response(request, await _book(request).account(user))
+    staff = False
+    orgs = getattr(request.app.state, "orgs", None)
+    if orgs is not None:
+        try:
+            await orgs.join_by_domain(user.id, user.email)
+            staff = await orgs.is_staff(
+                user.id, user.email, request.app.state.settings.auth.staff_emails
+            )
+        except Exception:
+            logger.exception("could not read the account's organisations")
+    response = _account_response(request, await _book(request).account(user))
+    return response.model_copy(update={"is_staff": staff})
 
 
 @router.patch("/me", response_model=AccountResponse, summary="Change your display name")

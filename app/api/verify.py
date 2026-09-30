@@ -13,6 +13,7 @@ deployment denies every trigger rather than accepting anonymous ones.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -29,7 +30,7 @@ from fastapi import APIRouter, File, Form, Header, HTTPException, Request, Uploa
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pypdf.errors import PdfReadError
 
-from app.api.accounts import charge, check_cost, require_credit, signed_in
+from app.api.accounts import charge, check_cost, release_credit, require_credit, signed_in
 from app.api.schemas import (
     AcceptedResponse,
     AdvisoryResponse,
@@ -668,6 +669,15 @@ async def cached_full_response(
     )
 
 
+_VIDEO_SUFFIXES = (".mp4", ".mov", ".m4v", ".webm", ".mkv", ".3gp", ".avi")
+
+
+def _is_video(file: UploadFile) -> bool:
+    """A video costs more (speech read, frames checked): known from the upload."""
+    kind = (file.content_type or "").lower()
+    return kind.startswith("video/") or (file.filename or "").lower().endswith(_VIDEO_SUFFIXES)
+
+
 def _followed_by(request: Request) -> str | None:
     """The id the app follows this check by: the `X-Request-ID` it sent, if any.
 
@@ -838,6 +848,53 @@ def to_response(result: VerificationResult, *, receipt_url: str | None = None) -
     summary="Verify a URL or a block of text",
 )
 async def verify(payload: VerifyRequest, request: Request) -> VerifyResponse | JSONResponse:
+    """Verify a URL or a block of text.
+
+    With an API key, an `Idempotency-Key` header makes a retried request return the
+    first answer, charged once (kept 24 hours).
+    """
+    idem = await _idempotency(request, payload.model_dump_json())
+    if isinstance(idem, JSONResponse):
+        return idem
+    response = await _verify(payload, request)
+    if idem is not None:
+        await _remember_idempotent(request, idem, response)
+    return response
+
+
+async def _idempotency(
+    request: Request, fingerprint_of: str
+) -> tuple[str, str, str] | JSONResponse | None:
+    header = request.headers.get("idempotency-key", "").strip()[:200]
+    orgs = getattr(request.app.state, "orgs", None)
+    if not header or orgs is None:
+        return None
+    await signed_in(request)
+    payer = getattr(request.state, "payer", None)
+    if payer is None or payer.key_id is None:
+        return None
+    scope = f"key:{payer.key_id}"
+    fingerprint = hashlib.sha256(fingerprint_of.encode()).hexdigest()
+    found = await orgs.replay(scope, header, fingerprint)
+    if found is not None:
+        return JSONResponse(found[1], status_code=found[0], headers={"Idempotent-Replayed": "true"})
+    return scope, header, fingerprint
+
+
+async def _remember_idempotent(
+    request: Request, idem: tuple[str, str, str], response: VerifyResponse | JSONResponse
+) -> None:
+    if isinstance(response, JSONResponse):
+        status_code, body = response.status_code, json.loads(bytes(response.body))
+    else:
+        status_code, body = 200, response.model_dump(mode="json")
+    try:
+        await request.app.state.orgs.remember(*idem, status_code, body)
+    except Exception:
+        logger.exception("could not store an idempotent response")
+
+
+async def _verify(payload: VerifyRequest, request: Request) -> VerifyResponse | JSONResponse:
     """Run one synchronous verification.
 
     Targets 3-8 seconds. Video does not come through here — it cannot finish inside
@@ -874,8 +931,12 @@ async def verify(payload: VerifyRequest, request: Request) -> VerifyResponse | J
                 cost=cost,
             )
 
-        response = await with_receipt(request, await _checked(payload, request, arrived))
-        await charge(request, user, cost)
+        try:
+            response = await with_receipt(request, await _checked(payload, request, arrived))
+        except BaseException:
+            await release_credit(request)
+            raise
+        await charge(request, user, cost, response=response)
         if watching is not None:
             await watching.done(response.case_id)
     return _echo(response, key)
@@ -904,8 +965,12 @@ def _in_background(
         counting = claim_progress.set(progress)
         try:
             async with _watched(request, str(case_id)) as watching:
-                response = await with_receipt(request, await check())
-                await charge(request, user, cost)
+                try:
+                    response = await with_receipt(request, await check())
+                except BaseException:
+                    await release_credit(request)
+                    raise
+                await charge(request, user, cost, response=response)
                 if watching is not None:
                     await watching.done(str(case_id))
         finally:
@@ -1195,7 +1260,7 @@ async def verify_file(
     key = _followed_by(request)
     async with _watched(request, None if background else key) as watching:
         user = await signed_in(request)
-        cost = check_cost(request)
+        cost = check_cost(request, video=_is_video(file))
         await require_credit(request, user, cost)
 
         if background:
@@ -1213,10 +1278,16 @@ async def verify_file(
                 cost=cost,
             )
 
-        response = await _checked_file(request, file, consent_to_process_media, recheck)
-        if isinstance(response, VerifyResponse):
-            response = _echo(await with_receipt(request, response), key)
-        await charge(request, user, cost)
+        try:
+            response = await _checked_file(request, file, consent_to_process_media, recheck)
+            if isinstance(response, VerifyResponse):
+                response = _echo(await with_receipt(request, response), key)
+        except BaseException:
+            await release_credit(request)
+            raise
+        await charge(
+            request, user, cost, response=response if isinstance(response, VerifyResponse) else None
+        )
         if watching is not None:
             # A video is answered with a case id to poll, which is where it ends too.
             answered = (
