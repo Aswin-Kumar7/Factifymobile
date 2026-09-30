@@ -220,11 +220,12 @@ We keep 402 for credits because the app already uses it. Every body names the
 
 ## 7. Payments
 
-- **Now:** Razorpay in test mode (decided). A Factify admin can also add credits by hand
-  (logged).
-- **After KYC:** Razorpay live keys, (UPI, cards, net banking, GST invoices; Stripe's India
-  onboarding is harder). Credit packs, e.g. 5,000 / 20,000 / 100,000. A webhook adds
-  the credits once payment is confirmed. Invoices are downloadable.
+- **Now:** Razorpay in test mode (decided): UPI, cards and net banking, with GST
+  invoices. Stripe's onboarding for Indian businesses is harder. Credit packs, e.g.
+  5,000 / 20,000 / 100,000. Razorpay Checkout on the Billing page, a signed webhook that
+  adds the credits once payment is captured (and never twice for one payment), and
+  downloadable invoices. A Factify admin can also add credits by hand (logged).
+- **After KYC:** swap the test keys for live keys; nothing else changes.
 - **Phase 3:** auto top-up. If a recharge fails, the owner is emailed and checks stop
   at 0.
 
@@ -282,8 +283,9 @@ their account**. The web must keep that promise:
 | **G. Domain + SSO** | Own domain; domain verification + JIT; WorkOS/Clerk SAML when a customer needs it; SCIM | 2 days + per customer |
 
 **Demo on 3 October:** A, the landing page and Check from B, and the core of C
-(members, keys, usage) can be ready. Payments are then shown as "an admin adds
-credits". Nothing is dropped; the rest follows in order.
+(members, keys, usage) can be ready, with buying credits shown in Razorpay test mode
+if F fits, else as "an admin adds credits". Nothing is dropped; the rest follows in
+order.
 
 ## 11. Decisions (2026-09-30)
 
