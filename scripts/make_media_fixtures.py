@@ -119,9 +119,7 @@ def _authority() -> tuple[bytes, bytes]:
 def _signed(image: bytes, *, source: str, agent: str) -> bytes:
     key_pem, chain = _authority()
     signer = c2pa.Signer.from_info(
-        c2pa.C2paSignerInfo(
-            alg=b"es256", sign_cert=chain, private_key=key_pem, ta_url=None
-        )
+        c2pa.C2paSignerInfo(alg=b"es256", sign_cert=chain, private_key=key_pem, ta_url=None)
     )
     manifest = {
         "claim_generator_info": [{"name": agent, "version": "1.0"}],

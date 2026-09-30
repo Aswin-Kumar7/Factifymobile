@@ -78,9 +78,7 @@ class _Store:
     async def set_name(self, user_id: str, name: str) -> None:
         self.users[user_id]["display_name"] = name
 
-    async def set_survey(
-        self, user_id: str, state: str, answers: dict[str, object] | None
-    ) -> None:
+    async def set_survey(self, user_id: str, state: str, answers: dict[str, object] | None) -> None:
         self.users[user_id].update(survey_state=state, survey=answers)
 
 

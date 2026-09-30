@@ -77,8 +77,7 @@ SUITE_ONE: tuple[Case, ...] = (
         ref="F2",
         kind="text",
         payload=(
-            "Banks have been asked to stock up ATMs ahead of the UPI fee rollout on "
-            "15 October."
+            "Banks have been asked to stock up ATMs ahead of the UPI fee rollout on 15 October."
         ),
         truth="FALSE",
         note="Debunked by PIB Fact Check, 23 September 2026 — neither RBI nor MoF issued it",
@@ -171,8 +170,7 @@ SUITE_TWO: tuple[Case, ...] = (
         ref="S3",
         kind="text",
         payload=(
-            "Saudi Arabia said Houthi rebels tried to attack Riyadh with a ballistic "
-            "missile."
+            "Saudi Arabia said Houthi rebels tried to attack Riyadh with a ballistic missile."
         ),
         truth="TRUE",
         note="First time the Saudi capital was targeted since the escalation; NPR, wires",
@@ -205,8 +203,7 @@ SUITE_TWO: tuple[Case, ...] = (
         ref="S7",
         kind="url",
         payload=(
-            "https://www.pib.gov.in/PressNoteDetails.aspx"
-            "?NoteId=158973&ModuleId=3&reg=3&lang=1"
+            "https://www.pib.gov.in/PressNoteDetails.aspx?NoteId=158973&ModuleId=3&reg=3&lang=1"
         ),
         truth="TRUE",
         note=(
