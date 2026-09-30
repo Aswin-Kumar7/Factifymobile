@@ -121,8 +121,27 @@ function NavLink({ item, onClick }: { item: Item; onClick: () => void }) {
   );
 }
 
+/** The admin account's own sidebar: the admin panel and nothing of a user's. */
+function AdminNav({ onNavigate }: { onNavigate: () => void }) {
+  const items: Item[] = [
+    { href: "/app/admin", label: "Overview", icon: "overview", exact: true },
+    { href: "/app/admin/organisations", label: "Organisations", icon: "members" },
+    { href: "/app/admin/people", label: "People", icon: "profile" },
+    { href: "/app/admin/keys", label: "API keys", icon: "keys" },
+    { href: "/app/admin/audit", label: "Audit log", icon: "audit" },
+  ];
+  return (
+    <nav className="flex flex-col gap-0.5">
+      <div className="mb-1 px-3 text-xs font-semibold tracking-wide text-ink3 uppercase">Admin</div>
+      {items.map((i) => (
+        <NavLink key={i.href} item={i} onClick={onNavigate} />
+      ))}
+    </nav>
+  );
+}
+
 function Nav({ onNavigate }: { onNavigate: () => void }) {
-  const { me, current } = useAccount();
+  const { current } = useAccount();
   const base: Item[] = [
     { href: "/app/check", label: "Check", icon: "check", exact: true },
     { href: "/app/history", label: "History", icon: "history" },
@@ -155,12 +174,6 @@ function Nav({ onNavigate }: { onNavigate: () => void }) {
       )}
       <div className="mt-5 mb-1 px-3 text-xs font-semibold tracking-wide text-ink3 uppercase">You</div>
       {personal.map((i) => <NavLink key={i.href} item={i} onClick={onNavigate} />)}
-      {me?.is_staff && (
-        <>
-          <div className="mt-5 mb-1 px-3 text-xs font-semibold tracking-wide text-ink3 uppercase">Factify</div>
-          <NavLink item={{ href: "/app/admin", label: "Admin", icon: "admin" }} onClick={onNavigate} />
-        </>
-      )}
     </nav>
   );
 }
@@ -169,7 +182,17 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const { me, loading } = useAccount();
   const [open, setOpen] = useState(false);
   const path = usePathname();
+  const router = useRouter();
+  const staff = !!me?.is_staff;
   useEffect(() => setOpen(false), [path]);
+  // The admin account lives in the admin panel (it may open an organisation from
+  // there); a user's pages are not for it. Users never reach the admin panel.
+  useEffect(() => {
+    if (loading || !me) return;
+    const inAdmin = path.startsWith("/app/admin");
+    if (staff && !inAdmin && !path.startsWith("/app/org/")) router.replace("/app/admin");
+    if (!staff && inAdmin) router.replace("/app/check");
+  }, [loading, me, staff, path, router]);
 
   async function signOut() {
     await authAction("logout").catch(() => undefined);
@@ -184,9 +207,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <Link href="/" className="flex items-center gap-2.5 px-1 font-serif text-2xl font-semibold tracking-tight text-ink">
         <Seal size={32} /> Factify
       </Link>
-      <Switcher onPick={() => setOpen(false)} />
+      {staff ? (
+        <div className="rounded-xl bg-acc-soft px-3 py-2.5 text-sm font-semibold text-acc-ink">Factify admin</div>
+      ) : (
+        <Switcher onPick={() => setOpen(false)} />
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <Nav onNavigate={() => setOpen(false)} />
+        {staff ? <AdminNav onNavigate={() => setOpen(false)} /> : <Nav onNavigate={() => setOpen(false)} />}
       </div>
       <div className="border-t border-line pt-3">
         <div className="truncate px-1 text-sm font-semibold text-ink">{me?.name || me?.email?.split("@")[0]}</div>
@@ -203,7 +230,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <aside className="sticky top-0 hidden h-dvh border-r border-line bg-bg lg:block">{sidebar}</aside>
 
       <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-line bg-bg/95 px-4 backdrop-blur lg:hidden">
-        <Link href="/app/check" className="flex items-center gap-2 font-serif text-xl font-semibold text-ink">
+        <Link href={staff ? "/app/admin" : "/app/check"} className="flex items-center gap-2 font-serif text-xl font-semibold text-ink">
           <Seal size={28} /> Factify
         </Link>
         <button onClick={() => setOpen(true)} aria-label="Open menu" className="-mr-2 rounded-lg p-2 text-ink">

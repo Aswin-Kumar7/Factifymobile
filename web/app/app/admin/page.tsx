@@ -29,7 +29,6 @@ type AdminUser = {
 type AdminKey = { id: string; org_id: string; org_name: string; name: string; prefix: string; created_at: string; last_used_at: string | null; revoked_at: string | null; created_by_email: string | null };
 type AuditRow = { at: string; action: string; target: string | null; detail: Record<string, unknown>; actor_email: string | null };
 
-const tabs = ["Overview", "Organisations", "People", "API keys", "Audit"] as const;
 const roleWords: Record<string, string> = {
   journalist: "Journalists",
   student: "Students",
@@ -38,33 +37,32 @@ const roleWords: Record<string, string> = {
   curious: "Curious",
 };
 
-export default function Admin() {
+export type Section = "Overview" | "Organisations" | "People" | "API keys" | "Audit";
+
+export function AdminSection({ section }: { section: Section }) {
   const { me } = useAccount();
-  const [tab, setTab] = useState<(typeof tabs)[number]>("Overview");
   if (!me?.is_staff) return <Notice tone="info">This page is for the Factify team.</Notice>;
+  const subs: Record<Section, string> = {
+    Overview: "Everything on Factify at a glance.",
+    Organisations: "Every organisation: credits, members, keys. Add credits or suspend.",
+    People: "Everyone with an account. Add credits or disable.",
+    "API keys": "Find any key by its prefix or name, and revoke it.",
+    Audit: "Admin and billing actions, newest first.",
+  };
   return (
     <>
-      <PageTitle title="Admin" sub="Factify's own view: every organisation, person and key." />
-      <div role="tablist" className="-mx-4 mb-6 flex gap-1 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-        {tabs.map((t) => (
-          <button
-            key={t}
-            role="tab"
-            aria-selected={tab === t}
-            onClick={() => setTab(t)}
-            className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold ${tab === t ? "bg-acc-soft text-acc-ink" : "text-ink2 hover:bg-sf2"}`}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
-      {tab === "Overview" && <Overview />}
-      {tab === "Organisations" && <Orgs />}
-      {tab === "People" && <People />}
-      {tab === "API keys" && <Keys />}
-      {tab === "Audit" && <Audit />}
+      <PageTitle title={section === "Overview" ? "Admin" : section} sub={subs[section]} />
+      {section === "Overview" && <Overview />}
+      {section === "Organisations" && <Orgs />}
+      {section === "People" && <People />}
+      {section === "API keys" && <Keys />}
+      {section === "Audit" && <Audit />}
     </>
   );
+}
+
+export default function Admin() {
+  return <AdminSection section="Overview" />;
 }
 
 function Overview() {
@@ -105,7 +103,8 @@ function Overview() {
               <li key={p.provider} className="flex justify-between gap-3 text-ink2">
                 <span className="text-ink">{p.provider}</span>
                 <span>
-                  {n(p.calls)} <span className="text-ink3">(cap {n(p.daily_cap)}/day)</span>
+                  {n(p.calls)}{" "}
+                  <span className="text-ink3">({p.daily_cap >= 1e9 ? "no daily cap" : `cap ${n(p.daily_cap)}/day`})</span>
                 </span>
               </li>
             ))}
