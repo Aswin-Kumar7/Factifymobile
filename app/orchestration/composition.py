@@ -50,6 +50,7 @@ from app.knowledge.schedule import IngestionSchedule
 from app.media.detectors.local import build as build_local_detector
 from app.media.discovery import ReverseImageDiscovery
 from app.media.report import MediaInspector
+from app.media.speech import build as build_speech_reader
 from app.media.synthetic import SightengineDetector
 from app.observability.logging import event
 from app.orchestration.adapters import (
@@ -502,6 +503,9 @@ async def build(settings: Settings) -> dict[str, Any]:
         # Loaded in the background: the service answers at once, and the models are
         # ready by the time a picture arrives.
         asyncio.get_running_loop().run_in_executor(None, local_detector.warm)
+    # What is said in a video (app/media/speech.py): read on our own server, loaded
+    # on the first video rather than held from the start.
+    state["speech_reader"] = build_speech_reader(settings)
     vision = settings.vision
     synthetic = settings.synthetic
     state["media_inspector"] = MediaInspector(

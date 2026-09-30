@@ -1234,6 +1234,14 @@ class AppLocalizationsHi extends AppLocalizations {
       'इसकी आवाज़ भी संभवतः कंप्यूटर से बनी है।';
 
   @override
+  String get nothingToCheckFaceSwap =>
+      'लेकिन हमारी जाँच के अनुसार इस वीडियो में किसी चेहरे को संभवतः AI से बदला गया है। नीचे वीडियो की जाँच देखें।';
+
+  @override
+  String get nothingToCheckFaceSwapToo =>
+      'इसमें किसी चेहरे को भी संभवतः AI से बदला गया है।';
+
+  @override
   String get searchUnavailableNote =>
       'हमारी समाचार खोज से संपर्क नहीं हो सका, इसलिए इसे समाचार रिपोर्टों से नहीं मिलाया गया। थोड़ी देर बाद फिर से जाँचें दबाएँ।';
 
@@ -1501,6 +1509,12 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get textInPicture => 'तस्वीर में लिखा पाठ';
+
+  @override
+  String get saidInVideo => 'वीडियो में कहा गया';
+
+  @override
+  String get saidInVideoCutOff => 'केवल पहले तीन मिनट पढ़े गए।';
 
   @override
   String shows(String publisher) {

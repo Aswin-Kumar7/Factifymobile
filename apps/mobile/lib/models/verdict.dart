@@ -706,7 +706,11 @@ class MediaDetector {
     this.onServer = false,
     this.why,
     this.machineVoice,
+    this.faceSwapped,
   });
+
+  /// A face in a video is past the face model's line for video (contract 1.5).
+  final bool? faceSwapped;
 
   /// A video's voice is past the voice model's own line (contract 1.5); null when
   /// there was no voice, or from an older server.
@@ -744,6 +748,7 @@ class MediaDetector {
     status: json['status'] as String? ?? 'not_checked',
     why: json['why'] as String?,
     machineVoice: json['machine_voice'] as bool?,
+    faceSwapped: json['face_swapped'] as bool?,
     generated: (json['generated'] as num?)?.toDouble(),
     faceSwap: (json['face_swap'] as num?)?.toDouble(),
     secondOpinion: (json['second_opinion'] as num?)?.toDouble(),
@@ -769,6 +774,30 @@ class MediaEditing {
     unevenNoise: json['uneven_noise'] as bool? ?? false,
     spectralPeaks: json['spectral_peaks'] as bool? ?? false,
   );
+}
+
+/// What is said in a video, read on Factify's own server (contract 1.5).
+class SpokenWords {
+  const SpokenWords({required this.text, this.language, this.cutOff = false});
+
+  final String text;
+
+  /// The language it was heard in: "hi", "ta", "en".
+  final String? language;
+
+  /// Only the start of a long video was read.
+  final bool cutOff;
+
+  static SpokenWords? tryParse(Object? json) {
+    if (json is! Map) return null;
+    final text = (json['text'] as String? ?? '').trim();
+    if (text.isEmpty) return null;
+    return SpokenWords(
+      text: text,
+      language: json['language'] as String?,
+      cutOff: json['cut_off'] as bool? ?? false,
+    );
+  }
 }
 
 class ImageReading {
@@ -825,6 +854,7 @@ class Verdict {
     this.sourceRisk = 'UNKNOWN',
     this.imageReading,
     this.mediaReport,
+    this.speech,
     this.raw = const {},
   });
 
@@ -868,6 +898,9 @@ class Verdict {
   /// For an uploaded picture or video: the checks of the upload itself (contract
   /// 1.3). Beside the verdict, never inside it.
   final MediaReport? mediaReport;
+
+  /// For an uploaded video: what is said in it (contract 1.5), checked as a message is.
+  final SpokenWords? speech;
 
   /// The claim the checked thing is mainly about: the headline claim, else the
   /// first. Null when nothing checkable was found.
@@ -925,6 +958,7 @@ class Verdict {
         ? null
         : ImageReading.fromJson((json['image_reading'] as Map).cast<String, dynamic>()),
     mediaReport: MediaReport.tryParse(json['media_report']),
+    speech: SpokenWords.tryParse(json['speech']),
     raw: json,
   );
 

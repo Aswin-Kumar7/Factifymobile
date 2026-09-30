@@ -1910,6 +1910,18 @@ abstract class AppLocalizations {
   /// **'Its voice was also likely made by a computer.'**
   String get nothingToCheckVoiceToo;
 
+  /// No description provided for @nothingToCheckFaceSwap.
+  ///
+  /// In en, this message translates to:
+  /// **'But our checks say a face in this video was likely swapped or changed by AI. See the video checks below.'**
+  String get nothingToCheckFaceSwap;
+
+  /// No description provided for @nothingToCheckFaceSwapToo.
+  ///
+  /// In en, this message translates to:
+  /// **'A face in it was also likely swapped or changed by AI.'**
+  String get nothingToCheckFaceSwapToo;
+
   /// No description provided for @searchUnavailableNote.
   ///
   /// In en, this message translates to:
@@ -2323,6 +2335,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Text in the picture'**
   String get textInPicture;
+
+  /// No description provided for @saidInVideo.
+  ///
+  /// In en, this message translates to:
+  /// **'Said in the video'**
+  String get saidInVideo;
+
+  /// No description provided for @saidInVideoCutOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Only the first three minutes were read.'**
+  String get saidInVideoCutOff;
 
   /// No description provided for @shows.
   ///

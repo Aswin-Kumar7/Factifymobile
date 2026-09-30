@@ -348,6 +348,18 @@ class RecurrenceResponse(BaseModel):
     summary: str
 
 
+class SpeechResponse(BaseModel):
+    """What is said in an uploaded video, read on our own server (1.5)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    text: str
+    # The language it was heard in, as Whisper names it ("hi", "ta", "en").
+    language: str | None = None
+    # Only the start of a long video was read.
+    cut_off: bool = False
+
+
 class ImageReadingResponse(BaseModel):
     """What was read from an uploaded picture, shown beside the verdict about it.
 
@@ -440,6 +452,9 @@ class DetectorResponse(BaseModel):
     # Added in 1.5: whether that is past the voice model's own line - the app does
     # not hold the model's threshold, so it is told. None when there was no voice.
     machine_voice: bool | None = None
+    # Added in 1.5: whether a face in a video is past the face model's line for
+    # video. None when no face was judged.
+    face_swapped: bool | None = None
     # These detectors ran on our own server. Other checks (the hosted text reader,
     # reverse image search) may still send the picture to their providers.
     on_server: bool = False
@@ -576,6 +591,8 @@ class VerifyResponse(BaseModel):
     image_reading: ImageReadingResponse | None = None
     # For an uploaded picture or video: the checks of the upload itself (1.3).
     media_report: MediaReportResponse | None = None
+    # For an uploaded video: what is said in it, which is checked as a message is (1.5).
+    speech: SpeechResponse | None = None
 
     receipt_url: str | None = None
     # The receipt itself, checked as the result was sent. None when none was issued.
@@ -775,6 +792,11 @@ def media_report_to_response(report: Any, *, thumbnails: str) -> MediaReportResp
             voice=synthetic.voice,
             machine_voice=(
                 synthetic.voice >= synthetic.voice_at if synthetic.voice is not None else None
+            ),
+            face_swapped=(
+                synthetic.face_swap >= synthetic.face_swap_at
+                if synthetic.face_swap is not None
+                else None
             ),
             on_server=synthetic.on_server,
         ),

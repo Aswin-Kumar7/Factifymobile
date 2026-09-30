@@ -41,6 +41,9 @@ models = [
     # Puts a right-to-left (Urdu) line RapidOCR read back into reading order. LGPL,
     # used unmodified as a library.
     "python-bidi>=0.6",
+    # What is said in a video, on our own server: Whisper through CTranslate2 (MIT,
+    # model weights MIT). A forward's claim is usually spoken, not written.
+    "faster-whisper>=1.2",
 ]
 
 [tool.uv.sources]
@@ -149,6 +152,11 @@ ignore_missing_imports = true
 # configuration that returns "unknown", so the import is guarded rather than required.
 [[tool.mypy.overrides]]
 module = ["c2pa.*"]
+ignore_missing_imports = true
+
+# Optional (the `models` extra) and untyped: what is said in a video.
+[[tool.mypy.overrides]]
+module = ["faster_whisper.*"]
 ignore_missing_imports = true
 
 [tool.coverage.run]

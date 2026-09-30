@@ -1235,6 +1235,14 @@ class AppLocalizationsEn extends AppLocalizations {
       'Its voice was also likely made by a computer.';
 
   @override
+  String get nothingToCheckFaceSwap =>
+      'But our checks say a face in this video was likely swapped or changed by AI. See the video checks below.';
+
+  @override
+  String get nothingToCheckFaceSwapToo =>
+      'A face in it was also likely swapped or changed by AI.';
+
+  @override
   String get searchUnavailableNote =>
       'Our news search couldn\'t be reached, so this wasn\'t checked against news reports. Tap Check again in a little while.';
 
@@ -1503,6 +1511,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get textInPicture => 'Text in the picture';
+
+  @override
+  String get saidInVideo => 'Said in the video';
+
+  @override
+  String get saidInVideoCutOff => 'Only the first three minutes were read.';
 
   @override
   String shows(String publisher) {

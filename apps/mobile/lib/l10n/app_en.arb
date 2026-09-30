@@ -694,6 +694,8 @@
   "nothingToCheckAiDeclared": "But its content credentials say it was made with an AI tool. See the checks below.",
   "nothingToCheckVoice": "But our checks say the voice in this video was likely made by a computer, not recorded from a person. See the video checks below.",
   "nothingToCheckVoiceToo": "Its voice was also likely made by a computer.",
+  "nothingToCheckFaceSwap": "But our checks say a face in this video was likely swapped or changed by AI. See the video checks below.",
+  "nothingToCheckFaceSwapToo": "A face in it was also likely swapped or changed by AI.",
   "searchUnavailableNote": "Our news search couldn't be reached, so this wasn't checked against news reports. Tap Check again in a little while.",
   "claimSearchUnavailable": "Our news search couldn't be reached, so no news reports were looked at for this. It isn't the same as finding nothing.",
   "documentReadTitle": "What we read in your document",
@@ -885,6 +887,8 @@
     }
   },
   "textInPicture": "Text in the picture",
+  "saidInVideo": "Said in the video",
+  "saidInVideoCutOff": "Only the first three minutes were read.",
   "shows": "Shows: {publisher}",
   "@shows": {
     "placeholders": {

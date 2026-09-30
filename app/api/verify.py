@@ -47,6 +47,7 @@ from app.api.schemas import (
     ReviewLabelRequest,
     SkippedCheckResponse,
     SourceReaderResponse,
+    SpeechResponse,
     StrengthResponse,
     VerifyRequest,
     VerifyResponse,
@@ -75,6 +76,7 @@ from app.intake.normalizer import (
     normalise_url,
 )
 from app.knowledge.registry import authenticate_trigger
+from app.media.speech import Transcript
 from app.media.video import KeyframeExtractor
 from app.observability.logging import event
 from app.observability.middleware import REQUEST_ID_HEADER
@@ -1281,9 +1283,15 @@ async def _checked_picture(
 
 
 async def _checked_upload(
-    request: Request, intake: NormalisedIntake, *, case_id: UUID, recheck: bool
+    request: Request,
+    intake: NormalisedIntake,
+    *,
+    case_id: UUID,
+    recheck: bool,
+    spoken: str | None = None,
 ) -> VerifyResponse:
-    """A picture or a PDF, read and checked. Also a video's representative frame."""
+    """A picture or a PDF, read and checked. Also a video's representative frame,
+    with what is `spoken` in the video checked beside the words on it."""
     orchestrator = get_orchestrator(request)
 
     # Probed before media preparation (hashing, embedding, OCR), for the same reason
@@ -1312,6 +1320,10 @@ async def _checked_upload(
     # checked exactly as a pasted message is - the same extraction, the same search,
     # the same rules - and a link in it is opened, as a link in a message is.
     document, reading, notes = await _read_document(request, intake)
+    if spoken:
+        # What the video says out loud, after what is written on it: both are what
+        # the video claims.
+        document = f"{document}\n\n{spoken}".strip()
     claims: list[Claim] = []
     own_pages: set[str] = set()
     if document.strip():
@@ -1537,7 +1549,16 @@ async def _checked_video(
     )
     inspector = getattr(request.app.state, "media_inspector", None)
     inspection = asyncio.create_task(inspector.inspect_video(data, frames)) if inspector else None
-    response = await _checked_upload(request, middle, case_id=case_id, recheck=recheck)
+    # What is said in it, read while the frames are checked (`app/media/speech.py`).
+    speech = await _spoken(request, data)
+    response = await _checked_upload(
+        request,
+        middle,
+        case_id=case_id,
+        # The answer stored for this frame may be for another video's words.
+        recheck=recheck or speech is not None,
+        spoken=speech.text if speech is not None else None,
+    )
     notes = (
         SkippedCheckResponse(
             check="video_frames",
@@ -1545,6 +1566,14 @@ async def _checked_video(
             + (f"; {'; '.join(extracted.limitations)}" if extracted.limitations else ""),
         ),
     )
+    if speech is not None:
+        response = response.model_copy(
+            update={
+                "speech": SpeechResponse(
+                    text=speech.text, language=speech.language, cut_off=speech.cut_off
+                )
+            }
+        )
     response = response.model_copy(update={"skipped": (*response.skipped, *notes)})
     if inspection is None:
         return response
@@ -1562,6 +1591,22 @@ async def _checked_video(
             ),
         }
     )
+
+
+async def _spoken(request: Request, video: bytes) -> Transcript | None:
+    """What is said in a video, or None: no reader here, no sound, or no speech.
+
+    A reader that fails takes nothing else down - the video is still checked from its
+    frames, as it was before speech was read.
+    """
+    reader = getattr(request.app.state, "speech_reader", None)
+    if reader is None:
+        return None
+    try:
+        return await asyncio.to_thread(reader.read_video, video)
+    except Exception:
+        logger.exception("the video's speech could not be read")
+        return None
 
 
 _THUMBNAIL_KEY = re.compile(r"^[0-9a-f]{32}$")

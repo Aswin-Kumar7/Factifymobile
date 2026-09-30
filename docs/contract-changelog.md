@@ -19,6 +19,10 @@ shows `not_checked`, so the app can say it rather than a bare "Not checked":
 
 Both are absent when the check ran.
 
+`speech` (on a video's result): what is said in it - `text`, the `language` it was
+heard in, and `cut_off` when only the start of a long video was read. Read on our own
+server, and checked exactly as a pasted message is, alongside the words on its frame.
+
 `media_report.detector.machine_voice` says whether a video's voice is past the voice
 model's own line (the app does not hold the threshold); absent when there was no voice.
 

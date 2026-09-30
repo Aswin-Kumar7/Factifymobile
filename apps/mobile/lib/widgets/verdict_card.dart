@@ -714,7 +714,16 @@ class _WhatWeCheckedState extends State<_WhatWeChecked> {
     final spans = verdict.nothingToCheck
         ? const <ClaimSpan>[]
         : locateClaims(quote, verdict.claims, useAnchors: card.kind == SubmissionKind.text);
-    final keys = {for (final s in spans) s.mark}.toList();
+    // What is said in a video, with the claims found in it marked as they are in
+    // the picture's text (contract 1.5).
+    final spoken = verdict.speech;
+    var said = spoken?.text ?? '';
+    final saidLong = said.length > limit;
+    if (saidLong && !_whole) said = said.substring(0, limit);
+    final saidSpans = said.isEmpty || verdict.nothingToCheck
+        ? const <ClaimSpan>[]
+        : locateClaims(said, verdict.claims, useAnchors: false);
+    final keys = {for (final s in [...spans, ...saidSpans]) s.mark}.toList();
 
     return FxCard(
       padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
@@ -796,6 +805,34 @@ class _WhatWeCheckedState extends State<_WhatWeChecked> {
           ] else if (card.kind == SubmissionKind.image && reading != null) ...[
             const SizedBox(height: 8),
             Text(l10n.imageNoText, style: FactifyText.sans(12, color: k.ink3)),
+          ],
+          if (said.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              l10n.saidInVideo,
+              style: FactifyText.sans(11.5, weight: FontWeight.w600, color: k.ink3),
+            ),
+            const SizedBox(height: 8),
+            _Underlined(text: said, spans: saidSpans, shortened: saidLong && !_whole),
+            if (saidLong && !long)
+              Semantics(
+                button: true,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => setState(() => _whole = !_whole),
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 8, bottom: 4),
+                    child: Text(
+                      _whole ? l10n.imageShowLessText : l10n.imageShowAllText,
+                      style: FactifyText.sans(12.5, weight: FontWeight.w600, color: k.acc),
+                    ),
+                  ),
+                ),
+              ),
+            if (spoken?.cutOff ?? false) ...[
+              const SizedBox(height: 6),
+              Text(l10n.saidInVideoCutOff, style: FactifyText.sans(12, color: k.ink3)),
+            ],
           ],
           if (keys.isNotEmpty) ...[
             const SizedBox(height: 10),
@@ -1484,6 +1521,10 @@ String? _aiNote(Verdict verdict, AppLocalizations l10n) {
     else if (report.detector.agreement == 'likely_ai')
       report.isVideo ? l10n.nothingToCheckAiVideo : l10n.nothingToCheckAiPicture,
   ];
+  // A swapped face in a video: the deepfake people mean by the word.
+  if (report.isVideo && report.detector.faceSwapped == true) {
+    notes.add(notes.isEmpty ? l10n.nothingToCheckFaceSwap : l10n.nothingToCheckFaceSwapToo);
+  }
   // A video's voice: a computer voice over real footage is its own finding.
   if (report.isVideo && report.detector.machineVoice == true) {
     notes.add(notes.isEmpty ? l10n.nothingToCheckVoice : l10n.nothingToCheckVoiceToo);

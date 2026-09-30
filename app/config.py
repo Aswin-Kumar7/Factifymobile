@@ -219,8 +219,20 @@ class LocalModelSettings(BaseModel):
     # pictures, 2026-09-28). A face check that tells people a real face is fake does
     # more harm than none; it stays off until it is calibrated on real Indian faces.
     faces: bool = False
+    # Face swaps in a video, which is where they matter. On 25 real and 25 face-swapped
+    # videos (Google's DeepFakeDetection set, 2026-09-30) GenD separated them at AUROC
+    # 0.90, and past 0.8 it flagged no real video and caught 13 of the 25 swaps. That
+    # set is close to what GenD was trained on, so real forwards will do worse. Loaded
+    # on the first video, not at startup (1.26 GB).
+    video_faces: bool = True
     # Cloned voices in a video's sound: Spectra-AASIST. Experimental.
     voice: bool = True
+    # What is said in a video: Whisper through faster-whisper, its files in
+    # `directory`/faster-whisper-<speech_model>. "small" (486 MB, about 0.5 GB of
+    # memory) read Tamil nearly exactly and Hindi with spelling slips the claim reader
+    # sees past; a larger one reads better and needs three times the memory.
+    speech: bool = True
+    speech_model: str = "small"
     # Text in pictures: PaddleOCR's models through RapidOCR.
     ocr: bool = True
     # Which pages speak to a claim, and how: a reranker and two NLI models.

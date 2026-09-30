@@ -48,7 +48,9 @@ Map<String, dynamic> _report({
   'frames': ?frames,
 };
 
-Verdict _verdict(Map<String, dynamic> report) => Verdict.fromJson({
+Verdict _verdict(Map<String, dynamic> report, {Map<String, dynamic>? speech}) =>
+    Verdict.fromJson({
+  'speech': ?speech,
   'case_id': 'case-1',
   'contract_version': '1.3',
   'action': 'SEND_TO_REVIEW',
@@ -208,6 +210,47 @@ void main() {
     );
 
     expect(find.textContaining('the voice in this video was likely made by a computer'), findsOneWidget);
+  });
+
+  testWidgets("what is said in a video is shown with the video's text (contract 1.5)", (
+    tester,
+  ) async {
+    await _show(
+      tester,
+      _verdict(
+        _report(kind: 'video', frames: 4),
+        speech: {'text': 'सरकार हर महिला को पाँच हज़ार रुपये देगी।', 'language': 'hi'},
+      ),
+    );
+
+    expect(find.text('Said in the video'), findsOneWidget);
+    expect(find.textContaining('सरकार हर महिला को'), findsOneWidget);
+  });
+
+  testWidgets('a video with nothing to check and a swapped face says so at the top', (
+    tester,
+  ) async {
+    await _show(
+      tester,
+      _verdict(
+        _report(
+          kind: 'video',
+          frames: 4,
+          credentials: {'status': 'none'},
+          history: {'status': 'none'},
+          detector: {
+            'status': 'checked',
+            'generated': 0.02,
+            'agreement': 'no_sign',
+            'face_swap': 0.93,
+            'faces': 2,
+            'face_swapped': true,
+          },
+        ),
+      ),
+    );
+
+    expect(find.textContaining('a face in this video was likely swapped'), findsOneWidget);
   });
 
   testWidgets('nothing is said at the top when the checks found no sign of AI', (tester) async {
