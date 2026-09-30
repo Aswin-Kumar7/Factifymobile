@@ -104,9 +104,9 @@ function CheckPage() {
 
   return (
     <>
-      <PageTitle title="What would you like to check?" sub={<>Paid from {paying}. A video uses 3 credits; anything else, 1.</>} />
+      <PageTitle eyebrow={current ? current.name : "Workspace"} title="What would you like to check?" sub={<>Paid from {paying}. A video uses 3 credits; anything else, 1.</>} />
 
-      <form onSubmit={run} className="rounded-2xl border border-line bg-sf p-3 sm:p-4">
+      <form onSubmit={run} className="paper rounded-3xl border border-line bg-sf p-3 shadow-lift sm:p-5">
         <div role="tablist" className="mb-3 inline-flex w-full rounded-xl bg-sf2 p-1 sm:w-auto">
           {(
             [
@@ -128,6 +128,7 @@ function CheckPage() {
         </div>
 
         {tab === "text" ? (
+          <>
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -135,8 +136,27 @@ function CheckPage() {
             maxLength={50000}
             placeholder="Paste a message, a claim or a news link"
             aria-label="What to check"
-            className="block w-full resize-y rounded-xl bg-transparent px-2 py-2 font-serif text-xl leading-snug text-ink placeholder:text-ink3 focus:outline-none"
+            className="block w-full resize-y rounded-xl bg-transparent px-2 py-2 font-serif text-[1.35rem] leading-snug text-ink placeholder:text-ink3 focus:outline-none sm:text-2xl"
           />
+          {!text && (
+            <div className="flex flex-wrap gap-2 px-1 pb-1">
+              {[
+                "Govt to pay ₹5,000 a month to every woman from 1 July",
+                "RBI keeps repo rate unchanged in September review",
+                "https://www.pib.gov.in/",
+              ].map((example) => (
+                <button
+                  key={example}
+                  type="button"
+                  onClick={() => setText(example)}
+                  className="max-w-full truncate rounded-full border border-line bg-bg px-3 py-1.5 text-xs text-ink2 hover:border-acc hover:text-ink"
+                >
+                  Try: {example}
+                </button>
+              ))}
+            </div>
+          )}
+          </>
         ) : (
           <label className="flex min-h-40 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-line px-4 py-8 text-center hover:bg-sf2">
             <input

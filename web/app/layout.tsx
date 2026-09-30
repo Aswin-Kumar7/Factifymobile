@@ -49,6 +49,15 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* The chosen theme, applied before the first paint so the page never flashes. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{var t=localStorage.getItem('fct_theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}",
+          }}
+        />
+      </head>
       <body className={`${geist.variable} ${newsreader.variable} ${geistMono.variable} antialiased`}>
         {children}
       </body>

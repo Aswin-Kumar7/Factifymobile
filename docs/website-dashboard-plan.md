@@ -347,3 +347,44 @@ else going to the website.
 - **SAML SSO and SCIM:** need a WorkOS or Clerk account.
 - **GitHub secret scanning:** needs GitHub's partner programme.
 - **Our own domain:** none bought yet.
+
+## 13. More admin control (proposed 2026-09-30)
+
+**Built now:**
+- The admin opens any organisation in its own view (`/app/admin/organisations/{id}`),
+  not as an owner. It has tabs for Overview, Members, API keys, Usage, Billing,
+  Settings and the Audit log. From there the admin can:
+  - add or remove credits, with a reason;
+  - set the monthly cap;
+  - suspend or restore the organisation;
+  - change any member's role and limit, suspend or remove them;
+  - edit, rotate or revoke any key.
+- The overview shows the pool, the month against the cap, a 30-day chart, dashboard
+  versus API use, and members and keys ranked by spend, with each member's last
+  activity and lifetime spend.
+
+**Next, needing server work:**
+
+1. **Organisation plans and overrides.** A plan per organisation (Free, Team, Newsroom,
+   Enterprise). Per-organisation rate limits that replace the defaults of 60 and 300
+   requests a minute. A custom price for a video check. Private notes for staff.
+2. **Owners and transfer.** An admin can make any member owner, transfer ownership, or
+   add someone to an organisation directly without an invitation.
+3. **API keys across the platform.** Filter by organisation, status, creator and last
+   use. See each key's usage over time and error rate. Revoke many at once. A rate
+   limit per key. Mark a key "leaked", which revokes it and notifies the owner with a
+   reason.
+4. **People detail.**
+   - Each person's organisations and roles, personal credit ledger and survey answers.
+   - Sign them out everywhere (end all sessions).
+   - Reset their password: set a temporary one, or send a link once email exists.
+5. **Staff roles.** A super-admin (everything) and a support role (read-only, plus
+   adding credits). Every staff action goes in the audit log with the staff member's
+   name.
+6. **Refunds and invoices.** Refund a Razorpay payment from the admin panel: take the
+   credits back and record the refund. Download invoices for any organisation.
+7. **Alerts for the team.** Organisations running out of credits, keys with sudden
+   spikes, failed payments, and provider quotas near their limits, all in one list on
+   the admin overview.
+8. **See it as they do.** A read-only view of the dashboard as a given owner or member,
+   to help with support.

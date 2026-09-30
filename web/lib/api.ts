@@ -134,6 +134,8 @@ export type Member = {
   joined_at: string;
   month_spend?: number;
   keys?: number;
+  lifetime_spend?: number;
+  last_active_at?: string | null;
 };
 
 export type ApiKey = {

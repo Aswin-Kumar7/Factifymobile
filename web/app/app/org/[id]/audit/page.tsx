@@ -53,7 +53,7 @@ export default function Audit({ params }: { params: Promise<{ id: string }> }) {
 
   return (
     <>
-      <PageTitle title="Audit log" sub="Who changed what, and when." />
+      <PageTitle eyebrow={org.name} title="Audit log" sub="Who changed what, and when." />
       {!entries ? (
         <Spinner />
       ) : entries.length === 0 ? (

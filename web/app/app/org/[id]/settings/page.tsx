@@ -66,7 +66,7 @@ export default function Settings({ params }: { params: Promise<{ id: string }> }
 
   return (
     <>
-      <PageTitle title="Settings" />
+      <PageTitle eyebrow={org.name} title="Settings" />
       <Card>
         <form onSubmit={save} className="grid gap-4 md:grid-cols-2">
           <Field label="Organisation name">

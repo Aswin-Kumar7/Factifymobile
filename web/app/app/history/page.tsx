@@ -44,6 +44,7 @@ export default function History() {
   return (
     <>
       <PageTitle
+        eyebrow="Workspace"
         title="History"
         sub="Your checks are kept in this browser only. We don't keep a record of what you check."
         action={

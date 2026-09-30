@@ -62,6 +62,7 @@ export default function Keys({ params }: { params: Promise<{ id: string }> }) {
   return (
     <>
       <PageTitle
+        eyebrow={org.name}
         title="API keys"
         sub={
           <>

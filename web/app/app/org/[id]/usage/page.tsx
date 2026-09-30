@@ -1,7 +1,8 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
-import { Bars, Card, PageTitle, Select, Spinner, Stat, Table } from "@/components/ui";
+import { AreaChart, daily } from "@/components/charts";
+import { Card, PageTitle, Select, Spinner, Stat, Table } from "@/components/ui";
 import { api, Usage } from "@/lib/api";
 import { n, when } from "@/lib/format";
 import { useOrg } from "@/lib/use-org";
@@ -29,17 +30,12 @@ export default function UsagePage({ params }: { params: Promise<{ id: string }> 
   const owner = org.my_role === "owner";
   const total = (usage?.by_day ?? []).reduce((s, d) => s + Number(d.credits), 0);
   const checks = (usage?.by_day ?? []).reduce((s, d) => s + Number(d.checks), 0);
-  const series = (() => {
-    const map = new Map((usage?.by_day ?? []).map((d) => [d.day, Number(d.credits)]));
-    return Array.from({ length: days }, (_, i) => {
-      const d = new Date(Date.now() - (days - 1 - i) * 86400000).toISOString().slice(0, 10);
-      return { label: d.slice(5), value: map.get(d) ?? 0 };
-    });
-  })();
+  const series = daily(usage?.by_day ?? [], days);
 
   return (
     <>
       <PageTitle
+        eyebrow={org.name}
         title="Usage"
         sub={owner ? `Everything ${org.name} spent.` : "What you spent in this organisation."}
         action={
@@ -68,7 +64,7 @@ export default function UsagePage({ params }: { params: Promise<{ id: string }> 
           </div>
           <Card className="mt-6">
             <h2 className="mb-4 font-serif text-2xl text-ink">By day</h2>
-            <Bars data={series} />
+            <AreaChart data={series} />
           </Card>
           {owner && (
             <div className="mt-6 grid gap-4 lg:grid-cols-2">

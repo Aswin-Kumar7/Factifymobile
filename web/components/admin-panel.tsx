@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useAccount } from "@/components/account";
-import { Badge, Bars, Button, Card, Field, Input, Modal, Notice, PageTitle, Spinner, Stat, Table } from "@/components/ui";
+import { AreaChart, daily, Split } from "@/components/charts";
+import { Icon } from "@/components/shell";
+import { Avatar, Badge, Button, Card, Field, Input, Modal, Notice, PageTitle, Progress, Spinner, Stat, Table } from "@/components/ui";
 import { api } from "@/lib/api";
 import { ago, inr, n, when } from "@/lib/format";
 
@@ -51,7 +53,7 @@ export function AdminSection({ section }: { section: Section }) {
   };
   return (
     <>
-      <PageTitle title={section === "Overview" ? "Admin" : section} sub={subs[section]} />
+      <PageTitle eyebrow="Factify admin" title={section === "Overview" ? "Platform" : section} sub={subs[section]} />
       {section === "Overview" && <Overview />}
       {section === "Organisations" && <Orgs />}
       {section === "People" && <People />}
@@ -63,59 +65,82 @@ export function AdminSection({ section }: { section: Section }) {
 
 function Overview() {
   const [stats, setStats] = useState<Stats | null>(null);
+  const [orgs, setOrgs] = useState<AdminOrg[]>([]);
   useEffect(() => {
     api<Stats>("/v1/admin/stats", { account: "personal" }).then(setStats).catch(() => undefined);
+    api<AdminOrg[]>("/v1/admin/orgs", { account: "personal" }).then(setOrgs).catch(() => undefined);
   }, []);
   if (!stats) return <Spinner />;
   const t = stats.totals;
-  const answered = stats.survey.filter((s) => s.survey_state === "answered");
-  const map = new Map(stats.by_day.map((d) => [d.day, Number(d.checks)]));
-  const series = Array.from({ length: 30 }, (_, i) => {
+  const series = daily(stats.by_day, 30, "checks");
+  const videos = new Map(stats.by_day.map((d) => [d.day, Number(d.videos)]));
+  const withVideos = series.map((p, i) => {
     const d = new Date(Date.now() - (29 - i) * 86400000).toISOString().slice(0, 10);
-    return { label: d.slice(5), value: map.get(d) ?? 0 };
+    return { ...p, extra: videos.get(d) ?? 0 };
   });
+  const answered = stats.survey.filter((s) => s.survey_state === "answered");
+  const maxCalls = Math.max(1, ...stats.providers.map((p) => Number(p.calls)));
+  const lowOrgs = orgs.filter((o) => o.status === "active" && o.balance < 50);
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        <Stat label="People" value={n(t.users)} sub={`${n(t.users_7d)} new this week`} />
-        <Stat label="Organisations" value={n(t.orgs)} sub={`${n(t.active_keys)} active keys`} />
-        <Stat label="Checks, 24 h" value={n(t.checks_24h)} sub={`${n(t.checks_30d)} in 30 days`} />
-        <Stat label="Revenue" value={inr((t.revenue_paise ?? 0) / 100)} sub={`${n(t.credits_sold)} credits sold`} />
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+        <Stat label="People" value={n(t.users)} sub={`${n(t.users_7d)} new this week`} icon={<Icon name="members" size={17} />} tone="acc" />
+        <Stat label="Organisations" value={n(t.orgs)} sub={`${n(t.active_keys)} active API keys`} icon={<Icon name="building" size={17} />} />
+        <Stat label="Checks, 24 h" value={n(t.checks_24h)} sub={`${n(t.checks_30d)} in 30 days`} icon={<Icon name="check" size={17} />} />
+        <Stat label="Revenue" value={inr((t.revenue_paise ?? 0) / 100)} sub={`${n(t.credits_sold)} credits sold`} icon={<Icon name="billing" size={17} />} tone="warn" />
       </div>
+
       <Card>
-        <h2 className="mb-4 font-serif text-2xl text-ink">Checks per day</h2>
-        <Bars data={series} />
-      </Card>
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <h2 className="mb-3 font-semibold text-ink">Credits used, 30 days</h2>
-          <div className="space-y-1 text-sm text-ink2">
-            <div className="flex justify-between"><span>Personal (free)</span><span>{n(t.personal_credits_30d)}</span></div>
-            <div className="flex justify-between"><span>Organisations</span><span>{n(t.org_credits_30d)}</span></div>
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="font-serif text-2xl text-ink">Checks per day</h2>
+            <p className="text-sm text-ink3">Last 30 days, every account</p>
           </div>
-          <h2 className="mt-5 mb-3 font-semibold text-ink">Provider calls, 30 days</h2>
-          <ul className="space-y-1 text-sm">
+          <div className="flex items-center gap-4 text-xs text-ink2">
+            <span className="flex items-center gap-1.5">
+              <span className="h-0.5 w-4 bg-chart-1" /> All checks
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-0.5 w-4 border-t-2 border-dashed border-chart-3" /> Videos
+            </span>
+          </div>
+        </div>
+        <AreaChart data={withVideos} unit="checks" extraLabel="videos" />
+      </Card>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card>
+          <h2 className="font-serif text-xl text-ink">Credits used</h2>
+          <p className="mb-4 text-sm text-ink3">Last 30 days</p>
+          <Split
+            parts={[
+              { label: "Free (personal)", value: Number(t.personal_credits_30d) },
+              { label: "Organisations", value: Number(t.org_credits_30d) },
+            ]}
+          />
+        </Card>
+        <Card>
+          <h2 className="font-serif text-xl text-ink">Provider calls</h2>
+          <p className="mb-4 text-sm text-ink3">Last 30 days: what checks cost us</p>
+          <ul className="space-y-3">
             {stats.providers.map((p) => (
-              <li key={p.provider} className="flex justify-between gap-3 text-ink2">
-                <span className="text-ink">{p.provider}</span>
-                <span>
-                  {n(p.calls)}{" "}
-                  <span className="text-ink3">({p.daily_cap >= 1e9 ? "no daily cap" : `cap ${n(p.daily_cap)}/day`})</span>
-                </span>
+              <li key={p.provider}>
+                <div className="flex justify-between gap-3 text-sm">
+                  <span className="font-medium text-ink">{p.provider.replace("_", " ")}</span>
+                  <span className="tabular text-ink2">{n(p.calls)}</span>
+                </div>
+                <div className="mt-1.5">
+                  <Progress used={Number(p.calls)} total={maxCalls} />
+                </div>
+                <div className="mt-0.5 text-[11px] text-ink3">{p.daily_cap >= 1e9 ? "no daily cap" : `cap ${n(p.daily_cap)} a day`}</div>
               </li>
             ))}
           </ul>
         </Card>
         <Card>
-          <h2 className="mb-3 font-semibold text-ink">Who signs up (survey)</h2>
-          <ul className="space-y-2 text-sm">
-            {answered.map((s) => (
-              <li key={s.role ?? "none"} className="flex justify-between gap-3 text-ink2">
-                <span className="text-ink">{s.role ? roleWords[s.role] ?? s.role : "Skipped this question"}</span>
-                <span>{n(s.n)}</span>
-              </li>
-            ))}
-          </ul>
+          <h2 className="font-serif text-xl text-ink">Who signs up</h2>
+          <p className="mb-4 text-sm text-ink3">From the new-account survey</p>
+          <Split parts={answered.map((s) => ({ label: s.role ? roleWords[s.role] ?? s.role : "Skipped", value: Number(s.n) }))} />
           <div className="mt-3 text-xs text-ink3">
             {stats.survey
               .filter((s) => s.survey_state !== "answered")
@@ -124,6 +149,30 @@ function Overview() {
           </div>
         </Card>
       </div>
+
+      <Card>
+        <div className="mb-3 flex items-baseline justify-between">
+          <h2 className="font-serif text-xl text-ink">Needs attention</h2>
+          <Link href="/app/admin/organisations" className="text-sm font-semibold text-acc-ink">
+            All organisations →
+          </Link>
+        </div>
+        {lowOrgs.length ? (
+          <ul className="divide-y divide-line">
+            {lowOrgs.slice(0, 6).map((o) => (
+              <li key={o.id}>
+                <Link href={`/app/admin/organisations/${o.id}`} className="flex items-center gap-3 py-2.5 hover:opacity-80">
+                  <Avatar name={o.name} size={32} />
+                  <span className="min-w-0 flex-1 truncate font-medium text-ink">{o.name}</span>
+                  <Badge tone={o.balance <= 0 ? "bad" : "warn"}>{o.balance <= 0 ? "Out of credits" : `${n(o.balance)} left`}</Badge>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-ink3">Every active organisation has at least 50 credits.</p>
+        )}
+      </Card>
     </div>
   );
 }
@@ -203,7 +252,8 @@ function Orgs() {
             {rows.map((o) => (
               <tr key={o.id}>
                 <td>
-                  <Link href={`/app/org/${o.id}`} className="font-medium text-ink hover:underline">
+                  <Link href={`/app/admin/organisations/${o.id}`} className="flex items-center gap-3 font-medium text-ink hover:underline">
+                    <Avatar name={o.name} size={32} />
                     {o.name}
                   </Link>
                   <div className="flex items-center gap-2 text-xs text-ink3">

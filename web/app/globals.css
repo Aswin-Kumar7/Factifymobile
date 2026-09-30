@@ -1,17 +1,20 @@
 @import "tailwindcss";
 
-/* Factify's colours, the same as the phone app (apps/mobile/lib/theme/tokens.dart). */
+/* Factify's colours, the same as the phone app (apps/mobile/lib/theme/tokens.dart),
+   plus the dashboard's own: an ink-dark sidebar, soft shadows and chart colours.
+   Dark mode follows the system unless the person picks one (html[data-theme]). */
 :root {
   --bg: #f5f3ee;
+  --bg-deep: #ece9e1;
   --sf: #ffffff;
-  --sf2: #efece5;
+  --sf2: #f1eee7;
   --ink: #1c1b18;
   --ink2: #55524a;
   --ink3: #8a867c;
-  --line: #e2ded4;
+  --line: #e4e0d6;
   --acc: #0e6b4f;
   --acc-ink: #0e6b4f;
-  --acc-soft: #dcefe6;
+  --acc-soft: #ddefe6;
   --on-acc: #ffffff;
   --mint: #7fe0b8;
   --true: #15803d;
@@ -22,20 +25,34 @@
   --mis-soft: #fef0c7;
   --unc: #57534e;
   --unc-soft: #ecebe7;
+  --side: #161614;
+  --side-2: #201f1c;
+  --side-ink: #f1efe8;
+  --side-ink2: #a9a69c;
+  --side-line: #2c2b27;
+  --chart-1: #0e6b4f;
+  --chart-2: #6fd4ab;
+  --chart-3: #c8a35a;
+  --chart-4: #8f7fd4;
+  --grid: #e8e4da;
+  --shadow: 0 1px 2px rgba(28, 27, 24, 0.04), 0 8px 24px -12px rgba(28, 27, 24, 0.12);
+  --shadow-lg: 0 2px 6px rgba(28, 27, 24, 0.05), 0 24px 48px -20px rgba(28, 27, 24, 0.22);
+  color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #151513;
-    --sf: #1e1e1b;
-    --sf2: #262622;
+    --bg: #121210;
+    --bg-deep: #0c0c0b;
+    --sf: #1b1b18;
+    --sf2: #24231f;
     --ink: #f1efe8;
     --ink2: #b4b2a9;
-    --ink3: #8a887f;
-    --line: #34332f;
+    --ink3: #858378;
+    --line: #2e2d29;
     --acc: #1f8a66;
     --acc-ink: #7fe0b8;
-    --acc-soft: #173d31;
+    --acc-soft: #163a2e;
     --on-acc: #ffffff;
     --true: #4ade80;
     --true-soft: #14331f;
@@ -45,20 +62,34 @@
     --mis-soft: #3a2a0c;
     --unc: #b4b2a9;
     --unc-soft: #2b2a26;
+    --side: #0c0c0b;
+    --side-2: #181816;
+    --side-ink: #f1efe8;
+    --side-ink2: #9c998f;
+    --side-line: #23221f;
+    --chart-1: #3fb58a;
+    --chart-2: #7fe0b8;
+    --chart-3: #d9b56a;
+    --chart-4: #a898ec;
+    --grid: #2a2925;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.35), 0 24px 48px -20px rgba(0, 0, 0, 0.7);
+    color-scheme: dark;
   }
 }
 
 :root[data-theme="dark"] {
-  --bg: #151513;
-  --sf: #1e1e1b;
-  --sf2: #262622;
+  --bg: #121210;
+  --bg-deep: #0c0c0b;
+  --sf: #1b1b18;
+  --sf2: #24231f;
   --ink: #f1efe8;
   --ink2: #b4b2a9;
-  --ink3: #8a887f;
-  --line: #34332f;
+  --ink3: #858378;
+  --line: #2e2d29;
   --acc: #1f8a66;
   --acc-ink: #7fe0b8;
-  --acc-soft: #173d31;
+  --acc-soft: #163a2e;
   --on-acc: #ffffff;
   --true: #4ade80;
   --true-soft: #14331f;
@@ -68,10 +99,24 @@
   --mis-soft: #3a2a0c;
   --unc: #b4b2a9;
   --unc-soft: #2b2a26;
+  --side: #0c0c0b;
+  --side-2: #181816;
+  --side-ink: #f1efe8;
+  --side-ink2: #9c998f;
+  --side-line: #23221f;
+  --chart-1: #3fb58a;
+  --chart-2: #7fe0b8;
+  --chart-3: #d9b56a;
+  --chart-4: #a898ec;
+  --grid: #2a2925;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.35), 0 24px 48px -20px rgba(0, 0, 0, 0.7);
+  color-scheme: dark;
 }
 
 @theme inline {
   --color-bg: var(--bg);
+  --color-bg-deep: var(--bg-deep);
   --color-sf: var(--sf);
   --color-sf2: var(--sf2);
   --color-ink: var(--ink);
@@ -91,6 +136,18 @@
   --color-mis-soft: var(--mis-soft);
   --color-unc: var(--unc);
   --color-unc-soft: var(--unc-soft);
+  --color-side: var(--side);
+  --color-side-2: var(--side-2);
+  --color-side-ink: var(--side-ink);
+  --color-side-ink2: var(--side-ink2);
+  --color-side-line: var(--side-line);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-grid: var(--grid);
+  --shadow-card: var(--shadow);
+  --shadow-lift: var(--shadow-lg);
   --font-sans: var(--font-geist);
   --font-serif: var(--font-newsreader);
   --font-mono: var(--font-geist-mono);
@@ -105,6 +162,7 @@ body {
   color: var(--ink);
   font-family: var(--font-geist), system-ui, sans-serif;
   overflow-x: hidden;
+  font-feature-settings: "ss01", "cv11";
 }
 
 ::selection {
@@ -114,4 +172,42 @@ body {
 :focus-visible {
   outline: 2px solid var(--acc);
   outline-offset: 2px;
+}
+
+/* Numbers line up in tables and stats. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The faint paper grain behind dashboard hero panels. */
+.paper {
+  background-image:
+    radial-gradient(circle at 20% 0%, color-mix(in srgb, var(--acc) 14%, transparent), transparent 55%),
+    radial-gradient(circle at 100% 100%, color-mix(in srgb, var(--chart-3) 10%, transparent), transparent 50%);
+}
+
+.fade-in {
+  animation: fade-in 0.35s ease-out both;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-in {
+    animation: none;
+  }
+}
+
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--side-line) transparent;
 }

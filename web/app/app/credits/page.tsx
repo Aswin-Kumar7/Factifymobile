@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useAccount } from "@/components/account";
-import { Card, PageTitle, Stat } from "@/components/ui";
+import { Ring } from "@/components/charts";
+import { Card, PageTitle } from "@/components/ui";
 import { n, roleName } from "@/lib/format";
 
 export default function Credits() {
@@ -10,12 +11,17 @@ export default function Credits() {
   if (!me) return null;
   return (
     <>
-      <PageTitle title="Credits" sub="Your personal credits, shared with the phone app." />
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Stat label="Left" value={n(me.credits.balance)} sub="free credits" />
-        <Stat label="Used" value={n(me.credits.used)} />
-        <Stat label="Checks" value={n(me.credits.checks)} />
-      </div>
+      <PageTitle eyebrow="You" title="Credits" />
+      <section className="paper flex flex-col items-start gap-6 rounded-3xl border border-line bg-sf p-6 shadow-card sm:flex-row sm:items-center sm:p-8">
+        <Ring used={me.credits.used} total={Math.max(1, me.credits.used + me.credits.balance)} label={n(me.credits.balance)} sub="left" size={148} />
+        <div>
+          <div className="text-sm font-medium text-ink3">Free credits left</div>
+          <div className="tabular font-serif text-6xl leading-none font-medium text-ink">{n(me.credits.balance)}</div>
+          <p className="mt-3 text-[15px] text-ink2">
+            You&apos;ve used {n(me.credits.used)} on {n(me.credits.checks)} checks. The same balance is in the phone app.
+          </p>
+        </div>
+      </section>
       <Card className="mt-6">
         <h2 className="font-semibold text-ink">What a check costs</h2>
         <p className="mt-1 text-[15px] text-ink2">Text, a link, a picture or a PDF: 1 credit. A video: 3. A check that fails costs nothing.</p>

@@ -30,7 +30,7 @@ export default function Profile() {
 
   return (
     <>
-      <PageTitle title="Profile" />
+      <PageTitle eyebrow="You" title="Profile" />
       <Card>
         <form onSubmit={save} className="max-w-md space-y-4">
           <Field label="Name">

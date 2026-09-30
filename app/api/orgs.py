@@ -157,6 +157,8 @@ async def get_org(org_id: str, request: Request) -> dict[str, Any]:
     _, member = await _access(request, org_id)
     org = await _store(request).org(org_id)
     org["my_role"] = member["role"]
+    # Factify staff looking at someone else's organisation, not a member of it.
+    org["viewing_as_staff"] = bool(member.get("staff"))
     org["my_monthly_limit"] = member.get("monthly_limit")
     org["alerts"] = _alerts(org)
     return org
@@ -214,7 +216,12 @@ async def members(org_id: str, request: Request) -> list[dict[str, Any]]:
     if member["role"] != "owner":
         # Members see who is in the organisation, not what each spends.
         rows = [
-            {k: v for k, v in r.items() if k not in ("month_spend", "monthly_limit", "keys")}
+            {
+                k: v
+                for k, v in r.items()
+                if k
+                not in ("month_spend", "monthly_limit", "keys", "lifetime_spend", "last_active_at")
+            }
             if r["user_id"] != user.id
             else r
             for r in rows

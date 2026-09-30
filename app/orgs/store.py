@@ -190,7 +190,17 @@ class OrgStore:
                       AS month_spend,
                   (SELECT COUNT(*) FROM org_member m WHERE m.org_id = o.id) AS members,
                   (SELECT COUNT(*) FROM api_key k WHERE k.org_id = o.id
-                      AND k.revoked_at IS NULL) AS active_keys
+                      AND k.revoked_at IS NULL) AS active_keys,
+                  COALESCE((SELECT SUM(delta) FROM org_ledger l WHERE l.org_id = o.id
+                               AND reason IN ('purchase', 'grant')), 0) AS credits_added,
+                  COALESCE((SELECT -SUM(delta) FROM org_ledger l WHERE l.org_id = o.id
+                               AND reason = 'check'), 0) AS lifetime_spend,
+                  COALESCE((SELECT COUNT(*) FROM org_ledger l WHERE l.org_id = o.id
+                               AND reason = 'check'), 0) AS lifetime_checks,
+                  COALESCE((SELECT SUM(amount_paise) FROM payment p WHERE p.org_id = o.id
+                               AND p.status = 'paid'), 0) AS paid_paise,
+                  (SELECT MAX(created_at) FROM org_ledger l WHERE l.org_id = o.id
+                               AND reason = 'check') AS last_check_at
                   FROM organisation o WHERE o.id = %s
                 """,
                 (_uuid(org_id),),
@@ -252,7 +262,13 @@ class OrgStore:
                                     AND l.reason = 'check' AND l.created_at >= {_MONTH}), 0)
                            AS month_spend,
                        (SELECT COUNT(*) FROM api_key k WHERE k.org_id = m.org_id
-                           AND k.created_by = m.user_id AND k.revoked_at IS NULL) AS keys
+                           AND k.created_by = m.user_id AND k.revoked_at IS NULL) AS keys,
+                       COALESCE((SELECT -SUM(delta) FROM org_ledger l
+                                  WHERE l.org_id = m.org_id AND l.user_id = m.user_id
+                                    AND l.reason = 'check'), 0) AS lifetime_spend,
+                       (SELECT MAX(created_at) FROM org_ledger l
+                         WHERE l.org_id = m.org_id AND l.user_id = m.user_id
+                           AND l.reason = 'check') AS last_active_at
                   FROM org_member m JOIN app_user u ON u.id = m.user_id
                  WHERE m.org_id = %s ORDER BY m.joined_at
                 """,

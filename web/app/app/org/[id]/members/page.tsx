@@ -3,9 +3,9 @@
 import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useState } from "react";
 import { useAccount } from "@/components/account";
-import { Badge, Button, Card, CopyButton, Field, Input, Modal, Notice, PageTitle, Select, Spinner, Table } from "@/components/ui";
+import { Avatar, Badge, Button, Card, CopyButton, Field, Input, Modal, Notice, PageTitle, Progress, Select, Spinner, Table } from "@/components/ui";
 import { api, Member, Role } from "@/lib/api";
-import { n, roleName, when } from "@/lib/format";
+import { ago, n, roleName, when } from "@/lib/format";
 import { useOrg } from "@/lib/use-org";
 
 type Invite = { id: string; email: string; role: Role; monthly_limit: number | null; expires_at: string; link?: string };
@@ -58,6 +58,7 @@ export default function Members({ params }: { params: Promise<{ id: string }> })
   return (
     <>
       <PageTitle
+        eyebrow={org.name}
         title="Members"
         sub={owner ? "Invite people, choose what they can do, and cap what they spend." : `People in ${org.name}.`}
         action={owner && <Button onClick={() => setInviting(true)}>Invite someone</Button>}
@@ -69,12 +70,17 @@ export default function Members({ params }: { params: Promise<{ id: string }> })
       )}
 
       <Card className="p-0 sm:p-0">
-        <Table head={["Person", "Role", owner ? "This month" : "", owner ? "Limit" : "", ""]}>
+        <Table head={["Person", "Role", owner ? "This month / limit" : "", owner ? "Activity" : "", ""]}>
           {members.map((m) => (
             <tr key={m.user_id}>
               <td>
-                <div className="font-medium text-ink">{m.name || m.email.split("@")[0]}</div>
-                <div className="text-xs text-ink3">{m.email}</div>
+                <div className="flex items-center gap-3">
+                  <Avatar name={m.name || m.email} />
+                  <div className="min-w-0">
+                    <div className="truncate font-medium text-ink">{m.name || m.email.split("@")[0]}</div>
+                    <div className="truncate text-xs text-ink3">{m.email}</div>
+                  </div>
+                </div>
               </td>
               <td>
                 <div className="flex flex-wrap gap-1.5">
@@ -82,8 +88,27 @@ export default function Members({ params }: { params: Promise<{ id: string }> })
                   {m.status !== "active" && <Badge tone="warn">Suspended</Badge>}
                 </div>
               </td>
-              <td className="whitespace-nowrap text-ink2">{owner && m.month_spend != null ? `${n(m.month_spend)} credits` : ""}</td>
-              <td className="whitespace-nowrap text-ink2">{owner ? (m.monthly_limit != null ? n(m.monthly_limit) : "No limit") : ""}</td>
+              <td className="min-w-[150px] text-ink2">
+                {owner && m.month_spend != null && (
+                  <>
+                    <div className="tabular text-sm">
+                      {n(m.month_spend)}
+                      {m.monthly_limit != null && <span className="text-ink3"> / {n(m.monthly_limit)}</span>}
+                    </div>
+                    <div className="mt-1.5">
+                      <Progress used={Number(m.month_spend)} total={m.monthly_limit} />
+                    </div>
+                  </>
+                )}
+              </td>
+              <td className="whitespace-nowrap text-ink2">
+                {owner && (
+                  <>
+                    <div className="tabular text-sm">{n(m.lifetime_spend)} all time</div>
+                    <div className="text-xs text-ink3">last check {ago(m.last_active_at)}</div>
+                  </>
+                )}
+              </td>
               <td className="text-right whitespace-nowrap">
                 {owner && (
                   <Button variant="ghost" size="sm" onClick={() => setEditing(m)}>

@@ -66,7 +66,7 @@ export function Spinner({ className = "" }: { className?: string }) {
 }
 
 export function Card({ className = "", children }: { className?: string; children: React.ReactNode }) {
-  return <div className={`min-w-0 rounded-2xl border border-line bg-sf p-4 sm:p-5 ${className}`}>{children}</div>;
+  return <div className={`min-w-0 rounded-2xl border border-line bg-sf p-4 shadow-card sm:p-5 ${className}`}>{children}</div>;
 }
 
 export function Field({
@@ -125,22 +125,114 @@ export function Badge({ tone = "neutral", children }: { tone?: "neutral" | "acc"
   return <span className={`inline-flex items-center rounded-lg px-2 py-0.5 text-xs font-semibold ${tones[tone]}`}>{children}</span>;
 }
 
-export function Stat({ label, value, sub }: { label: string; value: React.ReactNode; sub?: React.ReactNode }) {
+export function Stat({
+  label,
+  value,
+  sub,
+  icon,
+  trend,
+  tone = "neutral",
+}: {
+  label: string;
+  value: React.ReactNode;
+  sub?: React.ReactNode;
+  icon?: React.ReactNode;
+  trend?: React.ReactNode;
+  tone?: "neutral" | "acc" | "warn" | "bad";
+}) {
+  const tones = {
+    neutral: "bg-sf2 text-ink2",
+    acc: "bg-acc-soft text-acc-ink",
+    warn: "bg-mis-soft text-mis",
+    bad: "bg-false-soft text-false",
+  };
   return (
-    <div className="rounded-2xl border border-line bg-sf p-4">
-      <div className="text-sm text-ink3">{label}</div>
-      <div className="mt-1 font-serif text-3xl font-medium tracking-tight text-ink">{value}</div>
-      {sub && <div className="mt-1 text-xs text-ink3">{sub}</div>}
+    <div className="fade-in min-w-0 rounded-2xl border border-line bg-sf p-4 shadow-card">
+      <div className="flex items-center justify-between gap-2">
+        <div className="truncate text-[13px] font-medium text-ink3">{label}</div>
+        {icon && <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${tones[tone]}`}>{icon}</div>}
+      </div>
+      <div className="tabular mt-2 font-serif text-[2rem] leading-none font-medium tracking-tight text-ink">{value}</div>
+      {sub && <div className="mt-1.5 truncate text-xs text-ink3">{sub}</div>}
+      {trend && <div className="mt-2 text-acc-ink">{trend}</div>}
     </div>
   );
 }
 
-export function PageTitle({ title, sub, action }: { title: string; sub?: React.ReactNode; action?: React.ReactNode }) {
+const avatarTones = ["bg-[#dcefe6] text-[#0e6b4f]", "bg-[#efe4cf] text-[#7a5a1c]", "bg-[#e6e1f6] text-[#4b3f8f]", "bg-[#fbe3dc] text-[#9a3a1f]", "bg-[#dfeaf5] text-[#1f4f7a]"];
+
+export function Avatar({ name, size = 36 }: { name: string; size?: number }) {
+  const letters = name
+    .replace(/@.*/, "")
+    .split(/[\s._-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase())
+    .join("");
+  const tone = avatarTones[[...name].reduce((h, c) => h + c.charCodeAt(0), 0) % avatarTones.length];
   return (
-    <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <span
+      className={`inline-flex shrink-0 items-center justify-center rounded-full font-semibold ${tone}`}
+      style={{ width: size, height: size, fontSize: size * 0.38 }}
+      aria-hidden="true"
+    >
+      {letters || "?"}
+    </span>
+  );
+}
+
+/** Used of a limit, as a thin bar; turns amber then red as it fills. */
+export function Progress({ used, total }: { used: number; total: number | null | undefined }) {
+  if (!total) return <div className="h-1.5 rounded-full bg-sf2" />;
+  const f = Math.min(1, used / total);
+  const tone = f >= 0.9 ? "bg-false" : f >= 0.7 ? "bg-mis" : "bg-acc";
+  return (
+    <div className="h-1.5 overflow-hidden rounded-full bg-sf2" role="progressbar" aria-valuenow={used} aria-valuemax={total}>
+      <div className={`h-full rounded-full ${tone}`} style={{ width: `${Math.max(2, f * 100)}%` }} />
+    </div>
+  );
+}
+
+/** Section tabs as links, scrolling sideways on a narrow screen. */
+export function TabLinks({ tabs, active }: { tabs: { href: string; label: string; count?: number }[]; active: string }) {
+  return (
+    <div className="-mx-4 mb-6 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+      <div className="flex w-max gap-1 border-b border-line">
+        {tabs.map((t) => (
+          <Link
+            key={t.href}
+            href={t.href}
+            aria-current={active === t.href ? "page" : undefined}
+            className={`-mb-px flex items-center gap-2 border-b-2 px-3.5 py-2.5 text-sm font-semibold whitespace-nowrap ${
+              active === t.href ? "border-acc text-ink" : "border-transparent text-ink3 hover:text-ink"
+            }`}
+          >
+            {t.label}
+            {t.count != null && <span className="tabular rounded-md bg-sf2 px-1.5 py-0.5 text-[11px] text-ink2">{t.count}</span>}
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function PageTitle({
+  title,
+  sub,
+  action,
+  eyebrow,
+}: {
+  title: React.ReactNode;
+  sub?: React.ReactNode;
+  action?: React.ReactNode;
+  eyebrow?: React.ReactNode;
+}) {
+  return (
+    <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
-        <h1 className="font-serif text-3xl font-medium tracking-tight text-ink sm:text-4xl">{title}</h1>
-        {sub && <p className="mt-1.5 text-[15px] text-ink2">{sub}</p>}
+        {eyebrow && <div className="mb-1.5 text-xs font-semibold tracking-[0.12em] text-acc-ink uppercase">{eyebrow}</div>}
+        <h1 className="font-serif text-[2rem] leading-[1.05] font-medium tracking-tight text-ink sm:text-[2.6rem]">{title}</h1>
+        {sub && <p className="mt-2 max-w-2xl text-[15px] text-ink2">{sub}</p>}
       </div>
       {action && <div className="flex shrink-0 flex-wrap gap-2">{action}</div>}
     </div>

@@ -113,7 +113,7 @@ export default function Billing({ params }: { params: Promise<{ id: string }> })
   return (
     <>
       <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="afterInteractive" />
-      <PageTitle title="Billing" sub="Buy credit packs for the whole organisation. No subscription." />
+      <PageTitle eyebrow={org.name} title="Billing" sub="Buy credit packs for the whole organisation. No subscription." />
       {packs?.test_mode && (
         <div className="mb-4">
           <Notice tone="warning">
