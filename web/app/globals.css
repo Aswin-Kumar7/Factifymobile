@@ -1,0 +1,117 @@
+@import "tailwindcss";
+
+/* Factify's colours, the same as the phone app (apps/mobile/lib/theme/tokens.dart). */
+:root {
+  --bg: #f5f3ee;
+  --sf: #ffffff;
+  --sf2: #efece5;
+  --ink: #1c1b18;
+  --ink2: #55524a;
+  --ink3: #8a867c;
+  --line: #e2ded4;
+  --acc: #0e6b4f;
+  --acc-ink: #0e6b4f;
+  --acc-soft: #dcefe6;
+  --on-acc: #ffffff;
+  --mint: #7fe0b8;
+  --true: #15803d;
+  --true-soft: #dcfce7;
+  --false: #b42318;
+  --false-soft: #fee4e2;
+  --mis: #b45309;
+  --mis-soft: #fef0c7;
+  --unc: #57534e;
+  --unc-soft: #ecebe7;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #151513;
+    --sf: #1e1e1b;
+    --sf2: #262622;
+    --ink: #f1efe8;
+    --ink2: #b4b2a9;
+    --ink3: #8a887f;
+    --line: #34332f;
+    --acc: #1f8a66;
+    --acc-ink: #7fe0b8;
+    --acc-soft: #173d31;
+    --on-acc: #ffffff;
+    --true: #4ade80;
+    --true-soft: #14331f;
+    --false: #f97066;
+    --false-soft: #3d1a17;
+    --mis: #fbbf24;
+    --mis-soft: #3a2a0c;
+    --unc: #b4b2a9;
+    --unc-soft: #2b2a26;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #151513;
+  --sf: #1e1e1b;
+  --sf2: #262622;
+  --ink: #f1efe8;
+  --ink2: #b4b2a9;
+  --ink3: #8a887f;
+  --line: #34332f;
+  --acc: #1f8a66;
+  --acc-ink: #7fe0b8;
+  --acc-soft: #173d31;
+  --on-acc: #ffffff;
+  --true: #4ade80;
+  --true-soft: #14331f;
+  --false: #f97066;
+  --false-soft: #3d1a17;
+  --mis: #fbbf24;
+  --mis-soft: #3a2a0c;
+  --unc: #b4b2a9;
+  --unc-soft: #2b2a26;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-sf: var(--sf);
+  --color-sf2: var(--sf2);
+  --color-ink: var(--ink);
+  --color-ink2: var(--ink2);
+  --color-ink3: var(--ink3);
+  --color-line: var(--line);
+  --color-acc: var(--acc);
+  --color-acc-ink: var(--acc-ink);
+  --color-acc-soft: var(--acc-soft);
+  --color-on-acc: var(--on-acc);
+  --color-mint: var(--mint);
+  --color-true: var(--true);
+  --color-true-soft: var(--true-soft);
+  --color-false: var(--false);
+  --color-false-soft: var(--false-soft);
+  --color-mis: var(--mis);
+  --color-mis-soft: var(--mis-soft);
+  --color-unc: var(--unc);
+  --color-unc-soft: var(--unc-soft);
+  --font-sans: var(--font-geist);
+  --font-serif: var(--font-newsreader);
+  --font-mono: var(--font-geist-mono);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-geist), system-ui, sans-serif;
+  overflow-x: hidden;
+}
+
+::selection {
+  background: var(--acc-soft);
+}
+
+:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}

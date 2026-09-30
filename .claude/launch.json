@@ -1,0 +1,25 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "design-v5",
+      "runtimeExecutable": "X:/Hackathons/ZeAi/.venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8765",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "C:/Users/Admin/AppData/Local/Temp/claude/X--Hackathons-ZeAi/e8821175-948b-4d92-93ca-50fd07d0758f/scratchpad/v5"
+      ],
+      "port": 8765
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "X:/Hackathons/ZeAi/web", "run", "dev"],
+      "port": 3000
+    }
+  ]
+}

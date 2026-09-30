@@ -24,10 +24,23 @@ services:
       - "8080"
     restart: unless-stopped
 
+  # The website: landing page, dashboard and admin panel (web/).
+  web:
+    build:
+      context: ../web
+    environment:
+      FACTIFY_API_INTERNAL: http://app:8080
+    expose:
+      - "3000"
+    depends_on:
+      - app
+    restart: unless-stopped
+
   caddy:
     image: caddy:2
     depends_on:
       - app
+      - web
     environment:
       FACTIFY_DOMAIN: ${FACTIFY_DOMAIN:?set FACTIFY_DOMAIN in deploy/.env}
     ports:

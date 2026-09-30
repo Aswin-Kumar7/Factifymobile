@@ -1,6 +1,6 @@
 # Factify website and dashboard: plan
 
-Written 2026-09-30. Status: planned; decisions in section 11.
+Written 2026-09-30. Status: built 2026-09-30 (section 12); decisions in section 11.
 
 The website has three parts:
 
@@ -307,3 +307,43 @@ Still open (proposed defaults are used until decided):
 6. Org members keep their personal 100 free credits alongside the org pool, via the
    account switcher (default: yes).
 7. A domain name for the website.
+
+## 12. What is built (2026-09-30)
+
+**Server** (`app/orgs/`, `app/api/orgs.py`, `app/api/admin.py`, migration 0006):
+- Organisations, roles (owner, developer, member), invites by link, member limits.
+- The shared pool with hold-then-settle: 50 parallel checks against 10 credits run
+  exactly 10 (tests/unit/test_orgs.py). Member, key and org monthly limits; failed
+  checks release their hold; a video costs 3.
+- API keys: `fct_live_` with checksum, hashed, shown once; rotate with 24 h grace;
+  IP allowlist; expiry; 60/min per key and 300/min per org; error codes;
+  Idempotency-Key replay; `Factify-Credits-*` headers.
+- Usage (JSON and CSV), the audit log, opt-in shared history.
+- Razorpay test mode (orders, signed confirmation, signed webhook, invoices).
+- DNS-verified domains with auto-join (JIT).
+- The staff admin API.
+- Google sign-in returning to the website; disabled accounts.
+
+**Website** (`web/`, Next.js):
+- Public pages: the landing page, privacy, terms and API docs.
+- Sign-in and sign-up (email and Google), with the session in an httpOnly cookie
+  behind a proxy.
+- The dashboard: Check (text, link, file, live progress, sources), History (kept in
+  the browser, plus the org's shared history when switched on), Credits, Profile.
+- The organisation pages: Overview, Members, API keys, Usage, Billing, Settings
+  (limits, shared history, domains, close) and the Audit log, with an account
+  switcher.
+- The admin panel: Overview, Organisations, People, API keys and Audit.
+- Tested at 375, 768 and desktop widths; no page scrolls sideways.
+
+**Deploy:** `web/Dockerfile`, a `web` service in `deploy/docker-compose.yml`, and Caddy
+routing `/v1`, `/healthz`, `/readyz` and `/openapi.json` to the API, with everything
+else going to the website.
+
+**Not built, and why:**
+- **Emails:** there is no mail service yet. Invites are links the owner copies, and
+  alerts show in the dashboard.
+- **Auto top-up:** needs saved cards (Razorpay recurring payments).
+- **SAML SSO and SCIM:** need a WorkOS or Clerk account.
+- **GitHub secret scanning:** needs GitHub's partner programme.
+- **Our own domain:** none bought yet.

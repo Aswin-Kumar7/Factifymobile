@@ -1,16 +1,33 @@
-# HTTPS for the Factify API. Caddy fetches and renews the certificate itself.
+# HTTPS for Factify. Caddy fetches and renews the certificate itself.
+#
+# The API answers /v1 (the app, the website's calls and API keys), the health checks
+# and the OpenAPI schema; everything else is the website.
 {$FACTIFY_DOMAIN} {
 	encode gzip
 	# Uploads (pictures, PDFs, videos) up to the API's own limit.
 	request_body {
 		max_size 60MB
 	}
-	reverse_proxy app:8080 {
-		# A check in the background is followed over a long-lived stream.
-		flush_interval -1
-		transport http {
-			read_timeout 10m
-			write_timeout 10m
+
+	@api path /v1/* /healthz /readyz /openapi.json
+	handle @api {
+		reverse_proxy app:8080 {
+			# A check in the background is followed over a long-lived stream.
+			flush_interval -1
+			transport http {
+				read_timeout 10m
+				write_timeout 10m
+			}
+		}
+	}
+
+	handle {
+		reverse_proxy web:3000 {
+			flush_interval -1
+			transport http {
+				read_timeout 10m
+				write_timeout 10m
+			}
 		}
 	}
 }
