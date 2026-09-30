@@ -1,6 +1,6 @@
 "use client";
 
-import { AdminSection } from "../page";
+import { AdminSection } from "@/components/admin-panel";
 
 export default function Page() {
   return <AdminSection section="Organisations" />;
