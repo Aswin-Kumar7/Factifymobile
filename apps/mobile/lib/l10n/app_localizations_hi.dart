@@ -2211,4 +2211,158 @@ class AppLocalizationsHi extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String get onb3Title => 'तस्वीरें, वीडियो और वॉइस नोट भी';
+
+  @override
+  String get onb3Body =>
+      'Factify AI से बनी तस्वीरें, बदले गए चेहरे और मशीन की आवाज़ पहचानता है, और वीडियो में कही गई बात जाँचता है।';
+
+  @override
+  String get onbMediaMessages => 'मैसेज';
+
+  @override
+  String get onbMediaLinks => 'लिंक';
+
+  @override
+  String get onbMediaPictures => 'तस्वीरें';
+
+  @override
+  String get onbMediaVideos => 'वीडियो';
+
+  @override
+  String get onbMediaVoice => 'वॉइस नोट';
+
+  @override
+  String get onbMediaPdfs => 'PDF';
+
+  @override
+  String get onbHaveAccount => 'मेरा खाता है';
+
+  @override
+  String get authHaveAccount => 'पहले से खाता है?';
+
+  @override
+  String get authNewHere => 'Factify पर नए हैं?';
+
+  @override
+  String get authCreateLink => 'खाता बनाएँ';
+
+  @override
+  String get nameOptionalLabel => 'आपका नाम (ज़रूरी नहीं)';
+
+  @override
+  String get nameOptionalHint => 'हम आपको क्या कहें?';
+
+  @override
+  String authFreeChecks(int count) {
+    return '$count मुफ़्त जाँचों से शुरू करें।';
+  }
+
+  @override
+  String get signUpTitle => 'अपना खाता बनाएँ';
+
+  @override
+  String get signUpBody => '100 मुफ़्त जाँचों से शुरू करें। बस एक मिनट लगेगा।';
+
+  @override
+  String surveyStep(int step, int total) {
+    return '$total में से $step';
+  }
+
+  @override
+  String get surveySkipAll => 'सब छोड़ें';
+
+  @override
+  String get surveyNext => 'आगे';
+
+  @override
+  String get surveyFinish => 'पूरा करें';
+
+  @override
+  String get surveyPickAny => 'जो भी सही लगें, चुनें';
+
+  @override
+  String get surveyWhy =>
+      'चार छोटे सवाल हमें Factify को आपके लिए बेहतर बनाने में मदद करते हैं। कोई भी छोड़ सकते हैं।';
+
+  @override
+  String get surveyRoleQ => 'आप Factify क्यों इस्तेमाल करना चाहते हैं?';
+
+  @override
+  String get surveyRoleJournalist => 'पत्रकार या फ़ैक्ट-चेकर';
+
+  @override
+  String get surveyRoleStudent => 'छात्र या शोधकर्ता';
+
+  @override
+  String get surveyRoleTeacher => 'शिक्षक';
+
+  @override
+  String get surveyRoleFamily => 'परिवार और दोस्तों के फ़ॉरवर्ड जाँचने के लिए';
+
+  @override
+  String get surveyRoleCurious => 'बस जानने के लिए';
+
+  @override
+  String get surveyPlacesQ => 'जाँचने लायक चीज़ें आपको कहाँ दिखती हैं?';
+
+  @override
+  String get surveyPlaceNews => 'न्यूज़ वेबसाइट';
+
+  @override
+  String get surveyWantsQ => 'आप सबसे ज़्यादा क्या जाँचना चाहते हैं?';
+
+  @override
+  String get surveyWantForwards => 'फ़ॉरवर्ड और मैसेज';
+
+  @override
+  String get surveyWantLinks => 'ख़बरों के लिंक';
+
+  @override
+  String get surveyWantPictures => 'तस्वीरें';
+
+  @override
+  String get surveyWantVideos => 'वीडियो';
+
+  @override
+  String get surveyWantVoice => 'वॉइस नोट';
+
+  @override
+  String get surveyHeardQ => 'आपको Factify के बारे में कैसे पता चला?';
+
+  @override
+  String get surveyHeardFriend => 'किसी दोस्त से';
+
+  @override
+  String get surveyHeardSocial => 'सोशल मीडिया पर';
+
+  @override
+  String get surveyHeardCollege => 'कॉलेज या किसी कार्यक्रम में';
+
+  @override
+  String get surveyHeardOther => 'कहीं और से';
+
+  @override
+  String get surveySaveFailed =>
+      'आपके जवाब सेव नहीं हो सके। आप फिर भी आगे बढ़ सकते हैं।';
+
+  @override
+  String creditsTitleNamed(String name) {
+    return 'आपका स्वागत है, $name';
+  }
+
+  @override
+  String get creditsWelcomeTitle => 'आपका स्वागत है';
+
+  @override
+  String get creditsLabel => 'मुफ़्त जाँचें';
+
+  @override
+  String get creditsBody =>
+      'ये हमारी ओर से हैं। हर जाँच में एक लगती है, और आपका बैलेंस हमेशा प्रोफ़ाइल में दिखता है।';
+
+  @override
+  String get creditsStart => 'जाँच शुरू करें';
 }

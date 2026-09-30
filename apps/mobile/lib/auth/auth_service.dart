@@ -239,6 +239,12 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Answer the survey (null skips it). The account comes back with it no longer due.
+  Future<void> answerSurvey(SurveyAnswers? answers) async {
+    _account = await _client.answerSurvey(answers);
+    notifyListeners();
+  }
+
   Future<void> signOut() async {
     final session = _session;
     _session = null;

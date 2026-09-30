@@ -58,7 +58,7 @@ class _Store:
         self.users.setdefault(
             user.id,
             {"email": user.email, "display_name": user.name, "plan": "free",
-             "created_at": datetime.now(UTC)},
+             "created_at": datetime.now(UTC), "survey_state": "due"},
         )  # fmt: skip
         return created
 
@@ -77,6 +77,11 @@ class _Store:
 
     async def set_name(self, user_id: str, name: str) -> None:
         self.users[user_id]["display_name"] = name
+
+    async def set_survey(
+        self, user_id: str, state: str, answers: dict[str, object] | None
+    ) -> None:
+        self.users[user_id].update(survey_state=state, survey=answers)
 
 
 class TestSignInIsCheckedWithSupabase:
@@ -264,6 +269,49 @@ class TestTheAccountEndpoints:
         )
 
         assert body["name"] == "Asha K"
+
+    def test_a_new_account_is_asked_the_survey_until_it_answers(self) -> None:
+        app, store, _ = self._app()
+        client = TestClient(app)
+        me = {"Authorization": "Bearer good"}
+
+        assert client.get("/v1/me", headers=me).json()["survey_due"] is True
+        answered = client.put(
+            "/v1/me/survey",
+            json={"role": "journalist", "places": ["youtube", "whatsapp", "whatsapp"],
+                  "wants": ["videos"], "heard": None},
+            headers=me,
+        )  # fmt: skip
+
+        assert answered.status_code == 200 and answered.json()["survey_due"] is False
+        assert store.users[PERSON.id]["survey"] == {
+            "role": "journalist", "places": ["whatsapp", "youtube"], "wants": ["videos"],
+            "heard": None,
+        }  # fmt: skip
+        assert client.get("/v1/me", headers=me).json()["survey_due"] is False
+
+    def test_the_survey_can_be_skipped_and_is_not_asked_again(self) -> None:
+        app, store, _ = self._app()
+        client = TestClient(app)
+        me = {"Authorization": "Bearer good"}
+
+        body = client.put("/v1/me/survey", json={"skipped": True}, headers=me).json()
+
+        assert body["survey_due"] is False
+        assert store.users[PERSON.id]["survey_state"] == "skipped"
+        assert store.users[PERSON.id]["survey"] is None
+
+    def test_only_the_surveys_own_answers_are_stored(self) -> None:
+        app, store, _ = self._app()
+        client = TestClient(app)
+        me = {"Authorization": "Bearer good"}
+        client.get("/v1/me", headers=me)
+
+        response = client.put("/v1/me/survey", json={"role": "anything I like"}, headers=me)
+
+        assert response.status_code == 422
+        assert store.users[PERSON.id]["survey_state"] == "due"
+        assert TestClient(app).put("/v1/me/survey", json={"skipped": True}).status_code == 401
 
     def test_sign_in_config_is_off_until_the_servers_sign_in_is_composed(self) -> None:
         """Sign-in is this server's own now: nothing about a third-party auth

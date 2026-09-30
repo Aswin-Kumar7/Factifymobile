@@ -3271,6 +3271,294 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{count, plural, =0{None held up when checked against the claim} =1{1 source held up when checked against the claim} other{{count} sources held up when checked against the claim}}'**
   String evidenceHeldUp(int count);
+
+  /// No description provided for @onb3Title.
+  ///
+  /// In en, this message translates to:
+  /// **'Pictures, videos and voice notes too'**
+  String get onb3Title;
+
+  /// No description provided for @onb3Body.
+  ///
+  /// In en, this message translates to:
+  /// **'Factify spots AI-made pictures, face swaps and machine voices, and checks what\'s said in a video.'**
+  String get onb3Body;
+
+  /// No description provided for @onbMediaMessages.
+  ///
+  /// In en, this message translates to:
+  /// **'Messages'**
+  String get onbMediaMessages;
+
+  /// No description provided for @onbMediaLinks.
+  ///
+  /// In en, this message translates to:
+  /// **'Links'**
+  String get onbMediaLinks;
+
+  /// No description provided for @onbMediaPictures.
+  ///
+  /// In en, this message translates to:
+  /// **'Pictures'**
+  String get onbMediaPictures;
+
+  /// No description provided for @onbMediaVideos.
+  ///
+  /// In en, this message translates to:
+  /// **'Videos'**
+  String get onbMediaVideos;
+
+  /// No description provided for @onbMediaVoice.
+  ///
+  /// In en, this message translates to:
+  /// **'Voice notes'**
+  String get onbMediaVoice;
+
+  /// No description provided for @onbMediaPdfs.
+  ///
+  /// In en, this message translates to:
+  /// **'PDFs'**
+  String get onbMediaPdfs;
+
+  /// No description provided for @onbHaveAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'I have an account'**
+  String get onbHaveAccount;
+
+  /// No description provided for @authHaveAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Have an account?'**
+  String get authHaveAccount;
+
+  /// No description provided for @authNewHere.
+  ///
+  /// In en, this message translates to:
+  /// **'New to Factify?'**
+  String get authNewHere;
+
+  /// No description provided for @authCreateLink.
+  ///
+  /// In en, this message translates to:
+  /// **'Create one'**
+  String get authCreateLink;
+
+  /// No description provided for @nameOptionalLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Your name (optional)'**
+  String get nameOptionalLabel;
+
+  /// No description provided for @nameOptionalHint.
+  ///
+  /// In en, this message translates to:
+  /// **'What should we call you?'**
+  String get nameOptionalHint;
+
+  /// No description provided for @authFreeChecks.
+  ///
+  /// In en, this message translates to:
+  /// **'Start with {count} free checks.'**
+  String authFreeChecks(int count);
+
+  /// No description provided for @signUpTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Create your account'**
+  String get signUpTitle;
+
+  /// No description provided for @signUpBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Start with 100 free checks. It takes a minute.'**
+  String get signUpBody;
+
+  /// No description provided for @surveyStep.
+  ///
+  /// In en, this message translates to:
+  /// **'{step} of {total}'**
+  String surveyStep(int step, int total);
+
+  /// No description provided for @surveySkipAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip all'**
+  String get surveySkipAll;
+
+  /// No description provided for @surveyNext.
+  ///
+  /// In en, this message translates to:
+  /// **'Next'**
+  String get surveyNext;
+
+  /// No description provided for @surveyFinish.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish'**
+  String get surveyFinish;
+
+  /// No description provided for @surveyPickAny.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick any that fit'**
+  String get surveyPickAny;
+
+  /// No description provided for @surveyWhy.
+  ///
+  /// In en, this message translates to:
+  /// **'Four quick questions help us build Factify for you. Skip any you like.'**
+  String get surveyWhy;
+
+  /// No description provided for @surveyRoleQ.
+  ///
+  /// In en, this message translates to:
+  /// **'What brings you to Factify?'**
+  String get surveyRoleQ;
+
+  /// No description provided for @surveyRoleJournalist.
+  ///
+  /// In en, this message translates to:
+  /// **'Journalist or fact-checker'**
+  String get surveyRoleJournalist;
+
+  /// No description provided for @surveyRoleStudent.
+  ///
+  /// In en, this message translates to:
+  /// **'Student or researcher'**
+  String get surveyRoleStudent;
+
+  /// No description provided for @surveyRoleTeacher.
+  ///
+  /// In en, this message translates to:
+  /// **'Teacher'**
+  String get surveyRoleTeacher;
+
+  /// No description provided for @surveyRoleFamily.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking forwards for family and friends'**
+  String get surveyRoleFamily;
+
+  /// No description provided for @surveyRoleCurious.
+  ///
+  /// In en, this message translates to:
+  /// **'Just curious'**
+  String get surveyRoleCurious;
+
+  /// No description provided for @surveyPlacesQ.
+  ///
+  /// In en, this message translates to:
+  /// **'Where do you see things you\'d like to check?'**
+  String get surveyPlacesQ;
+
+  /// No description provided for @surveyPlaceNews.
+  ///
+  /// In en, this message translates to:
+  /// **'News sites'**
+  String get surveyPlaceNews;
+
+  /// No description provided for @surveyWantsQ.
+  ///
+  /// In en, this message translates to:
+  /// **'What do you want to check most?'**
+  String get surveyWantsQ;
+
+  /// No description provided for @surveyWantForwards.
+  ///
+  /// In en, this message translates to:
+  /// **'Forwards and messages'**
+  String get surveyWantForwards;
+
+  /// No description provided for @surveyWantLinks.
+  ///
+  /// In en, this message translates to:
+  /// **'News links'**
+  String get surveyWantLinks;
+
+  /// No description provided for @surveyWantPictures.
+  ///
+  /// In en, this message translates to:
+  /// **'Pictures'**
+  String get surveyWantPictures;
+
+  /// No description provided for @surveyWantVideos.
+  ///
+  /// In en, this message translates to:
+  /// **'Videos'**
+  String get surveyWantVideos;
+
+  /// No description provided for @surveyWantVoice.
+  ///
+  /// In en, this message translates to:
+  /// **'Voice notes'**
+  String get surveyWantVoice;
+
+  /// No description provided for @surveyHeardQ.
+  ///
+  /// In en, this message translates to:
+  /// **'How did you hear about Factify?'**
+  String get surveyHeardQ;
+
+  /// No description provided for @surveyHeardFriend.
+  ///
+  /// In en, this message translates to:
+  /// **'From a friend'**
+  String get surveyHeardFriend;
+
+  /// No description provided for @surveyHeardSocial.
+  ///
+  /// In en, this message translates to:
+  /// **'On social media'**
+  String get surveyHeardSocial;
+
+  /// No description provided for @surveyHeardCollege.
+  ///
+  /// In en, this message translates to:
+  /// **'At college or an event'**
+  String get surveyHeardCollege;
+
+  /// No description provided for @surveyHeardOther.
+  ///
+  /// In en, this message translates to:
+  /// **'Somewhere else'**
+  String get surveyHeardOther;
+
+  /// No description provided for @surveySaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Your answers couldn\'t be saved. You can carry on anyway.'**
+  String get surveySaveFailed;
+
+  /// No description provided for @creditsTitleNamed.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re in, {name}'**
+  String creditsTitleNamed(String name);
+
+  /// No description provided for @creditsWelcomeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re in'**
+  String get creditsWelcomeTitle;
+
+  /// No description provided for @creditsLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'free checks'**
+  String get creditsLabel;
+
+  /// No description provided for @creditsBody.
+  ///
+  /// In en, this message translates to:
+  /// **'They\'re on us. Each check uses one, and your balance is always in Profile.'**
+  String get creditsBody;
+
+  /// No description provided for @creditsStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Start checking'**
+  String get creditsStart;
 }
 
 class _AppLocalizationsDelegate

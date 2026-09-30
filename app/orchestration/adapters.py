@@ -192,6 +192,10 @@ class PoolAccountStore:
         async with self._database.connection() as conn:
             await AccountRepository(conn).set_name(user_id=user_id, name=name)
 
+    async def set_survey(self, user_id: str, state: str, answers: dict[str, object] | None) -> None:
+        async with self._database.connection() as conn:
+            await AccountRepository(conn).set_survey(user_id=user_id, state=state, answers=answers)
+
 
 class PoolLoginStore:
     """Sign-in (`LocalAuth`'s store), one short-lived connection per operation."""

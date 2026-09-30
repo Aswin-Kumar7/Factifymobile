@@ -12,8 +12,9 @@ import 'package:flutter/services.dart';
 
 import '../app_services.dart';
 import '../l10n/app_localizations.dart';
+import '../theme/typography.dart';
 import '../widgets/brand.dart';
-import 'main_shell.dart';
+import 'survey_screen.dart';
 import 'welcome_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -57,13 +58,21 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     } finally {
       auth.removeListener(check);
     }
+    // A new account that has not had the survey meets it first. The server says
+    // whether it is due; without an answer in time the app simply opens.
+    if (auth.welcomed) {
+      await auth
+          .refreshAccount()
+          .timeout(const Duration(seconds: 4), onTimeout: () => null)
+          .catchError((Object _) => null);
+    }
     if (!mounted) return;
     unawaited(
       Navigator.of(context).pushReplacement(
         PageRouteBuilder<void>(
           transitionDuration: const Duration(milliseconds: 450),
           pageBuilder: (_, _, _) => auth.welcomed
-              ? MainShell(services: widget.services)
+              ? signedInHome(widget.services)
               : WelcomeScreen(services: widget.services),
           transitionsBuilder: (_, animation, _, child) =>
               FadeTransition(opacity: animation, child: child),
@@ -112,10 +121,12 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                     children: [
                       const Text(
                         'Factify',
+                        // The wordmark is set in the serif, as on the seal's F.
                         style: TextStyle(
+                          fontFamily: FxFonts.serif,
                           color: Colors.white,
-                          fontSize: 34,
-                          fontWeight: FontWeight.w800,
+                          fontSize: 38,
+                          fontWeight: FontWeight.w600,
                           letterSpacing: -0.6,
                         ),
                       ),

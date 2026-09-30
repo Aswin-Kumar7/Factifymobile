@@ -27,6 +27,37 @@ abstract final class FxIcons {
   /// Phosphor filePdf.
   static const IconData pdf = IconData(0xe702, fontFamily: 'PhosphorRegular');
 
+  /// Phosphor videoCamera.
+  static const IconData video = IconData(0xe4da, fontFamily: 'PhosphorRegular');
+
+  /// Phosphor microphone.
+  static const IconData voice = IconData(0xe326, fontFamily: 'PhosphorRegular');
+
+  /// Phosphor chatText: a message or forward.
+  static const IconData message = IconData(0xe17a, fontFamily: 'PhosphorRegular');
+
+  // Onboarding and the survey.
+  /// Phosphor sparkle: made by AI.
+  static const IconData madeByAi = IconData(0xe6a2, fontFamily: 'PhosphorRegular');
+
+  /// Phosphor newspaper.
+  static const IconData newspaper = IconData(0xe344, fontFamily: 'PhosphorRegular');
+
+  /// Phosphor graduationCap.
+  static const IconData student = IconData(0xe62c, fontFamily: 'PhosphorRegular');
+
+  /// Phosphor chalkboardTeacher.
+  static const IconData teacher = IconData(0xe600, fontFamily: 'PhosphorRegular');
+
+  /// Phosphor house: family and friends.
+  static const IconData family = IconData(0xe2c2, fontFamily: 'PhosphorRegular');
+
+  /// Phosphor question: just curious.
+  static const IconData curious = IconData(0xe3e8, fontFamily: 'PhosphorRegular');
+
+  /// Phosphor gift: the free starting credits.
+  static const IconData gift = IconData(0xe276, fontFamily: 'PhosphorRegular');
+
   // Check.
   /// Phosphor clipboardText.
   static const IconData paste = IconData(0xe198, fontFamily: 'PhosphorRegular');

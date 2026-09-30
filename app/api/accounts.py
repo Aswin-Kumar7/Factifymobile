@@ -15,6 +15,7 @@ from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.accounts import Account, AuthUser, IdentityUnavailable
+from app.accounts.credits import SurveyAnswers
 from app.accounts.google import APP_REDIRECT, GoogleSignInFailed
 from app.accounts.local_auth import AuthRefused, IssuedSession
 from app.security.ratelimit import RateLimit, SlidingWindowLimiter
@@ -84,10 +85,23 @@ class AccountResponse(BaseModel):
     plan: str
     joined_at: str | None = None
     credits: CreditsResponse
+    # True for a new account that has not answered or skipped the survey: the app
+    # asks its four questions once, then never again on any phone.
+    survey_due: bool = False
 
 
 class RenameRequest(BaseModel):
     name: str = Field(min_length=1, max_length=60)
+
+
+class SurveyRequest(BaseModel):
+    """The survey's answers by key (app.accounts.credits), or `skipped`."""
+
+    skipped: bool = False
+    role: str | None = None
+    places: list[str] = Field(default_factory=list, max_length=10)
+    wants: list[str] = Field(default_factory=list, max_length=10)
+    heard: str | None = None
 
 
 async def signed_in(request: Request) -> AuthUser | None:
@@ -329,6 +343,25 @@ async def rename(payload: RenameRequest, request: Request) -> AccountResponse:
     return _account_response(request, account)
 
 
+@router.put("/me/survey", response_model=AccountResponse, summary="Answer or skip the survey")
+async def survey(payload: SurveyRequest, request: Request) -> AccountResponse:
+    user = await _require_person(request)
+    answers: SurveyAnswers | None = None
+    if not payload.skipped:
+        try:
+            answers = SurveyAnswers(
+                role=payload.role,
+                places=tuple(payload.places),
+                wants=tuple(payload.wants),
+                heard=payload.heard,
+            )
+        except ValueError:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY, detail="unknown_answer"
+            ) from None
+    return _account_response(request, await _book(request).answer_survey(user, answers))
+
+
 async def _require_person(request: Request) -> AuthUser:
     user = await signed_in(request)
     if user is None:
@@ -361,4 +394,5 @@ def _account_response(request: Request, account: Account) -> AccountResponse:
             deep_check_cost=auth.check_cost,
             limited=book.enforced,
         ),
+        survey_due=account.survey_due,
     )

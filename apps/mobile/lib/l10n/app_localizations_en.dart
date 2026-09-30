@@ -2214,4 +2214,158 @@ class AppLocalizationsEn extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String get onb3Title => 'Pictures, videos and voice notes too';
+
+  @override
+  String get onb3Body =>
+      'Factify spots AI-made pictures, face swaps and machine voices, and checks what\'s said in a video.';
+
+  @override
+  String get onbMediaMessages => 'Messages';
+
+  @override
+  String get onbMediaLinks => 'Links';
+
+  @override
+  String get onbMediaPictures => 'Pictures';
+
+  @override
+  String get onbMediaVideos => 'Videos';
+
+  @override
+  String get onbMediaVoice => 'Voice notes';
+
+  @override
+  String get onbMediaPdfs => 'PDFs';
+
+  @override
+  String get onbHaveAccount => 'I have an account';
+
+  @override
+  String get authHaveAccount => 'Have an account?';
+
+  @override
+  String get authNewHere => 'New to Factify?';
+
+  @override
+  String get authCreateLink => 'Create one';
+
+  @override
+  String get nameOptionalLabel => 'Your name (optional)';
+
+  @override
+  String get nameOptionalHint => 'What should we call you?';
+
+  @override
+  String authFreeChecks(int count) {
+    return 'Start with $count free checks.';
+  }
+
+  @override
+  String get signUpTitle => 'Create your account';
+
+  @override
+  String get signUpBody => 'Start with 100 free checks. It takes a minute.';
+
+  @override
+  String surveyStep(int step, int total) {
+    return '$step of $total';
+  }
+
+  @override
+  String get surveySkipAll => 'Skip all';
+
+  @override
+  String get surveyNext => 'Next';
+
+  @override
+  String get surveyFinish => 'Finish';
+
+  @override
+  String get surveyPickAny => 'Pick any that fit';
+
+  @override
+  String get surveyWhy =>
+      'Four quick questions help us build Factify for you. Skip any you like.';
+
+  @override
+  String get surveyRoleQ => 'What brings you to Factify?';
+
+  @override
+  String get surveyRoleJournalist => 'Journalist or fact-checker';
+
+  @override
+  String get surveyRoleStudent => 'Student or researcher';
+
+  @override
+  String get surveyRoleTeacher => 'Teacher';
+
+  @override
+  String get surveyRoleFamily => 'Checking forwards for family and friends';
+
+  @override
+  String get surveyRoleCurious => 'Just curious';
+
+  @override
+  String get surveyPlacesQ => 'Where do you see things you\'d like to check?';
+
+  @override
+  String get surveyPlaceNews => 'News sites';
+
+  @override
+  String get surveyWantsQ => 'What do you want to check most?';
+
+  @override
+  String get surveyWantForwards => 'Forwards and messages';
+
+  @override
+  String get surveyWantLinks => 'News links';
+
+  @override
+  String get surveyWantPictures => 'Pictures';
+
+  @override
+  String get surveyWantVideos => 'Videos';
+
+  @override
+  String get surveyWantVoice => 'Voice notes';
+
+  @override
+  String get surveyHeardQ => 'How did you hear about Factify?';
+
+  @override
+  String get surveyHeardFriend => 'From a friend';
+
+  @override
+  String get surveyHeardSocial => 'On social media';
+
+  @override
+  String get surveyHeardCollege => 'At college or an event';
+
+  @override
+  String get surveyHeardOther => 'Somewhere else';
+
+  @override
+  String get surveySaveFailed =>
+      'Your answers couldn\'t be saved. You can carry on anyway.';
+
+  @override
+  String creditsTitleNamed(String name) {
+    return 'You\'re in, $name';
+  }
+
+  @override
+  String get creditsWelcomeTitle => 'You\'re in';
+
+  @override
+  String get creditsLabel => 'free checks';
+
+  @override
+  String get creditsBody =>
+      'They\'re on us. Each check uses one, and your balance is always in Profile.';
+
+  @override
+  String get creditsStart => 'Start checking';
 }

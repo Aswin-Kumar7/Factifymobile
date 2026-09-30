@@ -1,14 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The Factify mark: a check on the emerald square. -->
+<!-- The Factify mark, the newsroom seal (tool/render_brand_icons.py draws it). -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item>
-        <shape android:shape="rectangle">
-            <solid android:color="@color/widget_acc" />
-            <corners android:radius="7dp" />
-            <!-- Sized, or the square is scaled to the view and its corners become a circle. -->
-            <size android:width="22dp" android:height="22dp" />
-        </shape>
-    </item>
-    <item android:drawable="@drawable/widget_icon_check" android:gravity="center"
-        android:width="14dp" android:height="14dp" />
+    <!-- Sized, or the bitmap is scaled to the view. -->
+    <item android:drawable="@drawable/widget_seal" android:width="22dp" android:height="22dp" />
 </layer-list>

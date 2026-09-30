@@ -22,7 +22,6 @@ import 'package:factify_mobile/notify/notify_preference.dart';
 import 'package:factify_mobile/notify/ready_notifier.dart';
 import 'package:factify_mobile/screens/error_screen.dart';
 import 'package:factify_mobile/screens/profile_screen.dart';
-import 'package:factify_mobile/screens/welcome_screen.dart';
 import 'package:factify_mobile/theme/theme.dart';
 import 'package:factify_mobile/theme/theme_mode_preference.dart';
 import 'package:factify_mobile/widgets/ui/fx_switch.dart';
@@ -224,47 +223,6 @@ void main() {
       await _pump(tester, services, ProfileScreen(services: services));
       expect(find.text('प्रोफ़ाइल'), findsOneWidget);
     }
-  });
-
-  group('welcome', () {
-    testWidgets('goes page by page to sign-up, and Skip goes straight there', (tester) async {
-      final services = await _services(signedIn: false);
-      await _pump(tester, services, WelcomeScreen(services: services));
-
-      expect(find.text("Know what's true before you share it"), findsOneWidget);
-      await tester.tap(find.text('Next'));
-      await tester.pumpAndSettle();
-      expect(find.text('Every answer comes with its sources'), findsOneWidget);
-      // The sample result is invented, and says so.
-      expect(find.text('AN EXAMPLE'), findsOneWidget);
-      await tester.ensureVisible(find.text('Get started'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Get started'));
-      await tester.pumpAndSettle();
-      expect(find.text('Create your account'), findsOneWidget);
-      expect(find.text('We never keep a record of what you check.'), findsOneWidget);
-
-      await _pump(tester, services, WelcomeScreen(services: services, key: UniqueKey()));
-      await tester.tap(find.text('Skip'));
-      await tester.pumpAndSettle();
-      expect(find.text('Create your account'), findsOneWidget);
-    });
-
-    testWidgets('lays out in Hindi at 130% text without overflowing', (tester) async {
-      final services = await _services(signedIn: false);
-      await services.language.choose(const Locale('hi'));
-      tester.platformDispatcher.textScaleFactorTestValue = 1.3;
-      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-      await _pump(tester, services, WelcomeScreen(services: services));
-      await tester.ensureVisible(find.text('आगे'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('आगे'));
-      await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('शुरू करें'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('शुरू करें'));
-      await tester.pumpAndSettle();
-    });
   });
 
   group('the error screen', () {

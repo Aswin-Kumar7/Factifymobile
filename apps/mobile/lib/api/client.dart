@@ -299,6 +299,21 @@ class FactifyClient {
     return Account.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 
+  /// Answer the survey, or skip it with null. Asked once, after a new account.
+  Future<Account> answerSurvey(SurveyAnswers? answers) async {
+    final auth = await _signedIn();
+    final response = await _send(
+      () => _http
+          .put(
+            Uri.parse('$baseUrl/v1/me/survey'),
+            headers: {'content-type': 'application/json', ...auth},
+            body: jsonEncode(answers == null ? {'skipped': true} : answers.toJson()),
+          )
+          .timeout(const Duration(seconds: 20)),
+    );
+    return Account.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
   Future<Verdict?> getCase(String caseId) => _guard(() async {
     final response = await _http.get(Uri.parse('$baseUrl/v1/cases/$caseId')).timeout(_timeout);
     // 202 is a video still being checked: not an answer yet. It was read as one,

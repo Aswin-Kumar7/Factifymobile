@@ -420,9 +420,14 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
 
-      // Welcome, then Skip to the one page there is no way past without an account.
+      // Welcome, then Skip to the ways in: there is no way past without an account.
       expect(find.text("Know what's true before you share it"), findsOneWidget);
       await tester.tap(find.text('Skip'));
+      await tester.pumpAndSettle();
+      final toSignUp = find.widgetWithText(FxButton, 'Create account');
+      await tester.ensureVisible(toSignUp);
+      await tester.pumpAndSettle();
+      await tester.tap(toSignUp);
       await tester.pumpAndSettle();
       expect(find.text('Create your account'), findsOneWidget);
       expect(find.textContaining('without an account'), findsNothing);

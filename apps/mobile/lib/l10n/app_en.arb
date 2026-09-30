@@ -1374,5 +1374,77 @@
         "type": "int"
       }
     }
-  }
+  },
+  "onb3Title": "Pictures, videos and voice notes too",
+  "onb3Body": "Factify spots AI-made pictures, face swaps and machine voices, and checks what's said in a video.",
+  "onbMediaMessages": "Messages",
+  "onbMediaLinks": "Links",
+  "onbMediaPictures": "Pictures",
+  "onbMediaVideos": "Videos",
+  "onbMediaVoice": "Voice notes",
+  "onbMediaPdfs": "PDFs",
+  "onbHaveAccount": "I have an account",
+  "authHaveAccount": "Have an account?",
+  "authNewHere": "New to Factify?",
+  "authCreateLink": "Create one",
+  "nameOptionalLabel": "Your name (optional)",
+  "nameOptionalHint": "What should we call you?",
+  "authFreeChecks": "Start with {count} free checks.",
+  "@authFreeChecks": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "signUpTitle": "Create your account",
+  "signUpBody": "Start with 100 free checks. It takes a minute.",
+  "surveyStep": "{step} of {total}",
+  "@surveyStep": {
+    "placeholders": {
+      "step": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "surveySkipAll": "Skip all",
+  "surveyNext": "Next",
+  "surveyFinish": "Finish",
+  "surveyPickAny": "Pick any that fit",
+  "surveyWhy": "Four quick questions help us build Factify for you. Skip any you like.",
+  "surveyRoleQ": "What brings you to Factify?",
+  "surveyRoleJournalist": "Journalist or fact-checker",
+  "surveyRoleStudent": "Student or researcher",
+  "surveyRoleTeacher": "Teacher",
+  "surveyRoleFamily": "Checking forwards for family and friends",
+  "surveyRoleCurious": "Just curious",
+  "surveyPlacesQ": "Where do you see things you'd like to check?",
+  "surveyPlaceNews": "News sites",
+  "surveyWantsQ": "What do you want to check most?",
+  "surveyWantForwards": "Forwards and messages",
+  "surveyWantLinks": "News links",
+  "surveyWantPictures": "Pictures",
+  "surveyWantVideos": "Videos",
+  "surveyWantVoice": "Voice notes",
+  "surveyHeardQ": "How did you hear about Factify?",
+  "surveyHeardFriend": "From a friend",
+  "surveyHeardSocial": "On social media",
+  "surveyHeardCollege": "At college or an event",
+  "surveyHeardOther": "Somewhere else",
+  "surveySaveFailed": "Your answers couldn't be saved. You can carry on anyway.",
+  "creditsTitleNamed": "You're in, {name}",
+  "@creditsTitleNamed": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "creditsWelcomeTitle": "You're in",
+  "creditsLabel": "free checks",
+  "creditsBody": "They're on us. Each check uses one, and your balance is always in Profile.",
+  "creditsStart": "Start checking"
 }

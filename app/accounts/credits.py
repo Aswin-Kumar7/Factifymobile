@@ -37,6 +37,47 @@ class Account:
     balance: int
     used: int
     checks: int
+    # A new account that has not answered or skipped the survey yet.
+    survey_due: bool = False
+
+
+# The survey asked once after sign-up (0005): each question and its allowed answers.
+# The app shows these words in the reader's language; only these keys are stored.
+SURVEY_ROLES = frozenset({"journalist", "student", "teacher", "family", "curious"})
+SURVEY_PLACES = frozenset(
+    {"whatsapp", "instagram", "youtube", "facebook", "x", "telegram", "news_sites"}
+)
+SURVEY_WANTS = frozenset({"forwards", "links", "pictures", "videos", "voice"})
+SURVEY_HEARD = frozenset({"friend", "social", "college", "other"})
+
+
+@dataclass(frozen=True, slots=True)
+class SurveyAnswers:
+    """The answers, each checked against its list; a blank one was skipped."""
+
+    role: str | None = None
+    places: tuple[str, ...] = ()
+    wants: tuple[str, ...] = ()
+    heard: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.role is not None and self.role not in SURVEY_ROLES:
+            raise ValueError(f"unknown role {self.role!r}")
+        if self.heard is not None and self.heard not in SURVEY_HEARD:
+            raise ValueError(f"unknown answer {self.heard!r}")
+        for chosen, allowed in ((self.places, SURVEY_PLACES), (self.wants, SURVEY_WANTS)):
+            unknown = set(chosen) - allowed
+            if unknown:
+                raise ValueError(f"unknown answers {sorted(unknown)}")
+
+    def as_record(self) -> dict[str, object]:
+        return {
+            "role": self.role,
+            # Sorted and without repeats, so the same answers are stored the same way.
+            "places": sorted(set(self.places)),
+            "wants": sorted(set(self.wants)),
+            "heard": self.heard,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +93,9 @@ class AccountStore(Protocol):
     async def totals(self, user_id: str) -> tuple[int, int, int]: ...
     async def profile(self, user_id: str) -> dict[str, object] | None: ...
     async def set_name(self, user_id: str, name: str) -> None: ...
+    async def set_survey(
+        self, user_id: str, state: str, answers: dict[str, object] | None
+    ) -> None: ...
 
 
 class CreditBook:
@@ -94,6 +138,7 @@ class CreditBook:
             balance=balance,
             used=used,
             checks=checks,
+            survey_due=profile.get("survey_state") == "due",
         )
 
     async def authorize(self, user: AuthUser, cost: int) -> CreditDecision:
@@ -120,6 +165,15 @@ class CreditBook:
     async def rename(self, user: AuthUser, name: str) -> Account:
         await self.account(user)
         await self._store.set_name(user.id, name)
+        return await self.account(user)
+
+    async def answer_survey(self, user: AuthUser, answers: SurveyAnswers | None) -> Account:
+        """Record the survey: the answers, or None when the person skipped it."""
+        await self.account(user)
+        if answers is None:
+            await self._store.set_survey(user.id, "skipped", None)
+        else:
+            await self._store.set_survey(user.id, "answered", answers.as_record())
         return await self.account(user)
 
 

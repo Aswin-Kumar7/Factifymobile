@@ -1,8 +1,8 @@
-/// Create an account or sign in (v5, 2.1, third welcome page).
+/// Create an account or sign in (the sign-up screen after the welcome pages).
 ///
-/// An email and a password, or Google. Creating an account asks for the password
-/// twice and nothing else: a name is optional and can be added later from Profile,
-/// so the first thing a new person meets is not a form longer than it needs to be.
+/// Google first, then an email and a password. Creating an account asks for the
+/// password twice and, optionally, a name (it can be added later from Profile too).
+/// A line at the foot switches between creating an account and signing in.
 ///
 /// The server's own sign-in (`lib/auth/auth_service.dart`). Every refusal it sends
 /// is shown in the reader's language; nothing is decided here but whether the two
@@ -19,12 +19,15 @@ import '../theme/icons.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
 import 'ui/fx_button.dart';
-import 'ui/fx_segmented.dart';
+import 'ui/fx_tap_area.dart';
 
 class AuthForm extends StatefulWidget {
-  const AuthForm({required this.auth, this.onModeChanged, super.key});
+  const AuthForm({required this.auth, this.onModeChanged, this.creating = true, super.key});
 
   final AuthService auth;
+
+  /// Whether it opens on creating an account (else on signing in).
+  final bool creating;
 
   /// Told when the person switches between creating an account and signing in.
   final ValueChanged<bool>? onModeChanged;
@@ -34,13 +37,14 @@ class AuthForm extends StatefulWidget {
 }
 
 class _AuthFormState extends State<AuthForm> {
+  final TextEditingController _name = TextEditingController();
   final TextEditingController _email = TextEditingController();
   final TextEditingController _password = TextEditingController();
   final TextEditingController _confirm = TextEditingController();
 
   /// "Next" on the password goes here, not to the show-password button beside it.
   final FocusNode _confirmFocus = FocusNode();
-  bool _creating = true;
+  late bool _creating = widget.creating;
   bool _hidden = true;
   bool _busy = false;
   AuthProblem? _problem;
@@ -57,6 +61,7 @@ class _AuthFormState extends State<AuthForm> {
   @override
   void dispose() {
     _auth.removeListener(_onAuth);
+    _name.dispose();
     _email.dispose();
     _password.dispose();
     _confirm.dispose();
@@ -107,7 +112,9 @@ class _AuthFormState extends State<AuthForm> {
         return;
       }
       setState(() => _mismatch = false);
-      unawaited(_run(() => _auth.register(email: _email.text, password: _password.text)));
+      unawaited(
+        _run(() => _auth.register(email: _email.text, password: _password.text, name: _name.text)),
+      );
     } else {
       unawaited(_run(() => _auth.signIn(email: _email.text, password: _password.text)));
     }
@@ -155,13 +162,63 @@ class _AuthFormState extends State<AuthForm> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 20),
-          FxSegmented<bool>(
-            segments: [FxSegment(true, l10n.modeCreateAccount), FxSegment(false, l10n.modeSignIn)],
-            selected: _creating,
-            onChanged: _busy ? null : _setMode,
+          const SizedBox(height: 22),
+          OutlinedButton(
+            onPressed: _busy || !_auth.googleAvailable ? null : () => _run(_auth.startGoogle),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(54),
+              backgroundColor: k.sf,
+              foregroundColor: k.ink,
+              side: BorderSide(color: k.line),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+              textStyle: FactifyText.sans(15, weight: FontWeight.w600),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const _GoogleG(),
+                const SizedBox(width: 10),
+                Flexible(child: Text(l10n.continueWithGoogle)),
+              ],
+            ),
           ),
-          const SizedBox(height: 16),
+          if (!_auth.googleAvailable) ...[
+            const SizedBox(height: 8),
+            Text(
+              l10n.authGoogleUnavailable,
+              textAlign: TextAlign.center,
+              style: FactifyText.sans(12, color: k.ink3),
+            ),
+          ],
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: SizedBox(height: 1, child: ColoredBox(color: k.line)),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(l10n.orDivider, style: FactifyText.sans(12, color: k.ink3)),
+                ),
+                Expanded(
+                  child: SizedBox(height: 1, child: ColoredBox(color: k.line)),
+                ),
+              ],
+            ),
+          ),
+          if (_creating) ...[
+            _Field(
+              controller: _name,
+              label: l10n.nameOptionalLabel,
+              hint: l10n.nameOptionalHint,
+              enabled: !_busy,
+              keyboardType: TextInputType.name,
+              action: TextInputAction.next,
+              autofill: AutofillHints.name,
+            ),
+            const SizedBox(height: 10),
+          ],
           _Field(
             controller: _email,
             label: l10n.emailLabel,
@@ -215,7 +272,7 @@ class _AuthFormState extends State<AuthForm> {
             const SizedBox(height: 12),
             _Notice(text: _describe(l10n, problem), warning: true),
           ],
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
           FxButton(
             label: _creating ? l10n.createAccountButton : l10n.signInButton,
             onPressed: _ready ? _submit : null,
@@ -224,67 +281,69 @@ class _AuthFormState extends State<AuthForm> {
             radius: 18,
             fontSize: 15,
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            child: Row(
-              children: [
-                Expanded(
-                  child: SizedBox(height: 1, child: ColoredBox(color: k.line)),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Text(l10n.orDivider, style: FactifyText.sans(12, color: k.ink3)),
-                ),
-                Expanded(
-                  child: SizedBox(height: 1, child: ColoredBox(color: k.line)),
-                ),
-              ],
-            ),
-          ),
-          OutlinedButton(
-            onPressed: _busy || !_auth.googleAvailable ? null : () => _run(_auth.startGoogle),
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size.fromHeight(52),
-              backgroundColor: k.sf,
-              foregroundColor: k.ink,
-              side: BorderSide(color: k.line),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-              textStyle: FactifyText.sans(14.5, weight: FontWeight.w600),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 22,
-                  height: 22,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: k.ink2, width: 1.5),
-                  ),
-                  // Google's initial, the same in every language.
+          const SizedBox(height: 10),
+          // The other of creating an account and signing in, as a line of text.
+          Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
+                _creating ? l10n.authHaveAccount : l10n.authNewHere,
+                style: FactifyText.sans(14, color: k.ink2),
+              ),
+              FxTapArea(
+                onTap: _busy ? null : () => _setMode(!_creating),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
                   child: Text(
-                    'G',
-                    style: FactifyText.sans(12, weight: FontWeight.w700, color: k.ink2),
+                    _creating ? l10n.modeSignIn : l10n.authCreateLink,
+                    style: FactifyText.sans(14, weight: FontWeight.w700, color: k.acc),
                   ),
                 ),
-                const SizedBox(width: 10),
-                Flexible(child: Text(l10n.continueWithGoogle)),
-              ],
-            ),
+              ),
+            ],
           ),
-          if (!_auth.googleAvailable) ...[
-            const SizedBox(height: 8),
-            Text(
-              l10n.authGoogleUnavailable,
-              textAlign: TextAlign.center,
-              style: FactifyText.sans(12, color: k.ink3),
-            ),
-          ],
         ],
       ),
     );
   }
+}
+
+/// Google's G in its four colours: the mark people look for on this button.
+class _GoogleG extends StatelessWidget {
+  const _GoogleG();
+
+  @override
+  Widget build(BuildContext context) =>
+      const SizedBox(width: 20, height: 20, child: CustomPaint(painter: _GooglePainter()));
+}
+
+class _GooglePainter extends CustomPainter {
+  const _GooglePainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final r = size.width / 2;
+    final w = size.width * 0.2;
+    final rect = Rect.fromCircle(center: Offset(r, r), radius: r - w / 2);
+    Paint arc(Color color) => Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = w;
+    // Clockwise from the right, as in Google's mark.
+    canvas
+      ..drawArc(rect, -0.25, 1.35, false, arc(const Color(0xFF4285F4)))
+      ..drawArc(rect, 1.1, 1.3, false, arc(const Color(0xFF34A853)))
+      ..drawArc(rect, 2.4, 1.1, false, arc(const Color(0xFFFBBC05)))
+      ..drawArc(rect, 3.5, 1.9, false, arc(const Color(0xFFEA4335)))
+      ..drawRect(
+        Rect.fromLTWH(r, r - w / 2, r - w / 4, w),
+        Paint()..color = const Color(0xFF4285F4),
+      );
+  }
+
+  @override
+  bool shouldRepaint(_GooglePainter oldDelegate) => false;
 }
 
 /// A field in a rounded box, its label small above the text (v5).

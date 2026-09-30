@@ -1209,6 +1209,19 @@ class AccountRepository(_Repository):
             "UPDATE app_user SET display_name = %s WHERE id = %s", (name, UUID(user_id))
         )
 
+    async def set_survey(
+        self, *, user_id: str, state: str, answers: dict[str, object] | None
+    ) -> None:
+        """Record the survey (0005): the answers, or that it was skipped."""
+        await self._execute(
+            """
+            UPDATE app_user
+               SET survey_state = %s, survey = %s::jsonb, survey_at = now()
+             WHERE id = %s
+            """,
+            (state, json.dumps(answers) if answers is not None else None, UUID(user_id)),
+        )
+
 
 class LoginRepository(_Repository):
     """How people sign in (0004_local_auth): their login and their sessions.
