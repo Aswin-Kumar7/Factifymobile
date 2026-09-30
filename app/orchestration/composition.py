@@ -504,8 +504,14 @@ async def build(settings: Settings) -> dict[str, Any]:
         # ready by the time a picture arrives.
         asyncio.get_running_loop().run_in_executor(None, local_detector.warm)
     # What is said in a video (app/media/speech.py): read on our own server, loaded
-    # on the first video rather than held from the start.
+    # on the first video rather than held from the start - unless `warm_video`.
     state["speech_reader"] = build_speech_reader(settings)
+    if settings.local.warm_video:
+        loop = asyncio.get_running_loop()
+        if local_detector is not None:
+            loop.run_in_executor(None, local_detector.warm_video)
+        if state["speech_reader"] is not None:
+            loop.run_in_executor(None, state["speech_reader"].load)
     vision = settings.vision
     synthetic = settings.synthetic
     state["media_inspector"] = MediaInspector(

@@ -61,6 +61,16 @@ class LocalDetector:
         self._voice = voice
         self._busy = threading.Lock()
 
+    def warm_video(self) -> None:
+        """Load the models only a video needs: the face model and the voice model."""
+        for model in (self._faces, self._voice):
+            if model is None:
+                continue
+            try:
+                model.load()
+            except Exception:
+                logger.exception("a video detector could not be loaded")
+
     def warm(self) -> None:
         """Load the picture models now, so the first picture does not wait for them.
 

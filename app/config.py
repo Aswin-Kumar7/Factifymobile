@@ -233,6 +233,10 @@ class LocalModelSettings(BaseModel):
     # sees past; a larger one reads better and needs three times the memory.
     speech: bool = True
     speech_model: str = "small"
+    # Load the video models (faces, voice, speech: about 3 GB together) at startup
+    # rather than on the first video, which then took three minutes (2026-09-30). Off
+    # by default for a small server; on where memory allows, as for a demo.
+    warm_video: bool = False
     # Text in pictures: PaddleOCR's models through RapidOCR.
     ocr: bool = True
     # Which pages speak to a claim, and how: a reranker and two NLI models.

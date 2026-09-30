@@ -379,3 +379,21 @@ class TestVideosAreJudgedOnVideosOwnLines:
         clip = await detector.read_video(b"video", [_jpeg()] * 3)
         assert clip.face_swap == 0.85
         assert clip.face_swap_at == 0.8
+
+
+def test_the_video_models_can_be_loaded_ahead_of_the_first_video() -> None:
+    loaded: list[str] = []
+
+    class _Loads(_Model):
+        def __init__(self, name: str) -> None:
+            super().__init__(_Score(0.1))
+            self._name = name
+
+        def load(self) -> None:
+            loaded.append(self._name)
+
+    detector = LocalDetector(
+        pictures=_Loads("pictures"), faces=_Loads("faces"), voice=_Loads("voice")
+    )
+    detector.warm_video()
+    assert loaded == ["faces", "voice"]
