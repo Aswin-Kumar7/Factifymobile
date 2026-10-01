@@ -74,6 +74,16 @@ READING_RELEVANCE_THRESHOLD = 0.5
 SHARED_REVIEW = "shared_claim_review"
 
 
+# The match metric of a company's own list of locations that leaves out the place a
+# claim says it opened in (`app/sources/official_presence.py`).
+OFFICIAL_ABSENCE = "official_listing_absent"
+
+
+def is_official_absence(metric: str) -> bool:
+    """Whether a match metric records a place missing from a company's own list."""
+    return metric == OFFICIAL_ABSENCE
+
+
 def is_shared_review(metric: str) -> bool:
     """Whether a match metric records the shared fact-check's own rating."""
     return metric == SHARED_REVIEW

@@ -29,12 +29,12 @@ from app.domain.enums import (
     Tier,
     Verdict,
 )
-from app.domain.evidence import Evidence, is_narrower_scope
+from app.domain.evidence import Evidence, is_narrower_scope, is_official_absence
 from app.domain.publishers import publishers_of
 
 # Stamped on every verdict. A cached verdict produced under older rules is therefore
 # identifiable, and the cache can refuse to serve it (M13).
-RULE_VERSION = "2026.09.29.1"
+RULE_VERSION = "2026.10.01.1"
 
 # Default number of genuinely independent origins required before corroboration can
 # support a claim. Tenant-configurable later; never below two, because one origin is
@@ -44,6 +44,11 @@ DEFAULT_MIN_ORIGINS = 2
 # The rule that finds a claim true only in a smaller version (rule 4b). Named once:
 # the rollup tells "partly true" from "shown out of context" by it.
 NARROWER_RULE = "rule.narrower_scope"
+
+# A company's own list of locations leaves out the place a claim says it opened in
+# (rule 3d), and the most confidence that can carry: a list can lag a new opening.
+OFFICIAL_ABSENCE_RULE = "rule.official_presence_absent"
+OFFICIAL_ABSENCE_CAP = 60
 
 
 class AdvisoryLeakError(TypeError):
@@ -217,6 +222,8 @@ def _confidence(decision: Decision, evidence: list[Evidence]) -> int | None:
         score = max(score, 88.0)
     if theirs:
         score -= 30.0 * theirs / (ours + theirs)
+    if decision.rule_id == OFFICIAL_ABSENCE_RULE:
+        score = min(score, float(OFFICIAL_ABSENCE_CAP))
     return round(min(97.0, max(50.0, score)))
 
 
@@ -435,6 +442,24 @@ def _decide_rules(
             status=ClaimStatus.UNVERIFIED,
             rule_id="rule.developing_window",
             reason="Too recent to corroborate; scheduled for re-check.",
+        )
+
+    # Rule 3d - the company's own list of where it is leaves out the place the claim
+    # says it opened in. "Bugatti opens a showroom in Chennai, its first in India":
+    # bugatti.com lists every partner showroom, none in India (2026-10-01).
+    #
+    # Not silence (rule 5 in the reader): the one source that would know says where
+    # the company is. Still the weakest contradiction there is - a list can lag a
+    # new opening - so it comes after the developing-news window, its confidence is
+    # capped at OFFICIAL_ABSENCE_CAP, and any source reporting the opening turns it
+    # into a disagreement above (rule 7, conflict).
+    official_absent = [e for e in contradicting if is_official_absence(e.match_basis.metric)]
+    if official_absent:
+        return Decision(
+            status=ClaimStatus.CONTRADICTED,
+            rule_id=OFFICIAL_ABSENCE_RULE,
+            reason=official_absent[0].finding,
+            supporting_evidence_ids=tuple(e.id for e in official_absent),
         )
 
     # Rule 4a is deliberately absent. It was here and it cleared a scam.

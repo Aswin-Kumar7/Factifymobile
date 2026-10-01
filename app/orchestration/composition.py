@@ -69,6 +69,7 @@ from app.sources.base import SourceResolver
 from app.sources.corpus import CorpusCorroboration, CorpusResolver
 from app.sources.credibility import SourceCredibility
 from app.sources.factcheck import FactCheckResolver
+from app.sources.official_presence import OfficialPresenceCheck
 from app.sources.reasoning import PassageReasoner
 from app.sources.stance import LocalStance
 from app.sources.verification import SourceVerification
@@ -346,6 +347,12 @@ async def build(settings: Settings) -> dict[str, Any]:
     if settings.receipt_signing_key:
         signer = ReceiptSigner(key=settings.receipt_signing_key.get_secret_value())
 
+    # A company's own list of locations, for a claim that it opened one somewhere.
+    presence = (
+        OfficialPresenceCheck(web=web_search, reasoner=reasoner)
+        if web_search is not None and reasoner is not None
+        else None
+    )
     orchestrator = Orchestrator(
         cache=cache,
         governor=governor,
@@ -353,6 +360,7 @@ async def build(settings: Settings) -> dict[str, Any]:
         extractor_version=_extractor_version(),
         model_id=settings.models.extraction,
         corroboration=CorpusCorroboration(resolver=corpus, database=database),
+        presence=presence,
         # Every source checked against the claim before anything decides. Needs the
         # reader's model; without one, sources are only deduplicated.
         verification=(

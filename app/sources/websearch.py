@@ -712,6 +712,25 @@ class WebSearchResolver:
                 return row.get("title"), content
         return None
 
+    async def search_site(self, query: str, domain: str) -> list[dict[str, Any]]:
+        """One metered search within one site; empty when it could not run. For the
+        company's own list of locations (app/sources/official_presence.py)."""
+        if not self._api_key or not await self._metered("site"):
+            return []
+        try:
+            return await self._search(query, domains=(domain,))
+        except Exception:  # one failed search is an unchecked claim, not an error
+            return []
+
+    async def fetch_page(self, url: str) -> FetchResult | None:
+        """The page as served - its markup too, where a list of locations is often
+        kept as data rather than as text."""
+        try:
+            fetched = await self._fetcher.fetch(url, provider=PROVIDER)
+        except Exception:
+            return None
+        return fetched if isinstance(fetched, FetchResult) else None
+
     async def _metered(self, call: str) -> bool:
         """Whether the budget allows one more paid call to the search provider.
 

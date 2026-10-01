@@ -17,7 +17,12 @@ page.
 from __future__ import annotations
 
 from app.domain.enums import ClaimStatus, Credibility, Direction, EvidenceKind, Tier
-from app.domain.evidence import Evidence, is_narrower_scope, is_shared_review
+from app.domain.evidence import (
+    Evidence,
+    is_narrower_scope,
+    is_official_absence,
+    is_shared_review,
+)
 from app.domain.publishers import publishers_of
 from app.verdict.wording import WORDING
 
@@ -31,6 +36,10 @@ _TEXT = {
     "en": {
         "factcheck": "{who} has fact-checked this and found it false: “{quote}”",
         "contradicts": "{who} reports otherwise: “{quote}”",
+        "official_absent": (
+            "{finding} ({who}). A company's list can miss a very new opening, so this "
+            "is less certain than usual."
+        ),
         "supports": "{who} confirms it: “{quote}”",
         "narrower": "Only a narrower version of this is reported. {who}: “{quote}”",
         "media": "The picture is real but older: {who} published it on {date}.",
@@ -47,6 +56,10 @@ _TEXT = {
     "hi": {
         "factcheck": "{who} ने इसकी फ़ैक्ट-चेक की है और इसे गलत पाया: “{quote}”",
         "contradicts": "{who} की रिपोर्ट कुछ और कहती है: “{quote}”",
+        "official_absent": (
+            "कंपनी की अपनी वेबसाइट ({who}) पर दी गई जगहों की सूची में यह जगह नहीं है। "
+            "बिल्कुल नई जगह सूची में देर से जुड़ सकती है, इसलिए यह नतीजा सामान्य से कम पक्का है।"
+        ),
         "supports": "{who} इसकी पुष्टि करता है: “{quote}”",
         "narrower": "इसका केवल एक सीमित रूप ही रिपोर्ट हुआ है। {who}: “{quote}”",
         "media": "तस्वीर असली है पर पुरानी है: {who} ने इसे {date} को प्रकाशित किया था।",
@@ -91,6 +104,8 @@ def explain(
     top = ranked[0]
     others = len({_who(e) for e in ranked}) - 1
 
+    if status is ClaimStatus.CONTRADICTED and is_official_absence(top.match_basis.metric):
+        return text["official_absent"].format(who=_who(top), finding=top.finding.rstrip("."))
     if status is ClaimStatus.CONTRADICTED:
         template = "factcheck" if top.kind is EvidenceKind.FACT_CHECK else "contradicts"
     elif status is ClaimStatus.SUPPORTED:

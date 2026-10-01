@@ -384,8 +384,12 @@ class Orchestrator:
         corroboration: Corroboration | None = None,
         verification: SourceVerification | None = None,
         translator: Any | None = None,
+        presence: Any | None = None,
     ) -> None:
         self._cache = cache
+        # Reads a company's own list of locations for a claim that it opened one
+        # somewhere (app/sources/official_presence.py). Optional.
+        self._presence = presence
         # Translates a claim made in another language into English before its sources
         # are sought (app/extraction/translate.py). Optional: without it, a claim is
         # searched in its own words only.
@@ -426,6 +430,7 @@ class Orchestrator:
             model_id=self._model_id,
             corroboration=self._corroboration,
             verification=self._verification,
+            presence=self._presence,
         )
         clone._semaphore = self._semaphore
         return clone
@@ -925,6 +930,23 @@ class Orchestrator:
             search = "searched"
 
         decision = decide(counted, evidence)
+
+        # A claim that a company opened a showroom or office somewhere, left undecided:
+        # the company's own list of locations, when it leaves the place out, is the
+        # one source that would know (rule 3d, app/sources/official_presence.py). Not
+        # for a claim any source disagrees about, nor for news too fresh to be listed.
+        if (
+            self._presence is not None
+            and search == "searched"
+            and claim.is_checkable
+            and not decision.status.is_decisive
+            and not decision.conflicting
+            and not _fresh_news(counted)
+        ):
+            absent = await self._presence.check(counted)
+            if absent is not None:
+                evidence.append(absent)
+                decision = decide(counted, evidence)
 
         # News too fresh for others to have reported it yet. A claim from a news page
         # the person shared, published today or yesterday, that nothing confirms or
