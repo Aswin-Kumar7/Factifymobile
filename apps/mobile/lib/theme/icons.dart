@@ -37,9 +37,6 @@ abstract final class FxIcons {
   static const IconData message = IconData(0xe17a, fontFamily: 'PhosphorRegular');
 
   // Onboarding and the survey.
-  /// Phosphor sparkle: made by AI.
-  static const IconData madeByAi = IconData(0xe6a2, fontFamily: 'PhosphorRegular');
-
   /// Phosphor newspaper.
   static const IconData newspaper = IconData(0xe344, fontFamily: 'PhosphorRegular');
 
@@ -61,9 +58,6 @@ abstract final class FxIcons {
   // Check.
   /// Phosphor clipboardText.
   static const IconData paste = IconData(0xe198, fontFamily: 'PhosphorRegular');
-
-  /// Phosphor binoculars.
-  static const IconData deep = IconData(0xea64, fontFamily: 'PhosphorRegular');
 
   /// Phosphor chatCircleDots.
   static const IconData chat = IconData(0xe16c, fontFamily: 'PhosphorRegular');
@@ -161,9 +155,6 @@ abstract final class FxIcons {
   /// Phosphor arrowRight.
   static const IconData forward = IconData(0xe06c, fontFamily: 'PhosphorRegular');
 
-  /// Phosphor arrowUpRight.
-  static const IconData external = IconData(0xe092, fontFamily: 'PhosphorRegular');
-
   /// Phosphor arrowSquareOut.
   static const IconData openExternal = IconData(0xe5de, fontFamily: 'PhosphorRegular');
 
@@ -196,9 +187,6 @@ abstract final class FxIcons {
 
   /// Phosphor moon.
   static const IconData moon = IconData(0xe330, fontFamily: 'PhosphorRegular');
-
-  /// Phosphor sun.
-  static const IconData sun = IconData(0xe472, fontFamily: 'PhosphorRegular');
 
   /// Phosphor cloudCheck.
   static const IconData service = IconData(0xe1b0, fontFamily: 'PhosphorRegular');
@@ -238,9 +226,6 @@ abstract final class FxIcons {
 
   /// Phosphor eyeSlash.
   static const IconData hidden = IconData(0xe224, fontFamily: 'PhosphorRegular');
-
-  /// Phosphor arrowUp.
-  static const IconData arrowUp = IconData(0xe08e, fontFamily: 'PhosphorRegular');
 
   static IconData forKind(SubmissionKind kind) => switch (kind) {
     SubmissionKind.text => text,

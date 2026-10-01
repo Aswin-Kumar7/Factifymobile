@@ -27,10 +27,6 @@ const String apiBaseUrl = String.fromEnvironment(
   defaultValue: 'http://10.0.2.2:8000',
 );
 
-/// Whether this build was compiled without `FACTIFY_API`, and so still points at
-/// the emulator's host address — which no real phone can reach.
-const bool apiUsesEmulatorDefault = !bool.hasEnvironment('FACTIFY_API');
-
 /// Why a request failed, named rather than worded.
 ///
 /// This client used to carry English sentences, which pinned every error to one
@@ -534,7 +530,6 @@ class FactifyClient {
   void close() => _http.close();
 }
 
-/// Either a finished verdict, or a case id to poll.
 /// A background check's state: claims done of total while it runs, the verdict
 /// when done. The total is zero until the claims have been read out of the input.
 class CheckProgress {
@@ -545,6 +540,7 @@ class CheckProgress {
   final int total;
 }
 
+/// Either a finished verdict, or a case id to poll.
 class VerifyFileOutcome {
   const VerifyFileOutcome._({this.verdict, this.pendingCaseId});
 

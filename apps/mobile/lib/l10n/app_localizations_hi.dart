@@ -12,9 +12,6 @@ class AppLocalizationsHi extends AppLocalizations {
   String get tabCheck => 'जाँचें';
 
   @override
-  String get tabActivity => 'गतिविधि';
-
-  @override
   String get statusOnline => 'ऑनलाइन';
 
   @override
@@ -30,32 +27,13 @@ class AppLocalizationsHi extends AppLocalizations {
   String get languagePhone => 'फ़ोन की भाषा';
 
   @override
-  String get heroTitle => 'क्या यह सच है?';
-
-  @override
-  String get heroSubtitle =>
-      'कोई संदेश या लिंक चिपकाएँ, या तस्वीर जाँचें। हम इसे विश्वसनीय स्रोतों से मिलाते हैं।';
-
-  @override
-  String get inputLabel => 'संदेश या लिंक चिपकाएँ';
-
-  @override
-  String get inputHint => 'या सीधे WhatsApp, ब्राउज़र या गैलरी से साझा करें';
-
-  @override
   String get clear => 'साफ़ करें';
-
-  @override
-  String get checkThis => 'इसे जाँचें';
 
   @override
   String get sourceGallery => 'गैलरी';
 
   @override
   String get sourceCamera => 'कैमरा';
-
-  @override
-  String get sourceFile => 'फ़ाइल';
 
   @override
   String checkingSubmission(String kind) {
@@ -67,13 +45,6 @@ class AppLocalizationsHi extends AppLocalizations {
     });
     return '$_temp0';
   }
-
-  @override
-  String get emptyTitle => 'अभी तक कुछ नहीं जाँचा गया';
-
-  @override
-  String get emptyBody =>
-      'कोई फ़ॉरवर्ड सीधे Factify में साझा करें, ऊपर चिपकाएँ, या कोई तस्वीर जाँचें। हर निर्णय के साथ उसके स्रोत दिखते हैं — और जब कोई स्रोत नहीं होता, तो यह साफ़ बताया जाता है।';
 
   @override
   String get working => 'इस बारे में स्रोत खोजे जा रहे हैं';
@@ -134,59 +105,14 @@ class AppLocalizationsHi extends AppLocalizations {
   }
 
   @override
-  String get videoAcceptedTitle => 'वीडियो स्वीकार किया गया';
-
-  @override
-  String get videoAcceptedBody =>
-      'इसमें एक अनुरोध की समय-सीमा से ज़्यादा समय लगता है। जाँच जारी है।';
-
-  @override
   String get retry => 'फिर कोशिश करें';
 
   @override
   String get reportedNote => 'रिपोर्ट किया गया। हम इस नतीजे को दोबारा देखेंगे।';
 
   @override
-  String get activityEmptyTitle => 'इस सत्र में कोई जाँच नहीं';
-
-  @override
-  String get activityEmptyBody =>
-      'नतीजे सिर्फ़ इस सत्र तक इसी फ़ोन पर रहते हैं और ऐप बंद होते ही मिट जाते हैं — आपने क्या जाँचा, इसका कोई रिकॉर्ड नहीं रहता।';
-
-  @override
-  String get activityFooter =>
-      'जान-बूझकर सिर्फ़ इस सत्र तक: आपने क्या जाँचा, वह इस बात का रिकॉर्ड है कि आपको किस पर शक था, और यह ऐप ऐसा रिकॉर्ड नहीं रखता।';
-
-  @override
-  String get historyTitle => 'इस सत्र में पहले';
-
-  @override
-  String historyCitations(int count) {
-    String _temp0 = intl.Intl.pluralLogic(
-      count,
-      locale: localeName,
-      other: '$count उद्धरण',
-      one: '1 उद्धरण',
-      zero: 'कोई उद्धरण-योग्य साक्ष्य नहीं',
-    );
-    return '$_temp0';
-  }
-
-  @override
-  String get errorNoServerAddress =>
-      'इस बिल्ड में सर्वर का पता नहीं है। इसे --dart-define=FACTIFY_API=https://your-server के साथ दोबारा बनाएँ।';
-
-  @override
-  String get errorShareUnreadable => 'साझा की गई चीज़ पढ़ी नहीं जा सकी।';
-
-  @override
   String get errorShareFileUnopenable =>
       'वह फ़ाइल खोली नहीं जा सकी। उसे फिर से साझा करें, या Factify में गैलरी बटन इस्तेमाल करें।';
-
-  @override
-  String errorVideoSlow(String caseId) {
-    return 'उस वीडियो में उम्मीद से ज़्यादा समय लग रहा है। मामला $caseId अभी भी प्रोसेस हो रहा है।';
-  }
 
   @override
   String get errorCameraDenied =>
@@ -295,10 +221,6 @@ class AppLocalizationsHi extends AppLocalizations {
   String get failureInvalidInput => 'वह इनपुट पढ़ा नहीं जा सका।';
 
   @override
-  String get failureLinkUnchecked =>
-      'उस पेज पर जाँचने लायक कुछ नहीं मिला। कुछ साइटें अपने-आप पढ़ने से रोकती हैं, इसलिए लेख का टेक्स्ट कॉपी करके यहाँ चिपकाएँ।';
-
-  @override
   String get failureTooLarge => 'वह फ़ाइल जाँचने के लिए बहुत बड़ी है।';
 
   @override
@@ -349,52 +271,11 @@ class AppLocalizationsHi extends AppLocalizations {
   String get subheadSendToReview => 'हम अभी इसकी पुष्टि या खंडन नहीं कर सके';
 
   @override
-  String citationCount(int count) {
-    String _temp0 = intl.Intl.pluralLogic(
-      count,
-      locale: localeName,
-      other: '$count उद्धरण',
-      one: '1 उद्धरण',
-      zero: 'कोई उद्धरण नहीं',
-    );
-    return '$_temp0';
-  }
-
-  @override
-  String evidenceRetrievedAt(DateTime time) {
-    final intl.DateFormat timeDateFormat = intl.DateFormat(
-      'd MMM, HH:mm',
-      localeName,
-    );
-    final String timeString = timeDateFormat.format(time);
-
-    return 'साक्ष्य जुटाए गए: $timeString';
-  }
-
-  @override
-  String get checkedEarlier => 'पहले जाँचा गया';
-
-  @override
-  String get reusedNote =>
-      'इसी सामग्री की पहले हुई जाँच से लिया गया। नीचे के साक्ष्य उसी जाँच के हैं।';
-
-  @override
   String get englishOnlyNote =>
       'नीचे के कुछ विवरण अभी सिर्फ़ अंग्रेज़ी में हैं।';
 
   @override
   String get whyNoVerdict => 'अपुष्ट क्यों?';
-
-  @override
-  String seeEvidence(int count) {
-    String _temp0 = intl.Intl.pluralLogic(
-      count,
-      locale: localeName,
-      other: 'सभी $count स्रोत देखें',
-      one: 'स्रोत देखें',
-    );
-    return '$_temp0';
-  }
 
   @override
   String get shareCorrection => 'सुधार साझा करें';
@@ -409,27 +290,6 @@ class AppLocalizationsHi extends AppLocalizations {
   String get evidenceTitle => 'स्रोत';
 
   @override
-  String get theClaim => 'दावा';
-
-  @override
-  String evidenceStrength(String band) {
-    return 'साक्ष्य की मज़बूती: $band';
-  }
-
-  @override
-  String strengthBand(String band) {
-    String _temp0 = intl.Intl.selectLogic(band, {
-      'none': 'कोई नहीं',
-      'weak': 'कमज़ोर',
-      'moderate': 'मध्यम',
-      'strong': 'मज़बूत',
-      'conclusive': 'निर्णायक',
-      'other': '$band',
-    });
-    return '$_temp0';
-  }
-
-  @override
   String strengthComponent(String name) {
     String _temp0 = intl.Intl.selectLogic(name, {
       'tier_composition': 'साक्ष्य के स्तर',
@@ -440,11 +300,6 @@ class AppLocalizationsHi extends AppLocalizations {
       'other': '$name',
     });
     return '$_temp0';
-  }
-
-  @override
-  String excludedFromScore(String providers) {
-    return 'इस स्कोर में शामिल नहीं: $providers';
   }
 
   @override
@@ -470,34 +325,12 @@ class AppLocalizationsHi extends AppLocalizations {
   }
 
   @override
-  String anchorPage(int page) {
-    return 'पेज $page पर मिला';
-  }
-
-  @override
-  String anchorParagraph(int paragraph) {
-    return 'पैराग्राफ़ $paragraph में मिला';
-  }
-
-  @override
-  String anchorCharacters(int start, int end) {
-    return 'अक्षर $start से $end तक में मिला';
-  }
-
-  @override
   String matchBasis(String metric, String value, String threshold) {
     return '$metric $value (सीमा $threshold)';
   }
 
   @override
   String get openSource => 'स्रोत खोलें';
-
-  @override
-  String get noEvidenceTitle => 'कोई उद्धरण-योग्य स्रोत नहीं मिला';
-
-  @override
-  String get noEvidenceBody =>
-      'इसका मतलब यह नहीं कि सामग्री झूठी है। इसका मतलब है कि ऐसा कोई स्रोत नहीं मिला जिसका हवाला देकर इसका समर्थन या खंडन किया जा सके, इसलिए Factify ने निर्णय नहीं दिया।';
 
   @override
   String get historyCardTitle => 'इतिहास';
@@ -558,31 +391,6 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get receiptMissing => 'इस नतीजे के लिए कोई रसीद जारी नहीं हुई।';
-
-  @override
-  String sourceRiskTitle(String risk) {
-    String _temp0 = intl.Intl.selectLogic(risk, {
-      'HIGH': 'प्रकाशक का जोखिम ऊँचा है',
-      'MEDIUM': 'प्रकाशक का रिकॉर्ड मिला-जुला है',
-      'LOW': 'प्रकाशक का रिकॉर्ड स्थापित है',
-      'other': 'प्रकाशक के जोखिम का आकलन नहीं हुआ',
-    });
-    return '$_temp0';
-  }
-
-  @override
-  String sourceRiskDetail(String risk) {
-    String _temp0 = intl.Intl.selectLogic(risk, {
-      'HIGH':
-          'हाल ही में पंजीकृत, या अविश्वसनीय सामग्री के रिकॉर्ड वाला। यह प्रकाशक के बारे में है, इस दावे के बारे में नहीं।',
-      'MEDIUM':
-          'स्रोत के बारे में कुछ ध्यान देने लायक संकेत। यह प्रकाशक के बारे में है, इस दावे के बारे में नहीं।',
-      'LOW':
-          'स्रोत के बारे में कोई प्रतिकूल संकेत नहीं। यह इस बात का साक्ष्य नहीं कि दावा ख़ुद सही है।',
-      'other': 'किसी भी तरफ़ कुछ ज्ञात नहीं।',
-    });
-    return '$_temp0';
-  }
 
   @override
   String get advisoryHeader =>
@@ -675,29 +483,12 @@ class AppLocalizationsHi extends AppLocalizations {
   String get mediaMatchEarlier => 'पहले प्रकाशित तस्वीर से मेल खाती है';
 
   @override
-  String strengthComponentCitations(int count) {
-    String _temp0 = intl.Intl.pluralLogic(
-      count,
-      locale: localeName,
-      other: '$count स्रोत',
-      one: '1 स्रोत',
-    );
-    return '$_temp0';
-  }
-
-  @override
   String uploading(int percent) {
     return 'अपलोड हो रहा है $percent%';
   }
 
   @override
   String get clipboardOffer => 'आपने कुछ टेक्स्ट कॉपी किया है। उसे जाँचें?';
-
-  @override
-  String get clipboardPasteAndCheck => 'चिपकाएँ और जाँचें';
-
-  @override
-  String get clipboardDismiss => 'अभी नहीं';
 
   @override
   String confidence(int value) {
@@ -759,13 +550,6 @@ class AppLocalizationsHi extends AppLocalizations {
   String get signIn => 'साइन इन';
 
   @override
-  String get signInTitle => 'Factify में साइन इन करें';
-
-  @override
-  String get signInBody =>
-      'अपनी प्रोफ़ाइल और क्रेडिट किसी भी फ़ोन पर रखें। आप क्या जाँचते हैं, इसका हम कोई रिकॉर्ड नहीं रखते।';
-
-  @override
   String get emailLabel => 'ईमेल';
 
   @override
@@ -806,28 +590,6 @@ class AppLocalizationsHi extends AppLocalizations {
   }
 
   @override
-  String checksSoFar(int count) {
-    String _temp0 = intl.Intl.pluralLogic(
-      count,
-      locale: localeName,
-      other: 'अब तक $count जाँचें',
-      one: 'अब तक 1 जाँच',
-    );
-    return '$_temp0';
-  }
-
-  @override
-  String memberSince(DateTime date) {
-    final intl.DateFormat dateDateFormat = intl.DateFormat.yMMMd(localeName);
-    final String dateString = dateDateFormat.format(date);
-
-    return '$dateString से सदस्य';
-  }
-
-  @override
-  String get planBeta => 'मुफ़्त · बीटा, अभी कोई सीमा नहीं';
-
-  @override
   String get editName => 'नाम बदलें';
 
   @override
@@ -865,9 +627,6 @@ class AppLocalizationsHi extends AppLocalizations {
       'यह जाँच आम से ज़्यादा समय ले रही है। एक मिनट बाद फिर से जाँचें।';
 
   @override
-  String get imageReadTitle => 'आपकी तस्वीर में हमने क्या पढ़ा';
-
-  @override
   String imageKind(String kind) {
     String _temp0 = intl.Intl.selectLogic(kind, {
       'NEWS_ARTICLE': 'समाचार लेख',
@@ -882,14 +641,6 @@ class AppLocalizationsHi extends AppLocalizations {
     });
     return '$_temp0';
   }
-
-  @override
-  String imageFrom(String publisher) {
-    return 'दिखाता है: $publisher';
-  }
-
-  @override
-  String get imageTextLabel => 'तस्वीर में लिखा पाठ';
 
   @override
   String get imageNoText =>
@@ -913,22 +664,6 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get welcomePointSources => 'हर जवाब के साथ उसके स्रोत';
-
-  @override
-  String get welcomePointInputs => 'पाठ, लिंक, तस्वीरें और PDF';
-
-  @override
-  String get welcomePointLanguages => 'अंग्रेज़ी और हिंदी में';
-
-  @override
-  String get welcomeSignInTitle => 'अपना खाता बनाएँ';
-
-  @override
-  String get welcomeSignInBody =>
-      'जाँच के लिए खाता ज़रूरी है। अपने ईमेल और पासवर्ड से, या Google से साइन अप या साइन इन करें।';
-
-  @override
-  String get tabHome => 'होम';
 
   @override
   String get tabHistory => 'इतिहास';
@@ -968,9 +703,6 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get removeInput => 'हटाएँ';
-
-  @override
-  String get pasteButton => 'चिपकाएँ';
 
   @override
   String get pickImageTitle => 'तस्वीर जोड़ें';
@@ -1077,18 +809,6 @@ class AppLocalizationsHi extends AppLocalizations {
   }
 
   @override
-  String get profileDetails => 'खाते की जानकारी';
-
-  @override
-  String get profileEmail => 'ईमेल';
-
-  @override
-  String get profileName => 'नाम';
-
-  @override
-  String get profilePlan => 'प्लान';
-
-  @override
   String get profileJoined => 'सदस्य बने';
 
   @override
@@ -1101,18 +821,6 @@ class AppLocalizationsHi extends AppLocalizations {
   String get settingHistory => 'सहेजी गई जाँचें';
 
   @override
-  String settingHistoryCount(int count) {
-    String _temp0 = intl.Intl.pluralLogic(
-      count,
-      locale: localeName,
-      other: 'इस फ़ोन पर $count जाँचें',
-      one: 'इस फ़ोन पर 1 जाँच',
-      zero: 'कुछ सहेजा नहीं गया',
-    );
-    return '$_temp0';
-  }
-
-  @override
   String get aboutTitle => 'Factify के बारे में';
 
   @override
@@ -1120,16 +828,10 @@ class AppLocalizationsHi extends AppLocalizations {
       'Factify आपकी साझा की गई चीज़ों को भरोसेमंद स्रोतों से जाँचता है और हमेशा उन्हें दिखाता है। जब स्रोतों से बात तय न हो, तो वह अंदाज़ा लगाने के बजाय अपुष्ट कहता है।';
 
   @override
-  String get serviceStatus => 'सेवा';
-
-  @override
   String get done => 'हो गया';
 
   @override
   String get modeSignIn => 'साइन इन';
-
-  @override
-  String get modeCreateAccount => 'खाता बनाएँ';
 
   @override
   String get welcomeBackTitle => 'फिर से स्वागत है';
@@ -1248,9 +950,6 @@ class AppLocalizationsHi extends AppLocalizations {
   @override
   String get claimSearchUnavailable =>
       'हमारी समाचार खोज से संपर्क नहीं हो सका, इसलिए इसके लिए कोई समाचार रिपोर्ट नहीं देखी गई। इसका मतलब यह नहीं कि कुछ नहीं मिला।';
-
-  @override
-  String get documentReadTitle => 'आपके दस्तावेज़ में हमने क्या पढ़ा';
 
   @override
   String get pasteCopiedText => 'चिपकाएँ';
@@ -1635,18 +1334,6 @@ class AppLocalizationsHi extends AppLocalizations {
   String get evidenceCollected => 'जुटाए गए सबूत';
 
   @override
-  String evidenceNote(int count) {
-    String _temp0 = intl.Intl.pluralLogic(
-      count,
-      locale: localeName,
-      other: '$count स्रोत इस दावे पर बात करते हैं',
-      one: '1 स्रोत इस दावे पर बात करता है',
-      zero: 'अभी कुछ नहीं, पढ़ना जारी है',
-    );
-    return '$_temp0';
-  }
-
-  @override
   String get notifyMe => 'तैयार होने पर मुझे बताएँ';
 
   @override
@@ -1983,9 +1670,6 @@ class AppLocalizationsHi extends AppLocalizations {
   String get onbNext => 'आगे';
 
   @override
-  String get onbGetStarted => 'शुरू करें';
-
-  @override
   String onbPage(int page, int total) {
     return 'पेज $page / $total';
   }
@@ -1999,12 +1683,6 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get onbSampleLink => 'RBI ने सितंबर की समीक्षा में रेपो दर नहीं बदली';
-
-  @override
-  String get onbSampleVideo => 'आज सुबह मुंबई हवाई अड्डे के अंदर बाढ़';
-
-  @override
-  String get onbVideo => 'वीडियो';
 
   @override
   String get onbExample => 'एक उदाहरण';
@@ -2274,15 +1952,10 @@ class AppLocalizationsHi extends AppLocalizations {
   String get nameOptionalHint => 'हम आपको क्या कहें?';
 
   @override
-  String authFreeChecks(int count) {
-    return '$count मुफ़्त जाँचों से शुरू करें।';
-  }
-
-  @override
   String get signUpTitle => 'अपना खाता बनाएँ';
 
   @override
-  String get signUpBody => '100 मुफ़्त जाँचों से शुरू करें। बस एक मिनट लगेगा।';
+  String get signUpBody => 'हर महीने 30 मुफ़्त जाँचें। बस एक मिनट लगेगा।';
 
   @override
   String surveyStep(int step, int total) {

@@ -91,7 +91,7 @@
             </intent-filter>
 
             <!--
-                Sign-in return. Google sign-in finishes in the browser, and Supabase
+                Sign-in return. Google sign-in finishes in the browser, and the Factify server
                 sends the person back here with their session: factify://auth-callback.
             -->
             <intent-filter>

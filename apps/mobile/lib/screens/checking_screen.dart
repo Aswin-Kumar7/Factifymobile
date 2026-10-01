@@ -212,6 +212,7 @@ class _CheckingScreenState extends State<CheckingScreen> {
       messenger.showSnackBar(SnackBar(content: Text(l10n.notifyDenied)));
       return;
     }
+    if (!mounted) return;
     setState(() => job.notifyWhenReady = !job.notifyWhenReady);
   }
 

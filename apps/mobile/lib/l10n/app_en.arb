@@ -1,21 +1,14 @@
 {
   "@@locale": "en",
   "tabCheck": "Check",
-  "tabActivity": "Activity",
   "statusOnline": "Online",
   "statusOffline": "Offline",
   "statusChecking": "Checking",
   "languageMenuTooltip": "Language",
   "languagePhone": "Phone language",
-  "heroTitle": "Is it true?",
-  "heroSubtitle": "Paste a message or a link, or check a picture. We check it against reliable sources.",
-  "inputLabel": "Paste a message or a link",
-  "inputHint": "Or share straight from WhatsApp, a browser, or the gallery",
   "clear": "Clear",
-  "checkThis": "Check this",
   "sourceGallery": "Gallery",
   "sourceCamera": "Camera",
-  "sourceFile": "File",
   "checkingSubmission": "{kind, select, text{Checking this message} link{Checking this link} image{Checking this image} other{Checking this document}}",
   "@checkingSubmission": {
     "description": "Label above the preview of what was submitted. kind is text, link, image or document.",
@@ -25,8 +18,6 @@
       }
     }
   },
-  "emptyTitle": "Nothing checked yet",
-  "emptyBody": "Share a forward straight into Factify, paste it above, or check a picture. Every verdict comes with the sources behind it — and when there are none, it says so.",
   "working": "Looking for sources that address this",
   "checkAgain": "Check again",
   "checkingTitle": "Checking…",
@@ -55,34 +46,9 @@
       }
     }
   },
-  "videoAcceptedTitle": "Video accepted",
-  "videoAcceptedBody": "Longer than a request can stay open. Checking now.",
   "retry": "Retry",
   "reportedNote": "Reported. We'll take another look at this result.",
-  "activityEmptyTitle": "No checks this session",
-  "activityEmptyBody": "Results stay on this device for the session and are gone when the app closes — what you check is nobody's record.",
-  "activityFooter": "Session only, by design: what you check is a record of what you were suspicious about, and this app does not keep one.",
-  "historyTitle": "Earlier this session",
-  "historyCitations": "{count, plural, =0{No citable evidence} =1{1 citation} other{{count} citations}}",
-  "@historyCitations": {
-    "description": "How many sources a past check quoted. A count of citations, never a confidence figure.",
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "errorNoServerAddress": "This build has no server address. Rebuild it with --dart-define=FACTIFY_API=https://your-server.",
-  "errorShareUnreadable": "Could not read the shared item.",
   "errorShareFileUnopenable": "That file could not be opened. Share it again, or use the Gallery button in Factify.",
-  "errorVideoSlow": "That video is taking longer than expected. Case {caseId} is still processing.",
-  "@errorVideoSlow": {
-    "placeholders": {
-      "caseId": {
-        "type": "String"
-      }
-    }
-  },
   "errorCameraDenied": "Factify needs camera access to check a photo you take.",
   "errorFileUnopenable": "That file could not be opened.",
   "reportSent": "Thanks. We'll review this result.",
@@ -140,7 +106,6 @@
   "failureUnreadableFile": "That file could not be read from this phone.",
   "failureBadReply": "Factify sent a reply this app could not read.",
   "failureInvalidInput": "That input could not be read.",
-  "failureLinkUnchecked": "We couldn't find anything to check on that page. Some sites block automatic reading, so copy the article's text and paste it here instead.",
   "failureTooLarge": "That file is too large to check.",
   "failureDailyLimit": "Factify is at its daily limit. Please try again tomorrow.",
   "failureUnavailable": "Verification is not available right now.",
@@ -163,74 +128,20 @@
     "description": "Abstention. Neutral wording: not deciding is the designed answer, not a failure."
   },
   "subheadSendToReview": "We couldn't confirm or rule this out yet",
-  "citationCount": "{count, plural, =0{No citations} =1{1 citation} other{{count} citations}}",
-  "@citationCount": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "evidenceRetrievedAt": "Evidence retrieved {time}",
-  "@evidenceRetrievedAt": {
-    "description": "When the evidence behind a verdict was gathered. Always shown.",
-    "placeholders": {
-      "time": {
-        "type": "DateTime",
-        "format": "d MMM, HH:mm",
-        "isCustomDateFormat": "true"
-      }
-    }
-  },
-  "checkedEarlier": "Checked earlier",
-  "reusedNote": "Reused from an earlier check of the same content. The evidence below is from that check.",
   "englishOnlyNote": "Some details below are shown in English for now.",
   "@englishOnlyNote": {
     "description": "Shown only when the interface is not in English: verdict reasons still arrive from the server in English."
   },
   "whyNoVerdict": "Why unconfirmed?",
-  "seeEvidence": "{count, plural, =1{See the source} other{See all {count} sources}}",
-  "@seeEvidence": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
   "shareCorrection": "Share correction",
   "report": "Report wrong result",
   "reporting": "Reporting…",
   "evidenceTitle": "Sources",
-  "theClaim": "The claim",
-  "evidenceStrength": "Evidence strength: {band}",
-  "@evidenceStrength": {
-    "placeholders": {
-      "band": {
-        "type": "String"
-      }
-    }
-  },
-  "strengthBand": "{band, select, none{none} weak{weak} moderate{moderate} strong{strong} conclusive{conclusive} other{{band}}}",
-  "@strengthBand": {
-    "placeholders": {
-      "band": {
-        "type": "String"
-      }
-    }
-  },
   "strengthComponent": "{name, select, tier_composition{Evidence tiers} independent_origins{Independent origins} temporal_confidence{Dating} source_transparency{Publisher transparency} conflict_penalty{Conflicting evidence} other{{name}}}",
   "@strengthComponent": {
     "description": "One term of the explainable strength score, named for a reader.",
     "placeholders": {
       "name": {
-        "type": "String"
-      }
-    }
-  },
-  "excludedFromScore": "Excluded from this score: {providers}",
-  "@excludedFromScore": {
-    "placeholders": {
-      "providers": {
         "type": "String"
       }
     }
@@ -251,33 +162,6 @@
       }
     }
   },
-  "anchorPage": "Found at page {page}",
-  "@anchorPage": {
-    "placeholders": {
-      "page": {
-        "type": "int"
-      }
-    }
-  },
-  "anchorParagraph": "Found at paragraph {paragraph}",
-  "@anchorParagraph": {
-    "placeholders": {
-      "paragraph": {
-        "type": "int"
-      }
-    }
-  },
-  "anchorCharacters": "Found at characters {start} to {end}",
-  "@anchorCharacters": {
-    "placeholders": {
-      "start": {
-        "type": "int"
-      },
-      "end": {
-        "type": "int"
-      }
-    }
-  },
   "matchBasis": "{metric} {value} (threshold {threshold})",
   "@matchBasis": {
     "placeholders": {
@@ -293,8 +177,6 @@
     }
   },
   "openSource": "Open source",
-  "noEvidenceTitle": "No citable source was found",
-  "noEvidenceBody": "This does not mean the content is false. It means nothing we could cite either supports or contradicts it, so Factify did not decide.",
   "historyCardTitle": "History",
   "recurrenceCaptions": "The same media has carried {count} different captions. An authentic photograph does not usually acquire several mutually exclusive stories.",
   "@recurrenceCaptions": {
@@ -335,23 +217,6 @@
     "description": "Shown when the digest does not match. The server also sends a reason, which is developer English and is not shown."
   },
   "receiptMissing": "No receipt was issued for this result.",
-  "sourceRiskTitle": "{risk, select, HIGH{Publisher has a high risk profile} MEDIUM{Publisher has a mixed record} LOW{Publisher has an established record} other{Publisher risk not assessed}}",
-  "@sourceRiskTitle": {
-    "placeholders": {
-      "risk": {
-        "type": "String"
-      }
-    }
-  },
-  "sourceRiskDetail": "{risk, select, HIGH{Recently registered, or with a record of unreliable material. This describes the publisher, not this claim.} MEDIUM{Some signals worth noting about the source. This describes the publisher, not this claim.} LOW{No adverse signals about the source. This is not evidence that the claim itself is true.} other{Nothing is known either way.}}",
-  "@sourceRiskDetail": {
-    "description": "A risky publisher is a reason to look harder, never a finding that the content is false.",
-    "placeholders": {
-      "risk": {
-        "type": "String"
-      }
-    }
-  },
   "advisoryHeader": "Forensic signals - shown for transparency. These are not used in the verdict and cannot change it.",
   "@advisoryHeader": {
     "description": "Permanent exclusion header. Must stay visible and must keep saying the signals are not used in the verdict."
@@ -402,15 +267,6 @@
   },
   "mediaMatchYours": "Your picture",
   "mediaMatchEarlier": "Matches a picture published earlier",
-  "strengthComponentCitations": "{count, plural, =1{1 source} other{{count} sources}}",
-  "@strengthComponentCitations": {
-    "description": "On a strength row that leads to the citations it was computed from.",
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
   "uploading": "Uploading {percent}%",
   "@uploading": {
     "placeholders": {
@@ -423,8 +279,6 @@
   "@clipboardOffer": {
     "description": "Shown when the clipboard holds text. The text itself is not read until the person taps."
   },
-  "clipboardPasteAndCheck": "Paste and check",
-  "clipboardDismiss": "Not now",
   "confidence": "{value}% confidence",
   "@confidence": {
     "description": "How sure the verdict is, from 50 to 97. Shown only with True, False or Misleading.",
@@ -464,8 +318,6 @@
   "incompleteNote": "Some sources couldn't be checked in time, so this answer may be incomplete.",
   "account": "Account",
   "signIn": "Sign in",
-  "signInTitle": "Sign in to Factify",
-  "signInBody": "Keep your profile and credits on any phone. We never keep a record of what you check.",
   "emailLabel": "Email",
   "orDivider": "or",
   "continueWithGoogle": "Continue with Google",
@@ -496,24 +348,6 @@
       }
     }
   },
-  "checksSoFar": "{count, plural, =1{1 check so far} other{{count} checks so far}}",
-  "@checksSoFar": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "memberSince": "Member since {date}",
-  "@memberSince": {
-    "placeholders": {
-      "date": {
-        "type": "DateTime",
-        "format": "yMMMd"
-      }
-    }
-  },
-  "planBeta": "Free · beta, no limits yet",
   "editName": "Edit name",
   "nameLabel": "Name",
   "save": "Save",
@@ -535,7 +369,6 @@
     }
   },
   "checkTooSlow": "This check is taking longer than usual. Try Check again in a minute.",
-  "imageReadTitle": "What we read in your picture",
   "imageKind": "{kind, select, NEWS_ARTICLE{News article} SOCIAL_POST{Social media post} CHAT_MESSAGE{Chat forward} TV_GRAPHIC{TV news graphic} POSTER{Poster} DOCUMENT{Document} PHOTO{Photo} MEME{Meme} other{Picture}}",
   "@imageKind": {
     "placeholders": {
@@ -544,15 +377,6 @@
       }
     }
   },
-  "imageFrom": "Shows: {publisher}",
-  "@imageFrom": {
-    "placeholders": {
-      "publisher": {
-        "type": "String"
-      }
-    }
-  },
-  "imageTextLabel": "Text in the picture",
   "imageNoText": "We found no text in this picture, so we checked the picture itself.",
   "imageShowAllText": "Show all the text",
   "imageShowLessText": "Show less",
@@ -560,11 +384,6 @@
   "welcomeTitle": "Know what's true before you share it",
   "welcomeBody": "Factify checks news, forwards, pictures and documents against reliable sources, and shows you every source it used.",
   "welcomePointSources": "Every answer comes with its sources",
-  "welcomePointInputs": "Text, links, pictures and PDFs",
-  "welcomePointLanguages": "In English and Hindi",
-  "welcomeSignInTitle": "Create your account",
-  "welcomeSignInBody": "An account is needed to check. Sign up or sign in with your email and a password, or with Google.",
-  "tabHome": "Home",
   "tabHistory": "History",
   "tabProfile": "Profile",
   "homeGreeting": "Hi, {name}",
@@ -584,7 +403,6 @@
   "inputLinkDetected": "Link found. We'll read the page and check it.",
   "inputLocked": "Remove what you've added to switch to another type.",
   "removeInput": "Remove",
-  "pasteButton": "Paste",
   "pickImageTitle": "Add a picture",
   "pickImageBody": "A screenshot, a WhatsApp forward or a photo. We read the text in it and check it.",
   "pickPdfTitle": "Add a PDF",
@@ -627,28 +445,14 @@
       }
     }
   },
-  "profileDetails": "Account details",
-  "profileEmail": "Email",
-  "profileName": "Name",
-  "profilePlan": "Plan",
   "profileJoined": "Member since",
   "settingsTitle": "Settings",
   "settingLanguage": "Language",
   "settingHistory": "Saved checks",
-  "settingHistoryCount": "{count, plural, =0{None saved} =1{1 check on this phone} other{{count} checks on this phone}}",
-  "@settingHistoryCount": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
   "aboutTitle": "About Factify",
   "aboutBody": "Factify checks what you share against reliable sources and always shows them. When the sources don't settle it, it says Unconfirmed rather than guess.",
-  "serviceStatus": "Service",
   "done": "Done",
   "modeSignIn": "Sign in",
-  "modeCreateAccount": "Create account",
   "welcomeBackTitle": "Welcome back",
   "welcomeBackBody": "Sign in with your email and password, or with Google.",
   "passwordLabel": "Password",
@@ -698,7 +502,6 @@
   "nothingToCheckFaceSwapToo": "A face in it was also likely swapped or changed by AI.",
   "searchUnavailableNote": "Our news search couldn't be reached, so this wasn't checked against news reports. Tap Check again in a little while.",
   "claimSearchUnavailable": "Our news search couldn't be reached, so no news reports were looked at for this. It isn't the same as finding nothing.",
-  "documentReadTitle": "What we read in your document",
   "pasteCopiedText": "Paste copied text",
   "shareFromWhatsApp": "Or share from WhatsApp",
   "checkTakes": "Every claim is checked · usually 1–2 minutes",
@@ -976,14 +779,6 @@
   "sourceEvidence": "Evidence found",
   "sourceNotRelevant": "Not relevant",
   "evidenceCollected": "Evidence collected",
-  "evidenceNote": "{count, plural, =0{Nothing yet, still reading} =1{1 source addresses this claim} other{{count} sources address this claim}}",
-  "@evidenceNote": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
   "notifyMe": "Notify me when ready",
   "notifyOn": "We'll notify you when it's ready",
   "notifyDenied": "Notifications are off for Factify. Turn them on in your phone's settings to be told.",
@@ -1200,7 +995,6 @@
   "srMoved": "This page no longer carries the passage as we quoted it. It may have been edited since.",
   "onbSkip": "Skip",
   "onbNext": "Next",
-  "onbGetStarted": "Get started",
   "onbPage": "Page {page} of {total}",
   "@onbPage": {
     "description": "Read out for the page dots.",
@@ -1221,14 +1015,6 @@
   "onbSampleLink": "RBI keeps repo rate unchanged in September review",
   "@onbSampleLink": {
     "description": "An example headline, on the first welcome page."
-  },
-  "onbSampleVideo": "Flooding inside Mumbai airport this morning",
-  "@onbSampleVideo": {
-    "description": "An example video caption, on the first welcome page."
-  },
-  "onbVideo": "Video",
-  "@onbVideo": {
-    "description": "Shown in capitals on a video placeholder."
   },
   "onbExample": "An example",
   "@onbExample": {
@@ -1396,16 +1182,8 @@
   "authCreateLink": "Create one",
   "nameOptionalLabel": "Your name (optional)",
   "nameOptionalHint": "What should we call you?",
-  "authFreeChecks": "Start with {count} free checks.",
-  "@authFreeChecks": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
   "signUpTitle": "Create your account",
-  "signUpBody": "Start with 100 free checks. It takes a minute.",
+  "signUpBody": "30 free checks every month. It takes a minute.",
   "surveyStep": "{step} of {total}",
   "@surveyStep": {
     "placeholders": {

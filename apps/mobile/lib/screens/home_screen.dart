@@ -286,7 +286,9 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         builder: (_) => CheckingScreen(
           services: _services,
           submission: submission,
-          onFinished: clearInput,
+          onFinished: () {
+            if (mounted) clearInput();
+          },
         ),
       ),
     );

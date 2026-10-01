@@ -46,7 +46,7 @@ class MainActivity : FlutterActivity() {
     private var pendingShare: Map<String, String?>? = null
 
     /**
-     * Sign-in links: Google sign-in finishes in the browser, and Supabase sends the
+     * Sign-in links: Google sign-in finishes in the browser, and the Factify server sends the
      * person back to factify://auth-callback with their session in the link. Held
      * like a share until Dart asks, for the same reason.
      */

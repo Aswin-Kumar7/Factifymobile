@@ -88,8 +88,6 @@ class WatchedSource {
         quote: quote ?? this.quote,
         kept: kept ?? this.kept,
       );
-
-  WatchedSource withState(SourceState next) => copyWith(state: next);
 }
 
 /// Where a check has got to. Everything in it was reported; nothing is estimated.

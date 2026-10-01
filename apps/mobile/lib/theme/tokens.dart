@@ -222,26 +222,3 @@ class FactifyTokens extends ThemeExtension<FactifyTokens> {
     );
   }
 }
-
-/// Radii and spacing (4pt grid), named as the build spec names them.
-abstract final class FxRadius {
-  static const double r8 = 8;
-  static const double r12 = 12;
-  static const double r16 = 16;
-  static const double r20 = 20;
-  static const double r24 = 24;
-  static const double full = 999;
-}
-
-abstract final class FxSpace {
-  static const double s4 = 4;
-  static const double s8 = 8;
-  static const double s12 = 12;
-  static const double s16 = 16;
-  static const double s20 = 20;
-  static const double s24 = 24;
-  static const double s28 = 28;
-
-  /// Screen side padding.
-  static const double side = 20;
-}

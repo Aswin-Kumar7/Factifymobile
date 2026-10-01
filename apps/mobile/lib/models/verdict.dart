@@ -190,8 +190,6 @@ class MatchBasis {
     value: (json['value'] as num?)?.toDouble() ?? 0,
     threshold: (json['threshold'] as num?)?.toDouble() ?? 0,
   );
-
-  double get margin => value - threshold;
 }
 
 /// One citable finding. Everything here points at something that was fetched.
@@ -480,8 +478,6 @@ class Claim {
             e.direction == 'contextualizes' && e.matchBasis.metric.startsWith('passage_narrower'),
       )
       .toList();
-  List<Evidence> get contradicting => evidence.where((e) => e.contradicts).toList();
-  List<Evidence> get supporting => evidence.where((e) => e.supports).toList();
 
   /// Where the claim sits in the submission, as the server located it (contract
   /// 1.3). Null from an older server.

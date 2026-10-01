@@ -92,6 +92,7 @@ class _PaymentScreenState extends State<PaymentScreen> with WidgetsBindingObserv
               : page,
         );
       }
+      if (!mounted) return;
       _poll = Timer.periodic(const Duration(seconds: 3), (_) => unawaited(_check()));
     } catch (_) {
       if (mounted) setState(() => _problem = AppLocalizations.of(context).payCouldNotStart);

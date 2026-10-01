@@ -1,6 +1,6 @@
 /// Sign-in links handed back to the app.
 ///
-/// Google sign-in finishes in the browser, and Supabase sends the person back to
+/// Google sign-in finishes in the browser, and the Factify server sends the person back to
 /// `factify://auth-callback` with their session in the link. MainActivity passes
 /// that link here over a platform channel, the way it passes shares — no plugin.
 library;

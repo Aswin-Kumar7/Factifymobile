@@ -2,5 +2,4 @@
 <resources>
     <!-- Factify's emerald, as in lib/theme/colors.dart. -->
     <color name="factify_emerald">#0E6B4F</color>
-    <color name="factify_emerald_deep">#0B5A42</color>
 </resources>

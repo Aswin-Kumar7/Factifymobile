@@ -29,19 +29,6 @@ extension Phrases on AppLocalizations {
     FailureKind.generic => failureGeneric,
   };
 
-  /// Where in the source the quoted excerpt sits, or null when the source gave
-  /// no position at all.
-  String? describeAnchor(SourceAnchor anchor) {
-    final page = anchor.pageNumber;
-    if (page != null) return anchorPage(page);
-    final paragraph = anchor.paragraphIndex;
-    // Counted from zero on the wire, from one for a reader.
-    if (paragraph != null) return anchorParagraph(paragraph + 1);
-    final start = anchor.charStart;
-    if (start != null) return anchorCharacters(start, anchor.charEnd ?? start);
-    return null;
-  }
-
   /// Where a claim sits in the submission, or null when nothing locates it.
   String? describeInputAnchor(InputAnchor anchor) {
     final page = anchor.pageNumber;

@@ -24,7 +24,6 @@ class SharedContent {
   final String? mimeType;
 
   bool get isFile => kind == 'file';
-  bool get isUrl => kind == 'url';
 
   /// The share arrived but could not be read. [value] then carries the native
   /// side's English description, for logs — the interface shows its own message,

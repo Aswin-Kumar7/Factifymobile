@@ -20,9 +20,6 @@ import '../api/client.dart';
 import '../models/account.dart';
 import 'auth_links.dart';
 
-/// Where the browser comes back to after signing in with Google.
-const String authRedirect = 'factify://auth-callback';
-
 /// Why signing in did not work, in terms the screen can put into words.
 enum AuthProblem {
   invalidEmail,
@@ -184,7 +181,7 @@ class AuthService extends ChangeNotifier {
     await _adopt(await _post('login', {'email': email.trim(), 'password': password}));
   }
 
-  /// Sign in with Google: in the browser, which returns to [authRedirect].
+  /// Sign in with Google: in the browser, which returns to `factify://auth-callback`.
   Future<void> startGoogle() async {
     if (!googleAvailable) throw const AuthFailure(AuthProblem.googleUnavailable);
     final opened = await launchUrl(
@@ -208,7 +205,12 @@ class AuthService extends ChangeNotifier {
       return;
     }
     _lastLinkProblem = null;
-    await _adopt(values, method: 'google');
+    try {
+      await _adopt(values, method: 'google');
+    } on AuthFailure {
+      _lastLinkProblem = AuthProblem.googleFailed;
+      notifyListeners();
+    }
   }
 
   /// The token to send with a check. Null when signed out or the session is over.
@@ -305,8 +307,12 @@ class AuthService extends ChangeNotifier {
       throw const AuthFailure(AuthProblem.network);
     }
     if (response.statusCode >= 300) throw AuthFailure(_problemOf(response));
-    final decoded = jsonDecode(response.body);
-    return decoded is Map<String, dynamic> ? decoded : const {};
+    try {
+      final decoded = jsonDecode(response.body);
+      return decoded is Map<String, dynamic> ? decoded : const {};
+    } on FormatException {
+      throw const AuthFailure(AuthProblem.generic);
+    }
   }
 
   static AuthProblem _problemOf(http.Response response) {

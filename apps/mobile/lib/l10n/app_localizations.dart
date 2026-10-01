@@ -104,12 +104,6 @@ abstract class AppLocalizations {
   /// **'Check'**
   String get tabCheck;
 
-  /// No description provided for @tabActivity.
-  ///
-  /// In en, this message translates to:
-  /// **'Activity'**
-  String get tabActivity;
-
   /// No description provided for @statusOnline.
   ///
   /// In en, this message translates to:
@@ -140,41 +134,11 @@ abstract class AppLocalizations {
   /// **'Phone language'**
   String get languagePhone;
 
-  /// No description provided for @heroTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Is it true?'**
-  String get heroTitle;
-
-  /// No description provided for @heroSubtitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Paste a message or a link, or check a picture. We check it against reliable sources.'**
-  String get heroSubtitle;
-
-  /// No description provided for @inputLabel.
-  ///
-  /// In en, this message translates to:
-  /// **'Paste a message or a link'**
-  String get inputLabel;
-
-  /// No description provided for @inputHint.
-  ///
-  /// In en, this message translates to:
-  /// **'Or share straight from WhatsApp, a browser, or the gallery'**
-  String get inputHint;
-
   /// No description provided for @clear.
   ///
   /// In en, this message translates to:
   /// **'Clear'**
   String get clear;
-
-  /// No description provided for @checkThis.
-  ///
-  /// In en, this message translates to:
-  /// **'Check this'**
-  String get checkThis;
 
   /// No description provided for @sourceGallery.
   ///
@@ -188,29 +152,11 @@ abstract class AppLocalizations {
   /// **'Camera'**
   String get sourceCamera;
 
-  /// No description provided for @sourceFile.
-  ///
-  /// In en, this message translates to:
-  /// **'File'**
-  String get sourceFile;
-
   /// Label above the preview of what was submitted. kind is text, link, image or document.
   ///
   /// In en, this message translates to:
   /// **'{kind, select, text{Checking this message} link{Checking this link} image{Checking this image} other{Checking this document}}'**
   String checkingSubmission(String kind);
-
-  /// No description provided for @emptyTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Nothing checked yet'**
-  String get emptyTitle;
-
-  /// No description provided for @emptyBody.
-  ///
-  /// In en, this message translates to:
-  /// **'Share a forward straight into Factify, paste it above, or check a picture. Every verdict comes with the sources behind it — and when there are none, it says so.'**
-  String get emptyBody;
 
   /// No description provided for @working.
   ///
@@ -296,18 +242,6 @@ abstract class AppLocalizations {
   /// **'{seconds}s'**
   String elapsedSeconds(int seconds);
 
-  /// No description provided for @videoAcceptedTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Video accepted'**
-  String get videoAcceptedTitle;
-
-  /// No description provided for @videoAcceptedBody.
-  ///
-  /// In en, this message translates to:
-  /// **'Longer than a request can stay open. Checking now.'**
-  String get videoAcceptedBody;
-
   /// No description provided for @retry.
   ///
   /// In en, this message translates to:
@@ -320,59 +254,11 @@ abstract class AppLocalizations {
   /// **'Reported. We\'ll take another look at this result.'**
   String get reportedNote;
 
-  /// No description provided for @activityEmptyTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'No checks this session'**
-  String get activityEmptyTitle;
-
-  /// No description provided for @activityEmptyBody.
-  ///
-  /// In en, this message translates to:
-  /// **'Results stay on this device for the session and are gone when the app closes — what you check is nobody\'s record.'**
-  String get activityEmptyBody;
-
-  /// No description provided for @activityFooter.
-  ///
-  /// In en, this message translates to:
-  /// **'Session only, by design: what you check is a record of what you were suspicious about, and this app does not keep one.'**
-  String get activityFooter;
-
-  /// No description provided for @historyTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Earlier this session'**
-  String get historyTitle;
-
-  /// How many sources a past check quoted. A count of citations, never a confidence figure.
-  ///
-  /// In en, this message translates to:
-  /// **'{count, plural, =0{No citable evidence} =1{1 citation} other{{count} citations}}'**
-  String historyCitations(int count);
-
-  /// No description provided for @errorNoServerAddress.
-  ///
-  /// In en, this message translates to:
-  /// **'This build has no server address. Rebuild it with --dart-define=FACTIFY_API=https://your-server.'**
-  String get errorNoServerAddress;
-
-  /// No description provided for @errorShareUnreadable.
-  ///
-  /// In en, this message translates to:
-  /// **'Could not read the shared item.'**
-  String get errorShareUnreadable;
-
   /// No description provided for @errorShareFileUnopenable.
   ///
   /// In en, this message translates to:
   /// **'That file could not be opened. Share it again, or use the Gallery button in Factify.'**
   String get errorShareFileUnopenable;
-
-  /// No description provided for @errorVideoSlow.
-  ///
-  /// In en, this message translates to:
-  /// **'That video is taking longer than expected. Case {caseId} is still processing.'**
-  String errorVideoSlow(String caseId);
 
   /// No description provided for @errorCameraDenied.
   ///
@@ -554,12 +440,6 @@ abstract class AppLocalizations {
   /// **'That input could not be read.'**
   String get failureInvalidInput;
 
-  /// No description provided for @failureLinkUnchecked.
-  ///
-  /// In en, this message translates to:
-  /// **'We couldn\'t find anything to check on that page. Some sites block automatic reading, so copy the article\'s text and paste it here instead.'**
-  String get failureLinkUnchecked;
-
   /// No description provided for @failureTooLarge.
   ///
   /// In en, this message translates to:
@@ -656,30 +536,6 @@ abstract class AppLocalizations {
   /// **'We couldn\'t confirm or rule this out yet'**
   String get subheadSendToReview;
 
-  /// No description provided for @citationCount.
-  ///
-  /// In en, this message translates to:
-  /// **'{count, plural, =0{No citations} =1{1 citation} other{{count} citations}}'**
-  String citationCount(int count);
-
-  /// When the evidence behind a verdict was gathered. Always shown.
-  ///
-  /// In en, this message translates to:
-  /// **'Evidence retrieved {time}'**
-  String evidenceRetrievedAt(DateTime time);
-
-  /// No description provided for @checkedEarlier.
-  ///
-  /// In en, this message translates to:
-  /// **'Checked earlier'**
-  String get checkedEarlier;
-
-  /// No description provided for @reusedNote.
-  ///
-  /// In en, this message translates to:
-  /// **'Reused from an earlier check of the same content. The evidence below is from that check.'**
-  String get reusedNote;
-
   /// Shown only when the interface is not in English: verdict reasons still arrive from the server in English.
   ///
   /// In en, this message translates to:
@@ -691,12 +547,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Why unconfirmed?'**
   String get whyNoVerdict;
-
-  /// No description provided for @seeEvidence.
-  ///
-  /// In en, this message translates to:
-  /// **'{count, plural, =1{See the source} other{See all {count} sources}}'**
-  String seeEvidence(int count);
 
   /// No description provided for @shareCorrection.
   ///
@@ -722,35 +572,11 @@ abstract class AppLocalizations {
   /// **'Sources'**
   String get evidenceTitle;
 
-  /// No description provided for @theClaim.
-  ///
-  /// In en, this message translates to:
-  /// **'The claim'**
-  String get theClaim;
-
-  /// No description provided for @evidenceStrength.
-  ///
-  /// In en, this message translates to:
-  /// **'Evidence strength: {band}'**
-  String evidenceStrength(String band);
-
-  /// No description provided for @strengthBand.
-  ///
-  /// In en, this message translates to:
-  /// **'{band, select, none{none} weak{weak} moderate{moderate} strong{strong} conclusive{conclusive} other{{band}}}'**
-  String strengthBand(String band);
-
   /// One term of the explainable strength score, named for a reader.
   ///
   /// In en, this message translates to:
   /// **'{name, select, tier_composition{Evidence tiers} independent_origins{Independent origins} temporal_confidence{Dating} source_transparency{Publisher transparency} conflict_penalty{Conflicting evidence} other{{name}}}'**
   String strengthComponent(String name);
-
-  /// No description provided for @excludedFromScore.
-  ///
-  /// In en, this message translates to:
-  /// **'Excluded from this score: {providers}'**
-  String excludedFromScore(String providers);
 
   /// No description provided for @tierLabel.
   ///
@@ -764,24 +590,6 @@ abstract class AppLocalizations {
   /// **'{direction, select, supports{Supports} contradicts{Contradicts} risk_signal{Risk signal} other{Context}}'**
   String directionLabel(String direction);
 
-  /// No description provided for @anchorPage.
-  ///
-  /// In en, this message translates to:
-  /// **'Found at page {page}'**
-  String anchorPage(int page);
-
-  /// No description provided for @anchorParagraph.
-  ///
-  /// In en, this message translates to:
-  /// **'Found at paragraph {paragraph}'**
-  String anchorParagraph(int paragraph);
-
-  /// No description provided for @anchorCharacters.
-  ///
-  /// In en, this message translates to:
-  /// **'Found at characters {start} to {end}'**
-  String anchorCharacters(int start, int end);
-
   /// No description provided for @matchBasis.
   ///
   /// In en, this message translates to:
@@ -793,18 +601,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Open source'**
   String get openSource;
-
-  /// No description provided for @noEvidenceTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'No citable source was found'**
-  String get noEvidenceTitle;
-
-  /// No description provided for @noEvidenceBody.
-  ///
-  /// In en, this message translates to:
-  /// **'This does not mean the content is false. It means nothing we could cite either supports or contradicts it, so Factify did not decide.'**
-  String get noEvidenceBody;
 
   /// No description provided for @historyCardTitle.
   ///
@@ -901,18 +697,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No receipt was issued for this result.'**
   String get receiptMissing;
-
-  /// No description provided for @sourceRiskTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'{risk, select, HIGH{Publisher has a high risk profile} MEDIUM{Publisher has a mixed record} LOW{Publisher has an established record} other{Publisher risk not assessed}}'**
-  String sourceRiskTitle(String risk);
-
-  /// A risky publisher is a reason to look harder, never a finding that the content is false.
-  ///
-  /// In en, this message translates to:
-  /// **'{risk, select, HIGH{Recently registered, or with a record of unreliable material. This describes the publisher, not this claim.} MEDIUM{Some signals worth noting about the source. This describes the publisher, not this claim.} LOW{No adverse signals about the source. This is not evidence that the claim itself is true.} other{Nothing is known either way.}}'**
-  String sourceRiskDetail(String risk);
 
   /// Permanent exclusion header. Must stay visible and must keep saying the signals are not used in the verdict.
   ///
@@ -1052,12 +836,6 @@ abstract class AppLocalizations {
   /// **'Matches a picture published earlier'**
   String get mediaMatchEarlier;
 
-  /// On a strength row that leads to the citations it was computed from.
-  ///
-  /// In en, this message translates to:
-  /// **'{count, plural, =1{1 source} other{{count} sources}}'**
-  String strengthComponentCitations(int count);
-
   /// No description provided for @uploading.
   ///
   /// In en, this message translates to:
@@ -1069,18 +847,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'You have text copied. Check it?'**
   String get clipboardOffer;
-
-  /// No description provided for @clipboardPasteAndCheck.
-  ///
-  /// In en, this message translates to:
-  /// **'Paste and check'**
-  String get clipboardPasteAndCheck;
-
-  /// No description provided for @clipboardDismiss.
-  ///
-  /// In en, this message translates to:
-  /// **'Not now'**
-  String get clipboardDismiss;
 
   /// How sure the verdict is, from 50 to 97. Shown only with True, False or Misleading.
   ///
@@ -1160,18 +926,6 @@ abstract class AppLocalizations {
   /// **'Sign in'**
   String get signIn;
 
-  /// No description provided for @signInTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Sign in to Factify'**
-  String get signInTitle;
-
-  /// No description provided for @signInBody.
-  ///
-  /// In en, this message translates to:
-  /// **'Keep your profile and credits on any phone. We never keep a record of what you check.'**
-  String get signInBody;
-
   /// No description provided for @emailLabel.
   ///
   /// In en, this message translates to:
@@ -1225,24 +979,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'A check costs {check}'**
   String creditCosts(int check);
-
-  /// No description provided for @checksSoFar.
-  ///
-  /// In en, this message translates to:
-  /// **'{count, plural, =1{1 check so far} other{{count} checks so far}}'**
-  String checksSoFar(int count);
-
-  /// No description provided for @memberSince.
-  ///
-  /// In en, this message translates to:
-  /// **'Member since {date}'**
-  String memberSince(DateTime date);
-
-  /// No description provided for @planBeta.
-  ///
-  /// In en, this message translates to:
-  /// **'Free · beta, no limits yet'**
-  String get planBeta;
 
   /// No description provided for @editName.
   ///
@@ -1310,29 +1046,11 @@ abstract class AppLocalizations {
   /// **'This check is taking longer than usual. Try Check again in a minute.'**
   String get checkTooSlow;
 
-  /// No description provided for @imageReadTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'What we read in your picture'**
-  String get imageReadTitle;
-
   /// No description provided for @imageKind.
   ///
   /// In en, this message translates to:
   /// **'{kind, select, NEWS_ARTICLE{News article} SOCIAL_POST{Social media post} CHAT_MESSAGE{Chat forward} TV_GRAPHIC{TV news graphic} POSTER{Poster} DOCUMENT{Document} PHOTO{Photo} MEME{Meme} other{Picture}}'**
   String imageKind(String kind);
-
-  /// No description provided for @imageFrom.
-  ///
-  /// In en, this message translates to:
-  /// **'Shows: {publisher}'**
-  String imageFrom(String publisher);
-
-  /// No description provided for @imageTextLabel.
-  ///
-  /// In en, this message translates to:
-  /// **'Text in the picture'**
-  String get imageTextLabel;
 
   /// No description provided for @imageNoText.
   ///
@@ -1375,36 +1093,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Every answer comes with its sources'**
   String get welcomePointSources;
-
-  /// No description provided for @welcomePointInputs.
-  ///
-  /// In en, this message translates to:
-  /// **'Text, links, pictures and PDFs'**
-  String get welcomePointInputs;
-
-  /// No description provided for @welcomePointLanguages.
-  ///
-  /// In en, this message translates to:
-  /// **'In English and Hindi'**
-  String get welcomePointLanguages;
-
-  /// No description provided for @welcomeSignInTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Create your account'**
-  String get welcomeSignInTitle;
-
-  /// No description provided for @welcomeSignInBody.
-  ///
-  /// In en, this message translates to:
-  /// **'An account is needed to check. Sign up or sign in with your email and a password, or with Google.'**
-  String get welcomeSignInBody;
-
-  /// No description provided for @tabHome.
-  ///
-  /// In en, this message translates to:
-  /// **'Home'**
-  String get tabHome;
 
   /// No description provided for @tabHistory.
   ///
@@ -1477,12 +1165,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Remove'**
   String get removeInput;
-
-  /// No description provided for @pasteButton.
-  ///
-  /// In en, this message translates to:
-  /// **'Paste'**
-  String get pasteButton;
 
   /// No description provided for @pickImageTitle.
   ///
@@ -1652,30 +1334,6 @@ abstract class AppLocalizations {
   /// **'{method, select, google{Signed in with Google} other{Signed in with email}}'**
   String signedInWith(String method);
 
-  /// No description provided for @profileDetails.
-  ///
-  /// In en, this message translates to:
-  /// **'Account details'**
-  String get profileDetails;
-
-  /// No description provided for @profileEmail.
-  ///
-  /// In en, this message translates to:
-  /// **'Email'**
-  String get profileEmail;
-
-  /// No description provided for @profileName.
-  ///
-  /// In en, this message translates to:
-  /// **'Name'**
-  String get profileName;
-
-  /// No description provided for @profilePlan.
-  ///
-  /// In en, this message translates to:
-  /// **'Plan'**
-  String get profilePlan;
-
   /// No description provided for @profileJoined.
   ///
   /// In en, this message translates to:
@@ -1700,12 +1358,6 @@ abstract class AppLocalizations {
   /// **'Saved checks'**
   String get settingHistory;
 
-  /// No description provided for @settingHistoryCount.
-  ///
-  /// In en, this message translates to:
-  /// **'{count, plural, =0{None saved} =1{1 check on this phone} other{{count} checks on this phone}}'**
-  String settingHistoryCount(int count);
-
   /// No description provided for @aboutTitle.
   ///
   /// In en, this message translates to:
@@ -1718,12 +1370,6 @@ abstract class AppLocalizations {
   /// **'Factify checks what you share against reliable sources and always shows them. When the sources don\'t settle it, it says Unconfirmed rather than guess.'**
   String get aboutBody;
 
-  /// No description provided for @serviceStatus.
-  ///
-  /// In en, this message translates to:
-  /// **'Service'**
-  String get serviceStatus;
-
   /// No description provided for @done.
   ///
   /// In en, this message translates to:
@@ -1735,12 +1381,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Sign in'**
   String get modeSignIn;
-
-  /// No description provided for @modeCreateAccount.
-  ///
-  /// In en, this message translates to:
-  /// **'Create account'**
-  String get modeCreateAccount;
 
   /// No description provided for @welcomeBackTitle.
   ///
@@ -1933,12 +1573,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Our news search couldn\'t be reached, so no news reports were looked at for this. It isn\'t the same as finding nothing.'**
   String get claimSearchUnavailable;
-
-  /// No description provided for @documentReadTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'What we read in your document'**
-  String get documentReadTitle;
 
   /// No description provided for @pasteCopiedText.
   ///
@@ -2444,12 +2078,6 @@ abstract class AppLocalizations {
   /// **'Evidence collected'**
   String get evidenceCollected;
 
-  /// No description provided for @evidenceNote.
-  ///
-  /// In en, this message translates to:
-  /// **'{count, plural, =0{Nothing yet, still reading} =1{1 source addresses this claim} other{{count} sources address this claim}}'**
-  String evidenceNote(int count);
-
   /// No description provided for @notifyMe.
   ///
   /// In en, this message translates to:
@@ -2918,12 +2546,6 @@ abstract class AppLocalizations {
   /// **'Next'**
   String get onbNext;
 
-  /// No description provided for @onbGetStarted.
-  ///
-  /// In en, this message translates to:
-  /// **'Get started'**
-  String get onbGetStarted;
-
   /// Read out for the page dots.
   ///
   /// In en, this message translates to:
@@ -2947,18 +2569,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'RBI keeps repo rate unchanged in September review'**
   String get onbSampleLink;
-
-  /// An example video caption, on the first welcome page.
-  ///
-  /// In en, this message translates to:
-  /// **'Flooding inside Mumbai airport this morning'**
-  String get onbSampleVideo;
-
-  /// Shown in capitals on a video placeholder.
-  ///
-  /// In en, this message translates to:
-  /// **'Video'**
-  String get onbVideo;
 
   /// Overline on the sample result on the second welcome page, in capitals. The sample is invented, so it says so.
   ///
@@ -3386,12 +2996,6 @@ abstract class AppLocalizations {
   /// **'What should we call you?'**
   String get nameOptionalHint;
 
-  /// No description provided for @authFreeChecks.
-  ///
-  /// In en, this message translates to:
-  /// **'Start with {count} free checks.'**
-  String authFreeChecks(int count);
-
   /// No description provided for @signUpTitle.
   ///
   /// In en, this message translates to:
@@ -3401,7 +3005,7 @@ abstract class AppLocalizations {
   /// No description provided for @signUpBody.
   ///
   /// In en, this message translates to:
-  /// **'Start with 100 free checks. It takes a minute.'**
+  /// **'30 free checks every month. It takes a minute.'**
   String get signUpBody;
 
   /// No description provided for @surveyStep.

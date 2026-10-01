@@ -153,11 +153,6 @@ class PlanUsage {
 class SurveyAnswers {
   const SurveyAnswers({this.role, this.places = const {}, this.wants = const {}, this.heard});
 
-  static const roles = ['journalist', 'student', 'teacher', 'family', 'curious'];
-  static const placeKeys = ['whatsapp', 'instagram', 'youtube', 'facebook', 'x', 'telegram', 'news_sites'];
-  static const wantKeys = ['forwards', 'links', 'pictures', 'videos', 'voice'];
-  static const heardKeys = ['friend', 'social', 'college', 'other'];
-
   final String? role;
   final Set<String> places;
   final Set<String> wants;
