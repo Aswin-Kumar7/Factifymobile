@@ -108,6 +108,14 @@ def backoff_for(consecutive_failures: int) -> int:
     return int(min(BACKOFF_BASE_SECONDS * 2 ** (consecutive_failures - 1), BACKOFF_CEILING_SECONDS))
 
 
+def failures_behind(backoff_seconds: int) -> int:
+    """How many failures in a row put a feed on this backoff; 0 after a success."""
+    failures = 0
+    while backoff_for(failures) < min(backoff_seconds, BACKOFF_CEILING_SECONDS):
+        failures += 1
+    return failures
+
+
 def authenticate_trigger(supplied: str | None, expected: SecretStr | str | None) -> bool:
     """Verify the scheduler's shared secret.
 

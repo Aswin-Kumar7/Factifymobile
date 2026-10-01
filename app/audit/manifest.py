@@ -94,10 +94,6 @@ class ManifestItem:
     def is_genuine(self) -> bool:
         return self.category is Category.GENUINE
 
-    @property
-    def expects_decisive(self) -> bool:
-        return self.expectation is not Expectation.ABSTAIN
-
     def to_json(self) -> dict[str, object]:
         return {
             "id": self.id,

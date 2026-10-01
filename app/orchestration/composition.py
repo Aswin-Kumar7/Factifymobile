@@ -322,7 +322,6 @@ async def build(settings: Settings) -> dict[str, Any]:
             governor=governor,
             # A fact-checker's page found by search is kept too.
             keeper=keeper,
-            # And the pages a claim was cited against before are read again.
             # And the pages a claim was cited against before, under any wording of it.
             memory=EvidenceMemory(database, embedder=embedder, same_claim=reasoner.same_claim),
             # Which results are read: the most relevant, by our own model.
@@ -364,7 +363,7 @@ async def build(settings: Settings) -> dict[str, Any]:
         resolvers=resolvers,
         extractor_version=_extractor_version(),
         model_id=settings.models.extraction,
-        corroboration=CorpusCorroboration(resolver=corpus, database=database),
+        corroboration=CorpusCorroboration(database=database),
         presence=presence,
         # Every source checked against the claim before anything decides. Needs the
         # reader's model; without one, sources are only deduplicated.
@@ -616,7 +615,6 @@ async def _prewarm(embedder: TextEmbedder, image_embedder: ImageEmbedder) -> Non
     as it would have at first use, and a warmup problem must not stop the service
     from answering the requests that do not need it.
     """
-    import asyncio
 
     def _warm() -> None:
         embedder.embed(["warmup"], language="en")

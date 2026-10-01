@@ -38,7 +38,12 @@ from app.extraction.web import extract
 from app.intake.normalizer import _canonical_url
 from app.knowledge.clustering import OriginClusterer
 from app.knowledge.minhash import sign
-from app.knowledge.registry import FeedDefinition, FeedRegistry, window_start
+from app.knowledge.registry import (
+    FeedDefinition,
+    FeedRegistry,
+    failures_behind,
+    window_start,
+)
 from app.observability.logging import event
 from app.security.fetcher import FetchFailure, FetchResult, SecureFetcher
 
@@ -95,11 +100,6 @@ class IngestedItem:
         stays inside M25's rule against republishing full article text.
         """
         return f"{self.title}\n{self.body or self.excerpt}"
-
-    @property
-    def is_hydrated(self) -> bool:
-        """Whether clustering is running on the article or on a feed snippet."""
-        return bool(self.body)
 
 
 @dataclass(slots=True)
@@ -235,7 +235,11 @@ class IngestionWorker:
 
             result.feeds_attempted += 1
             await self._ingest_feed(
-                feed_id=feed_id, run_id=run_id, definition=definition, result=result
+                feed_id=feed_id,
+                run_id=run_id,
+                definition=definition,
+                result=result,
+                failures_before=failures_behind(int(str(row.get("backoff_seconds") or 0))),
             )
 
         result.multi_outlet_clusters = len(self._clusterer.multi_outlet_clusters())
@@ -259,6 +263,7 @@ class IngestionWorker:
         run_id: UUID,
         definition: FeedDefinition,
         result: TickResult,
+        failures_before: int = 0,
     ) -> None:
         response = await self._fetcher.fetch(definition.url, provider="feed")
 
@@ -266,7 +271,10 @@ class IngestionWorker:
             result.feeds_failed += 1
             result.failures.append(f"{definition.publisher}: {response.reason}")
             await self._registry.fail(
-                run_id=run_id, feed_id=feed_id, reason=response.reason, consecutive_failures=1
+                run_id=run_id,
+                feed_id=feed_id,
+                reason=response.reason,
+                consecutive_failures=failures_before + 1,
             )
             return
 

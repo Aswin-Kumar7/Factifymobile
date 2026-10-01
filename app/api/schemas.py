@@ -676,22 +676,6 @@ class ReviewItemResponse(BaseModel):
     reviewed_at: datetime | None = None
 
 
-class ErrorResponse(BaseModel):
-    """A failure the client can act on.
-
-    `retryable` distinguishes "this input is wrong" from "try again shortly", which
-    is the difference between a client showing a correction and a client showing a
-    spinner.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    error: str
-    detail: str
-    retryable: bool = False
-    request_id: str | None = None
-
-
 def evidence_to_response(item: Any) -> EvidenceResponse:
     """Project a domain Evidence onto the wire model.
 

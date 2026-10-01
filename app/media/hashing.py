@@ -63,10 +63,6 @@ class PerceptualHash:
             )
         return int((self.bits ^ other.bits).bit_count())
 
-    def is_candidate(self, other: PerceptualHash, *, threshold: int = CANDIDATE_DISTANCE) -> bool:
-        """Whether this pair is worth verifying. Never whether it is a match."""
-        return self.distance(other) <= threshold
-
 
 def _grayscale(data: bytes, size: tuple[int, int]) -> np.ndarray:
     """Decode, desaturate and resize. The common first step of both hashes."""
@@ -143,11 +139,6 @@ class MediaFingerprint:
     sha256: str
     dhash: PerceptualHash
     phash: PerceptualHash
-
-    @property
-    def exact_identity(self) -> str:
-        """Byte-identical content. The only identifier that is proof on its own."""
-        return self.sha256
 
 
 def fingerprint(data: bytes) -> MediaFingerprint:

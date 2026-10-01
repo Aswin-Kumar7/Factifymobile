@@ -67,10 +67,6 @@ class MatchAttempt:
     verified: bool
     reason: str = ""
 
-    @property
-    def is_near_miss(self) -> bool:
-        return not self.verified and abs(self.distance - self.threshold) < 0.05
-
 
 @dataclass(frozen=True, slots=True)
 class MatchResult:
@@ -95,10 +91,6 @@ class MatchResult:
         finding, when the finding is always about *when* and *where*.
         """
         return self.matched is not None and self.matched.is_dated
-
-    @property
-    def near_misses(self) -> tuple[MatchAttempt, ...]:
-        return tuple(attempt for attempt in self.attempts if attempt.is_near_miss)
 
 
 # The threshold a candidate must clear *after* surviving the pHash gate — which is a

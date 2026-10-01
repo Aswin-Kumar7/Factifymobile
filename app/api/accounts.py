@@ -336,8 +336,8 @@ async def auth_config(request: Request) -> AuthConfigResponse:
 
 # Refusals, as HTTP: what the app shows is chosen from `detail`, which is the reason.
 _REFUSED_STATUS = {
-    "invalid_email": status.HTTP_422_UNPROCESSABLE_ENTITY,
-    "weak_password": status.HTTP_422_UNPROCESSABLE_ENTITY,
+    "invalid_email": status.HTTP_422_UNPROCESSABLE_CONTENT,
+    "weak_password": status.HTTP_422_UNPROCESSABLE_CONTENT,
     "email_taken": status.HTTP_409_CONFLICT,
     "use_google": status.HTTP_409_CONFLICT,
     "wrong_credentials": status.HTTP_401_UNAUTHORIZED,
@@ -350,7 +350,7 @@ _attempts = SlidingWindowLimiter()
 
 
 def _throttle(request: Request, email: str) -> None:
-    client = request.client.host if request.client else "unknown"
+    client = client_ip(request) or "unknown"
     for key in (f"email:{email.strip().lower()}", f"ip:{client}"):
         if not _attempts.check(key, _ATTEMPTS).allowed:
             raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail="too_many_attempts")
@@ -520,7 +520,7 @@ async def survey(payload: SurveyRequest, request: Request) -> AccountResponse:
             )
         except ValueError:
             raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_ENTITY, detail="unknown_answer"
+                status.HTTP_422_UNPROCESSABLE_CONTENT, detail="unknown_answer"
             ) from None
     return _account_response(request, await _book(request).answer_survey(user, answers))
 

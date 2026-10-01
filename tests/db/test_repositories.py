@@ -91,7 +91,9 @@ class TestClaim:
     async def test_claim_is_stored_with_its_anchor(self, conn: Any) -> None:
         _, claim_id = await _case_with_claim(conn)
 
-        claim = await ClaimRepository(conn).get(claim_id)
+        claim = await (
+            await conn.execute("SELECT * FROM claim WHERE id = %s", (claim_id,))
+        ).fetchone()
         anchors = await ClaimRepository(conn).anchors(claim_id)
 
         assert claim is not None
@@ -173,7 +175,12 @@ class TestObservationAndPromotion:
         for _ in range(5):
             await observations.record(case_id=case_id, kind="media_probe")
 
-        assert await observations.count_for_case(case_id) == 5
+        row = await (
+            await conn.execute(
+                "SELECT count(*) AS n FROM observation WHERE case_id = %s", (case_id,)
+            )
+        ).fetchone()
+        assert row["n"] == 5
         assert await FingerprintRepository(conn).get("sha256:never-validated") is None
 
     async def test_promotion_moves_the_counter(self, conn: Any) -> None:
@@ -325,16 +332,12 @@ class TestBudget:
     async def test_consumption_stops_at_the_cap(self, conn: Any) -> None:
         budget = BudgetRepository(conn)
 
-        taken = [await budget.try_consume(provider="vision", cap=3) for _ in range(5)]
+        taken = [await budget.consume(provider="vision", hard_cap=3) for _ in range(5)]
 
-        assert taken == [True, True, True, False, False]
+        assert taken == [1, 2, 3, None, None]
         usage = await budget.usage(provider="vision")
         assert usage is not None
         assert usage["used"] == 3
-
-    async def test_zero_cap_permits_nothing(self, conn: Any) -> None:
-        """Cap zero is a valid configuration: skip the provider, record the reason."""
-        assert await BudgetRepository(conn).try_consume(provider="vision", cap=0) is False
 
 
 class TestFeed:

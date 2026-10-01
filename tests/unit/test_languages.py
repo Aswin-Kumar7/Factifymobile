@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 
 from app.domain import ClaimStatus
-from app.extraction.language import CHECKED, Language, devanagari_language
+from app.extraction.language import Language, devanagari_language
 from app.extraction.translate import Translation, parse_free
 from app.orchestration.correction import _OPENING, _SAYS, _UNCONFIRMED
 from app.orchestration.pipeline import Orchestrator
@@ -86,7 +86,7 @@ _PLACEHOLDER = re.compile(r"\{[a-z]+\}")
 
 class TestWording:
     def test_every_language_has_every_line(self) -> None:
-        newer = CHECKED - {"en", "hi"}
+        newer = {language.value for language in Language} - {"en", "hi", "hi-Latn", "und"}
         assert set(WORDING) == newer
         for language in newer:
             assert set(_TEXT[language]) == set(_TEXT["en"]), language

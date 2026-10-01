@@ -34,7 +34,6 @@ from app.orchestration.pipeline import (
     SkippedCheck,
     VerificationResult,
     _distinct_citations,
-    abstained,
     cacheable,
 )
 from app.orchestration.receipt import (
@@ -42,12 +41,10 @@ from app.orchestration.receipt import (
     ReceiptSigner,
     canonicalise,
     digest,
-    parse_receipt,
 )
-from app.orchestration.review import HumanLabel, ReviewQueue, ReviewReason, reason_for
+from app.orchestration.review import HumanLabel, ReviewQueue, ReviewReason
 from app.sources.corpus import CorpusCorroboration, CorroborationSignal
-from app.verdict.engine import CaseDecision, Decision
-from app.verdict.strength import evidence_strength
+from app.verdict.engine import CaseDecision
 from tests.unit import factories
 from tests.unit.factories import claim, evidence
 
@@ -212,7 +209,6 @@ class TestTheReceiptGate:
         verification = signer.verify(receipt, tampered)
 
         assert not verification.valid
-        assert verification.failed_because_evidence_changed
         assert "changed since" in verification.reason
 
     def test_altering_the_citation_url_breaks_verification(self) -> None:
@@ -297,26 +293,10 @@ class TestReceiptConstruction:
 
         assert first.id == second.id
 
-    def test_the_payload_carries_the_disclaimer(self) -> None:
+    def test_the_disclaimer_disowns_a_legal_certificate(self) -> None:
         """It must never be described as a legal certificate."""
-        signer = ReceiptSigner(key="k")
-        receipt = signer.issue(
-            case_id=uuid4(), evidence=[_evidence()], action="SAFE_TO_SHARE", rule_version="v"
-        )
-
-        payload = receipt.to_payload()
-        assert payload["disclaimer"] == DISCLAIMER
-        assert "not a legal certificate" in str(payload["disclaimer"])
-        assert "tamper-evident" in str(payload["disclaimer"])
-
-    def test_a_receipt_round_trips_through_its_payload(self) -> None:
-        signer = ReceiptSigner(key="k")
-        evidence = [_evidence()]
-        receipt = signer.issue(
-            case_id=uuid4(), evidence=evidence, action="SAFE_TO_SHARE", rule_version="v"
-        )
-
-        assert signer.verify(parse_receipt(receipt.to_payload()), evidence).valid
+        assert "not a legal certificate" in DISCLAIMER
+        assert "tamper-evident" in DISCLAIMER
 
 
 # -------------------------------------------------------------------- M43 · review
@@ -353,48 +333,16 @@ class RecordingReviewRepository:
         ]
 
 
-class TestReviewRouting:
-    def test_a_resolved_case_is_not_routed(self) -> None:
-        assert reason_for(_result(action=Action.SAFE_TO_SHARE)) is None
-
-    def test_an_incomplete_run_is_routed_as_incomplete(self) -> None:
-        """Most actionable reason wins: a reviewer can re-run this one."""
-        result = _result(
-            action=Action.SEND_TO_REVIEW,
-            skipped=[SkippedCheck(check="factcheck", reason="down")],
-        )
-
-        assert reason_for(result) is ReviewReason.INCOMPLETE_RUN
-
-    def test_an_abstaining_case_is_routed_as_no_evidence(self) -> None:
-        assert reason_for(_result(action=Action.SEND_TO_REVIEW)) is ReviewReason.NO_EVIDENCE
-
-    @pytest.mark.anyio
-    async def test_an_abstaining_case_reaches_the_queue_with_its_reason(self) -> None:
-        repository = RecordingReviewRepository()
-        queue = ReviewQueue(repository=repository)  # type: ignore[arg-type]
-
-        item_id = await queue.route(_result(action=Action.SEND_TO_REVIEW))
-
-        assert item_id is not None
-        assert repository.enqueued[0]["reason"] == ReviewReason.NO_EVIDENCE.value
-
-    @pytest.mark.anyio
-    async def test_a_resolved_case_is_not_enqueued(self) -> None:
-        repository = RecordingReviewRepository()
-        queue = ReviewQueue(repository=repository)  # type: ignore[arg-type]
-
-        assert await queue.route(_result(action=Action.SAFE_TO_SHARE)) is None
-        assert repository.enqueued == []
-
+class TestReviewQueue:
     @pytest.mark.anyio
     async def test_a_human_label_never_touches_the_machine_status(self) -> None:
         """M43's rule. The repository has no path that writes machine_status."""
         repository = RecordingReviewRepository()
         queue = ReviewQueue(repository=repository)  # type: ignore[arg-type]
 
-        item_id = await queue.route(_result(action=Action.SEND_TO_REVIEW))
-        assert item_id is not None
+        item_id = await repository.enqueue(
+            case_id=uuid4(), reason=ReviewReason.USER_REPORTED.value, machine_status="UNVERIFIED"
+        )
         before = dict(repository.enqueued[0])
 
         await queue.record(item_id=item_id, label=HumanLabel.CONTRADICTED, reviewer="asha")
@@ -534,30 +482,6 @@ class TestTheContract:
 
         assert response.advisories
         assert all(not claim.evidence for claim in response.claims)
-
-
-class TestAbstentionHelpers:
-    def test_a_review_action_counts_as_abstained(self) -> None:
-        assert abstained(_result(action=Action.SEND_TO_REVIEW))
-
-    def test_an_informing_case_with_evidence_is_not_abstained(self) -> None:
-        from app.orchestration.pipeline import ClaimOutcome
-
-        claim = _claim()
-        evidence = [factories.evidence(claim_id=claim.id)]
-        outcome = ClaimOutcome(
-            claim=claim,
-            decision=Decision(
-                status=ClaimStatus.SUPPORTED,
-                rule_id="r",
-                reason="because",
-                supporting_evidence_ids=(evidence[0].id,),
-            ),
-            strength=evidence_strength(evidence),
-            evidence=evidence,
-        )
-
-        assert not abstained(_result(action=Action.SAFE_TO_SHARE, claims=[outcome]))
 
 
 class TestTheHttpSurface:

@@ -86,14 +86,12 @@ class TestEdgeCases:
 
         assert result.language is Language.UNKNOWN
         assert result.confident
-        assert not result.needs_model_fallback
 
     def test_very_short_text_defers_to_a_model(self) -> None:
         """The one case a model call is worth spending on, and it is rare."""
         result = detect("ok")
 
         assert not result.confident
-        assert result.needs_model_fallback
 
     def test_the_common_path_never_needs_a_model(self) -> None:
         for text in (
@@ -101,7 +99,7 @@ class TestEdgeCases:
             "The government announced a new policy today for all citizens",
             "Yeh sab jhooth hai bhai, mat forward karo",
         ):
-            assert not detect(text).needs_model_fallback
+            assert detect(text).confident
 
     def test_numbers_and_punctuation_alone_do_not_assert_a_language(self) -> None:
         assert detect("12345 !!! ???").language is Language.UNKNOWN

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from functools import lru_cache
-from typing import Any, Self
+from typing import Self
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, PostgresDsn, SecretStr, model_validator
@@ -58,8 +58,6 @@ class ProviderSettings(BaseModel):
     daily_cap: int = Field(default=0, ge=0)
     daily_hard_cap: int = Field(default=0, ge=0)
     per_minute_cap: int = Field(default=0, ge=0)
-    timeout_seconds: float = Field(default=10.0, gt=0, le=120)
-    max_retries: int = Field(default=1, ge=0, le=5)
 
     # Where the provider lives. Configurable rather than hard-coded because the same
     # credential can front different surfaces — a Gemini key works against the
@@ -119,17 +117,6 @@ class ProviderSettings(BaseModel):
         """
         return self.enabled and self.api_key is not None
 
-    @property
-    def is_callable(self) -> bool:
-        """Usable *and* has somewhere to send the request.
-
-        The caller's question. Checked at boot by `Settings` rather than enforced
-        here, because an enabled provider with no endpoint would otherwise pass the
-        governor and fail every call — and downstream that reads as "the source had
-        nothing" rather than "we were misconfigured".
-        """
-        return self.usable and bool(self.endpoint)
-
 
 class ModelSettings(BaseModel):
     """Model identifiers. No model name appears anywhere else in the codebase.
@@ -144,7 +131,6 @@ class ModelSettings(BaseModel):
     extraction: str = ""
     escalation: str = ""
     text_embedding: str = ""
-    image_embedding: str = ""
 
 
 class AuthSettings(BaseModel):
@@ -206,13 +192,6 @@ class LimitSettings(BaseModel):
     model_config = {"frozen": True}
 
     max_upload_bytes: int = Field(default=25 * 1024 * 1024, gt=0)
-    max_pdf_pages: int = Field(default=50, gt=0)
-    max_video_seconds: int = Field(default=90, gt=0)
-    max_video_keyframes: int = Field(default=12, gt=0, le=24)
-    max_redirects: int = Field(default=5, ge=0, le=10)
-    max_fetch_bytes: int = Field(default=10 * 1024 * 1024, gt=0)
-    fetch_timeout_seconds: float = Field(default=15.0, gt=0, le=60)
-    raw_media_retention_hours: int = Field(default=24, gt=0, le=72)
 
 
 class LocalModelSettings(BaseModel):
@@ -395,26 +374,6 @@ class Settings(BaseSettings):
             "archive": self.archive,
             "web_search": self.websearch,
             "synthetic": self.synthetic,
-        }
-
-    def redacted(self) -> dict[str, Any]:
-        """Configuration safe to log: enablement and caps, never credentials."""
-        return {
-            "environment": str(self.environment),
-            "database_configured": self.database_url is not None,
-            "log_level": self.log_level,
-            "models": self.models.model_dump(),
-            "limits": self.limits.model_dump(),
-            "providers": {
-                name: {
-                    "enabled": provider.enabled,
-                    "credentialled": provider.api_key is not None,
-                    "usable": provider.usable,
-                    "daily_cap": provider.daily_cap,
-                    "per_minute_cap": provider.per_minute_cap,
-                }
-                for name, provider in self.providers.items()
-            },
         }
 
 

@@ -728,15 +728,9 @@ def count_origins(rows: list[dict[str, Any]]) -> int:
 
 
 class CorpusCorroboration:
-    """Counts independent origins for a claim, using the corpus search.
+    """Counts independent origins for a claim, over the corpus rows behind its citations."""
 
-    Deliberately reuses `CorpusResolver.search` rather than querying separately: two
-    searches could return two different sets for one claim, and then the origin count
-    would describe a set other than the one that produced the citations.
-    """
-
-    def __init__(self, *, resolver: CorpusResolver, database: Any) -> None:
-        self._resolver = resolver
+    def __init__(self, *, database: Any) -> None:
         self._database = database
 
     async def signal(self, claim: Claim, *, citation_urls: list[str]) -> CorroborationSignal:

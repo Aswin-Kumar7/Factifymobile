@@ -12,11 +12,7 @@ from app.embeddings.image import (
     Verification,
     cosine,
 )
-from app.embeddings.text import (
-    EmbeddingResult,
-    TextEmbedder,
-    UnavailableTextEmbedder,
-)
+from app.embeddings.text import EmbeddingResult, TextEmbedder
 
 __all__ = [
     "EmbeddingResult",
@@ -24,7 +20,6 @@ __all__ = [
     "ImageEmbeddingResult",
     "TextEmbedder",
     "UnavailableImageEmbedder",
-    "UnavailableTextEmbedder",
     "Verification",
     "cosine",
 ]

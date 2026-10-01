@@ -22,7 +22,6 @@ from app.embeddings.text import (
 from app.embeddings.text import (
     SUPPORTED,
     TextEmbedder,
-    UnavailableTextEmbedder,
 )
 from app.extraction.language import Language
 
@@ -84,13 +83,6 @@ class TestHinglishIsRefusedNotGuessed:
 class TestUnavailableReturnsNothing:
     """A zero vector would be stored silently and match everything equally."""
 
-    def test_text_embedder_returns_no_vectors(self) -> None:
-        result = UnavailableTextEmbedder().embed(["anything"])
-
-        assert result.vectors == ()
-        assert not result.succeeded
-        assert "unavailable" in str(result.reason)
-
     def test_image_embedder_returns_no_vectors(self) -> None:
         result = UnavailableImageEmbedder().embed(["/some/path.jpg"])
 
@@ -145,21 +137,6 @@ class TestVerificationSemantics:
         answer, a miss is an honest abstention.
         """
         assert DEFAULT_THRESHOLD > 0.956
-
-    def test_a_near_miss_is_identifiable_for_calibration(self) -> None:
-        from app.embeddings.image import Verification
-
-        verification = Verification(verified=False, similarity=0.94, threshold=0.96)
-
-        assert verification.is_near_miss
-        assert verification.margin == pytest.approx(-0.02)
-
-    def test_a_clear_rejection_is_not_a_near_miss(self) -> None:
-        from app.embeddings.image import Verification
-
-        verification = Verification(verified=False, similarity=0.61, threshold=0.96)
-
-        assert not verification.is_near_miss
 
     def test_there_is_no_search_method_on_the_embedder(self) -> None:
         """Structural: this verifies candidates, it never proposes them.

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, date, datetime
-from typing import Any, Self
+from typing import Any
 from uuid import UUID
 
 from psycopg import AsyncConnection
@@ -37,10 +37,6 @@ class _Repository:
 
     def __init__(self, conn: Conn) -> None:
         self._conn = conn
-
-    @classmethod
-    def for_connection(cls, conn: Conn) -> Self:
-        return cls(conn)
 
     async def _one(self, sql: str, params: tuple[Any, ...] = ()) -> Row | None:
         cursor = await self._conn.execute(sql, params)
@@ -229,9 +225,6 @@ class ClaimRepository(_Repository):
             ),
         )
         return claim_id
-
-    async def get(self, claim_id: UUID) -> Row | None:
-        return await self._one("SELECT * FROM claim WHERE id = %s", (claim_id,))
 
     async def anchors(self, claim_id: UUID) -> list[Row]:
         return await self._all("SELECT * FROM claim_anchor WHERE claim_id = %s", (claim_id,))
@@ -544,13 +537,6 @@ class ObservationRepository(_Repository):
             (trust_state, observation_id),
         )
 
-    async def count_for_case(self, case_id: UUID) -> int:
-        row = await self._one(
-            "SELECT count(*) AS n FROM observation WHERE case_id = %s", (case_id,)
-        )
-        assert row is not None
-        return int(row["n"])
-
 
 class FingerprintRepository(_Repository):
     """The trusted media store. Written only on promotion (M38)."""
@@ -715,9 +701,6 @@ class CorpusRepository(_Repository):
         )
         assert row is not None
         return UUID(str(row["id"]))
-
-    async def get_item(self, item_id: UUID) -> Row | None:
-        return await self._one("SELECT * FROM corpus_item WHERE id = %s", (item_id,))
 
     async def create_cluster(
         self, *, minhash_signature: bytes, canonical_publisher: str | None = None
@@ -892,32 +875,6 @@ _NO_CEILING = 2_147_483_647
 
 class BudgetRepository(_Repository):
     """Daily per-provider counters. The governor (M14) enforces policy on top."""
-
-    async def try_consume(self, *, provider: str, cap: int, day: date | None = None) -> bool:
-        """Atomically take one unit if the cap allows. False means capacity reached.
-
-        The increment and the ceiling check are the same statement, so two concurrent
-        requests cannot both take the final unit.
-        """
-        day = day or datetime.now(UTC).date()
-        await self._execute(
-            """
-            INSERT INTO call_budget (provider, day, used, cap)
-            VALUES (%s, %s, 0, %s)
-            ON CONFLICT (provider, day) DO UPDATE SET cap = EXCLUDED.cap
-            """,
-            (provider, day, cap),
-        )
-        row = await self._one(
-            """
-            UPDATE call_budget
-               SET used = used + 1
-             WHERE provider = %s AND day = %s AND used < cap
-            RETURNING used
-            """,
-            (provider, day),
-        )
-        return row is not None
 
     async def consume(
         self, *, provider: str, hard_cap: int = 0, day: date | None = None

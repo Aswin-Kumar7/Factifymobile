@@ -84,16 +84,6 @@ class Verification:
     threshold: float
     reason: str | None = None
 
-    @property
-    def margin(self) -> float:
-        """Distance past the threshold. Negative means it failed and by how much."""
-        return self.similarity - self.threshold
-
-    @property
-    def is_near_miss(self) -> bool:
-        """Close but rejected. These are what threshold calibration is built from."""
-        return not self.verified and self.margin > -0.05
-
 
 def cosine(left: tuple[float, ...], right: tuple[float, ...]) -> float:
     """Cosine similarity. Pure, so the comparison logic is testable without weights."""

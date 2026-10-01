@@ -29,9 +29,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -132,7 +129,6 @@ class Grant:
     """Permission to make exactly one call."""
 
     provider: str
-    granted_at: float
 
 
 class Governor:
@@ -159,16 +155,9 @@ class Governor:
         # burst against itself and nothing against the process — the ceiling the
         # limiter exists to impose. `PoolGovernor` passes one process-wide window in.
         self._burst = burst if burst is not None else SlidingWindowLimiter()
-        self._skips: list[Skip] = []
-
-    @property
-    def skips(self) -> tuple[Skip, ...]:
-        """Every provider skipped during this request, with its reason."""
-        return tuple(self._skips)
 
     def _record_skip(self, provider: str, reason: SkipReason) -> Skip:
         skip = Skip(provider=provider, reason=reason)
-        self._skips.append(skip)
         metrics.record_skip(provider, reason.value)
         event(
             logger,
@@ -223,7 +212,7 @@ class Governor:
                 level=logging.WARNING,
             )
 
-        return Grant(provider=provider, granted_at=time.perf_counter())
+        return Grant(provider=provider)
 
     async def acquire(self, provider: str) -> Grant:
         """Take one unit or raise. For callers that cannot proceed without it."""
@@ -231,23 +220,6 @@ class Governor:
         if isinstance(outcome, Skip):
             raise ProviderUnavailable(provider, outcome.reason)
         return outcome
-
-    @asynccontextmanager
-    async def call(self, provider: str) -> AsyncIterator[Grant]:
-        """Wrap one provider call, recording its outcome and latency.
-
-        Every external call goes through this. There is no path that spends a unit
-        without recording that it was spent, and none that records a success it did
-        not observe.
-        """
-        grant = await self.acquire(provider)
-        try:
-            yield grant
-        except Exception:
-            metrics.record_failure(provider, (time.perf_counter() - grant.granted_at) * 1000)
-            raise
-        else:
-            metrics.record_success(provider, (time.perf_counter() - grant.granted_at) * 1000)
 
     async def usage(self, provider: str) -> dict[str, int]:
         """Today's spend against today's cap, for the usage endpoint."""
@@ -258,7 +230,3 @@ class Governor:
             "alarm": settings.daily_cap if settings else 0,
             "hard_cap": settings.daily_hard_cap if settings else 0,
         }
-
-    def capacity_notes(self) -> tuple[str, ...]:
-        """What the response says about checks that did not happen."""
-        return tuple(skip.note for skip in self._skips)

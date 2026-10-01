@@ -24,7 +24,6 @@ import base64
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime
 
 from app.extraction.web import extract
 from app.governor.governor import Governor, ProviderUnavailable
@@ -75,11 +74,6 @@ class DiscoveryResult:
     @property
     def oldest(self) -> DatedInstance | None:
         return min(self.instances, key=lambda i: i.published_at) if self.instances else None
-
-    @property
-    def undated_pages(self) -> int:
-        """Pages found but not datable. Reported, because it bounds the finding."""
-        return len(self.pages) - len(self.instances)
 
 
 class ReverseImageDiscovery:
@@ -230,24 +224,3 @@ class UnavailableDiscovery:
             reason="unavailable: reverse image discovery is not configured",
             provider_skipped=True,
         )
-
-
-def instances_from_local_match(
-    *, source_date: datetime | None, citation_url: str | None, publisher: str | None
-) -> tuple[DatedInstance, ...]:
-    """Turn a local corpus hit into a dated instance the temporal resolver can use.
-
-    Keeps the two discovery paths — corpus and provider — feeding one dating step, so
-    a cached answer and a fresh one produce the same shape of finding.
-    """
-    if source_date is None or not citation_url:
-        return ()
-
-    return (
-        DatedInstance(
-            url=citation_url,
-            published_at=source_date,
-            publisher=publisher,
-            method="matched_page_date",
-        ),
-    )

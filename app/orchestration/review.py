@@ -25,9 +25,7 @@ from enum import StrEnum
 from uuid import UUID
 
 from app.db.repositories import ReviewRepository
-from app.domain.enums import Action, ClaimStatus
 from app.observability.logging import event
-from app.orchestration.pipeline import VerificationResult
 
 logger = logging.getLogger("factify.review")
 
@@ -131,65 +129,11 @@ class ReviewedCase:
         }
 
 
-def reason_for(result: VerificationResult) -> ReviewReason | None:
-    """Why this case needs review, or `None` if it does not.
-
-    Checked most-specific first: a case that both had an incomplete run and found no
-    evidence is better described by the incomplete run, because that is the one a
-    reviewer can act on by re-running it.
-    """
-    if not result.is_complete:
-        return ReviewReason.INCOMPLETE_RUN
-
-    if any(outcome.decision.conflicting for outcome in result.claims):
-        return ReviewReason.CONFLICTING_EVIDENCE
-
-    if any(outcome.claim.within_developing_window for outcome in result.claims):
-        return ReviewReason.DEVELOPING_STORY
-
-    if result.action is not Action.SEND_TO_REVIEW:
-        return None
-
-    if any(outcome.claim.source_risk.value in {"HIGH", "MEDIUM"} for outcome in result.claims):
-        return ReviewReason.SOURCE_RISK
-
-    return ReviewReason.NO_EVIDENCE
-
-
 class ReviewQueue:
-    """Routes abstaining cases in, and records human labels beside machine ones."""
+    """Records human labels beside machine ones, and lists what awaits review."""
 
     def __init__(self, *, repository: ReviewRepository) -> None:
         self._repository = repository
-
-    async def route(self, result: VerificationResult) -> UUID | None:
-        """Enqueue this case if it needs review. Returns the item id, or `None`.
-
-        Called on every verification. A case that resolved cleanly is not enqueued,
-        so the queue length is a real measure of how often the system abstains rather
-        than a copy of the request log.
-        """
-        reason = reason_for(result)
-        if reason is None:
-            return None
-
-        machine_status = _dominant_status(result)
-
-        item_id = await self._repository.enqueue(
-            case_id=result.case_id,
-            reason=reason.value,
-            machine_status=machine_status,
-        )
-
-        event(
-            logger,
-            "case routed for review",
-            module="review",
-            outcome="ok",
-            reason=reason.value,
-            machine_status=machine_status,
-        )
-        return item_id
 
     async def record(
         self,
@@ -232,15 +176,3 @@ class ReviewQueue:
             )
             for row in rows
         ]
-
-
-def _dominant_status(result: VerificationResult) -> str | None:
-    """The status that best represents the case, for the reviewer's context.
-
-    A decisive claim if there is one, because that is what a reviewer is being asked
-    to check; otherwise `UNVERIFIED`, which is what an abstaining case actually said.
-    """
-    for outcome in result.claims:
-        if outcome.decision.status.is_decisive:
-            return outcome.decision.status.value
-    return ClaimStatus.UNVERIFIED.value if result.claims else None

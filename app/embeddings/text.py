@@ -180,24 +180,3 @@ class TextEmbedder:
     def embed_one(self, text: str, *, language: Language | str | None = None) -> EmbeddingResult:
         """Request-path encoding of a single claim."""
         return self.embed([text], language=language)
-
-
-class UnavailableTextEmbedder:
-    """Used when no model is configured. Returns nothing rather than zeros.
-
-    A zero vector would be silently stored and would match everything equally — the
-    worst kind of failure, because retrieval would keep working and keep being wrong.
-    """
-
-    available = False
-
-    def supports(self, language: Language | str | None) -> bool:
-        del language
-        return False
-
-    def embed(self, texts: list[str], *, language: Language | str | None = None) -> EmbeddingResult:
-        del texts, language
-        return EmbeddingResult(reason="unavailable: no text embedding model configured")
-
-    def embed_one(self, text: str, *, language: Language | str | None = None) -> EmbeddingResult:
-        return self.embed([text], language=language)

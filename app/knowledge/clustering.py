@@ -72,11 +72,6 @@ class Assignment:
     similarity: float
     created_new: bool
 
-    @property
-    def is_borderline(self) -> bool:
-        """Close to the threshold either way — the pairs worth reviewing by hand."""
-        return abs(self.similarity - DEFAULT_THRESHOLD) < 0.1
-
 
 class OriginClusterer:
     """Assigns documents to origin clusters by near-duplicate similarity.
@@ -91,10 +86,6 @@ class OriginClusterer:
         self._threshold = threshold
         self._clusters: dict[str, Cluster] = {}
         self._counter = 0
-
-    @property
-    def threshold(self) -> float:
-        return self._threshold
 
     @property
     def clusters(self) -> tuple[Cluster, ...]:

@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import json
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -61,25 +60,6 @@ class Receipt:
     evidence_count: int
     version: str = RECEIPT_VERSION
 
-    @property
-    def disclaimer(self) -> str:
-        return DISCLAIMER
-
-    def to_payload(self) -> dict[str, object]:
-        """What a verification view renders. Never includes the key."""
-        return {
-            "receipt_id": self.id,
-            "case_id": str(self.case_id),
-            "evidence_digest": self.evidence_digest,
-            "signature": self.signature,
-            "issued_at": self.issued_at.isoformat(),
-            "rule_version": self.rule_version,
-            "action": self.action,
-            "evidence_count": self.evidence_count,
-            "receipt_version": self.version,
-            "disclaimer": DISCLAIMER,
-        }
-
 
 @dataclass(frozen=True, slots=True)
 class Verification:
@@ -87,12 +67,6 @@ class Verification:
 
     valid: bool
     reason: str = ""
-    expected_digest: str = ""
-    actual_digest: str = ""
-
-    @property
-    def failed_because_evidence_changed(self) -> bool:
-        return not self.valid and self.expected_digest != self.actual_digest
 
 
 def canonicalise(evidence: list[Evidence]) -> str:
@@ -215,8 +189,6 @@ class ReceiptSigner:
             return Verification(
                 valid=False,
                 reason="the signature does not match; this receipt was not issued here",
-                expected_digest=receipt.evidence_digest,
-                actual_digest=receipt.evidence_digest,
             )
 
         actual = digest(evidence)
@@ -231,13 +203,9 @@ class ReceiptSigner:
             return Verification(
                 valid=False,
                 reason="the stored evidence has changed since this receipt was issued",
-                expected_digest=receipt.evidence_digest,
-                actual_digest=actual,
             )
 
-        return Verification(
-            valid=True, expected_digest=receipt.evidence_digest, actual_digest=actual
-        )
+        return Verification(valid=True)
 
     def _sign(
         self,
@@ -265,40 +233,6 @@ class ReceiptSigner:
             )
         )
         return hmac.new(self._key, message.encode("utf-8"), hashlib.sha256).hexdigest()
-
-
-def public_view(receipt: Receipt, verification: Verification) -> dict[str, object]:
-    """What the public verification page shows.
-
-    Deliberately does not include the evidence itself. A receipt says *that* a set of
-    evidence was attested and has not changed; the evidence is served from the case
-    endpoint, where access control applies.
-    """
-    return {
-        **receipt.to_payload(),
-        "verified": verification.valid,
-        "verification_reason": verification.reason
-        or "The evidence behind this result is unchanged since it was issued.",
-    }
-
-
-def parse_receipt(payload: dict[str, object]) -> Receipt:
-    """Rebuild a receipt from its stored payload."""
-    return Receipt(
-        id=str(payload["receipt_id"]),
-        case_id=UUID(str(payload["case_id"])),
-        evidence_digest=str(payload["evidence_digest"]),
-        signature=str(payload["signature"]),
-        issued_at=datetime.fromisoformat(str(payload["issued_at"])),
-        rule_version=str(payload["rule_version"]),
-        action=str(payload["action"]),
-        evidence_count=int(str(payload["evidence_count"])),
-        version=str(payload.get("receipt_version", RECEIPT_VERSION)),
-    )
-
-
-def dumps(receipt: Receipt) -> str:
-    return json.dumps(receipt.to_payload(), sort_keys=True, separators=(",", ":"))
 
 
 class ReceiptReader:

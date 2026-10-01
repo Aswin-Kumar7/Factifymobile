@@ -41,12 +41,6 @@ class Language(StrEnum):
     UNKNOWN = "und"
 
 
-# The languages a claim can be checked in, as their ISO 639-1 codes.
-CHECKED = frozenset(
-    language.value for language in Language if language not in (Language.HINGLISH, Language.UNKNOWN)
-)
-
-
 class Script(StrEnum):
     LATIN = "Latn"
     DEVANAGARI = "Deva"
@@ -201,11 +195,6 @@ class Detection:
     confident: bool
     method: str
     marker_ratio: float = 0.0
-
-    @property
-    def needs_model_fallback(self) -> bool:
-        """Only when the deterministic path genuinely could not tell."""
-        return not self.confident
 
 
 def detect_script(text: str) -> tuple[Script, dict[Script, int]]:

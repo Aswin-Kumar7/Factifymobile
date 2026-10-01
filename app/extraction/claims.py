@@ -33,9 +33,8 @@ logger = logging.getLogger("factify.claims")
 class Extractor(Protocol):
     """What the pipeline needs from a model client.
 
-    A protocol rather than a base class so `UnavailableExtractor` — which exists
-    precisely to return nothing — is a first-class implementation rather than a
-    degraded subclass of the real one.
+    A protocol rather than a base class, so a test double is a first-class
+    implementation rather than a degraded subclass of the real one.
     """
 
     async def extract_claims(self, text: str) -> ExtractionOutcome: ...

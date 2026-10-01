@@ -40,7 +40,6 @@ class TestWhatPaysForACheck:
 
         assert plans.source_for(month, 1) == "extra"
         assert plans.source_for(month, 2) is None
-        assert month.extra_checks_left() == 1
 
     def test_extra_usage_needs_a_paid_plan_and_no_unpaid_bill(self) -> None:
         free = plans.Month(allowance=30, used=30, balance=0, paid=False, extra_enabled=True)

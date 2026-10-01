@@ -136,13 +136,6 @@ class ForensicPanel:
     def rendered(self) -> bool:
         return self.noise is not None or self.spectrum is not None
 
-    @property
-    def caveat(self) -> str:
-        return (
-            "None of these signals can establish that content is authentic or fabricated. "
-            "The verdict above is based only on cited sources."
-        )
-
 
 def _luminance(data: bytes, *, max_side: int = 512) -> np.ndarray:
     """Decode to greyscale, bounded. Analysis does not need full resolution."""

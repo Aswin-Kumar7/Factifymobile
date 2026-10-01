@@ -262,25 +262,6 @@ class TestGovernorBudget:
         with pytest.raises(ProviderUnavailable, match="capacity limited"):
             await governor.acquire("vision")
 
-    async def test_the_call_wrapper_records_success(self, conn: Any) -> None:
-        metrics.reset()
-        governor = Governor(conn, _providers(vision=5))
-
-        async with governor.call("vision"):
-            pass
-
-        assert metrics.snapshot()["vision"]["successes"] == 1
-
-    async def test_the_call_wrapper_records_failure_and_reraises(self, conn: Any) -> None:
-        metrics.reset()
-        governor = Governor(conn, _providers(vision=5))
-
-        with pytest.raises(RuntimeError):
-            async with governor.call("vision"):
-                raise RuntimeError("provider exploded")
-
-        assert metrics.snapshot()["vision"]["failures"] == 1
-
 
 def _switched_off(*names: str) -> dict[str, ProviderSettings]:
     return {name: ProviderSettings(enabled=False) for name in names}
@@ -302,9 +283,8 @@ class TestNothingEnabled:
         ]
 
         assert all(isinstance(o, Skip) for o in outcomes)
-        assert len(governor.skips) == 4
 
-        notes = governor.capacity_notes()
+        notes = tuple(o.note for o in outcomes if isinstance(o, Skip))
         assert notes == (
             "llm: disabled",
             "factcheck: disabled",

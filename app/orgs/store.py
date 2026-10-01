@@ -24,6 +24,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
+from app.db.repositories import PLAN_MONTH, PLAN_MONTH_END
 from app.orgs import keys as keyfmt
 from app.orgs import plans
 from app.orgs.errors import ApiError, bad_request, forbidden, invalid_key, not_allowed, not_found
@@ -90,12 +91,6 @@ def _rows(rows: list[Row]) -> list[Row]:
 
 _MONTH = "date_trunc('month', now())"
 _OPEN_HOLD = "settled_at IS NULL AND released_at IS NULL AND expires_at > now()"
-# A plan's month: the calendar month in India time (0008).
-_PLAN_MONTH = "(date_trunc('month', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata')"
-_PLAN_MONTH_END = (
-    "((date_trunc('month', now() AT TIME ZONE 'Asia/Kolkata') + interval '1 month')"
-    " AT TIME ZONE 'Asia/Kolkata')"
-)
 # Ledger rows that move the credit balance: everything but checks a plan or extra
 # usage paid for (NULL is a row from before plans).
 _CREDITS = "COALESCE(l.source, 'credits') = 'credits'"
@@ -226,12 +221,12 @@ class OrgStore:
                   COALESCE((SELECT SUM(amount) FROM credit_hold h
                              WHERE h.org_id = o.id AND {_OPEN_HOLD}), 0) AS held,
                   COALESCE((SELECT -SUM(delta) FROM org_ledger l WHERE l.org_id = o.id
-                               AND l.source = 'plan' AND created_at >= {_PLAN_MONTH}), 0)
+                               AND l.source = 'plan' AND created_at >= {PLAN_MONTH}), 0)
                       AS plan_used,
                   COALESCE((SELECT -SUM(delta) FROM org_ledger l WHERE l.org_id = o.id
-                               AND l.source = 'extra' AND created_at >= {_PLAN_MONTH}), 0)
+                               AND l.source = 'extra' AND created_at >= {PLAN_MONTH}), 0)
                       AS extra_checks,
-                  {_PLAN_MONTH_END} AS plan_resets_at,
+                  {PLAN_MONTH_END} AS plan_resets_at,
                   COALESCE((SELECT -SUM(delta) FROM org_ledger l WHERE l.org_id = o.id
                                AND reason = 'check' AND created_at >= {_MONTH}), 0)
                       AS month_spend,
@@ -711,9 +706,9 @@ class OrgStore:
                              WHERE org_id = %(o)s AND source = 'extra' AND {_OPEN_HOLD}), 0)
                       AS held_extra,
                   COALESCE((SELECT -SUM(delta) FROM org_ledger WHERE org_id = %(o)s
-                             AND source = 'plan' AND created_at >= {_PLAN_MONTH}), 0) AS plan_used,
+                             AND source = 'plan' AND created_at >= {PLAN_MONTH}), 0) AS plan_used,
                   COALESCE((SELECT -SUM(delta) FROM org_ledger WHERE org_id = %(o)s
-                             AND source = 'extra' AND created_at >= {_PLAN_MONTH}), 0)
+                             AND source = 'extra' AND created_at >= {PLAN_MONTH}), 0)
                       AS extra_checks,
                   EXISTS (SELECT 1 FROM usage_bill b WHERE b.org_id = %(o)s
                            AND b.status = 'created'

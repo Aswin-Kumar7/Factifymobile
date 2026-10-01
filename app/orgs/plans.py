@@ -59,11 +59,6 @@ def personal(plan_id: str) -> Plan | None:
     return next((p for p in PERSONAL_PLANS if p.id == plan_id), None)
 
 
-def paid_plan(plan_id: str) -> Plan | None:
-    """A plan someone can subscribe to."""
-    return next((p for p in (PLUS, PRO, TEAM) if p.id == plan_id), None)
-
-
 @dataclass(frozen=True, slots=True)
 class Month:
     """One account's position this month, as the store read it."""
@@ -89,14 +84,6 @@ class Month:
     @property
     def extra_open(self) -> bool:
         return self.paid and self.extra_enabled and not self.extra_blocked
-
-    def extra_checks_left(self) -> int | None:
-        """How many more checks extra usage covers; None is no cap."""
-        if not self.extra_open:
-            return 0
-        if self.extra_cap_paise is None:
-            return None
-        return max(self.extra_cap_paise - self.extra_used_paise, 0) // self.extra_price_paise
 
 
 def effective_plan(

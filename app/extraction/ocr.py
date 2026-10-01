@@ -342,11 +342,3 @@ def _repeats_itself(text: str) -> bool:
         return True
     words = text.split()
     return len(words) >= 80 and len(set(words)) * 8 < len(words)
-
-
-class UnavailableOcr:
-    """Used when no model is configured. Returns nothing rather than approximating."""
-
-    async def transcribe(self, image: bytes, *, mime_type: str = "image/jpeg") -> OcrOutcome:
-        del image, mime_type
-        return OcrOutcome(reason="unavailable: no model configured")

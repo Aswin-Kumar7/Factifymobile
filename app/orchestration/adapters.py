@@ -125,13 +125,6 @@ class PoolReviewQueue:
     def __init__(self, database: Database) -> None:
         self._database = database
 
-    async def route(self, result: Any) -> Any:
-        from app.db.repositories import ReviewRepository
-        from app.orchestration.review import ReviewQueue
-
-        async with self._database.connection() as conn:
-            return await ReviewQueue(repository=ReviewRepository(conn)).route(result)
-
     async def pending(self, limit: int = 50) -> Any:
         from app.db.repositories import ReviewRepository
         from app.orchestration.review import ReviewQueue
@@ -149,7 +142,6 @@ class PoolReviewQueue:
     async def report(self, case_id: Any) -> Any:
         """A user-initiated report: this verdict deserves human eyes.
 
-        Distinct from `route`, which the pipeline calls for its own abstentions.
         The reason string names the source so a reviewer can tell "the system was
         unsure" from "a person disagreed" — those want different attention.
         """

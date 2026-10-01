@@ -85,16 +85,11 @@ class Razorpay:
         return self.key_id.startswith("rzp_test_")
 
     async def create_order(self, *, amount_paise: int, receipt: str, notes: dict[str, str]) -> str:
-        basic = base64.b64encode(f"{self.key_id}:{self._secret}".encode()).decode()
-        result = await SecureFetcher(timeout_seconds=20.0).post_json(
-            f"{_API}/orders",
+        body = await self._post(
+            "/orders",
             {"amount": amount_paise, "currency": "INR", "receipt": receipt[:40], "notes": notes},
-            provider="razorpay",
-            headers={"Authorization": f"Basic {basic}"},
         )
-        if not isinstance(result, FetchResult):
-            raise PaymentsUnavailable(f"Razorpay refused or could not be reached: {result}")
-        order_id = json.loads(result.body or b"{}").get("id")
+        order_id = body.get("id")
         if not order_id:
             raise PaymentsUnavailable("Razorpay did not return an order id")
         return str(order_id)
@@ -119,18 +114,26 @@ class Razorpay:
         return {"Authorization": f"Basic {basic}"}
 
     async def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
-        result = await SecureFetcher(timeout_seconds=20.0).post_json(
-            f"{_API}{path}", payload, provider="razorpay", headers=self._headers()
-        )
+        fetcher = SecureFetcher(timeout_seconds=20.0)
+        try:
+            result = await fetcher.post_json(
+                f"{_API}{path}", payload, provider="razorpay", headers=self._headers()
+            )
+        finally:
+            await fetcher.aclose()
         if not isinstance(result, FetchResult):
             raise PaymentsUnavailable(f"Razorpay refused or could not be reached: {result}")
         body: dict[str, Any] = json.loads(result.body or b"{}")
         return body
 
     async def _get(self, path: str) -> dict[str, Any]:
-        result = await SecureFetcher(timeout_seconds=20.0).get_json(
-            f"{_API}{path}", provider="razorpay", headers=self._headers()
-        )
+        fetcher = SecureFetcher(timeout_seconds=20.0)
+        try:
+            result = await fetcher.get_json(
+                f"{_API}{path}", provider="razorpay", headers=self._headers()
+            )
+        finally:
+            await fetcher.aclose()
         if not isinstance(result, FetchResult) or result.status_code >= 400:
             raise PaymentsUnavailable(f"Razorpay refused or could not be reached: {result}")
         body: dict[str, Any] = json.loads(result.body or b"{}")
@@ -234,10 +237,14 @@ async def txt_records(name: str) -> list[str]:
     """The TXT records of `name`, via Google's DNS-over-HTTPS resolver."""
     from urllib.parse import urlencode
 
-    result = await SecureFetcher(timeout_seconds=10.0).get_json(
-        f"https://dns.google/resolve?{urlencode({'name': name, 'type': 'TXT'})}",
-        provider="dns",
-    )
+    fetcher = SecureFetcher(timeout_seconds=10.0)
+    try:
+        result = await fetcher.get_json(
+            f"https://dns.google/resolve?{urlencode({'name': name, 'type': 'TXT'})}",
+            provider="dns",
+        )
+    finally:
+        await fetcher.aclose()
     if not isinstance(result, FetchResult) or result.status_code >= 400:
         raise PaymentsUnavailable("DNS could not be asked")
     answers = json.loads(result.body or b"{}").get("Answer") or []

@@ -337,7 +337,6 @@ class TestClusteringTextIsTheArticleNotTheExcerpt:
             language="en",
         )
 
-        assert not item.is_hydrated
         assert item.clustering_text == "Headline\nthe feed snippet"
 
     def test_independent_reporting_still_does_not_cluster_on_bodies(self) -> None:

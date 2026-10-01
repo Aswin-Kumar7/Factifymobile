@@ -32,6 +32,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pypdf.errors import PdfReadError
 
 from app.api.accounts import charge, check_cost, release_credit, require_credit, signed_in
+from app.api.admin import _staff
 from app.api.schemas import (
     AcceptedResponse,
     AdvisoryResponse,
@@ -1059,7 +1060,7 @@ async def _checked(
         )
     except IntakeRejected as rejected:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(rejected)
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(rejected)
         ) from rejected
 
     case_id = case_id or uuid4()
@@ -1115,7 +1116,7 @@ async def _checked(
     if not extracted.claims and intake.input_type is InputType.URL:
         reason = extracted.reason or "no checkable claims were found on the page"
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=(
                 f"{reason}. Nothing was checked. Try pasting the text of "
                 "the page instead of the link."
@@ -1411,7 +1412,7 @@ async def _read_upload(
         )
     except IntakeRejected as rejected:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(rejected)
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(rejected)
         ) from rejected
     return intake, data
 
@@ -2207,6 +2208,8 @@ async def report_case(case_id: UUID, request: Request) -> dict[str, str]:
     summary="Cases the system declined to decide (M43)",
 )
 async def pending_reviews(request: Request) -> list[ReviewItemResponse]:
+    # Reviewers only: the queue names cases and why each was held back.
+    await _staff(request)
     queue = _review_queue(request)
     return [
         ReviewItemResponse(
@@ -2228,6 +2231,7 @@ async def pending_reviews(request: Request) -> list[ReviewItemResponse]:
 )
 async def record_review(item_id: UUID, payload: ReviewLabelRequest, request: Request) -> None:
     """The machine verdict is never overwritten — both are kept (M43)."""
+    await _staff(request)
     queue = _review_queue(request)
     await queue.record(
         item_id=item_id,

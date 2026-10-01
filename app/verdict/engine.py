@@ -120,9 +120,6 @@ def _decisive(
 _TIER_AUTHORITY = {Tier.A: 1.00, Tier.B: 0.90, Tier.C: 0.95, Tier.D: 0.70}
 
 
-# Second-level domains that are themselves suffixes, so `bbc.co.uk` collapses to
-# itself rather than to `co.uk`. Enough for counting publishers; this module stays
-# pure and takes no dependency on a public-suffix list.
 def _publishers(evidence: list[Evidence]) -> set[str]:
     """The distinct publishers behind a set of citations.
 

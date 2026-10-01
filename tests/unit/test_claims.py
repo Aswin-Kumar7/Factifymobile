@@ -16,9 +16,7 @@ from app.extraction.llm import (
     ExtractionOutcome,
     ProposedAnchor,
     ProposedClaim,
-    UnavailableExtractor,
 )
-from app.extraction.ocr import UnavailableOcr
 
 pytestmark = pytest.mark.unit
 
@@ -57,22 +55,6 @@ class FakeExtractor:
 
 class TestNoModelMeansNoClaims:
     """The rule that outranks the rest: never invent evidence."""
-
-    async def test_an_unavailable_model_produces_nothing_and_says_why(self) -> None:
-        pipeline = ClaimPipeline(UnavailableExtractor())
-
-        result = await pipeline.extract(DOCUMENT, content_hash="sha256:doc")
-
-        assert result.claims == ()
-        assert result.reason == "unavailable: no model configured"
-        assert not result.succeeded
-
-    async def test_unavailable_ocr_returns_nothing_rather_than_approximating(self) -> None:
-        outcome = await UnavailableOcr().transcribe(b"\xff\xd8\xff")
-
-        assert outcome.text == ""
-        assert not outcome.has_text
-        assert outcome.reason == "unavailable: no model configured"
 
     async def test_a_provider_failure_is_a_reason_not_a_guess(self) -> None:
         pipeline = ClaimPipeline(

@@ -49,7 +49,7 @@ from app.domain.enums import (
 )
 from app.domain.evidence import Advisory, Evidence
 from app.domain.publishers import registrable_domain
-from app.governor.governor import ProviderUnavailable, Skip
+from app.governor.governor import ProviderUnavailable
 from app.intake.normalizer import NormalisedIntake
 from app.observability.logging import event
 from app.orchestration.progress import addresses_claim, current_progress, stance_of
@@ -619,7 +619,7 @@ class Orchestrator:
         # partial run would store a provider outage as the answer and serve it all
         # day. A write failure is logged and swallowed — losing a cache entry must
         # never lose the verdict that was already computed.
-        if result.is_complete and outcomes:
+        if cacheable(result) and outcomes:
             try:
                 await self._cache.put_verdict(
                     cache_key,
@@ -638,7 +638,7 @@ class Orchestrator:
                     },
                     case_id=None,
                     is_negative=result.action is Action.SEND_TO_REVIEW,
-                    developing=any(o.claim.within_developing_window for o in outcomes),
+                    developing=developing(result),
                 )
             except Exception as error:
                 event(
@@ -1396,15 +1396,6 @@ class Orchestrator:
                     quote=found.source_excerpt if spoke and found is not None else None,
                 )
 
-    async def probe_provider(self, provider: str) -> str | None:
-        """Ask the governor whether a provider may be used, without using it.
-
-        Callers that need to know before building a request use this rather than
-        catching a refusal after the fact.
-        """
-        outcome = await self._governor.try_acquire(provider)
-        return outcome.reason.value if isinstance(outcome, Skip) else None
-
 
 def _distinct_citations(
     evidence: list[Evidence], direction: Direction = Direction.SUPPORTS
@@ -1446,19 +1437,3 @@ def cacheable(result: VerificationResult) -> bool:
 def developing(result: VerificationResult) -> bool:
     """Whether this case is about a developing story, which shortens the TTL."""
     return any(outcome.claim.within_developing_window for outcome in result.claims)
-
-
-def decisive_claims(result: VerificationResult) -> list[ClaimOutcome]:
-    """Claims that reached a decisive status, and therefore carry citations."""
-    return [outcome for outcome in result.claims if outcome.decision.status.is_decisive]
-
-
-def abstained(result: VerificationResult) -> bool:
-    """Whether the case is one the system correctly refused to decide (M43)."""
-    return result.action is Action.SEND_TO_REVIEW or all(
-        outcome.decision.status is ClaimStatus.UNVERIFIED for outcome in result.claims
-    )
-
-
-def observed_at() -> datetime:
-    return datetime.now(UTC)

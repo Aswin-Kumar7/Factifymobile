@@ -496,15 +496,3 @@ class LLMExtractor:
         text = response_text(self._api_format, envelope)
         parsed: dict[str, Any] = json.loads(text)
         return parsed
-
-
-class UnavailableExtractor:
-    """The extractor used when no model is configured.
-
-    Returns nothing, always. This exists so the pipeline has something to call
-    without any branch anywhere producing a plausible-looking claim from thin air.
-    """
-
-    async def extract_claims(self, text: str) -> ExtractionOutcome:
-        del text
-        return ExtractionOutcome(reason="unavailable: no model configured")

@@ -21,10 +21,8 @@ from app.domain.enums import SyntheticSignal
 from app.domain.evidence import Advisory
 from app.embeddings.image import Verification
 from app.media.discovery import (
-    DiscoveryResult,
     MatchingPage,
     UnavailableDiscovery,
-    instances_from_local_match,
 )
 from app.media.forensics import (
     PANEL_HEADER,
@@ -44,7 +42,6 @@ from app.media.hashing import (
 )
 from app.media.matching import LocalMatcher, StoredMedia
 from app.media.provenance import ProvenanceReport
-from app.media.video import UnavailableKeyframeExtractor
 from tests.unit import images
 
 pytestmark = pytest.mark.unit
@@ -110,10 +107,9 @@ class TestPerceptualHashing:
         with pytest.raises(HashFailed):
             phash(b"this is not an image")
 
-    def test_fingerprint_carries_exact_identity(self) -> None:
+    def test_fingerprint_carries_the_sha256(self) -> None:
         result = fingerprint(images.original())
         assert result.sha256.startswith("sha256:")
-        assert result.exact_identity == result.sha256
 
 
 class TestPhashConstruction:
@@ -266,57 +262,8 @@ class TestDiscovery:
         assert result.instances == ()
         assert result.provider_skipped
 
-    def test_undated_pages_are_counted_not_hidden(self) -> None:
-        """A page found but not datable bounds the finding and must be visible."""
-        result = DiscoveryResult(
-            pages=(MatchingPage(url="https://a.example"), MatchingPage(url="https://b.example")),
-            instances=(),
-        )
-        assert result.undated_pages == 2
-        assert result.oldest is None
-
     def test_partial_matches_are_not_fetched(self) -> None:
         assert not MatchingPage(url="https://a.example", full_match=False).is_worth_fetching
-
-    def test_a_local_match_without_a_date_yields_no_instance(self) -> None:
-        assert (
-            instances_from_local_match(
-                source_date=None, citation_url="https://a.example", publisher="X"
-            )
-            == ()
-        )
-
-    def test_a_local_match_without_a_citation_yields_no_instance(self) -> None:
-        assert (
-            instances_from_local_match(
-                source_date=datetime(2019, 3, 14, tzinfo=UTC), citation_url=None, publisher="X"
-            )
-            == ()
-        )
-
-    def test_a_dated_local_match_becomes_an_instance(self) -> None:
-        instances = instances_from_local_match(
-            source_date=datetime(2019, 3, 14, tzinfo=UTC),
-            citation_url="https://example.org/story",
-            publisher="Example Wire",
-        )
-        assert len(instances) == 1
-        assert instances[0].published_at.year == 2019
-
-
-# ------------------------------------------------------------------ M35 · video
-
-
-class TestVideo:
-    def test_absent_ffmpeg_abstains(self) -> None:
-        import asyncio
-
-        result = asyncio.run(UnavailableKeyframeExtractor().extract(b"bytes"))
-
-        assert not result.succeeded
-        assert result.keyframes == ()
-        assert result.reason is not None
-        assert "unavailable" in result.reason
 
 
 # ------------------------------------------------------------- M36 · provenance
@@ -363,7 +310,6 @@ class TestForensicPanel:
 
         assert panel.header == PANEL_HEADER
         assert "not used in the verdict" in panel.header
-        assert "only on cited sources" in panel.caveat
 
     def test_the_panel_exposes_no_verdict_shaped_field(self) -> None:
         """A field named `score` or `is_fake` here would be quoted as an accuracy

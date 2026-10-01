@@ -62,10 +62,6 @@ class VideoProbe:
     codec: str
     container: str
 
-    @property
-    def is_within_caps(self) -> bool:
-        return self.duration_seconds <= DEFAULT_MAX_SECONDS
-
 
 @dataclass(frozen=True, slots=True)
 class Keyframe:
@@ -394,11 +390,3 @@ class KeyframeExtractor:
             )
             for index, path in enumerate(sorted(workspace.glob("frame-*.jpg")))
         )
-
-
-class UnavailableKeyframeExtractor:
-    """Used when ffmpeg is absent. Video abstains rather than half-working."""
-
-    async def extract(self, data: bytes) -> ExtractedVideo:
-        del data
-        return ExtractedVideo(probe=None, reason="unavailable: ffmpeg is not installed")

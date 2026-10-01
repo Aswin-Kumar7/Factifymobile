@@ -110,17 +110,6 @@ class SanitisedText:
     text: str
     findings: tuple[InjectionFinding, ...] = ()
     invisible_characters_removed: int = 0
-    original_length: int = 0
-
-    @property
-    def injection_attempted(self) -> bool:
-        """Whether this content tried to instruct the verifier.
-
-        True routes a deception signal to the source-risk track. It never changes a
-        claim status — the page being hostile says something about the publisher, not
-        about whether the claim it carries is true.
-        """
-        return bool(self.findings)
 
     @property
     def risk_signals(self) -> tuple[str, ...]:
@@ -171,7 +160,6 @@ def sanitise(text: str) -> SanitisedText:
         text=normalised,
         findings=findings,
         invisible_characters_removed=removed,
-        original_length=len(text),
     )
 
 

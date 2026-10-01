@@ -121,6 +121,8 @@ class GoogleOAuth:
         claims = _body(info)
         if claims.get("aud") != self._client_id or claims.get("iss") not in _ISSUERS:
             raise GoogleSignInFailed("the token was not issued to this app")
+        if not claims.get("sub"):
+            raise GoogleSignInFailed("Google did not say whose account this is")
         if str(claims.get("email_verified")).lower() != "true" or not claims.get("email"):
             raise GoogleSignInFailed("Google has not verified this email")
         return GoogleProfile(

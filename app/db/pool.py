@@ -38,7 +38,6 @@ class Database:
     """Owns the connection pool for the process lifetime."""
 
     def __init__(self, dsn: str, *, min_size: int = 1, max_size: int = 10) -> None:
-        self._dsn = dsn
         self._pool = AsyncConnectionPool(
             conninfo=dsn,
             min_size=min_size,

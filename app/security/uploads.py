@@ -49,7 +49,6 @@ class UploadRejected(Exception):
 class SniffResult:
     kind: MediaKind
     mime_type: str
-    detail: str = ""
 
 
 # Magic-byte signatures. Deliberately a short list of things we actually parse:

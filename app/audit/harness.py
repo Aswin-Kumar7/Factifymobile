@@ -25,7 +25,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from app.audit.manifest import MIN_GENUINE_ITEMS, Category, Expectation, Manifest, ManifestItem
+from app.audit.manifest import MIN_GENUINE_ITEMS, Expectation, Manifest, ManifestItem
 from app.domain.enums import ClaimStatus
 
 
@@ -140,12 +140,6 @@ class AuditReport:
             return None
 
         return self.false_positive_count / sample, sample
-
-    @property
-    def ran_cleanly(self) -> bool:
-        """Whether enough of the run reached a provider to mean anything."""
-        failure_rate, _ = self.provider_failure_rate
-        return failure_rate <= self.MAX_PROVIDER_FAILURE
 
     @property
     def citation_coverage(self) -> tuple[int, int]:
@@ -370,9 +364,3 @@ class AuditHarness:
             corpus_version=self._corpus_version,
             results=results,
         )
-
-
-def category_gaps(manifest: Manifest) -> list[str]:
-    """Categories with no items. Coverage the report would silently omit."""
-    present = {item.category for item in manifest.items}
-    return [c.value for c in Category if c not in present]

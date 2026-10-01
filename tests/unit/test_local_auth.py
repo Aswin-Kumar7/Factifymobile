@@ -413,3 +413,71 @@ class TestTheSignInApi:
             out = await api.post("/v1/auth/logout", headers={"Authorization": f"Bearer {token}"})
             assert out.status_code == 204
         assert await app.state.local_auth.verify(token) is None
+
+    @pytest.mark.anyio
+    async def test_guessing_is_slowed_per_caller_not_for_everyone_behind_the_proxy(
+        self,
+    ) -> None:
+        """Caddy and the website forward the caller's address in X-Forwarded-For; the
+        socket's address is the proxy's, the same for every person."""
+        from app.api import accounts
+
+        accounts._attempts.reset()
+        async with await self._client(self._app()) as api:
+
+            async def attempt(n: int, address: str) -> int:
+                response = await api.post(
+                    "/v1/auth/login",
+                    json={"email": f"guess{n}@example.org", "password": "wrong one"},
+                    headers={"x-forwarded-for": address},
+                )
+                return response.status_code
+
+            codes = [await attempt(n, "203.0.113.7") for n in range(11)]
+            other = await attempt(99, "198.51.100.4")
+        accounts._attempts.reset()
+
+        assert codes[:10] == [401] * 10
+        assert codes[10] == 429
+        assert other == 401
+
+    @pytest.mark.anyio
+    async def test_the_review_queue_is_for_staff_only(self) -> None:
+        """It lists cases and why each was held back, and records a reviewer's label."""
+
+        class _Queue:
+            async def pending(self) -> list[Any]:
+                return []
+
+            async def record(self, **_: Any) -> None:
+                raise AssertionError("a label was recorded for someone who is not staff")
+
+        class _Orgs:
+            async def is_staff(self, user_id: str, email: str, staff: Any) -> bool:
+                return False
+
+            async def member(self, org_id: str, user_id: str) -> None:
+                return None
+
+        app = self._app(required=False)
+        app.state.review_queue = _Queue()
+        app.state.orgs = _Orgs()
+        label = {"label": "SUPPORTED", "reviewer": "anyone"}
+        item = "00000000-0000-0000-0000-000000000001"
+        async with await self._client(app) as api:
+            anonymous = await api.get("/v1/review")
+            token = (
+                await api.post(
+                    "/v1/auth/register",
+                    json={"email": "asha@example.org", "password": "long enough"},
+                )
+            ).json()["access_token"]
+            signed_in = {"Authorization": f"Bearer {token}"}
+            listed = await api.get("/v1/review", headers=signed_in)
+            labelled = await api.post(f"/v1/review/{item}", json=label, headers=signed_in)
+            unsigned = await api.post(f"/v1/review/{item}", json=label)
+
+        assert anonymous.status_code == 401
+        assert listed.status_code == 403
+        assert labelled.status_code == 403
+        assert unsigned.status_code == 401

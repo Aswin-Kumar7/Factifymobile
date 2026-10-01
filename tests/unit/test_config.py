@@ -71,40 +71,6 @@ class TestUsability:
         assert provider.usable
 
 
-class TestRedaction:
-    def test_redacted_view_never_contains_a_credential(self) -> None:
-        settings = _settings(
-            vision={
-                "enabled": True,
-                "api_key": "super-secret-value",
-                "daily_cap": 33,
-                "endpoint": VISION_ENDPOINT,
-            }
-        )
-
-        assert "super-secret-value" not in repr(settings.redacted())
-        assert settings.redacted()["providers"]["vision"]["credentialled"] is True
-
-    def test_redacted_view_reports_enablement_and_caps(self) -> None:
-        settings = _settings(
-            vision={
-                "enabled": True,
-                "api_key": "k",
-                "daily_cap": 33,
-                "endpoint": VISION_ENDPOINT,
-            }
-        )
-
-        vision = settings.redacted()["providers"]["vision"]
-        assert vision == {
-            "enabled": True,
-            "credentialled": True,
-            "usable": True,
-            "daily_cap": 33,
-            "per_minute_cap": 0,
-        }
-
-
 class TestEnvironmentLoading:
     def test_provider_credential_is_read_from_the_environment(
         self, monkeypatch: pytest.MonkeyPatch
@@ -117,7 +83,6 @@ class TestEnvironmentLoading:
         settings = Settings(_env_file=None)
 
         assert settings.vision.usable
-        assert settings.vision.is_callable
         assert settings.vision.api_key is not None
         assert settings.vision.api_key.get_secret_value() == "from-env"
 
@@ -154,7 +119,7 @@ class TestEnvironmentLoading:
 
         settings = Settings(_env_file=None)
 
-        assert not settings.vision.is_callable
+        assert not settings.vision.usable
 
     def test_every_provider_can_be_disabled_by_configuration_alone(
         self, monkeypatch: pytest.MonkeyPatch

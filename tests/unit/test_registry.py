@@ -11,6 +11,7 @@ from app.knowledge.registry import (
     BACKOFF_CEILING_SECONDS,
     authenticate_trigger,
     backoff_for,
+    failures_behind,
     load_registry,
     window_start,
 )
@@ -111,6 +112,15 @@ class TestBackoff:
     def test_delay_is_capped(self) -> None:
         """A dead feed must not occupy a slot every tick, nor wait forever."""
         assert backoff_for(50) == BACKOFF_CEILING_SECONDS
+
+    def test_a_feed_failing_again_backs_off_further(self) -> None:
+        """The feed row keeps only its backoff; the next failure must double it."""
+        assert failures_behind(0) == 0
+        for failures in (1, 2, 3):
+            assert failures_behind(backoff_for(failures)) == failures
+        assert backoff_for(failures_behind(backoff_for(2)) + 1) == backoff_for(3)
+        ceiling = failures_behind(BACKOFF_CEILING_SECONDS)
+        assert backoff_for(ceiling + 1) == BACKOFF_CEILING_SECONDS
 
 
 class TestSchedulingWindow:

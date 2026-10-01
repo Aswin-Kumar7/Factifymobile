@@ -17,7 +17,7 @@ import asyncio
 import json
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -50,10 +50,6 @@ DEFAULT_ACCEPTED_TYPES = (
     "text/plain",
     "image/",
 )
-
-
-class FetchBlocked(Exception):
-    """The fetch did not happen, and the reason is recorded on the outcome."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,7 +90,6 @@ class FetchFailure:
     url: str
     reason: str
     kind: str
-    attempted_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 def _www_variant(url: str) -> str | None:

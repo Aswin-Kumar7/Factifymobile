@@ -237,16 +237,6 @@ class TestManifestRoundTrip:
         assert loaded.items[1].expectation is Expectation.CONTRADICTED
         assert loaded.collected_at == original.collected_at
 
-    def test_category_gaps_are_reported(self) -> None:
-        from app.audit.harness import category_gaps
-
-        gaps = category_gaps(Manifest(items=[_item(0)]))
-
-        # Everything except `genuine` is missing, and the report should be able to
-        # say so rather than implying the manifest covers every path.
-        assert Category.RECYCLED_MEDIA.value in gaps
-        assert Category.GENUINE.value not in gaps
-
 
 class TestOfflineRehearsal:
     """M48: the demo runs with the network gone, and says results are cached."""
@@ -319,20 +309,17 @@ class TestABrokenRunPublishesNoRate:
     def test_a_mostly_failed_run_withholds_the_rate(self) -> None:
         report = _report(self._results(failed=MIN_GENUINE_ITEMS - 2))
 
-        assert not report.ran_cleanly
         assert report.false_positive_rate() is None
 
     def test_a_clean_run_publishes_it(self) -> None:
         report = _report(self._results(failed=0))
 
-        assert report.ran_cleanly
         assert report.false_positive_rate() is not None
 
     def test_a_few_failures_are_tolerated(self) -> None:
         """Providers fail occasionally; that is not the same as an outage."""
         report = _report(self._results(failed=2))
 
-        assert report.ran_cleanly
         assert report.false_positive_rate() is not None
 
     def test_the_report_names_the_outage_rather_than_the_sample_size(self) -> None:
