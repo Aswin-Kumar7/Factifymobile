@@ -113,7 +113,9 @@ class ServedOrchestrator:
         orchestrator: Orchestrator,
         media: MediaVerification | None = None,
         signer: ReceiptSigner | None = None,
+        embedder: Any | None = None,
     ) -> None:
+        self._embedder = embedder
         self._database = database
         self._orchestrator = orchestrator
         self._media = media
@@ -173,7 +175,7 @@ class ServedOrchestrator:
         # checked out here, after every fetch and model call has already finished.
         if not result.from_cache:
             async with self._database.connection() as conn:
-                written = await Ledger(conn, signer=self._signer).persist(
+                written = await Ledger(conn, signer=self._signer, embedder=self._embedder).persist(
                     result,
                     request_id=str(case_id),
                     input_type=intake.input_type.value,
@@ -319,7 +321,8 @@ async def build(settings: Settings) -> dict[str, Any]:
             # A fact-checker's page found by search is kept too.
             keeper=keeper,
             # And the pages a claim was cited against before are read again.
-            memory=EvidenceMemory(database),
+            # And the pages a claim was cited against before, under any wording of it.
+            memory=EvidenceMemory(database, embedder=embedder, same_claim=reasoner.same_claim),
             # Which results are read: the most relevant, by our own model.
             relevance=local_stance,
         )
@@ -463,6 +466,7 @@ async def build(settings: Settings) -> dict[str, Any]:
             orchestrator=orchestrator,
             media=MediaVerification(database=database, embedder=image_embedder),
             signer=signer,
+            embedder=embedder,
         ),
     }
 

@@ -58,7 +58,7 @@ from app.sources.local_reading import local_reading, local_same_claim
 logger = logging.getLogger("factify.sources.reasoning")
 
 PROVIDER = "llm"
-REASONER_VERSION = "2026.10.01.1"
+REASONER_VERSION = "2026.10.01.2"
 
 # How many passages go to the model in one call. One call per source, not one per
 # passage: the model needs to see the alternatives to judge which actually bears on
@@ -127,6 +127,9 @@ class PassageJudgement:
     # Establishes only a narrower version of the claim: kept as context, never as
     # support, and marked so the rules can call the claim misleading.
     narrower: bool = False
+    # For a contradiction, how: "DENIES" (says the claim is false) or "INCOMPATIBLE"
+    # (states a fact that cannot be true alongside it - another winner).
+    basis: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,30 +179,90 @@ def split_passages(text: str) -> list[Passage]:
     settle whether a claim holds: the denial, the attribution and the date routinely
     sit in neighbouring sentences, and the previous sentence-level matching threw
     that context away before anything could read it.
+
+    A table is read as passages of its rows, under its caption and header (`_tables`).
     """
     passages: list[Passage] = []
-    cursor = 0
-    index = 0
-
-    for block in _PARAGRAPH.split(text):
-        start = text.find(block, cursor)
-        if start == -1:
-            start = cursor
-        cursor = start + len(block)
-
+    for start, end, block, table in _blocks(text):
         cleaned = " ".join(block.split())
-        if len(cleaned) < MIN_PASSAGE_CHARS or is_navigation(cleaned):
+        if len(cleaned) < MIN_PASSAGE_CHARS or (is_navigation(cleaned) and not table):
             continue
 
         if len(cleaned) > MAX_PASSAGE_CHARS:
             cleaned = _truncate_at_sentence(cleaned, MAX_PASSAGE_CHARS)
 
-        passages.append(
-            Passage(index=index, text=cleaned, char_start=start, char_end=start + len(block))
-        )
-        index += 1
+        passages.append(Passage(index=len(passages), text=cleaned, char_start=start, char_end=end))
 
     return passages
+
+
+# A table row as the page extractor writes it: `| TVK | 108 | 0 | 108 |`.
+_TABLE_MARK = "|"
+
+
+def _blocks(text: str) -> list[tuple[int, int, str, bool]]:
+    """(start, end, text, is a table) of each paragraph, a table's rows gathered.
+
+    Every row of a table is a line of pipes, and one line of pipes reads exactly
+    like a menu bar (`is_navigation`), so each was dropped on its own. The Election
+    Commission's party-wise result for Tamil Nadu 2026 - "Tamilaga Vettri Kazhagam -
+    TVK | 108", "Dravida Munnetra Kazhagam - DMK | 59" - came back "no readable
+    passages", the most authoritative page there is on who won (2026-10-01).
+
+    So a run of rows becomes passages of up to MAX_PASSAGE_CHARS, each carrying the
+    table's header row and the short lines just above the table (its caption, "Party
+    Wise Results"), so every part can be read on its own.
+    """
+    lines: list[tuple[int, int, str]] = []
+    cursor = 0
+    for line in _PARAGRAPH.split(text):
+        start = text.find(line, cursor)
+        if start == -1:
+            start = cursor
+        cursor = start + len(line)
+        lines.append((start, cursor, line))
+
+    blocks: list[tuple[int, int, str, bool]] = []
+    index = 0
+    while index < len(lines):
+        start, end, line = lines[index]
+        if not line.lstrip().startswith(_TABLE_MARK):
+            blocks.append((start, end, line, False))
+            index += 1
+            continue
+        rows = []
+        while index < len(lines) and lines[index][2].lstrip().startswith(_TABLE_MARK):
+            rows.append(lines[index])
+            index += 1
+        if len(rows) < 2:
+            blocks.extend((*row, False) for row in rows)
+            continue
+        caption: list[str] = []
+        for _, _, before, was_table in reversed(blocks[-2:]):
+            line = before.strip()
+            if was_table or not line or len(line) >= MIN_PASSAGE_CHARS or line.isdigit():
+                break
+            caption.insert(0, line)
+        header = [rows[0][2].strip()]
+        body = rows[1:]
+        if body and set(body[0][2].replace("|", "").strip()) <= set("-: "):
+            body = body[1:]  # the line under the header row
+        lead = " ".join([*caption, *header])
+        chunk: list[tuple[int, int, str]] = []
+        for row in body:
+            size = len(lead) + sum(len(r[2]) + 1 for r in chunk) + len(row[2])
+            if chunk and size > MAX_PASSAGE_CHARS:
+                blocks.append(_table_block(lead, chunk))
+                chunk = []
+            chunk.append(row)
+        if chunk:
+            blocks.append(_table_block(lead, chunk))
+    return blocks
+
+
+def _table_block(lead: str, rows: list[tuple[int, int, str]]) -> tuple[int, int, str, bool]:
+    text = " ".join([lead, *(row[2].strip() for row in rows)])
+    return rows[0][0], rows[-1][1], text, True
 
 
 def _overlap(claim_tokens: set[str], text: str) -> float:
@@ -476,6 +539,40 @@ class _ReasoningResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     judgements: list[_Judgement] = Field(default_factory=list)
+
+
+def _lenient_response(payload: Any) -> _ReasoningResponse:
+    """The reader's answer, keeping every judgement that is well formed.
+
+    One malformed judgement used to fail the whole answer. India Today's live results
+    page for the 2026 Tamil Nadu election - TVK first, DMK out of power - was lost
+    that way as "schema validation failed", and "DMK won the 2026 Tamil Nadu
+    election" read Unconfirmed on the website while the same claim worded a little
+    differently read False on the phone (2026-10-01). A relevance a shade outside
+    0-1 is clamped; anything else malformed drops only that judgement.
+    """
+    if not isinstance(payload, dict):
+        raise TypeError("the answer is not an object")
+    kept: list[_Judgement] = []
+    dropped = 0
+    for item in payload.get("judgements") or []:
+        if isinstance(item, dict) and isinstance(item.get("relevance"), int | float):
+            item = {**item, "relevance": min(1.0, max(0.0, float(item["relevance"])))}
+        try:
+            kept.append(_Judgement.model_validate(item))
+        except ValidationError:
+            dropped += 1
+    if dropped:
+        event(
+            logger,
+            "malformed judgements dropped",
+            module="sources.reasoning",
+            outcome="degraded",
+            provider=PROVIDER,
+            dropped=dropped,
+            kept=len(kept),
+        )
+    return _ReasoningResponse(judgements=kept)
 
 
 _RESPONSE_SCHEMA: dict[str, Any] = {
@@ -1043,6 +1140,12 @@ def older_than_the_claim(claim_text: str, quote: str, published: date | None) ->
     earliest = min(claimed)
     if published is not None and published.year < earliest:
         return True
+    # A page published in or after the claim's year is not about an earlier time
+    # because a sentence of it looks back: "the DMK and AIADMK, who have alternated in
+    # power since 1967, both sit in opposition" is the 2026 result, dropped as old
+    # news for its 1967 (2026-10-01). Its date settles it.
+    if published is not None:
+        return False
     quoted = _years(quote)
     return bool(quoted) and max(quoted) < earliest
 
@@ -1208,7 +1311,7 @@ class PassageReasoner:
             envelope = json.loads(response.text)
             self._meter("judge", envelope, len(selected))
             payload = json.loads(response_text(self._api_format, envelope))
-            validated = _ReasoningResponse.model_validate(payload)
+            validated = _lenient_response(payload)
         except (json.JSONDecodeError, ValidationError, KeyError, TypeError, IndexError) as exc:
             return ReasoningOutcome(reason=f"schema validation failed: {type(exc).__name__}")
 
@@ -1627,6 +1730,7 @@ class PassageReasoner:
                     char_start=passage.char_start + offset,
                     char_end=passage.char_start + end,
                     narrower=narrower,
+                    basis=judgement.contradiction_basis if relation is Relation.CONTRADICTS else "",
                 )
             )
 

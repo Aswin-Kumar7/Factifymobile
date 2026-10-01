@@ -585,6 +585,24 @@ class TestAPredictionIsNotCheckable:
         assert decision.status is ClaimStatus.UNVERIFIED
         assert decision.rule_id == "rule.prediction_not_checked"
 
+    def test_a_forecast_whose_outcome_is_reported_otherwise_is_false(self) -> None:
+        """ "DMK wins the 2026 Tamil Nadu elections", read as a prediction, under four
+        outlets reporting that TVK won: the event it is, and false (2026-10-01)."""
+        against = [
+            evidence(
+                direction=Direction.CONTRADICTS,
+                tier=Tier.D,
+                kind=EvidenceKind.CORROBORATION,
+                method=Method.PASSAGE_ENTAILMENT,
+                citation_url=f"https://{site}/tn-results",
+            )
+            for site in ("indiatoday.in", "indianexpress.com")
+        ]
+        decision = decide(claim(claim_type=ClaimType.PREDICTION), against)
+
+        assert decision.status is ClaimStatus.CONTRADICTED
+        assert decision.rule_id == "rule.independent_contradiction"
+
     def test_the_reason_says_why_rather_than_calling_it_an_opinion(self) -> None:
         """A forecast is not an opinion, and telling a user it was read as one is wrong."""
         decision = decide(claim(claim_type=ClaimType.PREDICTION), [])

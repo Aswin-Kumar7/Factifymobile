@@ -101,9 +101,18 @@ def content_hash(data: bytes) -> str:
     return f"sha256:{hashlib.sha256(data).hexdigest()}"
 
 
+# Punctuation and quotes at either end of a pasted text, which change nothing.
+_AROUND = " .,;:!?\"'“”‘’"
+
+
 def text_hash(text: str) -> str:
-    """Content addressing for text, normalised so trivial whitespace is not a miss."""
-    normalised = " ".join(text.split())
+    """Content addressing for text, normalised so trivial differences are not a miss.
+
+    Spacing, letter case and the punctuation around the text: "DMK won the election."
+    and "dmk won the election" are one question, and must get one answer wherever
+    they are asked - the website, the app or the API.
+    """
+    normalised = " ".join(text.split()).casefold().strip(_AROUND)
     return f"sha256:{hashlib.sha256(normalised.encode('utf-8')).hexdigest()}"
 
 

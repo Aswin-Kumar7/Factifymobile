@@ -18,6 +18,7 @@ storage error into a verdict change would be worst of all.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import asdict
 from datetime import UTC, date, datetime, time
@@ -44,10 +45,35 @@ from app.verdict.technique import technique_for
 logger = logging.getLogger("factify.ledger")
 
 
+async def claim_vector(embedder: Any | None, claim: Any) -> str | None:
+    """A claim's meaning as a vector literal, or None when it cannot be embedded.
+
+    In English where the claim has an English rendering, so the same claim made in
+    Tamil and in English lands in one place.
+    """
+    if embedder is None:
+        return None
+    text = claim.english_text or claim.text
+    language = None if claim.english_text else claim.language
+    try:
+        result = await asyncio.to_thread(embedder.embed_one, text, language=language)
+    except Exception:
+        logger.exception("claim could not be embedded")
+        return None
+    if not result.succeeded or result.single is None:
+        return None
+    return "[" + ",".join(f"{value:.6f}" for value in result.single) + "]"
+
+
 class Ledger:
     """Writes one completed verification to the database."""
 
-    def __init__(self, conn: Any, *, signer: ReceiptSigner | None = None) -> None:
+    def __init__(
+        self, conn: Any, *, signer: ReceiptSigner | None = None, embedder: Any | None = None
+    ) -> None:
+        # The claim's meaning, stored beside it, so a later check of the same claim in
+        # other words finds the pages this one was decided on (app/knowledge/memory.py).
+        self._embedder = embedder
         # Optional: without a signing key configured no receipt is issued, and the
         # endpoint says so rather than handing out something unverifiable.
         self._signer = signer
@@ -175,6 +201,7 @@ class Ledger:
             ),
             entities=list(claim.entities),
             location=claim.location,
+            embedding=await claim_vector(self._embedder, claim),
         )
 
         for item in outcome.evidence:

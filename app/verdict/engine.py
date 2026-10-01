@@ -34,7 +34,7 @@ from app.domain.publishers import publishers_of
 
 # Stamped on every verdict. A cached verdict produced under older rules is therefore
 # identifiable, and the cache can refuse to serve it (M13).
-RULE_VERSION = "2026.10.01.1"
+RULE_VERSION = "2026.10.01.2"
 
 # Default number of genuinely independent origins required before corroboration can
 # support a claim. Tenant-configurable later; never below two, because one origin is
@@ -243,6 +243,21 @@ def _decide_status(
 
     if not claim.is_checkable:
         prediction = claim.claim_type is ClaimType.PREDICTION
+        # A "forecast" whose outcome the sources already report is an event. "DMK
+        # wins the 2026 Tamil Nadu elections." was read as a prediction - present
+        # tense, a year - and left unchecked under four outlets reporting that TVK
+        # won; worded "DMK won", it was False (2026-10-01). Judged as the event it is,
+        # and only when the sources report a different outcome. Never toward support:
+        # pages on a forecast's prospects are how "India will win the 2027 Cricket
+        # World Cup" was once called safe to share (see `Claim.is_checkable`).
+        if prediction and evidence:
+            as_event = _decide_status(
+                claim.model_copy(update={"claim_type": ClaimType.EVENT}),
+                evidence,
+                min_origins=min_origins,
+            )
+            if as_event.status is ClaimStatus.CONTRADICTED:
+                return as_event
         return Decision(
             status=ClaimStatus.UNVERIFIED,
             rule_id="rule.prediction_not_checked" if prediction else "rule.opinion_not_checked",

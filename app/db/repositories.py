@@ -163,6 +163,7 @@ class ClaimRepository(_Repository):
         dates: list[str] | None = None,
         location: str | None = None,
         extractor_model: str | None = None,
+        embedding: str | None = None,
     ) -> UUID:
         """Insert a claim and its anchor together.
 
@@ -173,8 +174,8 @@ class ClaimRepository(_Repository):
             """
             INSERT INTO claim (case_id, text, normalized_text, language, claim_type,
                                severity, importance, coverage_expectation, entities,
-                               dates, location, extractor_model)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                               dates, location, extractor_model, embedding)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::vector)
             RETURNING id
             """,
             (
@@ -190,6 +191,7 @@ class ClaimRepository(_Repository):
                 json.dumps(dates or []),
                 location,
                 extractor_model,
+                embedding,
             ),
         )
         assert row is not None

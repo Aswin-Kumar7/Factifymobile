@@ -257,6 +257,9 @@ class WebSearchResolver:
         self._reads_by_check: dict[str, dict[str, tuple[float, tuple[str, str, str]]]] = {}
         # url -> the date the page itself says it was published (its own metadata).
         self._dates_by_check: dict[str, dict[str, datetime]] = {}
+        # Pages on a fact-checker's site that reported a fact rather than rating
+        # this claim (`relate`): cited as reporting, not as a fact-check.
+        self._reports_by_check: dict[str, set[str]] = {}
 
     @property
     def reads_sources(self) -> bool:
@@ -276,7 +279,7 @@ class WebSearchResolver:
         method names, and it is excluded from deciding anything for good reason.
         """
         source = snapshot.final_url or snapshot.url
-        if self._credibility.is_fact_checker(source):
+        if self._credibility.is_fact_checker(source) and source not in self._reports:
             return Tier.C, EvidenceKind.FACT_CHECK, Method.CLAIM_REVIEW
         return Tier.D, EvidenceKind.CORROBORATION, Method.PASSAGE_ENTAILMENT
 
@@ -289,6 +292,11 @@ class WebSearchResolver:
     def _dates(self) -> dict[str, datetime]:
         """This check's page dates, from each page's own metadata."""
         return self._dates_by_check.setdefault(current_check.get(), {})
+
+    @property
+    def _reports(self) -> set[str]:
+        """This check's fact-checker pages read as reporting."""
+        return self._reports_by_check.setdefault(current_check.get(), set())
 
     @property
     def _reads(self) -> dict[str, tuple[float, tuple[str, str, str]]]:
@@ -310,6 +318,7 @@ class WebSearchResolver:
         self._pages_by_check.pop(check_id, None)
         self._reads_by_check.pop(check_id, None)
         self._dates_by_check.pop(check_id, None)
+        self._reports_by_check.pop(check_id, None)
 
     async def candidates(self, claim: Claim) -> list[SourceCandidate]:
         # A media provenance claim is not searchable text, and must never be treated as
@@ -490,7 +499,9 @@ class WebSearchResolver:
         if self._memory is None or not claim.normalized_text:
             return []
         found = []
-        remembered = await self._memory.pages(claim.normalized_text)
+        remembered = await self._memory.pages(
+            claim.normalized_text, text=claim.english_text or claim.text
+        )
         for page in remembered:
             if page_key(page.url) in seen or not self._credibility.is_credible(page.url):
                 continue
@@ -892,8 +903,17 @@ class WebSearchResolver:
         ):
             reviewed = (snapshot.title or "").strip() or best.quote
             if await self._reasoner.same_claim(claim.reading_text, reviewed) is False:
-                relation = Relation.CONTEXTUALIZES
-                note = " (a fact-check of a different claim)"
+                if best.basis == "INCOMPATIBLE":
+                    # Not a rating of another claim but a fact stated outright that
+                    # cannot be true alongside this one - BOOM's election results
+                    # page, "TVK won an outright majority", against "DMK won the
+                    # 2026 Tamil Nadu election" (2026-10-01). Kept, as the reporting
+                    # it is rather than as a published fact-check (`classify`).
+                    self._reports.add(snapshot.final_url or snapshot.url)
+                    note = " (reported on a fact-checker's site)"
+                else:
+                    relation = Relation.CONTEXTUALIZES
+                    note = " (a fact-check of a different claim)"
 
         # A fact-checker's page that spoke to the claim: its ClaimReview is kept,
         # so the next check of it is answered from our own records.
