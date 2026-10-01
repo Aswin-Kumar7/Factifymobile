@@ -738,7 +738,7 @@ function personalRow(p: Plan, yearly: boolean): Row {
     name: p.name,
     price: rupees(perMonth(p, yearly)),
     per: p.monthInr ? "/ month" : "",
-    billed: p.monthInr ? (yearly ? `${rupees(p.yearInr)} billed yearly` : "Billed monthly") : "Free forever",
+    billed: p.monthInr ? (yearly ? `${rupees(p.yearInr)} for a year` : "Paid a month at a time") : "Free forever",
     blurb: p.blurb,
     cta: p.monthInr ? `Get ${p.name}` : "Start free",
     href: p.monthInr ? `/signup?next=${encodeURIComponent("/app/credits")}` : "/signup",
@@ -757,7 +757,7 @@ export function Pricing() {
           name: TEAM.name,
           price: rupees(perMonth(TEAM, yearly)),
           per: "/ member / month",
-          billed: `${yearly ? "Billed yearly" : "Billed monthly"} · from ${TEAM.minSeats} members`,
+          billed: `${yearly ? "Paid a year at a time" : "Paid a month at a time"} · from ${TEAM.minSeats} members`,
           blurb: TEAM.blurb,
           cta: "Start a team",
           href: `/signup?next=${encodeURIComponent("/app/org/new")}`,
@@ -870,7 +870,10 @@ export function Pricing() {
           How it works {arrow}
         </Link>
       </div>
-      <p className="mt-4 text-[13px] text-ink3">Prices in Indian rupees, including GST. A video uses 3 checks. A check that fails costs nothing. Cancel any time.</p>
+      <p className="mt-4 text-[13px] text-ink3">
+        Prices in Indian rupees, including GST. Plans don&apos;t renew by themselves: pay again to continue, or the plan stops at the end of its month. A video uses 3 checks. A check
+        that fails costs nothing.
+      </p>
     </>
   );
 }

@@ -105,7 +105,7 @@ def org_month(row: Row, now: datetime) -> plans.Month:
     """An organisation's `plans.Month` from the row `OrgStore.hold` reads."""
     plan = str(row.get("plan") or "credits")
     renews = row.get("plan_renews_at")
-    lapsed = renews is not None and renews + timedelta(days=plans.RENEWAL_GRACE_DAYS) < now
+    lapsed = plans.lapsed(renews, now, ending=bool(row.get("plan_cancel_at_end")))
     team = plan == "team" and not lapsed
     api = plan == "api"
     cap = row.get("extra_cap_paise")
@@ -677,7 +677,7 @@ class OrgStore:
                 conn,
                 """
                 SELECT status, monthly_spend_limit, plan, seats, plan_renews_at,
-                       extra_usage, extra_cap_paise
+                       plan_cancel_at_end, extra_usage, extra_cap_paise
                   FROM organisation WHERE id = %s FOR UPDATE
                 """,
                 (org_id,),

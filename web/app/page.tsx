@@ -36,7 +36,7 @@ const PRINCIPLES = [
 
 const FAQ = [
   ["Is Factify a chatbot?", "No. AI finds the claims and reads the pages; a fixed rulebook makes the call, so the same claim gets the same answer on the website, the app and the API."],
-  ["What happens when I reach my monthly limit?", "Wait for it to reset on the 1st, upgrade, or - on a paid plan - turn on extra usage at ₹3 a check up to a monthly cap you choose. A check that fails costs nothing."],
+  ["What happens when I reach my monthly limit?", "Wait for it to reset on the 1st, upgrade, or - on a paid plan - turn on extra usage at ₹3 a check up to a monthly cap you choose. A check that fails costs nothing. A paid plan doesn't renew by itself: pay again to continue, or it goes back to Free at the end of its month."],
   ["Why isn't the app on the Play Store?", "It's coming. Until then you install it from our site; Android asks you to allow the install once. The file is signed by us."],
   ["Do you keep what I check?", "Your history is kept in your browser or on your phone. Pictures and videos are deleted from our servers after 24 hours, and location data is removed from photos before they're checked."],
 ];

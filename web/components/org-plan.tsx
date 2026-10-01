@@ -112,6 +112,12 @@ export function OrgPlan({ id, members, onChange }: { id: string; members: number
             {onTeam ? (
               <>
                 {n(state.allowance)} checks a month, pooled · {manual ? "paid until" : state.cancel_at_end ? "ends on" : "renews on"} {day(state.renews_at)}
+                {manual && (
+                  <>
+                    <br />
+                    It doesn&apos;t renew by itself: pay again to continue, or the organisation goes back to its credits then.
+                  </>
+                )}
               </>
             ) : state.plan === "api" ? (
               <>Every check is billed at {rupees(API_CHECK_INR)} after the month ends, up to your cap. Credits the organisation holds are used first.</>

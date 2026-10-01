@@ -175,7 +175,9 @@ class CreditBook:
         now = datetime.now(UTC)
         month = plans.personal_month(row, now)
         renews = _when(row.get("plan_renews_at"))
-        plan = plans.effective_plan(str(row.get("plan") or "free"), renews, now)
+        plan = plans.effective_plan(
+            str(row.get("plan") or "free"), renews, now, ending=bool(row.get("plan_cancel_at_end"))
+        )
         paid = plan is not plans.FREE
         return PlanPosition(
             plan=plan.id,

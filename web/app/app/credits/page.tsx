@@ -13,7 +13,7 @@ import { inr, n, when } from "@/lib/format";
 import { PERSONAL, perMonth, rupees } from "@/lib/plans";
 import { appHandoff, forgetHandoff, payForSubscription, Subscription } from "@/lib/razorpay";
 
-type Sub = { id: string; plan: string; interval: string; status: string; amount_paise: number; current_end: string | null; created_at: string; test_mode: boolean };
+type Sub = { id: string; plan: string; interval: string; status: string; kind?: string; amount_paise: number; current_end: string | null; created_at: string; test_mode: boolean };
 type Bill = { id: string; month: string; checks: number; amount_paise: number; status: string; short_url: string | null };
 type MyPlan = {
   plan: "free" | "plus" | "pro";
@@ -137,12 +137,28 @@ export default function PlanAndUsage() {
   const extraChecks = plan.extra.price_paise ? Math.round(plan.extra.used_paise / plan.extra.price_paise) : 0;
   const capChecks = plan.extra.cap_paise != null && plan.extra.price_paise ? Math.floor(plan.extra.cap_paise / plan.extra.price_paise) : null;
   const paidPacks = payments.filter((p) => p.status === "paid");
+  // A plan paid a month (or a year) at a time stops on its date unless paid again.
+  const daysLeft = manual && plan.renews_at ? Math.ceil((new Date(plan.renews_at).getTime() - Date.now()) / 86_400_000) : null;
+  const lastPaid = plan.subscriptions.find((s) => s.current_end);
+  const endedOn = !paid && lastPaid?.current_end && new Date(lastPaid.current_end) < new Date() ? lastPaid : null;
+  const planName = (id: string) => PERSONAL.find((p) => p.id === id)?.name ?? id;
 
   return (
     <div className="flex flex-col gap-4">
       <PageTitle title="Plan & usage" sub="Your plan, how much you've used, and what happens when you run out." />
       {fromApp && !message && <Notice tone="info">Choose a plan below. When it&apos;s paid, the Factify app on your phone will know.</Notice>}
       {message && <Notice tone={message.tone}>{message.text}</Notice>}
+      {daysLeft != null && daysLeft <= 5 && (
+        <Notice tone="warning">
+          Your {plan.name} plan ends {daysLeft <= 0 ? "today" : daysLeft === 1 ? "tomorrow" : `in ${daysLeft} days`}, on {shortDate(plan.renews_at)}. To keep it, pay for another{" "}
+          {plan.interval === "year" ? "year" : "month"} below; otherwise you&apos;ll move to Free.
+        </Notice>
+      )}
+      {endedOn && (
+        <Notice tone="info">
+          Your {planName(endedOn.plan)} plan ended on {shortDate(endedOn.current_end)}, so you&apos;re on Free now. Pay for {planName(endedOn.plan)} again below to continue.
+        </Notice>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* The plan, as the app's dark feature card */}
@@ -163,6 +179,12 @@ export default function PlanAndUsage() {
                 <br />
                 {manual ? "Paid until" : plan.cancel_at_end ? "Ends" : "Renews"} {manual ? "" : "on "}
                 {shortDate(plan.renews_at)}
+                {manual && (
+                  <>
+                    <br />
+                    It doesn&apos;t renew by itself: pay again to continue, or it stops then.
+                  </>
+                )}
               </>
             ) : (
               <>
@@ -270,7 +292,7 @@ export default function PlanAndUsage() {
       {/* Plans */}
       <section className="flex flex-col gap-4 rounded-[14px] border border-line bg-sf p-5.5 shadow-card">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-base font-medium text-ink">{paid ? "Change plan" : "Upgrade"}</h2>
+          <h2 className="text-base font-medium text-ink">{manual ? "Renew or change plan" : paid ? "Change plan" : "Upgrade"}</h2>
           <div role="tablist" aria-label="Billing" className="inline-flex rounded-[9px] border border-line p-[3px]">
             {[false, true].map((y) => (
               <button
@@ -321,8 +343,8 @@ export default function PlanAndUsage() {
           })}
         </div>
         <p className="text-xs text-ink3">
-          Prices in rupees, including GST. A new plan starts when its first payment goes through; the one it replaces stops then. Cancel any time - the plan runs to the end of its
-          period. Need more for a team?{" "}
+          Prices in rupees, including GST. A plan is paid for a month or a year at a time and starts when the payment goes through. Paying again for the same plan adds the next
+          period after the one you have; a different plan replaces it at once. Nothing renews by itself. Need more for a team?{" "}
           <Link href="/app/org/new" className="text-acc-ink">
             Create an organisation
           </Link>

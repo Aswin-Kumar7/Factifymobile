@@ -99,20 +99,34 @@ class Month:
         return max(self.extra_cap_paise - self.extra_used_paise, 0) // self.extra_price_paise
 
 
-def effective_plan(plan_id: str, renews_at: datetime | None, now: datetime) -> Plan:
-    """The person's plan now: a paid plan whose period ended (and was not renewed
-    within the grace) is Free again."""
+def effective_plan(
+    plan_id: str, renews_at: datetime | None, now: datetime, *, ending: bool = False
+) -> Plan:
+    """The person's plan now: a paid plan whose period ended is Free again.
+
+    One that renews by itself keeps a few days' grace, for a renewal Razorpay has not
+    confirmed yet. One that is `ending` - paid a period at a time, or cancelled -
+    stops on the day its period ends: to go on, the person pays again.
+    """
     plan = personal(plan_id) or FREE
     if plan is FREE:
         return FREE
-    if renews_at is not None and renews_at + timedelta(days=RENEWAL_GRACE_DAYS) < now:
-        return FREE
-    return plan
+    return FREE if lapsed(renews_at, now, ending=ending) else plan
+
+
+def lapsed(renews_at: datetime | None, now: datetime, *, ending: bool) -> bool:
+    """Whether a paid period that ended `renews_at` is over now."""
+    if renews_at is None:
+        return False
+    return renews_at + timedelta(days=0 if ending else RENEWAL_GRACE_DAYS) < now
 
 
 def personal_month(row: Mapping[str, Any], now: datetime) -> Month:
     """A person's `Month` from the row `AccountRepository.month` reads."""
-    plan = effective_plan(str(row.get("plan") or "free"), row.get("plan_renews_at"), now)
+    plan = effective_plan(
+        str(row.get("plan") or "free"), row.get("plan_renews_at"), now,
+        ending=bool(row.get("plan_cancel_at_end")),
+    )  # fmt: skip
     paid = plan is not FREE
     cap = row.get("extra_cap_paise")
     return Month(

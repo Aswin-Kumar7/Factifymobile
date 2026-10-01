@@ -408,3 +408,16 @@ class TestPlansPaidAPeriodAtATime:
             await store.release(hold)
         finally:
             await _drop(database, orgs=[org["id"]], users=[owner])
+
+
+class TestAPlanPaidAMonthAtATime:
+    def test_it_stops_on_its_end_date_while_a_renewing_one_gets_grace(self) -> None:
+        ended = NOW - timedelta(hours=1)
+
+        assert plans.effective_plan("plus", ended, NOW, ending=True) is plans.FREE
+        assert plans.effective_plan("plus", ended, NOW, ending=False) is plans.PLUS
+        assert plans.effective_plan("plus", NOW + timedelta(days=1), NOW, ending=True) is plans.PLUS
+        team = org_month(
+            {"plan": "team", "seats": 3, "plan_renews_at": ended, "plan_cancel_at_end": True}, NOW
+        )
+        assert team.allowance == 0
