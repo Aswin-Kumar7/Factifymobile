@@ -54,29 +54,78 @@ labelled "not used in this verdict."**
 
 ---
 
+## What is in this repository
+
+| Path | What it is |
+|---|---|
+| [app/](app/) | The API (FastAPI, Python 3.12): intake, claim extraction, retrieval, evidence verification, the verdict engine, media checks, accounts, organisations, plans and billing |
+| [web/](web/) | The website (Next.js 15): landing page, the dashboard for checks, history, plans and organisations, and the admin panel |
+| [apps/mobile/](apps/mobile/) | The Android app (Flutter): share anything into it and get a cited verdict |
+| [migrations/](migrations/) | Forward-only Postgres migrations, applied in order by `app/db/migrate.py` |
+| [tests/](tests/) | `unit` (pure), `db` (needs Postgres), `replay` (stored snapshots), `live` and `model` (opt-in) |
+| [deploy/](deploy/) | Docker Compose and Caddy for the one-VM deployment |
+| [scripts/](scripts/) | Local server, accuracy suite, model evaluation, APK publishing |
+| [docs/](docs/) | Deployment, operations notes, the API contract changelog and design records |
+
+## Stack
+
+FastAPI / Python 3.12 · Supabase Postgres + pgvector · Azure OpenAI for reading and writing only ·
+Tavily web search over a 727-host credibility allowlist · on-server models for pictures, faces,
+voice, speech (Whisper) and text in images (RapidOCR) · CPU embeddings (fastembed) · ffmpeg ·
+Next.js · Flutter · Razorpay · one Azure VM behind Caddy.
+
+Every external provider is governed by a daily call budget and degrades to an honest
+"capacity limited" state rather than a fabricated answer.
+
+## Run it locally
+
+```bash
+cp .env.example .env
+uv sync
+uv run python scripts/serve_local.py
+```
+
+The API listens on `http://127.0.0.1:8000`. The website and the app talk only to it:
+
+```bash
+npm --prefix web install
+npm --prefix web run dev
+```
+
+```bash
+cd apps/mobile && flutter run
+```
+
+## Test it
+
+```bash
+uv run ruff check . && uv run mypy app && uv run pytest
+```
+
+```bash
+npm --prefix web run lint && npm --prefix web run build
+```
+
+```bash
+cd apps/mobile && flutter analyze && flutter test
+```
+
+Database tests skip unless `FACTIFY_DATABASE_URL` is set; `live` and `model` tests run only when
+asked for (`-m live`, `-m model`).
+
+## Deployment
+
+One VM runs the API, the website and Caddy for HTTPS; see
+[docs/deployment-azure.md](docs/deployment-azure.md).
+
 ## Documents
 
 | File | What it is |
 |---|---|
-| **[codexplan.md](codexplan.md)** | ⭐ **Start here.** The 15-day execution plan: trust model, evidence contract, architecture, data model, day-by-day build, evaluation gates, and the startup case |
-| [technical_plan.md](technical_plan.md) | The full platform architecture beyond the hackathon — signal providers, budget planner, attestations, transparency log, and the metered B2B API (keys, scopes, metering, webhooks, BYOK, tenancy) |
-| [dump/](dump/) | Superseded planning documents, kept for provenance |
-
-`codexplan.md` is the operational source of truth. Where the two disagree on scope, `codexplan.md`
-wins for the 15-day build and `technical_plan.md` describes where it grows.
-
-## Status
-
-Planning baseline. History starts fresh at the initial commit — no implementation yet. Build order,
-module boundaries and gates are in [agent-actionplan.md](agent-actionplan.md).
-
-## Stack
-
-FastAPI / Python 3.12 · Supabase Postgres + pgvector · Cloud Run · Android share target ·
-local CPU embeddings (ONNX) · ffmpeg · free-tier LLM for bounded extraction only.
-
-Every external provider is governed by a daily call budget and degrades to an honest
-"capacity limited" state rather than a fabricated answer.
+| [codexplan.md](codexplan.md) | The original 15-day plan: trust model, evidence contract, architecture, data model and evaluation gates |
+| [agent-actionplan.md](agent-actionplan.md) | The module-by-module build order derived from it |
+| [docs/evidence-architecture-plan.md](docs/evidence-architecture-plan.md) | How retrieval, verification and articulation fit together |
+| [docs/contract-changelog.md](docs/contract-changelog.md) | Every change to the API contract the app and website read |
 
 ## Ground rules
 

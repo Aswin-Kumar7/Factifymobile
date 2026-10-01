@@ -121,9 +121,9 @@ flutter build apk --release --dart-define=FACTIFY_API=https://factify-zeai.india
 The APK is `apps/mobile/build/app/outputs/flutter-apk/app-release.apk`. Install it on
 a phone (`adb install -r app-release.apk`, or copy it over and open it).
 
-It is signed with the debug key, which is fine for a demo and for sideloading. The
-Play Store needs a release key of your own (`android/app/build.gradle.kts`,
-`signingConfig`).
+It is signed with the release key named in `android/key.properties` when that file
+exists, and with the debug key otherwise, which is fine for a demo and for
+sideloading. The Play Store needs the release key.
 
 ## 8. After it works
 
