@@ -22,7 +22,13 @@ import '../widgets/brand.dart';
 import '../widgets/ui/fx_button.dart';
 
 class PaymentScreen extends StatefulWidget {
-  const PaymentScreen({required this.services, this.orgId, this.opener, super.key});
+  const PaymentScreen({
+    required this.services,
+    this.orgId,
+    this.opener,
+    this.plans = false,
+    super.key,
+  });
 
   final AppServices services;
 
@@ -31,6 +37,9 @@ class PaymentScreen extends StatefulWidget {
 
   /// Opens the payment page; the browser by default (tests replace it).
   final Future<bool> Function(Uri url)? opener;
+
+  /// Choose a monthly plan on the website, rather than buy a pack of credits.
+  final bool plans;
 
   @override
   State<PaymentScreen> createState() => _PaymentScreenState();
@@ -75,7 +84,14 @@ class _PaymentScreenState extends State<PaymentScreen> with WidgetsBindingObserv
       if (!mounted) return;
       setState(() => _handoff = handoff);
       final url = handoff.url;
-      if (url != null) await _open(Uri.parse(url));
+      if (url != null) {
+        final page = Uri.parse(url);
+        await _open(
+          widget.plans
+              ? page.replace(queryParameters: {...page.queryParameters, 'then': 'plans'})
+              : page,
+        );
+      }
       _poll = Timer.periodic(const Duration(seconds: 3), (_) => unawaited(_check()));
     } catch (_) {
       if (mounted) setState(() => _problem = AppLocalizations.of(context).payCouldNotStart);
@@ -117,7 +133,12 @@ class _PaymentScreenState extends State<PaymentScreen> with WidgetsBindingObserv
     final status = _problem != null ? 'problem' : (handoff?.status ?? 'starting');
 
     final (String title, String body, IconData? icon, Color tone) = switch (status) {
-      'paid' => (l10n.payPaidTitle, l10n.payPaidBody(handoff?.credits ?? 0), FxIcons.checkFill, k.tC),
+      'paid' => (
+        l10n.payPaidTitle,
+        widget.plans ? l10n.payPlanPaidBody : l10n.payPaidBody(handoff?.credits ?? 0),
+        FxIcons.checkFill,
+        k.tC,
+      ),
       'failed' => (l10n.payFailedTitle, l10n.payFailedBody, FxIcons.info, k.fC),
       'cancelled' => (l10n.payCancelledTitle, l10n.payCancelledBody, FxIcons.info, k.ink2),
       'expired' => (l10n.payExpiredTitle, l10n.payExpiredBody, FxIcons.info, k.ink2),

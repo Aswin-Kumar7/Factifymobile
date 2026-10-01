@@ -127,6 +127,35 @@ void main() {
     expect(server.polls, polls);
   });
 
+  testWidgets('choosing a plan opens the website at its plans, and says when the plan is on', (
+    tester,
+  ) async {
+    final server = _Server(['opened', 'paid']);
+    final services = await _services(server);
+    final opened = <Uri>[];
+    await _pump(
+      tester,
+      PaymentScreen(
+        services: services,
+        plans: true,
+        opener: (url) async {
+          opened.add(url);
+          return true;
+        },
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(opened.single.toString(), 'https://factify.test/pay?h=one-time&then=plans');
+
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump();
+    expect(find.text('Payment complete'), findsOneWidget);
+    expect(find.text('Your new plan is active. Its checks are yours from now.'), findsOneWidget);
+  });
+
   testWidgets('a failed payment offers to start again', (tester) async {
     final services = await _services(_Server(['failed']));
     await _pump(tester, PaymentScreen(services: services, opener: (_) async => true));

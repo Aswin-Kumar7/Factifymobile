@@ -9,6 +9,7 @@ import 'dart:convert';
 
 import 'package:factify_mobile/api/client.dart';
 import 'package:factify_mobile/auth/auth_service.dart';
+import 'package:factify_mobile/models/account.dart';
 import 'package:factify_mobile/l10n/app_localizations.dart';
 import 'package:factify_mobile/widgets/auth_form.dart';
 import 'package:factify_mobile/widgets/ui/fx_button.dart';
@@ -255,6 +256,37 @@ void main() {
 
     expect(auth.signedIn, isFalse);
     expect(auth.lastLinkProblem, AuthProblem.googleFailed);
+  });
+
+  test("an account from a server with plans carries the plan's month", () {
+    final account = Account.fromJson({
+      'id': 'u-1',
+      'email': 'asha@example.org',
+      'plan': 'pro',
+      'credits': {'balance': 330, 'used': 90, 'checks': 90, 'check_cost': 1, 'limited': true},
+      'plan_usage': {
+        'plan': 'pro',
+        'name': 'Pro',
+        'allowance': 400,
+        'used': 90,
+        'credits': 20,
+        'resets_at': '2026-11-01T00:00:00+05:30',
+        'cancel_at_end': true,
+      },
+    });
+    final plan = account.planUsage!;
+    expect(plan.paid, isTrue);
+    expect(plan.left, 310);
+    expect(plan.credits, 20);
+    expect(plan.cancelAtEnd, isTrue);
+    expect(plan.resetsAt, isNotNull);
+    // An older server sends no plan at all.
+    final older = Account.fromJson({
+      'id': 'u-1',
+      'email': 'asha@example.org',
+      'credits': {'balance': 5, 'used': 0, 'checks': 0, 'check_cost': 1},
+    });
+    expect(older.planUsage, isNull);
   });
 
   test('signing out forgets the session here and ends it on the server', () async {

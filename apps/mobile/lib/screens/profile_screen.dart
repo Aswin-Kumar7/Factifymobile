@@ -138,7 +138,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       account: account,
                       onBuy: () async {
                         await Navigator.of(context).push(
-                          MaterialPageRoute<bool>(builder: (_) => PaymentScreen(services: _services)),
+                          MaterialPageRoute<bool>(
+                            builder: (_) => PaymentScreen(
+                              services: _services,
+                              // With plans on the server, the button chooses a plan.
+                              plans: account.planUsage != null,
+                            ),
+                          ),
                         );
                         unawaited(auth.refreshAccount());
                       },
@@ -368,11 +374,21 @@ class _Credits extends StatelessWidget {
   Widget build(BuildContext context) {
     final k = FactifyTokens.of(context);
     final l10n = AppLocalizations.of(context);
-    // Grants minus spend is the balance, so the total is the two together; a
-    // balance below zero (possible while nothing is enforced) reads as fully used.
+    // The checks left this month: the plan's, plus any credits (the server's sum).
+    // A balance below zero (possible while nothing is enforced) reads as none left.
     final balance = account.balance > 0 ? account.balance : 0;
-    final total = account.used + balance;
-    final left = total == 0 ? 1.0 : (balance / total).clamp(0.0, 1.0);
+    final plan = account.planUsage;
+    final double left;
+    if (plan != null) {
+      // The bar is the plan's month: what is left of its checks.
+      left = plan.allowance == 0 ? 0.0 : (plan.left / plan.allowance).clamp(0.0, 1.0);
+    } else {
+      // Before plans, grants minus spend was the balance, so the total is the two.
+      final total = account.used + balance;
+      left = total == 0 ? 1.0 : (balance / total).clamp(0.0, 1.0);
+    }
+    final locale = Localizations.localeOf(context).toLanguageTag();
+    final resets = plan?.resetsAt == null ? null : DateFormat.MMMd(locale).format(plan!.resetsAt!);
     final ink = k.heroInk;
     final ring = Colors.white.withValues(alpha: 0.1);
 
@@ -393,7 +409,7 @@ class _Credits extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        l10n.creditsTitle,
+                        plan == null ? l10n.creditsTitle : l10n.planChecksTitle,
                         style: FactifyText.sans(12, color: ink.withValues(alpha: 0.75)),
                       ),
                     ),
@@ -404,7 +420,7 @@ class _Credits extends StatelessWidget {
                         borderRadius: BorderRadius.circular(9),
                       ),
                       child: Text(
-                        l10n.planBetaShort,
+                        plan == null ? l10n.planBetaShort : l10n.planName(plan.name),
                         style: FactifyText.sans(11, weight: FontWeight.w600, color: ink),
                       ),
                     ),
@@ -414,7 +430,7 @@ class _Credits extends StatelessWidget {
                 Semantics(
                   // The clamped balance, as shown: TalkBack read "-106 credits left"
                   // while the screen said 0 (2026-09-29).
-                  label: l10n.creditsLeft(balance),
+                  label: plan == null ? l10n.creditsLeft(balance) : l10n.planChecksLeft(balance),
                   excludeSemantics: true,
                   child: Wrap(
                     crossAxisAlignment: WrapCrossAlignment.end,
@@ -431,7 +447,7 @@ class _Credits extends StatelessWidget {
                       Padding(
                         padding: const EdgeInsets.only(bottom: 4),
                         child: Text(
-                          l10n.profileCreditsLabel(balance),
+                          plan == null ? l10n.profileCreditsLabel(balance) : l10n.planChecksLabel(balance),
                           style: FactifyText.sans(13, color: ink.withValues(alpha: 0.8)),
                         ),
                       ),
@@ -464,10 +480,13 @@ class _Credits extends StatelessWidget {
                     alignment: WrapAlignment.spaceBetween,
                     spacing: 12,
                     runSpacing: 2,
-                    children: [
-                      Text(l10n.creditsUsed(account.used)),
-                      Text(l10n.creditCosts(account.checkCost)),
-                    ],
+                    children: plan == null
+                        ? [Text(l10n.creditsUsed(account.used)), Text(l10n.creditCosts(account.checkCost))]
+                        : [
+                            Text(l10n.planUsed(plan.used, plan.allowance)),
+                            if (resets != null) Text(l10n.planResets(resets)),
+                            if (plan.credits > 0) Text(l10n.planCredits(plan.credits)),
+                          ],
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -488,7 +507,9 @@ class _Credits extends StatelessWidget {
                             const SizedBox(width: 8),
                             Flexible(
                               child: Text(
-                                l10n.buyCredits,
+                                plan == null
+                                    ? l10n.buyCredits
+                                    : (plan.paid ? l10n.changePlan : l10n.upgradePlan),
                                 style: FactifyText.sans(14.5, weight: FontWeight.w700, color: FactifyBrand.emerald),
                               ),
                             ),

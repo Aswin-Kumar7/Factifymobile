@@ -2443,4 +2443,59 @@ class AppLocalizationsHi extends AppLocalizations {
   @override
   String get payCouldNotStart =>
       'भुगतान शुरू नहीं हो सका। अपना कनेक्शन जाँचें और फिर कोशिश करें।';
+
+  @override
+  String get planChecksTitle => 'इस महीने की जाँचें';
+
+  @override
+  String planName(String name) {
+    return '$name प्लान';
+  }
+
+  @override
+  String planChecksLeft(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'इस महीने $count जाँचें बाकी',
+      one: 'इस महीने 1 जाँच बाकी',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String planChecksLabel(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'जाँचें बाकी',
+      one: 'जाँच बाकी',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String planUsed(int used, int total) {
+    return 'प्लान की $total में से $used जाँचें हुईं';
+  }
+
+  @override
+  String planResets(String date) {
+    return '$date को फिर से शुरू';
+  }
+
+  @override
+  String planCredits(int count) {
+    return '+$count क्रेडिट';
+  }
+
+  @override
+  String get upgradePlan => 'प्लान अपग्रेड करें';
+
+  @override
+  String get changePlan => 'प्लान बदलें';
+
+  @override
+  String get payPlanPaidBody =>
+      'आपका नया प्लान चालू है। इसकी जाँचें अब से आपकी हैं।';
 }

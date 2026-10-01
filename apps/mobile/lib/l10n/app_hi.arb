@@ -599,5 +599,15 @@
   "payExpiredBody": "यह सिर्फ़ 10 मिनट के लिए होता है। नया लिंक पाने के लिए फिर से शुरू करें।",
   "payTryAgain": "फिर से शुरू करें",
   "payDone": "हो गया",
-  "payCouldNotStart": "भुगतान शुरू नहीं हो सका। अपना कनेक्शन जाँचें और फिर कोशिश करें।"
+  "payCouldNotStart": "भुगतान शुरू नहीं हो सका। अपना कनेक्शन जाँचें और फिर कोशिश करें।",
+  "planChecksTitle": "इस महीने की जाँचें",
+  "planName": "{name} प्लान",
+  "planChecksLeft": "{count, plural, =1{इस महीने 1 जाँच बाकी} other{इस महीने {count} जाँचें बाकी}}",
+  "planChecksLabel": "{count, plural, =1{जाँच बाकी} other{जाँचें बाकी}}",
+  "planUsed": "प्लान की {total} में से {used} जाँचें हुईं",
+  "planResets": "{date} को फिर से शुरू",
+  "planCredits": "+{count} क्रेडिट",
+  "upgradePlan": "प्लान अपग्रेड करें",
+  "changePlan": "प्लान बदलें",
+  "payPlanPaidBody": "आपका नया प्लान चालू है। इसकी जाँचें अब से आपकी हैं।"
 }

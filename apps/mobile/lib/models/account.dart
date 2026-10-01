@@ -47,6 +47,7 @@ class Account {
     this.avatarUrl,
     this.joinedAt,
     this.surveyDue = false,
+    this.planUsage,
   });
 
   final String id;
@@ -68,6 +69,10 @@ class Account {
   /// server keeps this, so it is asked once, whichever phone the person uses.
   final bool surveyDue;
 
+  /// The monthly plan and this month's use of it (contract 1.7); null from a
+  /// server older than plans.
+  final PlanUsage? planUsage;
+
   /// What to call the person: their name, else the part of their email before @.
   String get displayName =>
       (name != null && name!.trim().isNotEmpty) ? name!.trim() : email.split('@').first;
@@ -87,8 +92,60 @@ class Account {
       checkCost: (credits['check_cost'] as num).toInt(),
       limited: credits['limited'] as bool? ?? false,
       surveyDue: json['survey_due'] as bool? ?? false,
+      planUsage: json['plan_usage'] is Map
+          ? PlanUsage.fromJson((json['plan_usage'] as Map).cast<String, dynamic>())
+          : null,
     );
   }
+}
+
+/// A person's monthly plan: Free, Plus or Pro, and this month's checks.
+class PlanUsage {
+  const PlanUsage({
+    required this.plan,
+    required this.name,
+    required this.allowance,
+    required this.used,
+    required this.credits,
+    this.resetsAt,
+    this.renewsAt,
+    this.cancelAtEnd = false,
+    this.extraEnabled = false,
+  });
+
+  /// free, plus or pro.
+  final String plan;
+
+  /// The plan's name as the server says it ("Plus").
+  final String name;
+
+  /// Checks the plan gives this month, and how many it has paid for so far.
+  final int allowance;
+  final int used;
+
+  /// Credits held besides the plan (bought packs, a sign-up grant).
+  final int credits;
+  final DateTime? resetsAt;
+  final DateTime? renewsAt;
+  final bool cancelAtEnd;
+  final bool extraEnabled;
+
+  bool get paid => plan != 'free';
+
+  /// The plan's checks left this month.
+  int get left => (allowance - used).clamp(0, allowance);
+
+  factory PlanUsage.fromJson(Map<String, dynamic> json) => PlanUsage(
+    plan: json['plan'] as String? ?? 'free',
+    name: json['name'] as String? ?? 'Free',
+    allowance: (json['allowance'] as num?)?.toInt() ?? 0,
+    used: (json['used'] as num?)?.toInt() ?? 0,
+    credits: (json['credits'] as num?)?.toInt() ?? 0,
+    resetsAt: DateTime.tryParse(json['resets_at'] as String? ?? '')?.toLocal(),
+    renewsAt: DateTime.tryParse(json['renews_at'] as String? ?? '')?.toLocal(),
+    cancelAtEnd: json['cancel_at_end'] as bool? ?? false,
+    extraEnabled: json['extra_enabled'] as bool? ?? false,
+  );
 }
 
 /// The survey's answers, by the keys the server accepts (app/accounts/credits.py).

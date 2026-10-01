@@ -32,7 +32,7 @@ import 'package:http/testing.dart';
 
 const _token = 'fs_session-1';
 
-MockClient _server() => MockClient((request) async {
+MockClient _server({bool plans = false}) => MockClient((request) async {
   final path = request.url.path;
   if (path == '/readyz') return http.Response('{"ready": true, "missing": []}', 200);
   if (path == '/v1/auth/config') {
@@ -73,6 +73,19 @@ MockClient _server() => MockClient((request) async {
           'deep_check_cost': 3,
           'limited': false,
         },
+        if (plans)
+          'plan_usage': {
+            'plan': 'plus',
+            'name': 'Plus',
+            'interval': 'month',
+            'renews_at': '2026-11-01T00:00:00+05:30',
+            'cancel_at_end': false,
+            'allowance': 120,
+            'used': 78,
+            'resets_at': '2026-11-01T00:00:00+05:30',
+            'credits': 0,
+            'extra_enabled': false,
+          },
       }),
       200,
     );
@@ -93,8 +106,8 @@ class _Notifier extends SilentNotifier {
   }
 }
 
-Future<AppServices> _services({bool allowed = true, bool signedIn = true}) async {
-  final server = _server();
+Future<AppServices> _services({bool allowed = true, bool signedIn = true, bool plans = false}) async {
+  final server = _server(plans: plans);
   final client = FactifyClient(baseUrl: 'http://factify.test', httpClient: server);
   final auth = AuthService(client: client, httpClient: server, persist: false);
   client.tokenProvider = auth.accessToken;
@@ -153,6 +166,21 @@ void main() {
       expect(find.text('checks so far'), findsOneWidget);
       expect(find.text('Sep ’26'), findsOneWidget);
       expect(find.text('Online'), findsOneWidget);
+    });
+
+    testWidgets("on a monthly plan, the card is the plan's month and its button changes the plan", (
+      tester,
+    ) async {
+      final services = await _services(plans: true);
+      await _pump(tester, services, ProfileScreen(services: services));
+
+      expect(find.text('Checks this month'), findsOneWidget);
+      expect(find.text('Plus plan'), findsOneWidget);
+      expect(find.text('checks left'), findsOneWidget);
+      expect(find.text('78 of 120 plan checks used'), findsOneWidget);
+      expect(find.textContaining('Resets '), findsOneWidget);
+      expect(find.text('Change plan'), findsOneWidget);
+      expect(find.text('Buy credits'), findsNothing);
     });
 
     testWidgets('the dark mode switch flips the theme; the row offers "same as your phone"', (

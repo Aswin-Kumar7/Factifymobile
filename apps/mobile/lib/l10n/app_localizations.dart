@@ -3697,6 +3697,66 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The payment couldn\'t be started. Check your connection and try again.'**
   String get payCouldNotStart;
+
+  /// No description provided for @planChecksTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Checks this month'**
+  String get planChecksTitle;
+
+  /// No description provided for @planName.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} plan'**
+  String planName(String name);
+
+  /// No description provided for @planChecksLeft.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 check left this month} other{{count} checks left this month}}'**
+  String planChecksLeft(int count);
+
+  /// No description provided for @planChecksLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{check left} other{checks left}}'**
+  String planChecksLabel(int count);
+
+  /// No description provided for @planUsed.
+  ///
+  /// In en, this message translates to:
+  /// **'{used} of {total} plan checks used'**
+  String planUsed(int used, int total);
+
+  /// No description provided for @planResets.
+  ///
+  /// In en, this message translates to:
+  /// **'Resets {date}'**
+  String planResets(String date);
+
+  /// No description provided for @planCredits.
+  ///
+  /// In en, this message translates to:
+  /// **'+{count} credits'**
+  String planCredits(int count);
+
+  /// No description provided for @upgradePlan.
+  ///
+  /// In en, this message translates to:
+  /// **'Upgrade plan'**
+  String get upgradePlan;
+
+  /// No description provided for @changePlan.
+  ///
+  /// In en, this message translates to:
+  /// **'Change plan'**
+  String get changePlan;
+
+  /// No description provided for @payPlanPaidBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Your new plan is active. Its checks are yours from now.'**
+  String get payPlanPaidBody;
 }
 
 class _AppLocalizationsDelegate

@@ -2446,4 +2446,59 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get payCouldNotStart =>
       'The payment couldn\'t be started. Check your connection and try again.';
+
+  @override
+  String get planChecksTitle => 'Checks this month';
+
+  @override
+  String planName(String name) {
+    return '$name plan';
+  }
+
+  @override
+  String planChecksLeft(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count checks left this month',
+      one: '1 check left this month',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String planChecksLabel(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'checks left',
+      one: 'check left',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String planUsed(int used, int total) {
+    return '$used of $total plan checks used';
+  }
+
+  @override
+  String planResets(String date) {
+    return 'Resets $date';
+  }
+
+  @override
+  String planCredits(int count) {
+    return '+$count credits';
+  }
+
+  @override
+  String get upgradePlan => 'Upgrade plan';
+
+  @override
+  String get changePlan => 'Change plan';
+
+  @override
+  String get payPlanPaidBody =>
+      'Your new plan is active. Its checks are yours from now.';
 }

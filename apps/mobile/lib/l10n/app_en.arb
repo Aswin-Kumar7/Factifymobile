@@ -1478,5 +1478,21 @@
   "payExpiredBody": "It's only valid for 10 minutes. Start again to get a new one.",
   "payTryAgain": "Start again",
   "payDone": "Done",
-  "payCouldNotStart": "The payment couldn't be started. Check your connection and try again."
+  "payCouldNotStart": "The payment couldn't be started. Check your connection and try again.",
+  "planChecksTitle": "Checks this month",
+  "planName": "{name} plan",
+  "@planName": {"placeholders": {"name": {"type": "String"}}},
+  "planChecksLeft": "{count, plural, =1{1 check left this month} other{{count} checks left this month}}",
+  "@planChecksLeft": {"placeholders": {"count": {"type": "int"}}},
+  "planChecksLabel": "{count, plural, =1{check left} other{checks left}}",
+  "@planChecksLabel": {"placeholders": {"count": {"type": "int"}}},
+  "planUsed": "{used} of {total} plan checks used",
+  "@planUsed": {"placeholders": {"used": {"type": "int"}, "total": {"type": "int"}}},
+  "planResets": "Resets {date}",
+  "@planResets": {"placeholders": {"date": {"type": "String"}}},
+  "planCredits": "+{count} credits",
+  "@planCredits": {"placeholders": {"count": {"type": "int"}}},
+  "upgradePlan": "Upgrade plan",
+  "changePlan": "Change plan",
+  "payPlanPaidBody": "Your new plan is active. Its checks are yours from now."
 }
