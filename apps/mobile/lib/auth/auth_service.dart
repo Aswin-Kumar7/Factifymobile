@@ -247,6 +247,20 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Delete the account for good, then forget the session on this phone. The
+  /// server has ended the session with the account, so there is no logout to send.
+  /// Throws [ApiFailure] when the server refuses (409 names the organisations the
+  /// person is the only owner of) or cannot be reached; nothing changes then.
+  Future<void> deleteAccount() async {
+    await _client.deleteAccount();
+    _session = null;
+    _account = null;
+    notifyListeners();
+    try {
+      await _store?.remove(_key);
+    } catch (_) {}
+  }
+
   Future<void> signOut() async {
     final session = _session;
     _session = null;

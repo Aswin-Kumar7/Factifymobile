@@ -15,6 +15,7 @@
 /// server now cites each page once per claim, and nothing here needs a key at all.
 library;
 
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -42,6 +43,7 @@ class EvidenceScreen extends StatelessWidget {
     required this.language,
     this.submission,
     this.client,
+    this.focus,
   });
 
   final Verdict verdict;
@@ -56,6 +58,10 @@ class EvidenceScreen extends StatelessWidget {
   /// screen without a server.
   final FactifyClient? client;
 
+  /// The claim tapped on the result: scrolled to and outlined, so the screen
+  /// opens on what the person asked about rather than at the top.
+  final Claim? focus;
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -65,39 +71,51 @@ class EvidenceScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.evidenceTitle),
-        actions: [LanguageMenu(preference: language), const SizedBox(width: 12)],
+        actions: [
+          LanguageMenu(preference: language),
+          const SizedBox(width: 12),
+        ],
       ),
       body: SafeArea(
-        child: ListView(
+        // Built whole rather than lazily, so a claim far down exists to scroll to.
+        child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
-          children: [
-            _Header(verdict: verdict, style: style),
-            const SizedBox(height: 20),
-            Text(
-              l10n.whatWeCheckedTitle,
-              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 10),
-            if (verdict.claims.isEmpty)
-              _Plain(text: l10n.unconfirmedBody)
-            else
-              for (final (index, claim) in verdict.claims.indexed) ...[
-                if (index > 0) const SizedBox(height: 12),
-                _ClaimCard(claim: claim, submission: submission),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _Header(verdict: verdict, style: style),
+              const SizedBox(height: 20),
+              Text(
+                l10n.whatWeCheckedTitle,
+                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 10),
+              if (verdict.claims.isEmpty)
+                _Plain(text: l10n.unconfirmedBody)
+              else
+                for (final (index, claim) in verdict.claims.indexed) ...[
+                  if (index > 0) const SizedBox(height: 12),
+                  if (identical(claim, focus) || (focus != null && claim.id == focus!.id))
+                    _Focused(
+                      child: _ClaimCard(claim: claim, submission: submission, focused: true),
+                    )
+                  else
+                    _ClaimCard(claim: claim, submission: submission),
+                ],
+              if (verdict.completenessNote != null) ...[
+                const SizedBox(height: 12),
+                _Plain(text: l10n.incompleteNote),
               ],
-            if (verdict.completenessNote != null) ...[
-              const SizedBox(height: 12),
-              _Plain(text: l10n.incompleteNote),
+              const SizedBox(height: 16),
+              _HowWeChecked(verdict: verdict),
+              if (verdict.advisories.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                AdvisoryPanel(advisories: verdict.advisories),
+              ],
+              const SizedBox(height: 20),
+              _CaseFooter(verdict: verdict, client: client),
             ],
-            const SizedBox(height: 16),
-            _HowWeChecked(verdict: verdict),
-            if (verdict.advisories.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              AdvisoryPanel(advisories: verdict.advisories),
-            ],
-            const SizedBox(height: 20),
-            _CaseFooter(verdict: verdict, client: client),
-          ],
+          ),
         ),
       ),
     );
@@ -117,10 +135,7 @@ class _Header extends StatelessWidget {
     final decided = verdict.factVerdict.isDecided;
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: style.container,
-        borderRadius: BorderRadius.circular(18),
-      ),
+      decoration: BoxDecoration(color: style.container, borderRadius: BorderRadius.circular(18)),
       child: Row(
         children: [
           Icon(style.icon, color: style.tone, size: 40),
@@ -145,7 +160,12 @@ class _Header extends StatelessWidget {
           ),
           if (decided && confidence != null) ...[
             const SizedBox(width: 10),
-            FxConfidenceRing(value: confidence, colour: style.tone, tint: style.container, size: 52),
+            FxConfidenceRing(
+              value: confidence,
+              colour: style.tone,
+              tint: style.container,
+              size: 52,
+            ),
           ],
         ],
       ),
@@ -153,12 +173,46 @@ class _Header extends StatelessWidget {
   }
 }
 
+/// Scrolls its child into view once it is laid out.
+class _Focused extends StatefulWidget {
+  const _Focused({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_Focused> createState() => _FocusedState();
+}
+
+class _FocusedState extends State<_Focused> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(
+        Scrollable.ensureVisible(
+          context,
+          alignment: 0.05,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        ),
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
 /// One claim: what it says, what the sources made of it, and the sources.
 class _ClaimCard extends StatelessWidget {
-  const _ClaimCard({required this.claim, required this.submission});
+  const _ClaimCard({required this.claim, required this.submission, this.focused = false});
 
   final Claim claim;
   final Submission? submission;
+
+  /// The claim the person tapped: outlined in the accent colour.
+  final bool focused;
 
   @override
   Widget build(BuildContext context) {
@@ -179,7 +233,14 @@ class _ClaimCard extends StatelessWidget {
     final technique = techniqueFor(claim);
     final picture = submission?.thumbnail;
 
+    final k = FactifyTokens.of(context);
     return Card(
+      shape: focused
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+              side: BorderSide(color: k.acc, width: 2),
+            )
+          : null,
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
@@ -187,19 +248,14 @@ class _ClaimCard extends StatelessWidget {
           children: [
             Text(
               claim.text,
-              style: theme.textTheme.bodyLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-                height: 1.35,
-              ),
+              style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600, height: 1.35),
             ),
             if (claim.inFull case final full?)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
                   l10n.claimInFull(full),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: FactifyTokens.of(context).ink3,
-                  ),
+                  style: theme.textTheme.bodySmall?.copyWith(color: FactifyTokens.of(context).ink3),
                 ),
               ),
             if (anchor != null) _InputAnchorBlock(anchor: anchor, submission: submission),
@@ -221,7 +277,9 @@ class _ClaimCard extends StatelessWidget {
                   const SizedBox(width: 8),
                   Text(
                     l10n.confidence(confidence),
-                    style: theme.textTheme.labelMedium?.copyWith(color: FactifyTokens.of(context).ink3),
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: FactifyTokens.of(context).ink3,
+                    ),
                   ),
                 ],
               ],
@@ -293,7 +351,12 @@ class _InputAnchorBlock extends StatelessWidget {
     final end = anchor.charEnd;
 
     final Widget detail;
-    if (text != null && start != null && end != null && 0 <= start && start < end && end <= text.length) {
+    if (text != null &&
+        start != null &&
+        end != null &&
+        0 <= start &&
+        start < end &&
+        end <= text.length) {
       final from = math.max(0, start - _surrounding);
       final to = math.min(text.length, end + _surrounding);
       detail = Text.rich(

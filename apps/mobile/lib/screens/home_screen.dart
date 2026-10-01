@@ -1,6 +1,6 @@
 /// Check: choose what to check, add it, and check it (v5).
 ///
-/// One kind of input at a time - text or a link, a picture, or a PDF. Once something
+/// One kind of input at a time - text or a link, a picture or a video, or a PDF. Once something
 /// is added the other kinds are locked, and it is removed to switch: a check is of
 /// one thing, and a screen that took a message, a picture and a file together left
 /// it unclear which one the answer was about.
@@ -32,6 +32,7 @@ import '../history/history_store.dart';
 import '../l10n/app_localizations.dart';
 import '../models/submission.dart';
 import '../widgets/action_style.dart';
+import '../widgets/person_avatar.dart';
 import '../widgets/ui/ui.dart';
 import 'checking_screen.dart';
 import 'error_screen.dart';
@@ -39,6 +40,16 @@ import 'history_screen.dart';
 
 /// The largest picture read into memory for its preview.
 const int _previewBytesLimit = 4 * 1024 * 1024;
+
+/// The largest upload the server takes (`limits.max_upload_bytes`, 25 MB): a video
+/// over it is turned away here, before minutes of uploading end in a refusal.
+const int _largestUpload = 25 * 1024 * 1024;
+
+/// How much of a video the server checks (app/media/video.py): the rest is not read.
+const int _videoSeconds = 90;
+
+/// Videos the server reads: MP4 and its family (MOV, M4V, 3GP), and WebM/Matroska.
+const Set<String> _videoEndings = {'mp4', 'm4v', 'mov', '3gp', 'webm', 'mkv'};
 
 /// What is being checked: exactly one of these at a time.
 enum InputType { text, image, pdf }
@@ -188,6 +199,7 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         final path = picked?.files.single.path;
         file = path == null ? null : File(path);
       }
+      _video = false;
       if (file != null) await _useFile(file, InputType.image);
     } on PlatformException catch (error) {
       if (!mounted) return;
@@ -195,6 +207,26 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _say(
         error.code == 'camera_access_denied' ? l10n.errorCameraDenied : l10n.errorFileUnopenable,
       );
+    }
+  }
+
+  /// A video from the phone, sent like a picture: the server tells them apart by
+  /// their bytes, reads what is said and checks the frames. A video costs more than
+  /// a picture; the Profile tab says how much.
+  Future<void> _pickVideo() async {
+    try {
+      final picked = await FilePicker.platform.pickFiles(type: FileType.video);
+      final path = picked?.files.single.path;
+      if (path == null) return;
+      final ending = path.contains('.') ? path.split('.').last.toLowerCase() : '';
+      if (!_videoEndings.contains(ending)) {
+        if (mounted) _say(AppLocalizations.of(context).notAVideo);
+        return;
+      }
+      _video = true;
+      await _useFile(File(path), InputType.image);
+    } on PlatformException {
+      if (mounted) _say(AppLocalizations.of(context).errorFileUnopenable);
     }
   }
 
@@ -236,6 +268,13 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     Uint8List? preview;
     try {
       size = await file.length();
+      if (_video && size > _largestUpload) {
+        _video = false;
+        if (mounted) {
+          _say(AppLocalizations.of(context).videoTooLarge(_largestUpload ~/ (1024 * 1024)));
+        }
+        return;
+      }
       if (type == InputType.image && !_video && size <= _previewBytesLimit) {
         preview = await file.readAsBytes();
       }
@@ -298,8 +337,6 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         fillText('');
       case CheckExit.chooseFile:
         clearInput();
-      case CheckExit.openHistory:
-        widget.onSeeAll?.call();
       case CheckExit.openProfile:
         widget.onOpenProfile?.call();
     }
@@ -373,6 +410,7 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       label: l10n.sourceCamera,
                       onTap: () => _pickImage(ImageSource.camera),
                     ),
+                    _DropButton(icon: FxIcons.video, label: l10n.sourceVideo, onTap: _pickVideo),
                   ],
                 ),
                 InputType.pdf when _file == null => _DropArea(
@@ -390,6 +428,7 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
                 _ => _FilePreview(
                   image: _type == InputType.image,
+                  video: _video,
                   preview: _preview,
                   name: _nameOf(_file!),
                   size: _fileSize,
@@ -457,14 +496,18 @@ class _Header extends StatelessWidget {
               return Expanded(
                 child: Row(
                   children: [
-                    Container(
-                      width: 36,
-                      height: 36,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(color: k.accS, shape: BoxShape.circle),
-                      child: Text(
-                        (shown ?? 'F').characters.first.toUpperCase(),
-                        style: FactifyText.sans(14, weight: FontWeight.w700, color: k.acc),
+                    PersonAvatar(
+                      url: services.auth.account?.avatarUrl,
+                      size: 36,
+                      fallback: Container(
+                        width: 36,
+                        height: 36,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(color: k.accS, shape: BoxShape.circle),
+                        child: Text(
+                          (shown ?? 'F').characters.first.toUpperCase(),
+                          style: FactifyText.sans(14, weight: FontWeight.w700, color: k.acc),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -808,6 +851,7 @@ class _DropButton extends StatelessWidget {
 class _FilePreview extends StatelessWidget {
   const _FilePreview({
     required this.image,
+    this.video = false,
     required this.preview,
     required this.name,
     required this.size,
@@ -815,6 +859,9 @@ class _FilePreview extends StatelessWidget {
   });
 
   final bool image;
+
+  /// A video: named with its own icon, and how much of it is checked.
+  final bool video;
   final Uint8List? preview;
   final String name;
   final int? size;
@@ -835,7 +882,7 @@ class _FilePreview extends StatelessWidget {
             clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(color: k.sf2, borderRadius: BorderRadius.circular(18)),
             child: shown == null
-                ? Icon(FxIcons.image, size: 40, color: k.ink3)
+                ? Icon(video ? FxIcons.video : FxIcons.image, size: 40, color: k.ink3)
                 : Image.memory(
                     shown,
                     fit: BoxFit.cover,
@@ -850,7 +897,15 @@ class _FilePreview extends StatelessWidget {
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(color: k.accS, borderRadius: BorderRadius.circular(12)),
-                child: Icon(image ? FxIcons.image : FxIcons.pdf, size: 18, color: k.acc),
+                child: Icon(
+                  video
+                      ? FxIcons.video
+                      : image
+                      ? FxIcons.image
+                      : FxIcons.pdf,
+                  size: 18,
+                  color: k.acc,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -865,6 +920,11 @@ class _FilePreview extends StatelessWidget {
                     ),
                     if (size != null)
                       Text(_sizeOf(size!), style: FactifyText.sans(11.5, color: k.ink3)),
+                    if (video)
+                      Text(
+                        l10n.videoFirstSeconds(_videoSeconds),
+                        style: FactifyText.sans(11.5, color: k.ink3),
+                      ),
                   ],
                 ),
               ),

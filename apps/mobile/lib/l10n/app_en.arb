@@ -107,7 +107,7 @@
   "failureBadReply": "Factify sent a reply this app could not read.",
   "failureInvalidInput": "That input could not be read.",
   "failureTooLarge": "That file is too large to check.",
-  "failureDailyLimit": "Factify is at its daily limit. Please try again tomorrow.",
+  "failureRateLimited": "Too many requests at once. Wait a minute, then try again.",
   "failureUnavailable": "Verification is not available right now.",
   "failureGeneric": "Factify could not complete that check.",
   "headlineSafeToShare": "True",
@@ -130,7 +130,7 @@
   "subheadSendToReview": "We couldn't confirm or rule this out yet",
   "englishOnlyNote": "Some details below are shown in English for now.",
   "@englishOnlyNote": {
-    "description": "Shown only when the interface is not in English: verdict reasons still arrive from the server in English."
+    "description": "Shown only when the interface is not in English and some claim reasons arrive in English (claims made in English)."
   },
   "whyNoVerdict": "Why unconfirmed?",
   "shareCorrection": "Share correction",
@@ -403,8 +403,8 @@
   "inputLinkDetected": "Link found. We'll read the page and check it.",
   "inputLocked": "Remove what you've added to switch to another type.",
   "removeInput": "Remove",
-  "pickImageTitle": "Add a picture",
-  "pickImageBody": "A screenshot, a WhatsApp forward or a photo. We read the text in it and check it.",
+  "pickImageTitle": "Add a picture or video",
+  "pickImageBody": "A screenshot, a WhatsApp forward, a photo or a video. We read what is in it and check it.",
   "pickPdfTitle": "Add a PDF",
   "pickPdfBody": "A circular, a notice or any document. We read it and check what it claims.",
   "choosePdf": "Choose a PDF",
@@ -424,7 +424,7 @@
   "historyClearConfirm": "Delete every saved check from this phone?",
   "historyDelete": "Delete",
   "historyFilterAll": "All",
-  "historyStoredNote": "Saved only on this phone. Nothing you check is kept on our servers. Swipe a check left to delete it.",
+  "historyStoredNote": "This list is kept only on this phone. What you check is stored on our server without your name. Swipe a check left to remove it from this list.",
   "historySources": "{count, plural, =0{No sources} =1{1 source} other{{count} sources}}",
   "@historySources": {
     "placeholders": {
@@ -551,7 +551,7 @@
       }
     }
   },
-  "historyStopped": "You stopped {count} false or misleading forwards from spreading this week.",
+  "historyStopped": "{count, plural, =1{1 check this week came back false, misleading or partly true.} other{{count} checks this week came back false, misleading or partly true.}}",
   "@historyStopped": {
     "placeholders": {
       "count": {
@@ -1022,7 +1022,7 @@
   },
   "onbSampleClaim": "Govt to pay ₹5,000 a month to every woman from 1 July.",
   "onbSourcesBody": "When the sources don't settle it, Factify says Unconfirmed rather than guess.",
-  "onbPrivacy": "We never keep a record of what you check.",
+  "onbPrivacy": "Your list of checks stays on your phone. What you check is stored on our server without your name.",
   "confirmPasswordHint": "Repeat it",
   "profileCreditsLabel": "{count, plural, =1{credit left} other{credits left}}",
   "@profileCreditsLabel": {
@@ -1060,8 +1060,8 @@
   "@errNoConnection": {
     "description": "Overline, in capitals."
   },
-  "errDailyLimit": "Daily limit",
-  "@errDailyLimit": {
+  "errRateLimited": "Too many at once",
+  "@errRateLimited": {
     "description": "Overline, in capitals."
   },
   "errYourAccount": "Your account",
@@ -1079,8 +1079,7 @@
   },
   "tryAgain": "Try again",
   "errSlowTitle": "This is taking too long",
-  "errLimitTitle": "Factify has reached today's limit",
-  "errLimitAction": "See saved checks",
+  "errRateLimitTitle": "Wait a minute, then try again",
   "errCreditsTitle": "You're out of credits",
   "errCreditsAction": "See your credits",
   "errSignedOutTitle": "Please sign in again",
@@ -1168,7 +1167,7 @@
       }
     }
   },
-  "onb3Title": "Pictures, videos and voice notes too",
+  "onb3Title": "Pictures and videos too",
   "onb3Body": "Factify spots AI-made pictures, face swaps and machine voices, and checks what's said in a video.",
   "onbMediaMessages": "Messages",
   "onbMediaLinks": "Links",
@@ -1272,5 +1271,39 @@
   "@planCredits": {"placeholders": {"count": {"type": "int"}}},
   "upgradePlan": "Upgrade plan",
   "changePlan": "Change plan",
-  "payPlanPaidBody": "Your new plan is active. Its checks are yours from now."
+  "payPlanPaidBody": "Your new plan is active. Its checks are yours from now.",
+  "privacyPolicy": "Privacy policy",
+  "deleteAccount": "Delete account",
+  "deleteAccountTitle": "Delete your account?",
+  "deleteAccountBody": "This deletes your account for good: your sign-in, any plan and credits you have left, your payment records and your survey answers. The checks saved on this phone are cleared too.",
+  "deleteAccountContinue": "Continue",
+  "deleteAccountConfirmTitle": "Delete for good?",
+  "deleteAccountConfirmBody": "The account {email} will be deleted now. This can't be undone.",
+  "@deleteAccountConfirmBody": {"placeholders": {"email": {"type": "String"}}},
+  "deleteAccountConfirm": "Delete for good",
+  "deleteAccountDeleting": "Deleting…",
+  "deleteAccountDone": "Your account has been deleted.",
+  "deleteAccountFailed": "Your account wasn't deleted. {reason}",
+  "@deleteAccountFailed": {"placeholders": {"reason": {"type": "String"}}},
+  "planEnds": "Ends {date}",
+  "@planEnds": {"placeholders": {"date": {"type": "String"}}},
+  "planRenews": "Renews {date}",
+  "@planRenews": {"placeholders": {"date": {"type": "String"}}},
+  "planExtraCapped": "Extra checks on, {price} each: {used} of {cap} used",
+  "@planExtraCapped": {"placeholders": {"price": {"type": "String"}, "used": {"type": "String"}, "cap": {"type": "String"}}},
+  "planExtraUncapped": "Extra checks on, {price} each: {used} used",
+  "@planExtraUncapped": {"placeholders": {"price": {"type": "String"}, "used": {"type": "String"}}},
+  "planExtraBlocked": "Extra checks are paused until your unpaid extra-usage bill is paid.",
+  "planPreviewNote": "During the preview you can keep checking after your plan's checks run out.",
+  "creditsPreviewNote": "During the preview you can keep checking after your credits run out.",
+  "creditCostsVideo": "A check costs {check}, a video {video}",
+  "@creditCostsVideo": {"placeholders": {"check": {"type": "int"}, "video": {"type": "int"}}},
+  "planVideoCost": "{count, plural, =1{A video uses 1 check} other{A video uses {count} checks}}",
+  "@planVideoCost": {"placeholders": {"count": {"type": "int"}}},
+  "sourceVideo": "Video",
+  "videoTooLarge": "That video is over {mb} MB. Choose a shorter one, or trim it first.",
+  "@videoTooLarge": {"placeholders": {"mb": {"type": "int"}}},
+  "notAVideo": "That file isn't a video Factify can read. Choose an MP4, MOV or WebM video.",
+  "videoFirstSeconds": "{seconds, plural, other{We look at the first {seconds} seconds of a video and listen to its first 3 minutes.}}",
+  "@videoFirstSeconds": {"placeholders": {"seconds": {"type": "int"}}}
 }

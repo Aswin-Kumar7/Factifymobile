@@ -54,8 +54,14 @@ enum FailureKind {
   /// 413.
   tooLarge,
 
-  /// 429.
-  dailyLimit,
+  /// 429: too many requests at once (the server's rate limit, or sign-in
+  /// throttling). Not "out of checks", which is 402: the server never answers 429
+  /// for a spent allowance.
+  rateLimited,
+
+  /// 409: the server refused because of the account's state, and said why in
+  /// [ApiFailure.detail] (deleting the last owner of an open organisation).
+  conflict,
 
   /// 503: the service is up but cannot verify.
   unavailable,
@@ -295,6 +301,36 @@ class FactifyClient {
     return Account.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 
+  /// Delete the signed-in person's account for good (204). The server refuses with
+  /// 409 [FailureKind.conflict] while they are the only owner of an open
+  /// organisation, and its [ApiFailure.detail] names the organisations.
+  Future<void> deleteAccount() async {
+    final auth = await _signedIn();
+    await _send(
+      () => _http
+          .delete(Uri.parse('$baseUrl/v1/me'), headers: auth)
+          .timeout(const Duration(seconds: 30)),
+    );
+  }
+
+  /// What each kind of check costs, from the server's price list: `text`, `link`,
+  /// `picture`, `pdf` and `video`. `/v1/me` carries only the cost of an ordinary
+  /// check, and a video costs more.
+  Future<Map<String, int>> checkCosts() async {
+    final response = await _send(
+      () => _http.get(Uri.parse('$baseUrl/v1/billing/packs')).timeout(const Duration(seconds: 15)),
+    );
+    final costs = (jsonDecode(response.body) as Map<String, dynamic>)['costs'];
+    if (costs is! Map) return const {};
+    return {
+      for (final entry in costs.entries)
+        if (entry.value is num) entry.key as String: (entry.value as num).toInt(),
+    };
+  }
+
+  /// The privacy policy, a page the same server publishes.
+  Uri get privacyPolicy => Uri.parse('$baseUrl/privacy');
+
   /// A one-time link to buy credits in the browser (like Spotify's): new for every
   /// purchase, single-use, valid 10 minutes. [orgId] buys for an organisation the
   /// person owns; null buys their own credits.
@@ -506,7 +542,8 @@ class FactifyClient {
       413 => ApiFailure(FailureKind.tooLarge, statusCode: code, detail: detail),
       401 => ApiFailure(FailureKind.signedOut, statusCode: code, detail: detail),
       402 => ApiFailure(FailureKind.outOfCredits, statusCode: code, detail: detail),
-      429 => ApiFailure(FailureKind.dailyLimit, retryable: true, statusCode: code, detail: detail),
+      409 => ApiFailure(FailureKind.conflict, statusCode: code, detail: detail),
+      429 => ApiFailure(FailureKind.rateLimited, retryable: true, statusCode: code, detail: detail),
       503 => ApiFailure(FailureKind.unavailable, retryable: true, statusCode: code, detail: detail),
       _ => ApiFailure(
         FailureKind.generic,

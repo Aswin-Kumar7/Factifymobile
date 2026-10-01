@@ -111,4 +111,74 @@ void main() {
       throwsA(isA<ApiFailure>().having((f) => f.kind, 'kind', FailureKind.interrupted)),
     );
   });
+
+  test('429 is too many at once, not out of checks; 402 is out of checks', () async {
+    for (final (status, kind) in [
+      (429, FailureKind.rateLimited),
+      (402, FailureKind.outOfCredits),
+    ]) {
+      final client = FactifyClient(
+        baseUrl: 'http://factify.test',
+        httpClient: MockClient((_) async => http.Response('{"detail": "x"}', status)),
+      );
+      await expectLater(
+        client.startCheck(text: 'A claim.'),
+        throwsA(isA<ApiFailure>().having((f) => f.kind, 'kind', kind)),
+      );
+    }
+  });
+
+  test(
+    "deleting the account sends DELETE /v1/me, and a refusal keeps the server's reason",
+    () async {
+      final sent = <String>[];
+      var status = 204;
+      final client = FactifyClient(
+        baseUrl: 'http://factify.test',
+        httpClient: MockClient((request) async {
+          sent.add('${request.method} ${request.url.path}');
+          return status == 204
+              ? http.Response('', 204)
+              : http.Response(
+                  jsonEncode({
+                    'detail': 'You are the only owner of Acme. Make someone else an owner first.',
+                    'error_code': 'owns_organisations',
+                  }),
+                  status,
+                );
+        }),
+      );
+
+      await client.deleteAccount();
+      expect(sent, ['DELETE /v1/me']);
+
+      status = 409;
+      await expectLater(
+        client.deleteAccount(),
+        throwsA(
+          isA<ApiFailure>()
+              .having((f) => f.kind, 'kind', FailureKind.conflict)
+              .having((f) => f.detail, 'detail', contains('only owner of Acme')),
+        ),
+      );
+    },
+  );
+
+  test('what each kind of check costs comes from the price list', () async {
+    final client = FactifyClient(
+      baseUrl: 'http://factify.test',
+      httpClient: MockClient(
+        (_) async => http.Response(
+          jsonEncode({
+            'packs': <Object>[],
+            'costs': {'text': 1, 'link': 1, 'picture': 1, 'pdf': 1, 'video': 3},
+          }),
+          200,
+        ),
+      ),
+    );
+    final costs = await client.checkCosts();
+    expect(costs['text'], 1);
+    expect(costs['video'], 3);
+  });
 }

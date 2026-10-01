@@ -224,8 +224,8 @@ class AppLocalizationsHi extends AppLocalizations {
   String get failureTooLarge => 'वह फ़ाइल जाँचने के लिए बहुत बड़ी है।';
 
   @override
-  String get failureDailyLimit =>
-      'Factify आज की सीमा तक पहुँच गया है। कृपया कल फिर कोशिश करें।';
+  String get failureRateLimited =>
+      'एक साथ बहुत ज़्यादा अनुरोध आ गए। एक मिनट रुककर फिर कोशिश करें।';
 
   @override
   String get failureUnavailable => 'जाँच अभी उपलब्ध नहीं है।';
@@ -705,11 +705,11 @@ class AppLocalizationsHi extends AppLocalizations {
   String get removeInput => 'हटाएँ';
 
   @override
-  String get pickImageTitle => 'तस्वीर जोड़ें';
+  String get pickImageTitle => 'तस्वीर या वीडियो जोड़ें';
 
   @override
   String get pickImageBody =>
-      'स्क्रीनशॉट, व्हाट्सऐप फ़ॉरवर्ड या फ़ोटो। हम इसमें लिखा पाठ पढ़कर उसकी जाँच करते हैं।';
+      'स्क्रीनशॉट, व्हाट्सऐप फ़ॉरवर्ड, फ़ोटो या वीडियो। हम इसमें जो है उसे पढ़कर उसकी जाँच करते हैं।';
 
   @override
   String get pickPdfTitle => 'PDF जोड़ें';
@@ -772,7 +772,7 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get historyStoredNote =>
-      'सिर्फ़ इसी फ़ोन पर सहेजा गया। आप जो जाँचते हैं, वह हमारे सर्वर पर नहीं रखा जाता। किसी जाँच को मिटाने के लिए उसे बाईं ओर सरकाएँ।';
+      'यह सूची सिर्फ़ इसी फ़ोन पर रहती है। आप जो जाँचते हैं, वह हमारे सर्वर पर आपके नाम के बिना रखा जाता है। किसी जाँच को इस सूची से हटाने के लिए उसे बाईं ओर सरकाएँ।';
 
   @override
   String historySources(int count) {
@@ -1008,7 +1008,13 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String historyStopped(int count) {
-    return 'इस हफ़्ते आपने $count झूठे या भ्रामक फ़ॉरवर्ड फैलने से रोके।';
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'इस हफ़्ते $count जाँचें झूठी, भ्रामक या आंशिक रूप से सच निकलीं।',
+      one: 'इस हफ़्ते 1 जाँच झूठी, भ्रामक या आंशिक रूप से सच निकली।',
+    );
+    return '$_temp0';
   }
 
   @override
@@ -1696,7 +1702,8 @@ class AppLocalizationsHi extends AppLocalizations {
       'जब स्रोत बात तय नहीं करते, तो Factify अंदाज़ा लगाने के बजाय \'अपुष्ट\' कहता है।';
 
   @override
-  String get onbPrivacy => 'आप क्या जाँचते हैं, इसका रिकॉर्ड हम कभी नहीं रखते।';
+  String get onbPrivacy =>
+      'आपकी जाँचों की सूची आपके फ़ोन पर ही रहती है। आप जो जाँचते हैं, वह हमारे सर्वर पर आपके नाम के बिना रखा जाता है।';
 
   @override
   String get confirmPasswordHint => 'फिर से लिखें';
@@ -1761,7 +1768,7 @@ class AppLocalizationsHi extends AppLocalizations {
   String get errNoConnection => 'कोई कनेक्शन नहीं';
 
   @override
-  String get errDailyLimit => 'दैनिक सीमा';
+  String get errRateLimited => 'एक साथ बहुत ज़्यादा';
 
   @override
   String get errYourAccount => 'आपका खाता';
@@ -1792,10 +1799,7 @@ class AppLocalizationsHi extends AppLocalizations {
   String get errSlowTitle => 'इसमें बहुत समय लग रहा है';
 
   @override
-  String get errLimitTitle => 'Factify आज की सीमा तक पहुँच गया है';
-
-  @override
-  String get errLimitAction => 'सहेजी गई जाँचें देखें';
+  String get errRateLimitTitle => 'एक मिनट रुककर फिर कोशिश करें';
 
   @override
   String get errCreditsTitle => 'आपके क्रेडिट खत्म हो गए हैं';
@@ -1909,7 +1913,7 @@ class AppLocalizationsHi extends AppLocalizations {
   }
 
   @override
-  String get onb3Title => 'तस्वीरें, वीडियो और वॉइस नोट भी';
+  String get onb3Title => 'तस्वीरें और वीडियो भी';
 
   @override
   String get onb3Body =>
@@ -2171,4 +2175,113 @@ class AppLocalizationsHi extends AppLocalizations {
   @override
   String get payPlanPaidBody =>
       'आपका नया प्लान चालू है। इसकी जाँचें अब से आपकी हैं।';
+
+  @override
+  String get privacyPolicy => 'निजता नीति';
+
+  @override
+  String get deleteAccount => 'खाता मिटाएँ';
+
+  @override
+  String get deleteAccountTitle => 'अपना खाता मिटाएँ?';
+
+  @override
+  String get deleteAccountBody =>
+      'इससे आपका खाता हमेशा के लिए मिट जाएगा: आपका साइन-इन, बचा हुआ प्लान और क्रेडिट, आपके भुगतान का रिकॉर्ड और सर्वे के जवाब। इस फ़ोन पर सहेजी गई जाँचें भी हट जाएँगी।';
+
+  @override
+  String get deleteAccountContinue => 'आगे बढ़ें';
+
+  @override
+  String get deleteAccountConfirmTitle => 'हमेशा के लिए मिटाएँ?';
+
+  @override
+  String deleteAccountConfirmBody(String email) {
+    return 'खाता $email अभी मिटा दिया जाएगा। इसे वापस नहीं लाया जा सकता।';
+  }
+
+  @override
+  String get deleteAccountConfirm => 'हमेशा के लिए मिटाएँ';
+
+  @override
+  String get deleteAccountDeleting => 'मिटाया जा रहा है…';
+
+  @override
+  String get deleteAccountDone => 'आपका खाता मिटा दिया गया है।';
+
+  @override
+  String deleteAccountFailed(String reason) {
+    return 'आपका खाता नहीं मिटाया गया। $reason';
+  }
+
+  @override
+  String planEnds(String date) {
+    return '$date को खत्म';
+  }
+
+  @override
+  String planRenews(String date) {
+    return '$date को नवीनीकरण';
+  }
+
+  @override
+  String planExtraCapped(String price, String used, String cap) {
+    return 'अतिरिक्त जाँचें चालू, $price प्रति जाँच: $cap में से $used इस्तेमाल';
+  }
+
+  @override
+  String planExtraUncapped(String price, String used) {
+    return 'अतिरिक्त जाँचें चालू, $price प्रति जाँच: $used इस्तेमाल';
+  }
+
+  @override
+  String get planExtraBlocked =>
+      'अतिरिक्त इस्तेमाल का बकाया बिल चुकाने तक अतिरिक्त जाँचें रुकी हैं।';
+
+  @override
+  String get planPreviewNote =>
+      'प्रीव्यू के दौरान प्लान की जाँचें खत्म होने के बाद भी आप जाँच करते रह सकते हैं।';
+
+  @override
+  String get creditsPreviewNote =>
+      'प्रीव्यू के दौरान क्रेडिट खत्म होने के बाद भी आप जाँच करते रह सकते हैं।';
+
+  @override
+  String creditCostsVideo(int check, int video) {
+    return 'एक जाँच: $check, एक वीडियो: $video';
+  }
+
+  @override
+  String planVideoCost(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'एक वीडियो में $count जाँचें लगती हैं',
+      one: 'एक वीडियो में 1 जाँच लगती है',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get sourceVideo => 'वीडियो';
+
+  @override
+  String videoTooLarge(int mb) {
+    return 'वह वीडियो $mb MB से बड़ा है। छोटा वीडियो चुनें, या पहले उसे काट लें।';
+  }
+
+  @override
+  String get notAVideo =>
+      'वह फ़ाइल ऐसा वीडियो नहीं है जिसे Factify पढ़ सके। MP4, MOV या WebM वीडियो चुनें।';
+
+  @override
+  String videoFirstSeconds(int seconds) {
+    String _temp0 = intl.Intl.pluralLogic(
+      seconds,
+      locale: localeName,
+      other:
+          'हम वीडियो के पहले $seconds सेकंड देखते हैं और पहले 3 मिनट सुनते हैं।',
+    );
+    return '$_temp0';
+  }
 }

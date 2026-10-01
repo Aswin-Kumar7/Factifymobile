@@ -43,6 +43,7 @@ class Account {
     required this.checks,
     required this.checkCost,
     required this.limited,
+    this.videoCheckCost,
     this.name,
     this.avatarUrl,
     this.joinedAt,
@@ -61,6 +62,11 @@ class Account {
   final int used;
   final int checks;
   final int checkCost;
+
+  /// What a video costs, when the server says (a video's speech and frames are
+  /// read, so it costs more than an ordinary check). Null from a server that
+  /// does not send it here; the price list says it instead (`checkCosts`).
+  final int? videoCheckCost;
 
   /// Whether the server refuses checks past the balance. False until plans exist.
   final bool limited;
@@ -91,6 +97,7 @@ class Account {
       checks: (credits['checks'] as num).toInt(),
       checkCost: (credits['check_cost'] as num).toInt(),
       limited: credits['limited'] as bool? ?? false,
+      videoCheckCost: (credits['video_check_cost'] as num?)?.toInt(),
       surveyDue: json['survey_due'] as bool? ?? false,
       planUsage: json['plan_usage'] is Map
           ? PlanUsage.fromJson((json['plan_usage'] as Map).cast<String, dynamic>())
@@ -111,6 +118,11 @@ class PlanUsage {
     this.renewsAt,
     this.cancelAtEnd = false,
     this.extraEnabled = false,
+    this.interval,
+    this.extraCapPaise,
+    this.extraUsedPaise = 0,
+    this.extraPricePaise = 0,
+    this.extraBlocked = false,
   });
 
   /// free, plus or pro.
@@ -130,6 +142,18 @@ class PlanUsage {
   final bool cancelAtEnd;
   final bool extraEnabled;
 
+  /// month or year, for a paid plan.
+  final String? interval;
+
+  /// The most extra usage may come to this month; null is no cap.
+  final int? extraCapPaise;
+  final int extraUsedPaise;
+  final int extraPricePaise;
+
+  /// An extra-usage bill left unpaid past its grace: extra checks are refused
+  /// until it is paid.
+  final bool extraBlocked;
+
   bool get paid => plan != 'free';
 
   /// The plan's checks left this month.
@@ -145,6 +169,11 @@ class PlanUsage {
     renewsAt: DateTime.tryParse(json['renews_at'] as String? ?? '')?.toLocal(),
     cancelAtEnd: json['cancel_at_end'] as bool? ?? false,
     extraEnabled: json['extra_enabled'] as bool? ?? false,
+    interval: json['interval'] as String?,
+    extraCapPaise: (json['extra_cap_paise'] as num?)?.toInt(),
+    extraUsedPaise: (json['extra_used_paise'] as num?)?.toInt() ?? 0,
+    extraPricePaise: (json['extra_price_paise'] as num?)?.toInt() ?? 0,
+    extraBlocked: json['extra_blocked'] as bool? ?? false,
   );
 }
 

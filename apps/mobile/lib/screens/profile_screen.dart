@@ -4,7 +4,7 @@
 /// holds for them, and how long they have been here. As a guest: a way to sign in.
 /// For everyone: the interface language, dark mode, whether a check that runs long
 /// tells them when it is ready, the checks saved on this phone, whether the service
-/// can be reached, and sign out.
+/// can be reached, the privacy policy, sign out, and deleting the account.
 ///
 /// Every number about the account is the server's: the balance shown is the one
 /// `/v1/me` returns, and whether a check may run is decided there, never here.
@@ -14,15 +14,19 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../api/client.dart';
 import '../app_services.dart';
 import '../auth/auth_service.dart';
 import '../l10n/app_localizations.dart';
+import '../l10n/phrases.dart';
 import '../models/account.dart';
 import '../theme/icons.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
 import '../widgets/brand.dart';
+import '../widgets/person_avatar.dart';
 import '../widgets/ui/fx_button.dart';
 import '../widgets/ui/fx_card.dart';
 import '../widgets/ui/fx_sheet.dart';
@@ -54,6 +58,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
   /// than a spinner that never stops.
   bool _accountFailed = false;
 
+  /// What each kind of check costs, from the server's price list; null until it
+  /// answers, or when it cannot. `/v1/me` says only what an ordinary check costs.
+  Map<String, int>? _costs;
+
+  /// Deleting the account, between the second confirmation and the server's answer.
+  bool _deleting = false;
+
   AppServices get _services => widget.services;
 
   @override
@@ -61,6 +72,65 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.initState();
     unawaited(_probe());
     unawaited(_loadAccount());
+    unawaited(_loadCosts());
+  }
+
+  Future<void> _loadCosts() async {
+    try {
+      final costs = await _services.client.checkCosts();
+      if (mounted && costs.isNotEmpty) setState(() => _costs = costs);
+    } on ApiFailure {
+      // Without the price list the card says what an ordinary check costs, and no more.
+    }
+  }
+
+  void _openPrivacy() =>
+      unawaited(launchUrl(_services.client.privacyPolicy, mode: LaunchMode.externalApplication));
+
+  /// Two steps: what deleting removes, then a last "for good". Only then is the
+  /// server asked; on success the history kept on this phone is cleared and the
+  /// app returns to the welcome screen (the shell follows the sign-out).
+  Future<void> _deleteAccount(Account account) async {
+    final l10n = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final first = await showFxSheet<bool>(context, builder: (_) => const _DeleteSheet());
+    if (first != true || !mounted) return;
+    final sure = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        final k = FactifyTokens.of(context);
+        return AlertDialog(
+          title: Text(l10n.deleteAccountConfirmTitle),
+          content: Text(l10n.deleteAccountConfirmBody(account.email)),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: Text(l10n.cancel)),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: TextButton.styleFrom(foregroundColor: k.fC),
+              child: Text(l10n.deleteAccountConfirm),
+            ),
+          ],
+        );
+      },
+    );
+    if (sure != true || !mounted) return;
+    setState(() => _deleting = true);
+    final history = _services.history;
+    try {
+      await _services.auth.deleteAccount();
+    } on ApiFailure catch (failure) {
+      // 409 carries the server's own sentence naming the organisations to hand over.
+      final detail = failure.detail;
+      final reason = failure.kind == FailureKind.conflict && detail != null && detail.isNotEmpty
+          ? detail
+          : l10n.describeFailure(failure);
+      messenger.showSnackBar(SnackBar(content: Text(l10n.deleteAccountFailed(reason))));
+      if (mounted) setState(() => _deleting = false);
+      return;
+    }
+    await history.clear();
+    messenger.showSnackBar(SnackBar(content: Text(l10n.deleteAccountDone)));
+    if (mounted) setState(() => _deleting = false);
   }
 
   Future<void> _loadAccount() async {
@@ -136,6 +206,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     const SizedBox(height: 10),
                     _Credits(
                       account: account,
+                      videoCost: account.videoCheckCost ?? _costs?['video'],
                       onBuy: () async {
                         await Navigator.of(context).push(
                           MaterialPageRoute<bool>(
@@ -190,6 +261,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     onProbe: () => unawaited(_probe()),
                     onNotify: (on) => unawaited(_notify(on)),
                     onOpenHistory: widget.onOpenHistory,
+                    onOpenPrivacy: _openPrivacy,
                   ),
                   const SizedBox(height: 10),
                   FxCard(
@@ -218,6 +290,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       radius: 18,
                       fontSize: 14,
                     ),
+                    if (account != null) ...[
+                      const SizedBox(height: 4),
+                      FxButton(
+                        label: _deleting ? l10n.deleteAccountDeleting : l10n.deleteAccount,
+                        icon: FxIcons.trash,
+                        variant: FxButtonVariant.ghost,
+                        foreground: k.fC,
+                        onPressed: _deleting ? null : () => unawaited(_deleteAccount(account)),
+                        height: 46,
+                        radius: 18,
+                        fontSize: 13.5,
+                      ),
+                    ],
                   ],
                 ],
               ),
@@ -275,7 +360,11 @@ class _Identity extends StatelessWidget {
       radius: 22,
       child: Row(
         children: [
-          _Initial(name: account.displayName, size: 58),
+          PersonAvatar(
+            url: account.avatarUrl,
+            size: 58,
+            fallback: _Initial(name: account.displayName, size: 58),
+          ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
@@ -363,9 +452,12 @@ class _RenameSheetState extends State<_RenameSheet> {
 }
 
 class _Credits extends StatelessWidget {
-  const _Credits({required this.account, required this.onBuy});
+  const _Credits({required this.account, required this.onBuy, this.videoCost});
 
   final Account account;
+
+  /// What a video costs, when the server has said; a video costs more than a check.
+  final int? videoCost;
 
   /// Opens the browser to buy credits (payment_screen.dart).
   final VoidCallback onBuy;
@@ -389,6 +481,33 @@ class _Credits extends StatelessWidget {
     }
     final locale = Localizations.localeOf(context).toLanguageTag();
     final resets = plan?.resetsAt == null ? null : DateFormat.MMMd(locale).format(plan!.resetsAt!);
+    // A paid plan's period: one paid for once ends on its date (it does not renew by
+    // itself); only one the server says renews is called renewing.
+    final periodEnd = plan == null || !plan.paid || plan.renewsAt == null
+        ? null
+        : DateFormat.yMMMd(locale).format(plan.renewsAt!);
+    final money = NumberFormat.currency(locale: locale, symbol: '₹', decimalDigits: 0);
+    String rupees(int paise) => money.format(paise / 100);
+    final video = videoCost;
+    final costs = video == null || video == account.checkCost
+        ? l10n.creditCosts(account.checkCost)
+        : l10n.creditCostsVideo(account.checkCost, video);
+    // Notes under the numbers, each a full sentence on its own line.
+    final notes = <String>[
+      if (plan != null && plan.paid && plan.extraBlocked)
+        l10n.planExtraBlocked
+      else if (plan != null && plan.paid && plan.extraEnabled)
+        plan.extraCapPaise == null
+            ? l10n.planExtraUncapped(rupees(plan.extraPricePaise), rupees(plan.extraUsedPaise))
+            : l10n.planExtraCapped(
+                rupees(plan.extraPricePaise),
+                rupees(plan.extraUsedPaise),
+                rupees(plan.extraCapPaise!),
+              ),
+      // While nothing is enforced, the server refuses no check: said plainly, rather
+      // than a count that reads like a wall.
+      if (!account.limited) plan == null ? l10n.creditsPreviewNote : l10n.planPreviewNote,
+    ];
     final ink = k.heroInk;
     final ring = Colors.white.withValues(alpha: 0.1);
 
@@ -447,7 +566,9 @@ class _Credits extends StatelessWidget {
                       Padding(
                         padding: const EdgeInsets.only(bottom: 4),
                         child: Text(
-                          plan == null ? l10n.profileCreditsLabel(balance) : l10n.planChecksLabel(balance),
+                          plan == null
+                              ? l10n.profileCreditsLabel(balance)
+                              : l10n.planChecksLabel(balance),
                           style: FactifyText.sans(13, color: ink.withValues(alpha: 0.8)),
                         ),
                       ),
@@ -481,14 +602,32 @@ class _Credits extends StatelessWidget {
                     spacing: 12,
                     runSpacing: 2,
                     children: plan == null
-                        ? [Text(l10n.creditsUsed(account.used)), Text(l10n.creditCosts(account.checkCost))]
+                        ? [Text(l10n.creditsUsed(account.used)), Text(costs)]
                         : [
                             Text(l10n.planUsed(plan.used, plan.allowance)),
                             if (resets != null) Text(l10n.planResets(resets)),
+                            if (periodEnd != null)
+                              Text(
+                                plan.cancelAtEnd
+                                    ? l10n.planEnds(periodEnd)
+                                    : l10n.planRenews(periodEnd),
+                              ),
                             if (plan.credits > 0) Text(l10n.planCredits(plan.credits)),
+                            if (video != null && video != account.checkCost)
+                              Text(l10n.planVideoCost(video)),
                           ],
                   ),
                 ),
+                for (final note in notes) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    note,
+                    style: FactifyText.sans(
+                      11.5,
+                      color: ink.withValues(alpha: 0.85),
+                    ).copyWith(height: 1.4),
+                  ),
+                ],
                 const SizedBox(height: 14),
                 Material(
                   color: Colors.white,
@@ -510,7 +649,11 @@ class _Credits extends StatelessWidget {
                                 plan == null
                                     ? l10n.buyCredits
                                     : (plan.paid ? l10n.changePlan : l10n.upgradePlan),
-                                style: FactifyText.sans(14.5, weight: FontWeight.w700, color: FactifyBrand.emerald),
+                                style: FactifyText.sans(
+                                  14.5,
+                                  weight: FontWeight.w700,
+                                  color: FactifyBrand.emerald,
+                                ),
                               ),
                             ),
                           ],
@@ -659,6 +802,7 @@ class _Settings extends StatelessWidget {
     required this.onProbe,
     required this.onNotify,
     required this.onOpenHistory,
+    required this.onOpenPrivacy,
   });
 
   final AppServices services;
@@ -666,6 +810,9 @@ class _Settings extends StatelessWidget {
   final VoidCallback onProbe;
   final ValueChanged<bool> onNotify;
   final VoidCallback? onOpenHistory;
+
+  /// Opens the privacy policy in the browser.
+  final VoidCallback onOpenPrivacy;
 
   void _chooseLanguage(BuildContext context) {
     final chosen = services.language.value?.languageCode;
@@ -804,6 +951,12 @@ class _Settings extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+          _Row(
+            icon: FxIcons.privacy,
+            title: l10n.privacyPolicy,
+            onTap: onOpenPrivacy,
+            trailing: Icon(FxIcons.openExternal, size: 18, color: k.ink3),
           ),
         ],
       ),
@@ -958,6 +1111,46 @@ class _Choices extends StatelessWidget {
               ),
             ),
           ),
+      ],
+    );
+  }
+}
+
+/// The first of the two steps: what deleting the account removes.
+class _DeleteSheet extends StatelessWidget {
+  const _DeleteSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    final k = FactifyTokens.of(context);
+    final l10n = AppLocalizations.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(l10n.deleteAccountTitle, style: FactifyText.serif(22, color: k.ink)),
+        const SizedBox(height: 8),
+        Text(
+          l10n.deleteAccountBody,
+          style: FactifyText.sans(13.5, color: k.ink2).copyWith(height: 1.45),
+        ),
+        const SizedBox(height: 18),
+        FxButton(
+          label: l10n.deleteAccountContinue,
+          icon: FxIcons.trash,
+          variant: FxButtonVariant.outline,
+          foreground: k.fC,
+          height: 50,
+          fontSize: 14.5,
+          onPressed: () => Navigator.pop(context, true),
+        ),
+        const SizedBox(height: 8),
+        FxButton(
+          label: l10n.cancel,
+          variant: FxButtonVariant.ghost,
+          height: 46,
+          fontSize: 14,
+          onPressed: () => Navigator.pop(context, false),
+        ),
       ],
     );
   }

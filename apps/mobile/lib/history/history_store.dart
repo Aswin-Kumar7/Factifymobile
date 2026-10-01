@@ -1,9 +1,9 @@
-/// Past checks, kept on this phone and nowhere else.
+/// Past checks, listed on this phone.
 ///
-/// The server keeps no record of who checked what: the credit ledger holds that a
-/// check was run, never what it was of. History is therefore the phone's own, so a
-/// person can go back to an answer and its sources, and it can be wiped from the
-/// profile screen in one tap. It stores the server's response exactly as it came, so
+/// The server keeps each check it answers (the case, without the person's name),
+/// but not a list of who checked what: the credit ledger holds that a check was
+/// run, never what it was of. The list is therefore the phone's own, so a person
+/// can go back to an answer and its sources, and remove any of it. It stores the server's response exactly as it came, so
 /// an old answer is shown from the same data it was first shown from.
 library;
 
@@ -135,6 +135,11 @@ class HistoryStore extends ChangeNotifier {
 
   static const String _key = 'check_history';
 
+  /// Case ids this phone has reported as wrong, so a result reopened from History
+  /// says it was reported rather than offering to report it again.
+  static const String _reportedKey = 'reported_cases';
+  Set<String> _reported = {};
+
   /// The most kept. Older checks fall off the end.
   static const int limit = 50;
 
@@ -151,6 +156,10 @@ class HistoryStore extends ChangeNotifier {
   /// apart from the app) may have been kept since.
   Future<void> load() async {
     await _reread();
+    try {
+      final saved = await _store?.getStringList(_reportedKey);
+      if (saved != null) _reported = {..._reported, ...saved};
+    } catch (_) {}
     _loaded = true;
     notifyListeners();
   }
@@ -257,6 +266,18 @@ class HistoryStore extends ChangeNotifier {
     }
   }
 
+  /// Whether this phone has reported [caseId]'s result as wrong.
+  bool isReported(String caseId) => _reported.contains(caseId);
+
+  /// Remember that [caseId]'s result was reported, once the server accepted it.
+  Future<void> markReported(String caseId) async {
+    if (!_reported.add(caseId)) return;
+    notifyListeners();
+    try {
+      await _store?.setStringList(_reportedKey, _reported.toList());
+    } catch (_) {}
+  }
+
   /// This week, Monday to Sunday, for History's chart and recap (v5).
   WeekSummary weekSummary([DateTime? now]) {
     final today = DateUtils.dateOnly((now ?? clock.now()).toLocal());
@@ -288,9 +309,11 @@ class HistoryStore extends ChangeNotifier {
       await _forget(r.filePath);
     }
     _records = const [];
+    _reported = {};
     notifyListeners();
     try {
       await _store?.remove(_key);
+      await _store?.remove(_reportedKey);
     } catch (_) {}
   }
 
@@ -346,11 +369,10 @@ class WeekSummary {
   int count(FactVerdict verdict) =>
       byDay.fold(0, (sum, day) => sum + day.where((v) => v == verdict).length);
 
-  /// False, partly true and misleading forwards caught this week: the positive recap.
+  /// Checks this week that came back false, partly true or misleading. A count of
+  /// verdicts, not of forwards anyone stopped.
   int get stopped =>
-      count(FactVerdict.falseClaim) +
-      count(FactVerdict.partlyTrue) +
-      count(FactVerdict.misleading);
+      count(FactVerdict.falseClaim) + count(FactVerdict.partlyTrue) + count(FactVerdict.misleading);
 
   /// The busiest days, at most two, or none in an empty week.
   List<DateTime> get busiest {

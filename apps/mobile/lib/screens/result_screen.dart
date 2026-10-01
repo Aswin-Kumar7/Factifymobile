@@ -68,7 +68,10 @@ class ResultScreen extends StatefulWidget {
 
 class _ResultScreenState extends State<ResultScreen> {
   bool _reporting = false;
-  bool _reported = false;
+
+  /// Remembered on the phone, so a result reopened from History is not offered
+  /// for reporting a second time.
+  late bool _reported = widget.services.history.isReported(widget.verdict.caseId);
   ReceiptState? _receipt;
   String? _receiptId;
 
@@ -147,6 +150,7 @@ class _ResultScreenState extends State<ResultScreen> {
           language: widget.services.language,
           submission: widget.submission,
           client: widget.services.client,
+          focus: claim,
         ),
       ),
     ),
@@ -178,6 +182,7 @@ class _ResultScreenState extends State<ResultScreen> {
     final messenger = ScaffoldMessenger.of(context);
     try {
       await widget.services.client.reportCase(_verdict.caseId);
+      await widget.services.history.markReported(_verdict.caseId);
       if (!mounted) return;
       setState(() => _reported = true);
       messenger.showSnackBar(SnackBar(content: Text(l10n.reportSent)));

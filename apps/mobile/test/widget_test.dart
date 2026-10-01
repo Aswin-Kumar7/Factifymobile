@@ -486,12 +486,27 @@ void main() {
     });
 
     testWidgets('states when the check was made, and what is still English', (tester) async {
-      await _pump(tester, _card(Verdict.fromJson(_payload())), locale: _hindi);
+      await _pump(
+        tester,
+        _card(Verdict.fromJson(_payload(claims: [{..._claim(), 'language': 'en'}]))),
+        locale: _hindi,
+      );
 
       expect(find.textContaining('को जाँचा गया'), findsOneWidget);
-      // Summaries still arrive in the claim's language (B5), and the card says so
-      // rather than switching language halfway down without a word.
+      // Reasons arrive in the claim's language; an English claim's are English, and
+      // the card says so rather than switching language halfway down without a word.
       expect(find.text('नीचे के कुछ विवरण अभी सिर्फ़ अंग्रेज़ी में हैं।'), findsOneWidget);
+    });
+
+    testWidgets('a Hindi claim, whose reasons arrive in Hindi, gets no English note', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        _card(Verdict.fromJson(_payload(claims: [{..._claim(), 'language': 'hi'}]))),
+        locale: _hindi,
+      );
+      expect(find.text('नीचे के कुछ विवरण अभी सिर्फ़ अंग्रेज़ी में हैं।'), findsNothing);
     });
 
     testWidgets('the advisory exclusion header survives translation', (tester) async {

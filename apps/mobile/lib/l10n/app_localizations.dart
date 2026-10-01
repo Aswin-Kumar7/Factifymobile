@@ -446,11 +446,11 @@ abstract class AppLocalizations {
   /// **'That file is too large to check.'**
   String get failureTooLarge;
 
-  /// No description provided for @failureDailyLimit.
+  /// No description provided for @failureRateLimited.
   ///
   /// In en, this message translates to:
-  /// **'Factify is at its daily limit. Please try again tomorrow.'**
-  String get failureDailyLimit;
+  /// **'Too many requests at once. Wait a minute, then try again.'**
+  String get failureRateLimited;
 
   /// No description provided for @failureUnavailable.
   ///
@@ -536,7 +536,7 @@ abstract class AppLocalizations {
   /// **'We couldn\'t confirm or rule this out yet'**
   String get subheadSendToReview;
 
-  /// Shown only when the interface is not in English: verdict reasons still arrive from the server in English.
+  /// Shown only when the interface is not in English and some claim reasons arrive in English (claims made in English).
   ///
   /// In en, this message translates to:
   /// **'Some details below are shown in English for now.'**
@@ -1169,13 +1169,13 @@ abstract class AppLocalizations {
   /// No description provided for @pickImageTitle.
   ///
   /// In en, this message translates to:
-  /// **'Add a picture'**
+  /// **'Add a picture or video'**
   String get pickImageTitle;
 
   /// No description provided for @pickImageBody.
   ///
   /// In en, this message translates to:
-  /// **'A screenshot, a WhatsApp forward or a photo. We read the text in it and check it.'**
+  /// **'A screenshot, a WhatsApp forward, a photo or a video. We read what is in it and check it.'**
   String get pickImageBody;
 
   /// No description provided for @pickPdfTitle.
@@ -1295,7 +1295,7 @@ abstract class AppLocalizations {
   /// No description provided for @historyStoredNote.
   ///
   /// In en, this message translates to:
-  /// **'Saved only on this phone. Nothing you check is kept on our servers. Swipe a check left to delete it.'**
+  /// **'This list is kept only on this phone. What you check is stored on our server without your name. Swipe a check left to remove it from this list.'**
   String get historyStoredNote;
 
   /// No description provided for @historySources.
@@ -1643,7 +1643,7 @@ abstract class AppLocalizations {
   /// No description provided for @historyStopped.
   ///
   /// In en, this message translates to:
-  /// **'You stopped {count} false or misleading forwards from spreading this week.'**
+  /// **'{count, plural, =1{1 check this week came back false, misleading or partly true.} other{{count} checks this week came back false, misleading or partly true.}}'**
   String historyStopped(int count);
 
   /// No description provided for @historyNoResults.
@@ -2591,7 +2591,7 @@ abstract class AppLocalizations {
   /// No description provided for @onbPrivacy.
   ///
   /// In en, this message translates to:
-  /// **'We never keep a record of what you check.'**
+  /// **'Your list of checks stays on your phone. What you check is stored on our server without your name.'**
   String get onbPrivacy;
 
   /// No description provided for @confirmPasswordHint.
@@ -2687,8 +2687,8 @@ abstract class AppLocalizations {
   /// Overline, in capitals.
   ///
   /// In en, this message translates to:
-  /// **'Daily limit'**
-  String get errDailyLimit;
+  /// **'Too many at once'**
+  String get errRateLimited;
 
   /// Overline, in capitals.
   ///
@@ -2744,17 +2744,11 @@ abstract class AppLocalizations {
   /// **'This is taking too long'**
   String get errSlowTitle;
 
-  /// No description provided for @errLimitTitle.
+  /// No description provided for @errRateLimitTitle.
   ///
   /// In en, this message translates to:
-  /// **'Factify has reached today\'s limit'**
-  String get errLimitTitle;
-
-  /// No description provided for @errLimitAction.
-  ///
-  /// In en, this message translates to:
-  /// **'See saved checks'**
-  String get errLimitAction;
+  /// **'Wait a minute, then try again'**
+  String get errRateLimitTitle;
 
   /// No description provided for @errCreditsTitle.
   ///
@@ -2915,7 +2909,7 @@ abstract class AppLocalizations {
   /// No description provided for @onb3Title.
   ///
   /// In en, this message translates to:
-  /// **'Pictures, videos and voice notes too'**
+  /// **'Pictures and videos too'**
   String get onb3Title;
 
   /// No description provided for @onb3Body.
@@ -3361,6 +3355,150 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Your new plan is active. Its checks are yours from now.'**
   String get payPlanPaidBody;
+
+  /// No description provided for @privacyPolicy.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy policy'**
+  String get privacyPolicy;
+
+  /// No description provided for @deleteAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete account'**
+  String get deleteAccount;
+
+  /// No description provided for @deleteAccountTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete your account?'**
+  String get deleteAccountTitle;
+
+  /// No description provided for @deleteAccountBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This deletes your account for good: your sign-in, any plan and credits you have left, your payment records and your survey answers. The checks saved on this phone are cleared too.'**
+  String get deleteAccountBody;
+
+  /// No description provided for @deleteAccountContinue.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue'**
+  String get deleteAccountContinue;
+
+  /// No description provided for @deleteAccountConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete for good?'**
+  String get deleteAccountConfirmTitle;
+
+  /// No description provided for @deleteAccountConfirmBody.
+  ///
+  /// In en, this message translates to:
+  /// **'The account {email} will be deleted now. This can\'t be undone.'**
+  String deleteAccountConfirmBody(String email);
+
+  /// No description provided for @deleteAccountConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete for good'**
+  String get deleteAccountConfirm;
+
+  /// No description provided for @deleteAccountDeleting.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleting…'**
+  String get deleteAccountDeleting;
+
+  /// No description provided for @deleteAccountDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Your account has been deleted.'**
+  String get deleteAccountDone;
+
+  /// No description provided for @deleteAccountFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Your account wasn\'t deleted. {reason}'**
+  String deleteAccountFailed(String reason);
+
+  /// No description provided for @planEnds.
+  ///
+  /// In en, this message translates to:
+  /// **'Ends {date}'**
+  String planEnds(String date);
+
+  /// No description provided for @planRenews.
+  ///
+  /// In en, this message translates to:
+  /// **'Renews {date}'**
+  String planRenews(String date);
+
+  /// No description provided for @planExtraCapped.
+  ///
+  /// In en, this message translates to:
+  /// **'Extra checks on, {price} each: {used} of {cap} used'**
+  String planExtraCapped(String price, String used, String cap);
+
+  /// No description provided for @planExtraUncapped.
+  ///
+  /// In en, this message translates to:
+  /// **'Extra checks on, {price} each: {used} used'**
+  String planExtraUncapped(String price, String used);
+
+  /// No description provided for @planExtraBlocked.
+  ///
+  /// In en, this message translates to:
+  /// **'Extra checks are paused until your unpaid extra-usage bill is paid.'**
+  String get planExtraBlocked;
+
+  /// No description provided for @planPreviewNote.
+  ///
+  /// In en, this message translates to:
+  /// **'During the preview you can keep checking after your plan\'s checks run out.'**
+  String get planPreviewNote;
+
+  /// No description provided for @creditsPreviewNote.
+  ///
+  /// In en, this message translates to:
+  /// **'During the preview you can keep checking after your credits run out.'**
+  String get creditsPreviewNote;
+
+  /// No description provided for @creditCostsVideo.
+  ///
+  /// In en, this message translates to:
+  /// **'A check costs {check}, a video {video}'**
+  String creditCostsVideo(int check, int video);
+
+  /// No description provided for @planVideoCost.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{A video uses 1 check} other{A video uses {count} checks}}'**
+  String planVideoCost(int count);
+
+  /// No description provided for @sourceVideo.
+  ///
+  /// In en, this message translates to:
+  /// **'Video'**
+  String get sourceVideo;
+
+  /// No description provided for @videoTooLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'That video is over {mb} MB. Choose a shorter one, or trim it first.'**
+  String videoTooLarge(int mb);
+
+  /// No description provided for @notAVideo.
+  ///
+  /// In en, this message translates to:
+  /// **'That file isn\'t a video Factify can read. Choose an MP4, MOV or WebM video.'**
+  String get notAVideo;
+
+  /// No description provided for @videoFirstSeconds.
+  ///
+  /// In en, this message translates to:
+  /// **'{seconds, plural, other{We look at the first {seconds} seconds of a video and listen to its first 3 minutes.}}'**
+  String videoFirstSeconds(int seconds);
 }
 
 class _AppLocalizationsDelegate

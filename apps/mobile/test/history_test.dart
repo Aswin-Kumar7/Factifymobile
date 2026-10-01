@@ -149,7 +149,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('This week · ${_range(store)}'), findsOneWidget);
-    expect(find.textContaining('You stopped 1 false or misleading'), findsOneWidget);
+    expect(find.textContaining('1 check this week came back false, misleading or partly true'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField), 'monsoon');
     await tester.pumpAndSettle();

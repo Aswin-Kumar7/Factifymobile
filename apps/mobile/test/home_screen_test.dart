@@ -178,14 +178,14 @@ void main() {
       // Still on text, and told why.
       expect(find.byType(TextField), findsOneWidget);
       expect(find.text("Remove what you've added to switch to another type."), findsOneWidget);
-      expect(find.text('Add a picture'), findsNothing);
+      expect(find.text('Add a picture or video'), findsNothing);
 
       await tester.tap(find.text('Remove'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Image'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Add a picture'), findsOneWidget);
+      expect(find.text('Add a picture or video'), findsOneWidget);
       expect(find.text('Gallery'), findsOneWidget);
       expect(find.byType(TextField), findsNothing);
     });

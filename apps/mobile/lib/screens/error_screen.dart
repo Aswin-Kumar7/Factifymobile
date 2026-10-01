@@ -31,8 +31,9 @@ enum CheckProblem {
   /// The check ran past its time.
   slow,
 
-  /// The service's daily limit.
-  dailyLimit,
+  /// Too many requests at once: the server's rate limit. Not the plan running out,
+  /// which is [outOfCredits].
+  rateLimited,
 
   /// This person has no credits left.
   outOfCredits,
@@ -53,7 +54,7 @@ enum CheckProblem {
     FailureKind.invalidInput when link => CheckProblem.linkUnread,
     FailureKind.unreachable || FailureKind.interrupted => CheckProblem.offline,
     FailureKind.timeout => CheckProblem.slow,
-    FailureKind.dailyLimit => CheckProblem.dailyLimit,
+    FailureKind.rateLimited => CheckProblem.rateLimited,
     FailureKind.outOfCredits => CheckProblem.outOfCredits,
     FailureKind.signedOut => CheckProblem.signedOut,
     FailureKind.tooLarge => CheckProblem.tooLarge,
@@ -69,9 +70,6 @@ enum CheckExit {
 
   /// Check, with the file removed: choose a smaller one.
   chooseFile,
-
-  /// The History tab.
-  openHistory,
 
   /// The Profile tab, where the credits are.
   openProfile,
@@ -236,11 +234,6 @@ class ErrorView extends StatelessWidget {
         FxIcons.paste,
         () => onExit(CheckExit.pasteText),
       ),
-      CheckProblem.dailyLimit => (
-        l10n.errLimitAction,
-        FxIcons.history,
-        () => onExit(CheckExit.openHistory),
-      ),
       CheckProblem.outOfCredits => (
         l10n.errCreditsAction,
         FxIcons.profile,
@@ -289,7 +282,11 @@ class _Shape {
     CheckProblem.linkUnread => _Shape(FxIcons.brokenLink, l10n.errUnfinished, l10n.errLinkTitle),
     CheckProblem.offline => _Shape(FxIcons.offline, l10n.errNoConnection, l10n.errOfflineTitle),
     CheckProblem.slow => _Shape(FxIcons.history, l10n.errUnfinished, l10n.errSlowTitle),
-    CheckProblem.dailyLimit => _Shape(FxIcons.lock, l10n.errDailyLimit, l10n.errLimitTitle),
+    CheckProblem.rateLimited => _Shape(
+      FxIcons.history,
+      l10n.errRateLimited,
+      l10n.errRateLimitTitle,
+    ),
     CheckProblem.outOfCredits => _Shape(FxIcons.lock, l10n.creditsTitle, l10n.errCreditsTitle),
     CheckProblem.signedOut => _Shape(FxIcons.person, l10n.errYourAccount, l10n.errSignedOutTitle),
     CheckProblem.tooLarge => _Shape(FxIcons.document, l10n.errUnfinished, l10n.errTooLargeTitle),

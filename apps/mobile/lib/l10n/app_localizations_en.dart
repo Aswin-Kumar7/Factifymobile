@@ -223,8 +223,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get failureTooLarge => 'That file is too large to check.';
 
   @override
-  String get failureDailyLimit =>
-      'Factify is at its daily limit. Please try again tomorrow.';
+  String get failureRateLimited =>
+      'Too many requests at once. Wait a minute, then try again.';
 
   @override
   String get failureUnavailable => 'Verification is not available right now.';
@@ -706,11 +706,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get removeInput => 'Remove';
 
   @override
-  String get pickImageTitle => 'Add a picture';
+  String get pickImageTitle => 'Add a picture or video';
 
   @override
   String get pickImageBody =>
-      'A screenshot, a WhatsApp forward or a photo. We read the text in it and check it.';
+      'A screenshot, a WhatsApp forward, a photo or a video. We read what is in it and check it.';
 
   @override
   String get pickPdfTitle => 'Add a PDF';
@@ -774,7 +774,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get historyStoredNote =>
-      'Saved only on this phone. Nothing you check is kept on our servers. Swipe a check left to delete it.';
+      'This list is kept only on this phone. What you check is stored on our server without your name. Swipe a check left to remove it from this list.';
 
   @override
   String historySources(int count) {
@@ -1008,7 +1008,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String historyStopped(int count) {
-    return 'You stopped $count false or misleading forwards from spreading this week.';
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          '$count checks this week came back false, misleading or partly true.',
+      one: '1 check this week came back false, misleading or partly true.',
+    );
+    return '$_temp0';
   }
 
   @override
@@ -1696,7 +1703,8 @@ class AppLocalizationsEn extends AppLocalizations {
       'When the sources don\'t settle it, Factify says Unconfirmed rather than guess.';
 
   @override
-  String get onbPrivacy => 'We never keep a record of what you check.';
+  String get onbPrivacy =>
+      'Your list of checks stays on your phone. What you check is stored on our server without your name.';
 
   @override
   String get confirmPasswordHint => 'Repeat it';
@@ -1761,7 +1769,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get errNoConnection => 'No connection';
 
   @override
-  String get errDailyLimit => 'Daily limit';
+  String get errRateLimited => 'Too many at once';
 
   @override
   String get errYourAccount => 'Your account';
@@ -1793,10 +1801,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get errSlowTitle => 'This is taking too long';
 
   @override
-  String get errLimitTitle => 'Factify has reached today\'s limit';
-
-  @override
-  String get errLimitAction => 'See saved checks';
+  String get errRateLimitTitle => 'Wait a minute, then try again';
 
   @override
   String get errCreditsTitle => 'You\'re out of credits';
@@ -1911,7 +1916,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get onb3Title => 'Pictures, videos and voice notes too';
+  String get onb3Title => 'Pictures and videos too';
 
   @override
   String get onb3Body =>
@@ -2173,4 +2178,113 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get payPlanPaidBody =>
       'Your new plan is active. Its checks are yours from now.';
+
+  @override
+  String get privacyPolicy => 'Privacy policy';
+
+  @override
+  String get deleteAccount => 'Delete account';
+
+  @override
+  String get deleteAccountTitle => 'Delete your account?';
+
+  @override
+  String get deleteAccountBody =>
+      'This deletes your account for good: your sign-in, any plan and credits you have left, your payment records and your survey answers. The checks saved on this phone are cleared too.';
+
+  @override
+  String get deleteAccountContinue => 'Continue';
+
+  @override
+  String get deleteAccountConfirmTitle => 'Delete for good?';
+
+  @override
+  String deleteAccountConfirmBody(String email) {
+    return 'The account $email will be deleted now. This can\'t be undone.';
+  }
+
+  @override
+  String get deleteAccountConfirm => 'Delete for good';
+
+  @override
+  String get deleteAccountDeleting => 'Deleting…';
+
+  @override
+  String get deleteAccountDone => 'Your account has been deleted.';
+
+  @override
+  String deleteAccountFailed(String reason) {
+    return 'Your account wasn\'t deleted. $reason';
+  }
+
+  @override
+  String planEnds(String date) {
+    return 'Ends $date';
+  }
+
+  @override
+  String planRenews(String date) {
+    return 'Renews $date';
+  }
+
+  @override
+  String planExtraCapped(String price, String used, String cap) {
+    return 'Extra checks on, $price each: $used of $cap used';
+  }
+
+  @override
+  String planExtraUncapped(String price, String used) {
+    return 'Extra checks on, $price each: $used used';
+  }
+
+  @override
+  String get planExtraBlocked =>
+      'Extra checks are paused until your unpaid extra-usage bill is paid.';
+
+  @override
+  String get planPreviewNote =>
+      'During the preview you can keep checking after your plan\'s checks run out.';
+
+  @override
+  String get creditsPreviewNote =>
+      'During the preview you can keep checking after your credits run out.';
+
+  @override
+  String creditCostsVideo(int check, int video) {
+    return 'A check costs $check, a video $video';
+  }
+
+  @override
+  String planVideoCost(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'A video uses $count checks',
+      one: 'A video uses 1 check',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get sourceVideo => 'Video';
+
+  @override
+  String videoTooLarge(int mb) {
+    return 'That video is over $mb MB. Choose a shorter one, or trim it first.';
+  }
+
+  @override
+  String get notAVideo =>
+      'That file isn\'t a video Factify can read. Choose an MP4, MOV or WebM video.';
+
+  @override
+  String videoFirstSeconds(int seconds) {
+    String _temp0 = intl.Intl.pluralLogic(
+      seconds,
+      locale: localeName,
+      other:
+          'We look at the first $seconds seconds of a video and listen to its first 3 minutes.',
+    );
+    return '$_temp0';
+  }
 }

@@ -3,7 +3,7 @@
 /// 1. The seal, the name, and an example forward stamped False: what Factify does.
 /// 2. That every answer comes with its sources - an example claim and the three
 ///    sources that refute it - and that the sources not settling it is an answer too.
-/// 3. That pictures, videos and voice notes are checked too, and the way in:
+/// 3. That pictures and videos are checked too, and the way in:
 ///    Create account, or I have an account.
 ///
 /// Either button opens the sign-up screen ([AuthScreen]); it opens on creating an
@@ -27,6 +27,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../app_services.dart';
 import '../l10n/app_localizations.dart';
@@ -220,8 +221,10 @@ class _AuthScreenState extends State<AuthScreen> {
                         header: true,
                         child: Text(
                           _creating ? l10n.signUpTitle : l10n.welcomeBackTitle,
-                          style: FactifyText.serif(34, color: k.ink)
-                              .copyWith(height: 1.04, letterSpacing: -1),
+                          style: FactifyText.serif(
+                            34,
+                            color: k.ink,
+                          ).copyWith(height: 1.04, letterSpacing: -1),
                         ),
                       ),
                       const SizedBox(height: 10),
@@ -248,6 +251,28 @@ class _AuthScreenState extends State<AuthScreen> {
                             ),
                           ),
                         ],
+                      ),
+                      Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: FxTapArea(
+                          onTap: () => unawaited(
+                            launchUrl(
+                              widget.services.client.privacyPolicy,
+                              mode: LaunchMode.externalApplication,
+                            ),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsetsDirectional.only(start: 24, end: 6),
+                            child: Text(
+                              l10n.privacyPolicy,
+                              style: FactifyText.sans(12, weight: FontWeight.w600, color: k.acc)
+                                  .copyWith(
+                                    decoration: TextDecoration.underline,
+                                    decorationColor: k.acc,
+                                  ),
+                            ),
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -319,7 +344,11 @@ class _Page extends StatelessWidget {
                               children: [
                                 Text(
                                   l10n.onbNext,
-                                  style: FactifyText.sans(15, weight: FontWeight.w600, color: k.onAcc),
+                                  style: FactifyText.sans(
+                                    15,
+                                    weight: FontWeight.w600,
+                                    color: k.onAcc,
+                                  ),
                                 ),
                                 const SizedBox(width: 8),
                                 Icon(
@@ -429,9 +458,8 @@ class _Header extends StatelessWidget {
           if (services != null)
             FxTapArea(
               label: l10n.languageMenuTooltip,
-              onTap: () => unawaited(
-                services.language.choose(Locale(showing == 'hi' ? 'en' : 'hi')),
-              ),
+              onTap: () =>
+                  unawaited(services.language.choose(Locale(showing == 'hi' ? 'en' : 'hi'))),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6),
                 child: Text.rich(
@@ -488,8 +516,11 @@ class _WhatItDoes extends StatelessWidget {
                 alignment: AlignmentDirectional.centerStart,
                 child: Text(
                   'Factify',
-                  style: FactifyText.serif(30, weight: FontWeight.w600, color: k.ink)
-                      .copyWith(letterSpacing: -0.6),
+                  style: FactifyText.serif(
+                    30,
+                    weight: FontWeight.w600,
+                    color: k.ink,
+                  ).copyWith(letterSpacing: -0.6),
                 ),
               ),
             ),
@@ -588,8 +619,10 @@ class _StampedCard extends StatelessWidget {
                     Flexible(
                       child: Text(
                         source,
-                        style: FactifyText.sans(11.5, color: k.ink3)
-                            .copyWith(fontStyle: italic ? FontStyle.italic : null),
+                        style: FactifyText.sans(
+                          11.5,
+                          color: k.ink3,
+                        ).copyWith(fontStyle: italic ? FontStyle.italic : null),
                       ),
                     ),
                   ],
@@ -598,8 +631,11 @@ class _StampedCard extends StatelessWidget {
                 Text(
                   text,
                   style: serif
-                      ? FactifyText.serif(17, weight: FontWeight.w400, color: k.ink)
-                          .copyWith(height: 1.3)
+                      ? FactifyText.serif(
+                          17,
+                          weight: FontWeight.w400,
+                          color: k.ink,
+                        ).copyWith(height: 1.3)
                       : FactifyText.sans(14, color: k.ink).copyWith(height: 1.45),
                 ),
               ],
@@ -645,8 +681,11 @@ class _Stamp extends StatelessWidget {
         ),
         child: Text(
           ActionStyle.word(verdict, l10n).toUpperCase(),
-          style: FactifyText.serif(17, weight: FontWeight.w600, color: strong)
-              .copyWith(letterSpacing: 1.5, height: 1.1),
+          style: FactifyText.serif(
+            17,
+            weight: FontWeight.w600,
+            color: strong,
+          ).copyWith(letterSpacing: 1.5, height: 1.1),
         ),
       ),
     );
@@ -727,7 +766,11 @@ class _WithSources extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 '“${l10n.onbSampleClaim}”',
-                style: FactifyText.serif(18, weight: FontWeight.w400, color: k.ink).copyWith(height: 1.3),
+                style: FactifyText.serif(
+                  18,
+                  weight: FontWeight.w400,
+                  color: k.ink,
+                ).copyWith(height: 1.3),
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(0, 14, 0, 4),
@@ -828,7 +871,9 @@ class _AllKinds extends StatelessWidget {
             children: [
               for (final (i, (icon, label)) in row.indexed) ...[
                 if (i > 0) const SizedBox(width: 10),
-                Expanded(child: _Kind(icon: icon, label: label)),
+                Expanded(
+                  child: _Kind(icon: icon, label: label),
+                ),
               ],
             ],
           ),

@@ -10,6 +10,7 @@ import 'package:factify_mobile/l10n/app_localizations.dart';
 import 'package:factify_mobile/l10n/language_preference.dart';
 import 'package:factify_mobile/models/submission.dart';
 import 'package:factify_mobile/models/verdict.dart';
+import 'package:factify_mobile/screens/evidence_screen.dart';
 import 'package:factify_mobile/screens/result_screen.dart';
 import 'package:factify_mobile/theme/theme.dart';
 import 'package:factify_mobile/widgets/action_style.dart';
@@ -301,6 +302,60 @@ void main() {
       expect(_verdict('DO_NOT_SHARE', [_claim('A claim.')]).receipt, isNull);
       expect(ReceiptSummary.tryParse({'verified': true}), isNull);
     });
+  });
+
+  testWidgets('a result reported earlier says so when reopened, and is not offered again', (
+    tester,
+  ) async {
+    final services = _services();
+    await services.history.markReported('case-1');
+    await _show(
+      tester,
+      ResultScreen(
+        services: services,
+        verdict: _verdict('DO_NOT_SHARE', [_claim('A claim.', confidence: 90)], confidence: 90),
+        submission: Submission.text('A claim.'),
+      ),
+    );
+    await tester.scrollUntilVisible(
+      find.text("Reported. We'll take another look at this result."),
+      300,
+      scrollable: find
+          .byWidgetPredicate((w) => w is Scrollable && w.axisDirection == AxisDirection.down)
+          .first,
+    );
+    expect(find.text('Report wrong result'), findsNothing);
+  });
+
+  testWidgets('tapping a claim opens the sources at that claim', (tester) async {
+    final claims = [
+      for (final n in ['one', 'two', 'three', 'four', 'five', 'six'])
+        _claim('Claim $n is about something.', confidence: 90),
+    ];
+    await _show(
+      tester,
+      ResultScreen(
+        services: _services(),
+        verdict: _verdict('DO_NOT_SHARE', claims, confidence: 90),
+        submission: Submission.text('A claim.'),
+      ),
+    );
+    final row = find.text('Claim six is about something.');
+    await tester.ensureVisible(row);
+    await tester.pumpAndSettle();
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(EvidenceScreen), findsOneWidget);
+    final card = find.descendant(
+      of: find.byType(EvidenceScreen),
+      matching: find.text('Claim six is about something.'),
+    );
+    expect(card, findsOneWidget);
+    final rect = tester.getRect(card);
+    final height = tester.view.physicalSize.height / tester.view.devicePixelRatio;
+    expect(rect.top, greaterThanOrEqualTo(0));
+    expect(rect.bottom, lessThanOrEqualTo(height));
   });
 
   group('the bottom bar offers one thing to do next', () {

@@ -247,8 +247,8 @@ class _Header extends StatelessWidget {
             ),
           ],
           // Summaries and quotes arrive in the language of the claim, not the app's;
-          // a Hindi reader is told so rather than surprised.
-          const EnglishOnlyNote(padding: EdgeInsets.only(top: 8)),
+          // a Hindi reader is told so when that is English, rather than surprised.
+          EnglishOnlyNote(verdict: verdict, padding: const EdgeInsets.only(top: 8)),
           if (verdict.fromCache) ...[
             const SizedBox(height: 12),
             Container(
@@ -646,11 +646,17 @@ class _SiteCard extends StatelessWidget {
             runSpacing: 6,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Text(site.domain, style: FactifyText.sans(14, weight: FontWeight.w600, color: k.ink)),
+              Text(
+                site.domain,
+                style: FactifyText.sans(14, weight: FontWeight.w600, color: k.ink),
+              ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
                 decoration: BoxDecoration(color: tint, borderRadius: BorderRadius.circular(10)),
-                child: Text(badge, style: FactifyText.sans(11.5, weight: FontWeight.w600, color: colour)),
+                child: Text(
+                  badge,
+                  style: FactifyText.sans(11.5, weight: FontWeight.w600, color: colour),
+                ),
               ),
             ],
           ),
@@ -660,7 +666,14 @@ class _SiteCard extends StatelessWidget {
           ],
           for (final line in site.warnings) ...[
             const SizedBox(height: 6),
-            Text(line, style: FactifyText.sans(13, weight: FontWeight.w600, color: k.mC).copyWith(height: 1.4)),
+            Text(
+              line,
+              style: FactifyText.sans(
+                13,
+                weight: FontWeight.w600,
+                color: k.mC,
+              ).copyWith(height: 1.4),
+            ),
           ],
           const SizedBox(height: 8),
           Text(l10n.sourceProfileNote, style: FactifyText.sans(11.5, color: k.ink3)),
@@ -780,7 +793,9 @@ class _WhatWeCheckedState extends State<_WhatWeChecked> {
     final saidSpans = said.isEmpty || verdict.nothingToCheck
         ? const <ClaimSpan>[]
         : locateClaims(said, verdict.claims, useAnchors: false);
-    final keys = {for (final s in [...spans, ...saidSpans]) s.mark}.toList();
+    final keys = {
+      for (final s in [...spans, ...saidSpans]) s.mark,
+    }.toList();
 
     return FxCard(
       padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
@@ -910,10 +925,7 @@ class _WhatWeCheckedState extends State<_WhatWeChecked> {
                         ),
                       ),
                       const SizedBox(width: 5),
-                      Text(
-                        claimStateLabel(mark, l10n),
-                        style: FactifyText.sans(11, color: k.ink3),
-                      ),
+                      Text(claimStateLabel(mark, l10n), style: FactifyText.sans(11, color: k.ink3)),
                     ],
                   ),
               ],

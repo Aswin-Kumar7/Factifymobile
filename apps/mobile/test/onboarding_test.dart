@@ -157,12 +157,12 @@ void main() {
       // The sample result is invented, and says so.
       expect(find.text('AN EXAMPLE'), findsOneWidget);
       await _tap(tester, find.text('Next').last);
-      expect(find.text('Pictures, videos and voice notes too'), findsOneWidget);
+      expect(find.text('Pictures and videos too'), findsOneWidget);
       expect(find.text('I have an account'), findsOneWidget);
 
       await _tap(tester, find.text('Create account'));
       expect(find.text('Create your account'), findsOneWidget);
-      expect(find.text('We never keep a record of what you check.'), findsOneWidget);
+      expect(find.text('Your list of checks stays on your phone. What you check is stored on our server without your name.'), findsOneWidget);
 
       await _pump(tester, services, WelcomeScreen(services: services, key: UniqueKey()));
       await _tap(tester, find.text('Skip'));

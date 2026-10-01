@@ -32,8 +32,37 @@ import 'package:http/testing.dart';
 
 const _token = 'fs_session-1';
 
-MockClient _server({bool plans = false}) => MockClient((request) async {
+/// Requests the server was sent, as "METHOD path".
+final List<String> _calls = [];
+
+MockClient _server({
+  bool plans = false,
+  bool prepaid = false,
+  int deleteStatus = 204,
+}) => MockClient((request) async {
   final path = request.url.path;
+  _calls.add('${request.method} $path');
+  if (path == '/v1/me' && request.method == 'DELETE') {
+    if (deleteStatus == 409) {
+      return http.Response(
+        jsonEncode({
+          'detail':
+              'You are the only owner of Acme News. Make someone else an owner or close it first.',
+          'error_code': 'owns_organisations',
+        }),
+        409,
+      );
+    }
+    return http.Response('', deleteStatus);
+  }
+  if (path == '/v1/billing/packs') {
+    return http.Response(
+      jsonEncode({
+        'costs': {'text': 1, 'link': 1, 'picture': 1, 'pdf': 1, 'video': 3},
+      }),
+      200,
+    );
+  }
   if (path == '/readyz') return http.Response('{"ready": true, "missing": []}', 200);
   if (path == '/v1/auth/config') {
     return http.Response(
@@ -79,12 +108,16 @@ MockClient _server({bool plans = false}) => MockClient((request) async {
             'name': 'Plus',
             'interval': 'month',
             'renews_at': '2026-11-01T00:00:00+05:30',
-            'cancel_at_end': false,
+            'cancel_at_end': prepaid,
             'allowance': 120,
             'used': 78,
             'resets_at': '2026-11-01T00:00:00+05:30',
             'credits': 0,
-            'extra_enabled': false,
+            'extra_enabled': prepaid,
+            'extra_cap_paise': 50000,
+            'extra_used_paise': 0,
+            'extra_price_paise': 100,
+            'extra_blocked': prepaid,
           },
       }),
       200,
@@ -106,8 +139,15 @@ class _Notifier extends SilentNotifier {
   }
 }
 
-Future<AppServices> _services({bool allowed = true, bool signedIn = true, bool plans = false}) async {
-  final server = _server(plans: plans);
+Future<AppServices> _services({
+  bool allowed = true,
+  bool signedIn = true,
+  bool plans = false,
+  bool prepaid = false,
+  int deleteStatus = 204,
+}) async {
+  _calls.clear();
+  final server = _server(plans: plans, prepaid: prepaid, deleteStatus: deleteStatus);
   final client = FactifyClient(baseUrl: 'http://factify.test', httpClient: server);
   final auth = AuthService(client: client, httpClient: server, persist: false);
   client.tokenProvider = auth.accessToken;
@@ -181,6 +221,96 @@ void main() {
       expect(find.textContaining('Resets '), findsOneWidget);
       expect(find.text('Change plan'), findsOneWidget);
       expect(find.text('Buy credits'), findsNothing);
+      // A plan the server says renews is called renewing; a video's cost is the
+      // price list's, not an ordinary check's.
+      expect(find.textContaining('Renews '), findsOneWidget);
+      expect(find.text('A video uses 3 checks'), findsOneWidget);
+      // Nothing is enforced on this server, and the card says so.
+      expect(
+        find.text("During the preview you can keep checking after your plan's checks run out."),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a plan paid once says when it ends, and when extra checks are paused', (
+      tester,
+    ) async {
+      final services = await _services(plans: true, prepaid: true);
+      await _pump(tester, services, ProfileScreen(services: services));
+
+      expect(find.textContaining('Ends '), findsOneWidget);
+      expect(find.textContaining('Renews '), findsNothing);
+      expect(
+        find.text('Extra checks are paused until your unpaid extra-usage bill is paid.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('without a plan, the costs name what a video costs', (tester) async {
+      final services = await _services();
+      await _pump(tester, services, ProfileScreen(services: services));
+      expect(find.text('A check costs 1, a video 3'), findsOneWidget);
+    });
+
+    testWidgets('deleting the account asks twice, then deletes it and clears this phone', (
+      tester,
+    ) async {
+      final services = await _services();
+      await services.history.markReported('case-1');
+      await _pump(tester, services, ProfileScreen(services: services));
+
+      await tester.scrollUntilVisible(
+        find.text('Delete account'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete account'));
+      await tester.pumpAndSettle();
+      expect(find.text('Delete your account?'), findsOneWidget);
+      expect(_calls, isNot(contains('DELETE /v1/me')));
+
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+      expect(find.text('Delete for good?'), findsOneWidget);
+      expect(find.textContaining('asha@example.org will be deleted now'), findsOneWidget);
+      expect(_calls, isNot(contains('DELETE /v1/me')));
+
+      await tester.tap(find.text('Delete for good'));
+      await tester.pumpAndSettle();
+      expect(_calls, contains('DELETE /v1/me'));
+      expect(services.auth.signedIn, isFalse);
+      expect(services.history.isReported('case-1'), isFalse);
+      expect(find.text('Your account has been deleted.'), findsOneWidget);
+    });
+
+    testWidgets("the server's reason is shown when it refuses to delete", (tester) async {
+      final services = await _services(deleteStatus: 409);
+      await _pump(tester, services, ProfileScreen(services: services));
+
+      await tester.scrollUntilVisible(
+        find.text('Delete account'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete account'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete for good'));
+      await tester.pumpAndSettle();
+
+      expect(services.auth.signedIn, isTrue);
+      expect(find.textContaining('You are the only owner of Acme News'), findsOneWidget);
+      expect(find.textContaining("Your account wasn't deleted."), findsOneWidget);
+    });
+
+    testWidgets('the privacy policy is one tap away', (tester) async {
+      final services = await _services();
+      await _pump(tester, services, ProfileScreen(services: services));
+      expect(find.text('Privacy policy'), findsOneWidget);
+      expect(services.client.privacyPolicy.toString(), 'http://factify.test/privacy');
     });
 
     testWidgets('the dark mode switch flips the theme; the row offers "same as your phone"', (
@@ -205,6 +335,8 @@ void main() {
     testWidgets('"Notify when ready" asks first, and stays off when refused', (tester) async {
       final refused = await _services(allowed: false);
       await _pump(tester, refused, ProfileScreen(services: refused));
+      await tester.ensureVisible(find.text('Notify when ready'));
+      await tester.pumpAndSettle();
       await tester.tap(_switchIn('Notify when ready'));
       await tester.pumpAndSettle();
       expect((refused.notifier as _Notifier).asked, 1);
@@ -213,6 +345,8 @@ void main() {
 
       final allowed = await _services();
       await _pump(tester, allowed, ProfileScreen(services: allowed));
+      await tester.ensureVisible(find.text('Notify when ready'));
+      await tester.pumpAndSettle();
       await tester.tap(_switchIn('Notify when ready'));
       await tester.pumpAndSettle();
       expect(allowed.notifyByDefault.value, isTrue);
@@ -307,9 +441,11 @@ void main() {
     });
 
     testWidgets('each limit has its own next step', (tester) async {
-      var exits = await show(tester, CheckProblem.dailyLimit);
-      await tester.tap(find.text('See saved checks'));
-      expect(exits, ['openHistory']);
+      // Too many at once is the server's rate limit, not a spent allowance: wait, retry.
+      var exits = await show(tester, CheckProblem.rateLimited);
+      expect(find.text('Wait a minute, then try again'), findsOneWidget);
+      await tester.tap(find.text('Try again'));
+      expect(exits, ['retry']);
 
       exits = await show(tester, CheckProblem.outOfCredits);
       await tester.tap(find.text('See your credits'));
@@ -336,6 +472,10 @@ void main() {
       expect(
         CheckProblem.of(const ApiFailure(FailureKind.outOfCredits), link: false),
         CheckProblem.outOfCredits,
+      );
+      expect(
+        CheckProblem.of(const ApiFailure(FailureKind.rateLimited), link: false),
+        CheckProblem.rateLimited,
       );
     });
   });
