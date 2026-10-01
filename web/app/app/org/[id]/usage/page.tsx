@@ -63,7 +63,7 @@ export default function UsagePage({ params }: { params: Promise<{ id: string }> 
             <Stat label="Checks" value={n(checks)} />
           </div>
           <Card className="mt-6">
-            <h2 className="mb-4 font-serif text-2xl text-ink">By day</h2>
+            <h2 className="font-medium tracking-tight mb-4 text-2xl text-ink">By day</h2>
             <AreaChart data={series} />
           </Card>
           {owner && (

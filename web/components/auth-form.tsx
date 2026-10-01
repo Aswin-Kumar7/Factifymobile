@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ApiFailure, authAction } from "@/lib/api";
-import { Button, Field, Input, Notice, Seal } from "./ui";
+import { ThemeButton } from "./theme";
+import { Button, Field, Input, Notice, Wordmark } from "./ui";
 
 const problems: Record<string, string> = {
   invalid_email: "That doesn't look like an email address.",
@@ -53,20 +54,33 @@ export function AuthForm({ mode }: { mode: "signin" | "signup" }) {
     }
   }
 
-  const other = creating ? `/signin` : `/signup`;
   const nextQuery = params.get("next") ? `?next=${encodeURIComponent(next)}` : "";
 
   return (
-    <div className="mx-auto w-full max-w-md">
-      <Link href="/" className="inline-block" aria-label="Factify home">
-        <Seal size={52} />
-      </Link>
-      <h1 className="mt-6 font-serif text-4xl font-medium tracking-tight text-ink">
-        {creating ? "Create your account" : "Welcome back"}
-      </h1>
-      <p className="mt-2 text-[15px] text-ink2">
-        {creating ? "Start with 100 free checks. It takes a minute." : "Sign in with your email and password, or with Google."}
+    <div className="mx-auto w-full max-w-[420px]">
+      <h1 className="text-[2.4rem] leading-tight font-medium tracking-tight text-ink">{creating ? "Create your account" : "Welcome back"}</h1>
+      <p className="mt-2 text-[15.5px] leading-relaxed text-ink2">
+        {creating ? "30 free checks every month. It takes less than a minute." : "Sign in to check forwards, links, pictures and videos."}
       </p>
+
+      <div role="tablist" aria-label="Account" className="mt-7 inline-flex rounded-[12px] border border-line2 p-1">
+        <Link
+          href={`/signin${nextQuery}`}
+          role="tab"
+          aria-selected={!creating}
+          className={`rounded-[9px] px-4 py-2 text-sm font-medium transition-colors ${!creating ? "bg-hover text-ink" : "text-ink2 hover:text-ink"}`}
+        >
+          Sign in
+        </Link>
+        <Link
+          href={`/signup${nextQuery}`}
+          role="tab"
+          aria-selected={creating}
+          className={`rounded-[9px] px-4 py-2 text-sm font-medium transition-colors ${creating ? "bg-hover text-ink" : "text-ink2 hover:text-ink"}`}
+        >
+          Create account
+        </Link>
+      </div>
 
       <a
         href={`/v1/auth/google/start?to=web`}
@@ -75,7 +89,7 @@ export function AuthForm({ mode }: { mode: "signin" | "signup" }) {
             sessionStorage.setItem("fct_next", next);
           } catch {}
         }}
-        className="mt-7 flex h-12 w-full items-center justify-center gap-3 rounded-xl border border-line bg-sf font-semibold text-ink hover:bg-sf2"
+        className="mt-6 flex h-11.5 w-full items-center justify-center gap-3 rounded-[10px] border border-line2 font-medium text-ink transition-colors hover:bg-hover"
       >
         <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true">
           <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l5.7-5.7C34.1 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z" />
@@ -86,15 +100,15 @@ export function AuthForm({ mode }: { mode: "signin" | "signup" }) {
         Continue with Google
       </a>
 
-      <div className="my-5 flex items-center gap-3 text-xs text-ink3">
-        <span className="h-px flex-1 bg-line" />
-        or
-        <span className="h-px flex-1 bg-line" />
+      <div className="my-5 flex items-center gap-3.5 text-[13px] text-ink3">
+        <span className="h-px flex-1 bg-line2" />
+        or with email
+        <span className="h-px flex-1 bg-line2" />
       </div>
 
       <form onSubmit={submit} className="space-y-3.5">
         {creating && (
-          <Field label="Your name (optional)">
+          <Field label="Your name">
             <Input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" placeholder="What should we call you?" />
           </Field>
         )}
@@ -122,7 +136,7 @@ export function AuthForm({ mode }: { mode: "signin" | "signup" }) {
             <button
               type="button"
               onClick={() => setShown(!shown)}
-              className="absolute top-1/2 right-2 -translate-y-1/2 rounded-lg px-2 py-1 text-sm font-semibold text-ink3 hover:text-ink"
+              className="absolute top-1/2 right-2 -translate-y-1/2 rounded-lg px-2 py-1 text-[13px] font-medium text-ink3 hover:bg-hover hover:text-ink"
             >
               {shown ? "Hide" : "Show"}
             </button>
@@ -134,33 +148,97 @@ export function AuthForm({ mode }: { mode: "signin" | "signup" }) {
         </Button>
       </form>
 
-      <p className="mt-5 text-center text-[15px] text-ink2">
-        {creating ? "Have an account? " : "New to Factify? "}
-        <Link href={`${other}${nextQuery}`} className="font-semibold text-acc-ink">
-          {creating ? "Sign in" : "Create one"}
+      <p className="mt-6 text-[13px] leading-relaxed text-ink3">
+        By continuing you agree to the{" "}
+        <Link href="/terms" className="text-acc-ink">
+          Terms
+        </Link>{" "}
+        and{" "}
+        <Link href="/privacy" className="text-acc-ink">
+          Privacy policy
         </Link>
-      </p>
-      <p className="mt-8 text-center text-xs text-ink3">
-        By continuing you agree to the <Link href="/terms" className="underline">terms</Link> and{" "}
-        <Link href="/privacy" className="underline">privacy policy</Link>. We never keep a record of what you check.
+        . We never keep a record of what you check.
       </p>
     </div>
   );
 }
 
-export function AuthShell({ children }: { children: React.ReactNode }) {
+const EXAMPLES = [
+  { kind: "WhatsApp forward", claim: "Applications are open for the National Sports Scholarship 2026-27.", verdict: "False", tone: "text-false", source: "Government fact-check unit" },
+  { kind: "News link", claim: "ISRO's Chandrayaan-3 landed near the Moon's south pole.", verdict: "True", tone: "text-true", source: "7 independent sources" },
+  { kind: "Screenshot", claim: "Govt to pay ₹5,000 a month to every woman.", verdict: "Partly true", tone: "text-mis", source: "One state's scheme, not national" },
+];
+
+/** A few answers, one at a time: what Factify gives back. */
+function Examples() {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setI((x) => (x + 1) % EXAMPLES.length), 3200);
+    return () => clearInterval(t);
+  }, []);
+  const ex = EXAMPLES[i];
   return (
-    <main className="grid min-h-dvh lg:grid-cols-[1fr_1fr]">
-      <div className="flex items-center px-4 py-10 sm:px-8">{children}</div>
-      <aside className="hidden flex-col justify-between bg-acc p-12 text-on-acc lg:flex">
-        <div className="font-serif text-2xl font-semibold">Factify</div>
-        <blockquote className="max-w-md">
-          <p className="font-serif text-4xl leading-tight">
-            &ldquo;Every answer comes with its sources. When they don&apos;t settle it, Factify says so.&rdquo;
-          </p>
-        </blockquote>
-        <p className="text-sm opacity-80">Text, links, pictures, videos and PDFs, in 12 languages.</p>
-      </aside>
-    </main>
+    <div className="relative mx-auto w-full max-w-[420px]">
+      <div key={i} className="fade-in rounded-[20px] border border-line2 bg-sf/90 p-6 shadow-lift backdrop-blur-md">
+        <div className="text-[13px] text-ink3">{ex.kind}</div>
+        <p className="mt-2.5 mb-4.5 text-[17px] leading-relaxed text-ink">“{ex.claim}”</p>
+        <div className="flex items-center justify-between gap-3 border-t border-line pt-4">
+          <span className={`text-[1.75rem] font-medium tracking-tight ${ex.tone}`}>{ex.verdict}</span>
+          <span className="text-right text-[13px] text-ink2">{ex.source}</span>
+        </div>
+      </div>
+      <div className="mt-4 flex justify-center gap-1.5" aria-hidden="true">
+        {EXAMPLES.map((_, n) => (
+          <span key={n} className={`h-1.5 rounded-full transition-all duration-500 ${n === i ? "w-5.5 bg-acc-ink" : "w-1.5 bg-line2"}`} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function AuthShell({ children, mode = "signin" }: { children: React.ReactNode; mode?: "signin" | "signup" }) {
+  return (
+    <div className="relative flex min-h-dvh flex-col overflow-hidden">
+      <div className="pointer-events-none absolute -top-72 -right-48 h-[900px] w-[900px] rounded-full bg-[radial-gradient(circle,var(--glow),transparent_62%)]" aria-hidden="true" />
+      <header className="relative flex items-center justify-between px-5 py-5 sm:px-8">
+        <Wordmark size={24} />
+        <span className="flex items-center gap-3 text-sm text-ink3">
+          <span className="hidden sm:inline">
+            {mode === "signup" ? "Already have an account? " : "New to Factify? "}
+            <Link href={mode === "signup" ? "/signin" : "/signup"} className="text-acc-ink">
+              {mode === "signup" ? "Sign in" : "Create an account"}
+            </Link>
+          </span>
+          <ThemeButton />
+        </span>
+      </header>
+      <main className="relative mx-auto grid w-full max-w-[1360px] flex-1 gap-6 px-5 pb-8 sm:px-8 lg:grid-cols-2">
+        <section className="flex items-center justify-center py-6">{children}</section>
+        <aside className="relative hidden flex-col justify-between overflow-hidden rounded-[28px] border border-line2 bg-[linear-gradient(160deg,var(--acc-soft),transparent_60%)] p-12 lg:flex">
+          <div
+            className="pointer-events-none absolute inset-0 [mask-image:radial-gradient(ellipse_at_70%_30%,#000_10%,transparent_70%)] bg-[linear-gradient(var(--line)_1px,transparent_1px),linear-gradient(90deg,var(--line)_1px,transparent_1px)] bg-[size:56px_56px]"
+            aria-hidden="true"
+          />
+          <div className="relative flex flex-col gap-3.5">
+            <span className="font-mono text-xs tracking-[0.16em] text-acc-ink">30 FREE CHECKS A MONTH · NO CARD</span>
+            <h2 className="text-[2.6rem] leading-[1.05] font-medium tracking-tight text-ink">
+              Every answer comes <span className="text-ink3">with its sources.</span>
+            </h2>
+          </div>
+          <Examples />
+          <div className="relative flex gap-8 text-sm text-ink2">
+            <span>
+              <strong className="block text-[22px] font-medium text-ink">740</strong>vetted publishers
+            </span>
+            <span>
+              <strong className="block text-[22px] font-medium text-ink">12</strong>languages
+            </span>
+            <span>
+              <strong className="block text-[22px] font-medium text-ink">0</strong>guesses
+            </span>
+          </div>
+        </aside>
+      </main>
+    </div>
   );
 }

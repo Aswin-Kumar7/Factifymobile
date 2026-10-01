@@ -89,7 +89,7 @@ export function AdminRequests() {
               <div className="flex items-start gap-3">
                 <Avatar name={r.org_name} size={44} />
                 <div className="min-w-0 flex-1">
-                  <div className="truncate font-serif text-2xl text-ink">{r.org_name}</div>
+                  <div className="font-medium tracking-tight truncate text-2xl text-ink">{r.org_name}</div>
                   <div className="truncate text-sm text-ink2">
                     {r.name || r.email.split("@")[0]} · {r.email}
                   </div>

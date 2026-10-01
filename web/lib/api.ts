@@ -90,6 +90,25 @@ export type Me = {
   credits: { balance: number; used: number; checks: number; check_cost: number; limited: boolean };
   survey_due: boolean;
   is_staff: boolean;
+  plan_usage?: PlanUsage | null;
+};
+
+/** A person's monthly plan and this month's use of it (contract 1.7). */
+export type PlanUsage = {
+  plan: "free" | "plus" | "pro";
+  name: string;
+  interval: "month" | "year" | null;
+  renews_at: string | null;
+  cancel_at_end: boolean;
+  allowance: number;
+  used: number;
+  resets_at: string | null;
+  credits: number;
+  extra_enabled: boolean;
+  extra_cap_paise: number | null;
+  extra_used_paise: number;
+  extra_price_paise: number;
+  extra_blocked: boolean;
 };
 
 export type Role = "owner" | "developer" | "member";

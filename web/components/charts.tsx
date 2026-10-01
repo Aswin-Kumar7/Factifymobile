@@ -152,7 +152,7 @@ export function Ring({
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-        <div className="tabular font-serif text-2xl font-medium text-ink">{label}</div>
+        <div className="tabular text-2xl font-medium tracking-tight text-ink">{label}</div>
         {sub && <div className="text-[11px] text-ink3">{sub}</div>}
       </div>
     </div>

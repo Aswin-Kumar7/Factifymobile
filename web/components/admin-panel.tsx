@@ -96,7 +96,7 @@ function Overview() {
       <Card>
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="font-serif text-2xl text-ink">Checks per day</h2>
+            <h2 className="font-medium tracking-tight text-2xl text-ink">Checks per day</h2>
             <p className="text-sm text-ink3">Last 30 days, every account</p>
           </div>
           <div className="flex items-center gap-4 text-xs text-ink2">
@@ -113,7 +113,7 @@ function Overview() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card>
-          <h2 className="font-serif text-xl text-ink">Credits used</h2>
+          <h2 className="font-medium tracking-tight text-xl text-ink">Credits used</h2>
           <p className="mb-4 text-sm text-ink3">Last 30 days</p>
           <Split
             parts={[
@@ -123,7 +123,7 @@ function Overview() {
           />
         </Card>
         <Card>
-          <h2 className="font-serif text-xl text-ink">Provider calls</h2>
+          <h2 className="font-medium tracking-tight text-xl text-ink">Provider calls</h2>
           <p className="mb-4 text-sm text-ink3">Last 30 days: what checks cost us</p>
           <ul className="space-y-3">
             {stats.providers.map((p) => (
@@ -141,7 +141,7 @@ function Overview() {
           </ul>
         </Card>
         <Card>
-          <h2 className="font-serif text-xl text-ink">Who signs up</h2>
+          <h2 className="font-medium tracking-tight text-xl text-ink">Who signs up</h2>
           <p className="mb-4 text-sm text-ink3">From the new-account survey</p>
           <Split parts={answered.map((s) => ({ label: s.role ? roleWords[s.role] ?? s.role : "Skipped", value: Number(s.n) }))} />
           <div className="mt-3 text-xs text-ink3">
@@ -155,7 +155,7 @@ function Overview() {
 
       <Card>
         <div className="mb-3 flex items-baseline justify-between">
-          <h2 className="font-serif text-xl text-ink">Needs attention</h2>
+          <h2 className="font-medium tracking-tight text-xl text-ink">Needs attention</h2>
           <Link href="/app/admin/organisations" className="text-sm font-semibold text-acc-ink">
             All organisations →
           </Link>

@@ -1,117 +1,118 @@
 @import "tailwindcss";
 
-/* Factify's colours, the same as the phone app (apps/mobile/lib/theme/tokens.dart),
-   plus the dashboard's own: an ink-dark sidebar, soft shadows and chart colours.
-   Dark mode follows the system unless the person picks one (html[data-theme]). */
+/* Factify's colours. Dark is the default: near-black ground, mint accents, a deep
+   emerald for what acts. Light is the phone app's palette exactly
+   (apps/mobile/lib/theme/tokens.dart). The person's choice is html[data-theme];
+   "same as device" is resolved to one of the two before the first paint
+   (app/layout.tsx). */
 :root {
-  --bg: #f5f3ee;
-  --bg-deep: #ece9e1;
-  --sf: #ffffff;
-  --sf2: #f1eee7;
-  --ink: #1c1b18;
-  --ink2: #55524a;
-  --ink3: #8a867c;
-  --line: #e4e0d6;
-  --acc: #0e6b4f;
-  --acc-ink: #0e6b4f;
-  --acc-soft: #ddefe6;
-  --on-acc: #ffffff;
-  --mint: #7fe0b8;
-  --true: #15803d;
-  --true-soft: #dcfce7;
-  --false: #b42318;
-  --false-soft: #fee4e2;
-  --mis: #b45309;
-  --mis-soft: #fef0c7;
-  --unc: #57534e;
-  --unc-soft: #ecebe7;
-  --side: #161614;
-  --side-2: #201f1c;
-  --side-ink: #f1efe8;
-  --side-ink2: #a9a69c;
-  --side-line: #2c2b27;
-  --chart-1: #0e6b4f;
-  --chart-2: #6fd4ab;
-  --chart-3: #c8a35a;
-  --chart-4: #8f7fd4;
-  --grid: #e8e4da;
-  --shadow: 0 1px 2px rgba(28, 27, 24, 0.04), 0 8px 24px -12px rgba(28, 27, 24, 0.12);
-  --shadow-lg: 0 2px 6px rgba(28, 27, 24, 0.05), 0 24px 48px -20px rgba(28, 27, 24, 0.22);
-  color-scheme: light;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #121210;
-    --bg-deep: #0c0c0b;
-    --sf: #1b1b18;
-    --sf2: #24231f;
-    --ink: #f1efe8;
-    --ink2: #b4b2a9;
-    --ink3: #858378;
-    --line: #2e2d29;
-    --acc: #1f8a66;
-    --acc-ink: #7fe0b8;
-    --acc-soft: #163a2e;
-    --on-acc: #ffffff;
-    --true: #4ade80;
-    --true-soft: #14331f;
-    --false: #f97066;
-    --false-soft: #3d1a17;
-    --mis: #fbbf24;
-    --mis-soft: #3a2a0c;
-    --unc: #b4b2a9;
-    --unc-soft: #2b2a26;
-    --side: #0c0c0b;
-    --side-2: #181816;
-    --side-ink: #f1efe8;
-    --side-ink2: #9c998f;
-    --side-line: #23221f;
-    --chart-1: #3fb58a;
-    --chart-2: #7fe0b8;
-    --chart-3: #d9b56a;
-    --chart-4: #a898ec;
-    --grid: #2a2925;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
-    --shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.35), 0 24px 48px -20px rgba(0, 0, 0, 0.7);
-    color-scheme: dark;
-  }
-}
-
-:root[data-theme="dark"] {
-  --bg: #121210;
-  --bg-deep: #0c0c0b;
-  --sf: #1b1b18;
-  --sf2: #24231f;
-  --ink: #f1efe8;
-  --ink2: #b4b2a9;
-  --ink3: #858378;
-  --line: #2e2d29;
-  --acc: #1f8a66;
-  --acc-ink: #7fe0b8;
-  --acc-soft: #163a2e;
-  --on-acc: #ffffff;
-  --true: #4ade80;
-  --true-soft: #14331f;
-  --false: #f97066;
-  --false-soft: #3d1a17;
-  --mis: #fbbf24;
-  --mis-soft: #3a2a0c;
-  --unc: #b4b2a9;
-  --unc-soft: #2b2a26;
-  --side: #0c0c0b;
-  --side-2: #181816;
-  --side-ink: #f1efe8;
-  --side-ink2: #9c998f;
-  --side-line: #23221f;
-  --chart-1: #3fb58a;
-  --chart-2: #7fe0b8;
-  --chart-3: #d9b56a;
-  --chart-4: #a898ec;
-  --grid: #2a2925;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+  --bg: #050605;
+  --bg-deep: #030403;
+  --sf: #0a0d0b;
+  --sf2: #0f1412;
+  --ink: #eef3ef;
+  --ink2: #a9b6ae;
+  --ink3: #76847c;
+  --line: rgba(238, 243, 239, 0.08);
+  --line2: rgba(238, 243, 239, 0.14);
+  --hover: rgba(255, 255, 255, 0.05);
+  --acc: #1e7d56;
+  --acc-h: #238a60;
+  --acc-ink: #5be4a8;
+  --acc-soft: rgba(91, 228, 168, 0.1);
+  --on-acc: #f4fbf7;
+  --mint: #5be4a8;
+  --true: #5be4a8;
+  --true-soft: rgba(91, 228, 168, 0.13);
+  --false: #ff8370;
+  --false-soft: rgba(255, 131, 112, 0.13);
+  --mis: #f2c46b;
+  --mis-soft: rgba(242, 196, 107, 0.15);
+  --unc: #a9b6ae;
+  --unc-soft: rgba(255, 255, 255, 0.06);
+  --side: #070908;
+  --side-2: rgba(255, 255, 255, 0.05);
+  --side-ink: #eef3ef;
+  --side-ink2: #a9b6ae;
+  --side-line: rgba(238, 243, 239, 0.08);
+  /* The feature card (the plan, the month's meter), as the app's "hero" card. */
+  --hero: #0a0d0b;
+  --hero-ink: #eef3ef;
+  --hero-ink2: #a9b6ae;
+  --hero-line: rgba(238, 243, 239, 0.08);
+  --hero-acc: #5be4a8;
+  /* A soft mint panel, as the app's "this week" card. */
+  --hi: rgba(91, 228, 168, 0.06);
+  --chart-1: #5be4a8;
+  --chart-2: #2fb980;
+  --chart-3: #f2c46b;
+  --chart-4: #8fb8ff;
+  --grid: rgba(238, 243, 239, 0.07);
+  --glow: rgba(47, 185, 128, 0.3);
+  --glow-2: rgba(13, 59, 42, 0.9);
+  --wall: #08100c;
+  --contour: rgba(91, 228, 168, 0.13);
+  --alu: #3b3e42;
+  --alu-edge: #5a5e63;
+  --alu-top: #5c6065;
+  --alu-bot: #2a2c2f;
+  --shadow: 0 0 0 1px rgba(0, 0, 0, 0);
   --shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.35), 0 24px 48px -20px rgba(0, 0, 0, 0.7);
   color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg: #f4f3ef;
+  --bg-deep: #eeede8;
+  --sf: #ffffff;
+  --sf2: #eeede8;
+  --ink: #111513;
+  --ink2: #474d49;
+  --ink3: #7b817d;
+  --line: #e5e3dd;
+  --line2: #d6d4cd;
+  --hover: #eeede8;
+  --acc: #0e6b4f;
+  --acc-h: #0b5a42;
+  --acc-ink: #0f7a58;
+  --acc-soft: #dceee4;
+  --on-acc: #ffffff;
+  --mint: #52c99d;
+  --true: #0f7a58;
+  --true-soft: #e0f1e7;
+  --false: #c23a2e;
+  --false-soft: #fae8e4;
+  --mis: #856a00;
+  --mis-soft: #faf0c4;
+  --unc: #5f6763;
+  --unc-soft: #eaece9;
+  --side: #ffffff;
+  --side-2: #eeede8;
+  --side-ink: #111513;
+  --side-ink2: #474d49;
+  --side-line: #e5e3dd;
+  --hero: #0f2a20;
+  --hero-ink: #eaf4ee;
+  --hero-ink2: rgba(234, 244, 238, 0.78);
+  --hero-line: rgba(234, 244, 238, 0.16);
+  --hero-acc: #52c99d;
+  --hi: #e3efe7;
+  --chart-1: #0e6b4f;
+  --chart-2: #52c99d;
+  --chart-3: #aa650b;
+  --chart-4: #6e62c9;
+  --grid: #e5e3dd;
+  --glow: rgba(46, 170, 120, 0.24);
+  --glow-2: rgba(14, 107, 79, 0.28);
+  --wall: linear-gradient(160deg, #cfe7da 0%, #e9f2ec 45%, #f4f3ef 70%, #d9ece1 100%);
+  --contour: rgba(14, 107, 79, 0.16);
+  --alu: #c9cbce;
+  --alu-edge: #a6a9ad;
+  --alu-top: #e6e7e9;
+  --alu-bot: #b3b6ba;
+  --shadow: 0 1px 2px rgba(30, 30, 20, 0.05), 0 6px 18px -8px rgba(30, 30, 20, 0.1);
+  --shadow-lg: 0 2px 6px rgba(30, 30, 20, 0.05), 0 24px 48px -20px rgba(30, 30, 20, 0.22);
+  color-scheme: light;
 }
 
 @theme inline {
@@ -123,7 +124,10 @@
   --color-ink2: var(--ink2);
   --color-ink3: var(--ink3);
   --color-line: var(--line);
+  --color-line2: var(--line2);
+  --color-hover: var(--hover);
   --color-acc: var(--acc);
+  --color-acc-h: var(--acc-h);
   --color-acc-ink: var(--acc-ink);
   --color-acc-soft: var(--acc-soft);
   --color-on-acc: var(--on-acc);
@@ -141,6 +145,12 @@
   --color-side-ink: var(--side-ink);
   --color-side-ink2: var(--side-ink2);
   --color-side-line: var(--side-line);
+  --color-hero: var(--hero);
+  --color-hero-ink: var(--hero-ink);
+  --color-hero-ink2: var(--hero-ink2);
+  --color-hero-line: var(--hero-line);
+  --color-hero-acc: var(--hero-acc);
+  --color-hi: var(--hi);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
@@ -149,7 +159,6 @@
   --shadow-card: var(--shadow);
   --shadow-lift: var(--shadow-lg);
   --font-sans: var(--font-geist);
-  --font-serif: var(--font-newsreader);
   --font-mono: var(--font-geist-mono);
 }
 
@@ -162,7 +171,6 @@ body {
   color: var(--ink);
   font-family: var(--font-geist), system-ui, sans-serif;
   overflow-x: hidden;
-  font-feature-settings: "ss01", "cv11";
 }
 
 ::selection {
@@ -170,7 +178,7 @@ body {
 }
 
 :focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--acc-ink);
   outline-offset: 2px;
 }
 
@@ -179,11 +187,18 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* The faint paper grain behind dashboard hero panels. */
+/* Small caps-like labels above sections. */
+.eyebrow {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink3);
+}
+
+/* A soft mint wash behind a featured panel. */
 .paper {
-  background-image:
-    radial-gradient(circle at 20% 0%, color-mix(in srgb, var(--acc) 14%, transparent), transparent 55%),
-    radial-gradient(circle at 100% 100%, color-mix(in srgb, var(--chart-3) 10%, transparent), transparent 50%);
+  background-image: radial-gradient(ellipse at 0% 0%, color-mix(in srgb, var(--mint) 12%, transparent), transparent 60%);
 }
 
 .fade-in {
@@ -209,5 +224,89 @@ body {
 
 .scroll-thin {
   scrollbar-width: thin;
-  scrollbar-color: var(--side-line) transparent;
+  scrollbar-color: var(--line2) transparent;
+}
+
+/* ---- the landing page's laptop: the one part that moves ---- */
+.lap-lid {
+  position: relative;
+  border-radius: 20px 20px 6px 6px;
+  padding: 12px 12px 18px;
+  background: #0c0d0e;
+  border: 1px solid var(--alu-edge);
+  box-shadow:
+    0 0 0 4px var(--alu),
+    0 0 0 5px var(--alu-edge),
+    0 70px 120px -60px rgba(0, 0, 0, 0.55);
+}
+.lap-lid::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  margin-left: -2.5px;
+  border-radius: 50%;
+  background: #2b2e31;
+}
+.lap-base {
+  position: relative;
+  height: 16px;
+  margin: 4px -8% 0;
+  border-radius: 3px 3px 18px 18px;
+  background: linear-gradient(180deg, var(--alu-top) 0%, var(--alu) 45%, var(--alu-bot) 100%);
+  border: 1px solid var(--alu-edge);
+  border-top-color: rgba(255, 255, 255, 0.5);
+  box-shadow: 0 18px 30px -18px rgba(0, 0, 0, 0.45);
+}
+.lap-base::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 130px;
+  margin-left: -65px;
+  height: 7px;
+  border-radius: 0 0 9px 9px;
+  background: linear-gradient(180deg, var(--alu-bot), var(--alu));
+}
+.lap-in {
+  opacity: 0;
+  transform: translateY(8px);
+  transition:
+    opacity 0.6s cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.lap-in.on {
+  opacity: 1;
+  transform: none;
+}
+.lap-u {
+  background-repeat: no-repeat;
+  background-position: 0 100%;
+  background-size: 0% 2px;
+  transition: background-size 0.9s cubic-bezier(0.2, 0.8, 0.2, 1);
+  color: var(--ink);
+}
+.lap-u.on {
+  background-size: 100% 2px;
+}
+.lap-prog {
+  animation: lap-prog var(--dur) linear forwards;
+  transform-origin: left;
+}
+@keyframes lap-prog {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lap-in,
+  .lap-u {
+    transition: none;
+  }
 }

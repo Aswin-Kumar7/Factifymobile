@@ -1,28 +1,42 @@
 "use client";
 
+import Link from "next/link";
 import { OrgRequest } from "@/components/org-request";
-import { Card, PageTitle } from "@/components/ui";
+import { PageTitle } from "@/components/ui";
+import { TEAM, rupees } from "@/lib/plans";
+
+const STEPS = [
+  "The Factify team reviews your request, usually within a day.",
+  "Once approved, your organisation appears in the workspace switcher, with you as its owner.",
+  "Choose the Team plan (or pay per check through the API), invite people, and create API keys.",
+  "Your personal plan and history stay yours.",
+];
 
 export default function RequestOrg() {
   return (
-    <>
-      <PageTitle
-        eyebrow="Organisation plan"
-        title="Request an organisation plan"
-        sub="One credit pool for your team, limits per person, and API keys. Tell us a little about your team; we review every request."
-      />
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+    <div className="flex flex-col gap-5">
+      <PageTitle title="Create an organisation" sub="One shared pool of checks for your desk, NGO or company - with members, roles, API keys and usage by person." />
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,.65fr)]">
         <OrgRequest />
-        <Card className="h-fit bg-sf2">
-          <h2 className="font-semibold text-ink">What happens next</h2>
-          <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-ink2">
-            <li>The Factify team reviews your request, usually within a day.</li>
-            <li>Once approved, your organisation appears in the account switcher, with you as its owner.</li>
-            <li>Buy credits for the team, invite people, and create API keys.</li>
-            <li>Your personal free credits stay yours.</li>
+        <aside className="flex flex-col gap-3.5 rounded-[14px] border border-line bg-sf p-5.5 shadow-card">
+          <h2 className="text-[15px] font-medium text-ink">What happens next</h2>
+          <ol className="flex flex-col gap-3">
+            {STEPS.map((s, i) => (
+              <li key={s} className="grid grid-cols-[24px_minmax(0,1fr)] gap-2.5 text-sm leading-relaxed text-ink2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full border border-line2 font-mono text-[11px] text-ink">{i + 1}</span>
+                {s}
+              </li>
+            ))}
           </ol>
-        </Card>
+          <div className="h-px bg-line" />
+          <p className="text-[13px] text-ink3">
+            Team plan · {rupees(TEAM.monthInr)} per member a month, from {TEAM.minSeats} members, {TEAM.monthlyChecks} checks each.{" "}
+            <Link href="/#pricing" className="text-acc-ink">
+              See plans
+            </Link>
+          </p>
+        </aside>
       </div>
-    </>
+    </div>
   );
 }

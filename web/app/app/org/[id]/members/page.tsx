@@ -128,7 +128,7 @@ export default function Members({ params }: { params: Promise<{ id: string }> })
 
       {owner && invites.length > 0 && (
         <>
-          <h2 className="mt-8 mb-3 font-serif text-2xl text-ink">Open invitations</h2>
+          <h2 className="font-medium tracking-tight mt-8 mb-3 text-2xl text-ink">Open invitations</h2>
           <Card className="p-0 sm:p-0">
             <Table head={["Email", "Role", "Limit", "Expires", ""]}>
               {invites.map((i) => (

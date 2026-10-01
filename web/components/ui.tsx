@@ -3,25 +3,19 @@
 import Link from "next/link";
 import { useEffect, useRef } from "react";
 
-export function Seal({ size = 40, className = "" }: { size?: number; className?: string }) {
+/** Factify's mark: a tick in a ring, in the accent colour. */
+export function Seal({ size = 24, className = "" }: { size?: number; className?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 96 96" aria-hidden="true" className={`shrink-0 ${className}`}>
-      <rect width="96" height="96" rx="26" fill="#0E6B4F" />
-      <circle cx="48" cy="48" r="31" fill="none" stroke="#fff" strokeWidth="3.2" strokeDasharray="3.8 3.2" />
-      <circle cx="48" cy="48" r="23.5" fill="#fff" />
-      <text x="48" y="61" textAnchor="middle" fontFamily="var(--font-newsreader), Georgia, serif" fontSize="36" fontWeight="600" fill="#0E6B4F">
-        F
-      </text>
-      <circle cx="67" cy="67" r="12.4" fill="#0E6B4F" />
-      <circle cx="67" cy="67" r="10" fill="#7FE0B8" />
-      <path d="M62.4 67.2l3.2 3.2 6.2-6.8" fill="none" stroke="#0E6B4F" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true" className={`shrink-0 text-acc-ink ${className}`}>
+      <circle cx="16" cy="16" r="14.5" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M10.8 16.6l3.5 3.5 7.2-7.6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
 
-export function Wordmark({ size = 32 }: { size?: number }) {
+export function Wordmark({ size = 24, href = "/" }: { size?: number; href?: string }) {
   return (
-    <Link href="/" className="flex items-center gap-2.5 font-serif text-2xl font-semibold tracking-tight text-ink">
+    <Link href={href} className="flex items-center gap-2 text-[17px] font-semibold tracking-tight text-ink" aria-label="Factify home">
       <Seal size={size} />
       <span>Factify</span>
     </Link>
@@ -36,13 +30,13 @@ type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
 
 export function Button({ variant = "primary", busy, size = "md", className = "", children, disabled, ...rest }: ButtonProps) {
   const base =
-    "inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 whitespace-nowrap";
-  const sizes = { sm: "h-9 px-3 text-sm", md: "h-11 px-4 text-[15px]", lg: "h-12 px-6 text-base" };
+    "inline-flex items-center justify-center gap-2 rounded-[9px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 whitespace-nowrap";
+  const sizes = { sm: "h-8.5 px-3 text-[13.5px]", md: "h-10 px-4 text-sm", lg: "h-11 px-5 text-[15px]" };
   const variants = {
-    primary: "bg-acc text-on-acc hover:brightness-110",
-    outline: "border border-line bg-sf text-ink hover:bg-sf2",
-    ghost: "text-ink2 hover:bg-sf2 hover:text-ink",
-    danger: "border border-line bg-sf text-false hover:bg-false-soft",
+    primary: "bg-acc text-on-acc hover:bg-acc-h",
+    outline: "border border-line2 text-ink hover:bg-hover",
+    ghost: "text-ink2 hover:bg-hover hover:text-ink",
+    danger: "border border-false/40 text-false hover:bg-false-soft",
   };
   return (
     <button
@@ -66,7 +60,7 @@ export function Spinner({ className = "" }: { className?: string }) {
 }
 
 export function Card({ className = "", children }: { className?: string; children: React.ReactNode }) {
-  return <div className={`min-w-0 rounded-2xl border border-line bg-sf p-4 shadow-card sm:p-5 ${className}`}>{children}</div>;
+  return <div className={`min-w-0 rounded-[14px] border border-line bg-sf p-4 shadow-card sm:p-5 ${className}`}>{children}</div>;
 }
 
 export function Field({
@@ -82,7 +76,7 @@ export function Field({
 }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-sm font-semibold text-ink2">{label}</span>
+      <span className="mb-1.5 block text-[13px] text-ink2">{label}</span>
       {children}
       {hint && !error && <span className="mt-1 block text-xs text-ink3">{hint}</span>}
       {error && <span className="mt-1 block text-xs text-false">{error}</span>}
@@ -91,7 +85,7 @@ export function Field({
 }
 
 export const inputClass =
-  "w-full rounded-xl border border-line bg-sf px-3.5 py-2.5 text-[15px] text-ink placeholder:text-ink3 focus:border-acc focus:outline-none";
+  "w-full rounded-[9px] border border-line2 bg-sf px-3.5 py-2.5 text-[14.5px] text-ink placeholder:text-ink3 focus:border-acc-ink focus:outline-none focus:ring-3 focus:ring-acc-ink/15";
 
 export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={`${inputClass} ${props.className ?? ""}`} />;
@@ -109,7 +103,7 @@ export function Notice({ tone = "info", children }: { tone?: "info" | "error" | 
     success: "bg-acc-soft text-acc-ink",
   };
   return (
-    <div role={tone === "error" ? "alert" : "status"} className={`rounded-xl px-3.5 py-2.5 text-sm ${tones[tone]}`}>
+    <div role={tone === "error" ? "alert" : "status"} className={`rounded-[10px] px-3.5 py-2.5 text-sm ${tones[tone]}`}>
       {children}
     </div>
   );
@@ -122,7 +116,7 @@ export function Badge({ tone = "neutral", children }: { tone?: "neutral" | "acc"
     warn: "bg-mis-soft text-mis",
     bad: "bg-false-soft text-false",
   };
-  return <span className={`inline-flex items-center rounded-lg px-2 py-0.5 text-xs font-semibold ${tones[tone]}`}>{children}</span>;
+  return <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${tones[tone]}`}>{children}</span>;
 }
 
 export function Stat({
@@ -147,19 +141,25 @@ export function Stat({
     bad: "bg-false-soft text-false",
   };
   return (
-    <div className="fade-in min-w-0 rounded-2xl border border-line bg-sf p-4 shadow-card">
+    <div className="fade-in min-w-0 rounded-[14px] border border-line bg-sf p-4 shadow-card">
       <div className="flex items-center justify-between gap-2">
         <div className="truncate text-[13px] font-medium text-ink3">{label}</div>
         {icon && <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${tones[tone]}`}>{icon}</div>}
       </div>
-      <div className="tabular mt-2 font-serif text-[2rem] leading-none font-medium tracking-tight text-ink">{value}</div>
+      <div className="tabular mt-2 text-[1.75rem] leading-none font-medium tracking-tight text-ink">{value}</div>
       {sub && <div className="mt-1.5 truncate text-xs text-ink3">{sub}</div>}
       {trend && <div className="mt-2 text-acc-ink">{trend}</div>}
     </div>
   );
 }
 
-const avatarTones = ["bg-[#dcefe6] text-[#0e6b4f]", "bg-[#efe4cf] text-[#7a5a1c]", "bg-[#e6e1f6] text-[#4b3f8f]", "bg-[#fbe3dc] text-[#9a3a1f]", "bg-[#dfeaf5] text-[#1f4f7a]"];
+const avatarTones = [
+  "bg-gradient-to-br from-[#2fb980] to-[#0d3b2a] text-white",
+  "bg-gradient-to-br from-[#f2c46b] to-[#7a5a1e] text-white",
+  "bg-gradient-to-br from-[#8fb8ff] to-[#2b4c8c] text-white",
+  "bg-gradient-to-br from-[#ff8370] to-[#8a2f22] text-white",
+  "bg-gradient-to-br from-[#b49cf5] to-[#4b3f8f] text-white",
+];
 
 export function Avatar({ name, size = 36 }: { name: string; size?: number }) {
   const letters = name
@@ -183,11 +183,11 @@ export function Avatar({ name, size = 36 }: { name: string; size?: number }) {
 
 /** Used of a limit, as a thin bar; turns amber then red as it fills. */
 export function Progress({ used, total }: { used: number; total: number | null | undefined }) {
-  if (!total) return <div className="h-1.5 rounded-full bg-sf2" />;
+  if (!total) return <div className="h-1.5 rounded-full bg-hover" />;
   const f = Math.min(1, used / total);
-  const tone = f >= 0.9 ? "bg-false" : f >= 0.7 ? "bg-mis" : "bg-acc";
+  const tone = f >= 0.9 ? "bg-false" : f >= 0.7 ? "bg-mis" : "bg-acc-ink";
   return (
-    <div className="h-1.5 overflow-hidden rounded-full bg-sf2" role="progressbar" aria-valuenow={used} aria-valuemax={total}>
+    <div className="h-1.5 overflow-hidden rounded-full bg-hover" role="progressbar" aria-valuenow={used} aria-valuemax={total}>
       <div className={`h-full rounded-full ${tone}`} style={{ width: `${Math.max(2, f * 100)}%` }} />
     </div>
   );
@@ -203,12 +203,12 @@ export function TabLinks({ tabs, active }: { tabs: { href: string; label: string
             key={t.href}
             href={t.href}
             aria-current={active === t.href ? "page" : undefined}
-            className={`-mb-px flex items-center gap-2 border-b-2 px-3.5 py-2.5 text-sm font-semibold whitespace-nowrap ${
-              active === t.href ? "border-acc text-ink" : "border-transparent text-ink3 hover:text-ink"
+            className={`-mb-px flex items-center gap-2 border-b px-3.5 py-2.5 text-sm whitespace-nowrap ${
+              active === t.href ? "border-acc-ink text-ink" : "border-transparent text-ink3 hover:text-ink2"
             }`}
           >
             {t.label}
-            {t.count != null && <span className="tabular rounded-md bg-sf2 px-1.5 py-0.5 text-[11px] text-ink2">{t.count}</span>}
+            {t.count != null && <span className="tabular rounded-md bg-hover px-1.5 py-0.5 text-[11px] text-ink2">{t.count}</span>}
           </Link>
         ))}
       </div>
@@ -228,11 +228,11 @@ export function PageTitle({
   eyebrow?: React.ReactNode;
 }) {
   return (
-    <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
-        {eyebrow && <div className="mb-1.5 text-xs font-semibold tracking-[0.12em] text-acc-ink uppercase">{eyebrow}</div>}
-        <h1 className="font-serif text-[2rem] leading-[1.05] font-medium tracking-tight text-ink sm:text-[2.6rem]">{title}</h1>
-        {sub && <p className="mt-2 max-w-2xl text-[15px] text-ink2">{sub}</p>}
+        {eyebrow && <div className="eyebrow mb-1.5">{eyebrow}</div>}
+        <h1 className="text-[1.75rem] leading-[1.1] font-medium tracking-tight text-ink sm:text-[1.9rem]">{title}</h1>
+        {sub && <p className="mt-1.5 max-w-2xl text-[15px] text-ink2">{sub}</p>}
       </div>
       {action && <div className="flex shrink-0 flex-wrap gap-2">{action}</div>}
     </div>
@@ -241,8 +241,8 @@ export function PageTitle({
 
 export function Empty({ title, children }: { title: string; children?: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border border-dashed border-line px-5 py-10 text-center">
-      <div className="font-serif text-xl text-ink">{title}</div>
+    <div className="rounded-[14px] border border-dashed border-line2 px-5 py-10 text-center">
+      <div className="text-lg font-medium text-ink">{title}</div>
       {children && <div className="mx-auto mt-2 max-w-md text-sm text-ink2">{children}</div>}
     </div>
   );
@@ -256,7 +256,7 @@ export function Table({ head, children }: { head: React.ReactNode[]; children: R
         <thead>
           <tr>
             {head.map((h, i) => (
-              <th key={i} className="border-b border-line px-4 py-2.5 text-left font-semibold whitespace-nowrap text-ink3">
+              <th key={i} className="border-b border-line px-4 py-2.5 text-left text-xs font-medium tracking-wide whitespace-nowrap text-ink3 uppercase">
                 {h}
               </th>
             ))}
@@ -291,12 +291,12 @@ export function Modal({
       ref={ref}
       onClose={onClose}
       onClick={(e) => e.target === ref.current && onClose()}
-      className="m-auto w-[calc(100%-2rem)] max-w-lg rounded-2xl border border-line bg-sf p-0 text-ink backdrop:bg-black/40"
+      className="m-auto w-[calc(100%-2rem)] max-w-lg rounded-[14px] border border-line2 bg-sf p-0 text-ink shadow-lift backdrop:bg-black/50"
     >
       <div className="max-h-[85vh] overflow-y-auto p-5 sm:p-6">
         <div className="mb-4 flex items-start justify-between gap-4">
-          <h2 className="font-serif text-2xl text-ink">{title}</h2>
-          <button onClick={onClose} aria-label="Close" className="-mr-2 -mt-1 rounded-lg p-2 text-ink3 hover:bg-sf2">
+          <h2 className="text-lg font-medium text-ink">{title}</h2>
+          <button onClick={onClose} aria-label="Close" className="-mr-2 -mt-1 rounded-lg p-2 text-ink3 hover:bg-hover">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M6 6l12 12M18 6L6 18" />
             </svg>
@@ -318,7 +318,7 @@ export function Bars({ data }: { data: { label: string; value: number }[] }) {
         {data.map((d) => (
           <div key={d.label} className="group relative flex h-full min-w-0 flex-1 items-end">
             <div
-              className="w-full rounded-t-[4px] bg-acc/80 transition-colors group-hover:bg-acc"
+              className="w-full rounded-t-[4px] bg-chart-1/70 transition-colors group-hover:bg-chart-1"
               style={{ height: `${Math.max(3, (d.value / max) * 100)}%` }}
               title={`${d.label}: ${d.value} credits`}
             />

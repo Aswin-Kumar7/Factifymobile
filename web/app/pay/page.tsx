@@ -9,7 +9,7 @@ import Link from "next/link";
 import Script from "next/script";
 import { useRouter } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { ThemeToggle } from "@/components/theme";
+import { ThemeButton } from "@/components/theme";
 import { Badge, Button, Notice, Seal, Spinner } from "@/components/ui";
 import { api, ApiFailure, authAction, Me, MyOrg } from "@/lib/api";
 import { inr, n } from "@/lib/format";
@@ -148,10 +148,10 @@ function PayPage() {
       <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="afterInteractive" />
       <header className="border-b border-line">
         <div className="mx-auto flex h-16 max-w-3xl items-center justify-between px-4 sm:px-6">
-          <Link href={handoff ? "#" : "/app/credits"} className="flex items-center gap-2.5 font-serif text-2xl font-semibold text-ink">
-            <Seal size={32} /> Factify
+          <Link href={handoff ? "#" : "/app/credits"} className="flex items-center gap-2 text-[17px] font-semibold tracking-tight text-ink">
+            <Seal size={24} /> Factify
           </Link>
-          <ThemeToggle />
+          <ThemeButton />
         </div>
       </header>
 
@@ -163,23 +163,23 @@ function PayPage() {
         )}
 
         {state === "error" && (
-          <div className="rounded-3xl border border-line bg-sf p-6 text-center shadow-card sm:p-10">
-            <h1 className="font-serif text-3xl text-ink">Can&apos;t open this payment</h1>
+          <div className="rounded-[16px] border border-line bg-sf p-6 text-center shadow-card sm:p-10">
+            <h1 className="font-medium tracking-tight text-3xl text-ink">Can&apos;t open this payment</h1>
             <p className="mt-3 text-ink2">{message}</p>
           </div>
         )}
 
         {state === "paid" && (
-          <div className="fade-in rounded-3xl border border-line bg-sf p-6 text-center shadow-lift sm:p-10">
+          <div className="fade-in rounded-[16px] border border-line bg-sf p-6 text-center shadow-lift sm:p-10">
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-acc-soft text-3xl text-acc-ink">✓</div>
-            <h1 className="mt-5 font-serif text-4xl text-ink">Payment complete</h1>
+            <h1 className="font-medium tracking-tight mt-5 text-4xl text-ink">Payment complete</h1>
             <p className="mt-3 text-lg text-ink2">
               {n(added)} credits were added to {org ? org.name : "your account"}. You now have {n(balance)}.
             </p>
             {handoff ? (
-              <p className="mt-6 rounded-2xl bg-sf2 p-4 text-ink">You can close this tab and go back to the Factify app. It has updated already.</p>
+              <p className="mt-6 rounded-[14px] bg-sf2 p-4 text-ink">You can close this tab and go back to the Factify app. It has updated already.</p>
             ) : (
-              <Link href={org ? `/app/org/${org.id}/billing` : "/app/credits"} className="mt-6 inline-block rounded-xl bg-acc px-5 py-3 font-semibold text-on-acc">
+              <Link href={org ? `/app/org/${org.id}/billing` : "/app/credits"} className="mt-6 inline-block rounded-[9px] bg-acc px-5 py-3 font-semibold text-on-acc">
                 Back to the dashboard
               </Link>
             )}
@@ -187,8 +187,8 @@ function PayPage() {
         )}
 
         {state === "cancelled" && (
-          <div className="rounded-3xl border border-line bg-sf p-6 text-center shadow-card sm:p-10">
-            <h1 className="font-serif text-3xl text-ink">Cancelled</h1>
+          <div className="rounded-[16px] border border-line bg-sf p-6 text-center shadow-card sm:p-10">
+            <h1 className="font-medium tracking-tight text-3xl text-ink">Cancelled</h1>
             <p className="mt-3 text-ink2">Nothing was charged. {handoff ? "You can close this tab and go back to the app." : ""}</p>
           </div>
         )}
@@ -196,7 +196,7 @@ function PayPage() {
         {(state === "ready" || state === "paying") && me && packs && (
           <div className="fade-in">
             <div className="text-xs font-semibold tracking-[0.12em] text-acc-ink uppercase">Buy credits</div>
-            <h1 className="mt-1 font-serif text-4xl leading-tight font-medium tracking-tight text-ink sm:text-5xl">Choose a pack</h1>
+            <h1 className="mt-1 text-4xl leading-tight font-medium tracking-tight text-ink sm:text-5xl">Choose a pack</h1>
             <p className="mt-2 text-ink2">
               Signed in as {me.email}. One check is one credit; a video is three. Credits don&apos;t expire.
             </p>
@@ -229,13 +229,13 @@ function PayPage() {
                     key={p.id}
                     onClick={() => setChosen(p.id)}
                     aria-pressed={on}
-                    className={`rounded-2xl border p-5 text-left transition-shadow ${on ? "border-acc bg-sf shadow-lift ring-1 ring-acc" : "border-line bg-sf shadow-card hover:border-ink3"}`}
+                    className={`rounded-[14px] border p-5 text-left transition-shadow ${on ? "border-acc bg-sf shadow-lift ring-1 ring-acc" : "border-line bg-sf shadow-card hover:border-ink3"}`}
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-ink">{p.name}</span>
                       {on && <Badge tone="acc">Selected</Badge>}
                     </div>
-                    <div className="tabular mt-3 font-serif text-4xl text-ink">{n(p.credits)}</div>
+                    <div className="font-medium tracking-tight tabular mt-3 text-4xl text-ink">{n(p.credits)}</div>
                     <div className="text-sm text-ink3">credits</div>
                     <div className="mt-3 flex items-baseline justify-between">
                       <span className="text-lg font-semibold text-ink">{inr(p.price_inr)}</span>
@@ -247,7 +247,7 @@ function PayPage() {
             </div>
 
             {pack && (
-              <div className="mt-6 rounded-3xl border border-line bg-sf p-5 shadow-card sm:p-6">
+              <div className="mt-6 rounded-[16px] border border-line bg-sf p-5 shadow-card sm:p-6">
                 <div className="text-sm font-semibold text-ink2">Summary</div>
                 <dl className="mt-3 space-y-2 text-[15px]">
                   <div className="flex justify-between gap-4"><dt className="text-ink2">Account</dt><dd className="text-right text-ink">{org ? org.name : "Personal"}</dd></div>

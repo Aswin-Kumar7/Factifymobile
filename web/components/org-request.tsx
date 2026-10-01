@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAccount } from "./account";
-import { Badge, Button, Card, Field, Input, Notice } from "./ui";
+import { Badge, Button, Card, Field, Input, inputClass, Notice } from "./ui";
 import { api } from "@/lib/api";
 import { when } from "@/lib/format";
 
@@ -68,11 +68,11 @@ export function OrgRequest() {
   return (
     <div className="space-y-4">
       {pending ? (
-        <Card className="paper">
+        <Card className="bg-hi">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="text-sm text-ink3">Your request</div>
-              <div className="font-serif text-2xl text-ink">{pending.org_name}</div>
+              <div className="text-xl font-medium tracking-tight text-ink">{pending.org_name}</div>
               <div className="text-sm text-ink2">Sent {when(pending.created_at, true)}. We usually reply within a day.</div>
             </div>
             <div className="flex items-center gap-2">
@@ -113,7 +113,7 @@ export function OrgRequest() {
                   maxLength={1000}
                   rows={3}
                   placeholder="A newsroom desk checking forwards before publishing; an API for our CMS…"
-                  className="w-full rounded-xl border border-line bg-sf px-3.5 py-2.5 text-[15px] text-ink placeholder:text-ink3 focus:border-acc focus:outline-none"
+                  className={inputClass}
                 />
               </Field>
             </div>
@@ -133,7 +133,7 @@ export function OrgRequest() {
 
       {requests && requests.filter((r) => r.status !== "pending").length > 0 && (
         <Card>
-          <h3 className="mb-2 font-semibold text-ink">Earlier requests</h3>
+          <h3 className="mb-2 font-medium text-ink">Earlier requests</h3>
           <ul className="divide-y divide-line">
             {requests
               .filter((r) => r.status !== "pending")
@@ -144,7 +144,7 @@ export function OrgRequest() {
                     {r.decision_note && <span className="text-ink3">“{r.decision_note}”</span>}
                     <Badge tone={tone[r.status]}>{word[r.status]}</Badge>
                     {r.org_id && (
-                      <a href={`/app/org/${r.org_id}`} className="font-semibold text-acc-ink">
+                      <a href={`/app/org/${r.org_id}`} className="font-medium text-acc-ink">
                         Open
                       </a>
                     )}

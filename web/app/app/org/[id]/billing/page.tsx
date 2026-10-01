@@ -3,6 +3,7 @@
 import Script from "next/script";
 import { use, useCallback, useEffect, useState } from "react";
 import { useAccount } from "@/components/account";
+import { OrgPlan } from "@/components/org-plan";
 import { Badge, Button, Card, Notice, PageTitle, Spinner, Stat, Table } from "@/components/ui";
 import { api } from "@/lib/api";
 import { inr, n, when } from "@/lib/format";
@@ -113,7 +114,11 @@ export default function Billing({ params }: { params: Promise<{ id: string }> })
   return (
     <>
       <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="afterInteractive" />
-      <PageTitle eyebrow={org.name} title="Billing" sub="Buy credit packs for the whole organisation. No subscription." />
+      <PageTitle eyebrow={org.name} title="Plan & billing" sub="The Team plan gives the organisation a monthly pool; credit packs top it up, with no subscription." />
+      <div className="mb-8">
+        <OrgPlan id={id} members={org.members} onChange={() => Promise.all([reload(), refresh()])} />
+      </div>
+      <h2 className="mb-3 text-lg font-medium text-ink">Credit packs</h2>
       {packs?.test_mode && (
         <div className="mb-4">
           <Notice tone="warning">
@@ -141,7 +146,7 @@ export default function Billing({ params }: { params: Promise<{ id: string }> })
           {packs.packs.map((p) => (
             <Card key={p.id} className="flex flex-col">
               <div className="font-semibold text-ink">{p.name}</div>
-              <div className="mt-2 font-serif text-3xl text-ink">{n(p.credits)}</div>
+              <div className="font-medium tracking-tight mt-2 text-3xl text-ink">{n(p.credits)}</div>
               <div className="text-sm text-ink3">credits</div>
               <div className="mt-3 text-lg font-semibold text-ink">{inr(p.price_inr)}</div>
               <div className="text-xs text-ink3">₹{(p.price_inr / p.credits).toFixed(2)} a check</div>
@@ -153,7 +158,7 @@ export default function Billing({ params }: { params: Promise<{ id: string }> })
         </div>
       )}
 
-      <h2 className="mt-10 mb-3 font-serif text-2xl text-ink">Payments</h2>
+      <h2 className="mt-10 mb-3 text-lg font-medium text-ink">Payments</h2>
       {payments.length === 0 ? (
         <p className="text-sm text-ink3">No payments yet.</p>
       ) : (

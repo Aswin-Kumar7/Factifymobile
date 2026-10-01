@@ -76,7 +76,7 @@ export function OrgOverview({ id, admin = false, base }: { id: string; admin?: b
       )}
 
       {/* The pool: what is left, and this month against the cap. */}
-      <section className="paper relative overflow-hidden rounded-3xl border border-line bg-sf p-5 shadow-card sm:p-7">
+      <section className="paper relative overflow-hidden rounded-[16px] border border-line bg-sf p-5 shadow-card sm:p-7">
         <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -84,14 +84,14 @@ export function OrgOverview({ id, admin = false, base }: { id: string; admin?: b
               <span className="text-sm text-ink3">since {when(org.created_at)}</span>
             </div>
             <div className="mt-4 text-sm font-medium text-ink3">Credits available</div>
-            <div className="tabular font-serif text-6xl leading-none font-medium tracking-tight text-ink sm:text-7xl">{n(available)}</div>
+            <div className="tabular text-6xl leading-none font-medium tracking-tight text-ink sm:text-7xl">{n(available)}</div>
             <div className="mt-2 text-sm text-ink2">
               {org.held > 0 && <>{n(org.held)} held by checks running now · </>}
               {n(org.credits_added)} added in total · {n(org.lifetime_spend)} used
             </div>
             <div className="mt-5 flex flex-wrap gap-2">
               {!admin && (
-                <Link href="/app/check" className="inline-flex items-center gap-1.5 rounded-xl bg-acc px-4 py-2.5 text-sm font-semibold text-on-acc hover:brightness-110">
+                <Link href="/app/check" className="inline-flex items-center gap-1.5 rounded-[9px] bg-acc px-4 py-2.5 text-sm font-semibold text-on-acc hover:bg-acc-h">
                   <Icon name="bolt" size={16} /> Check something
                 </Link>
               )}
@@ -138,7 +138,7 @@ export function OrgOverview({ id, admin = false, base }: { id: string; admin?: b
         <Card>
           <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
             <div>
-              <h2 className="font-serif text-2xl text-ink">{full ? "Credits used" : "Your credits used"}</h2>
+              <h2 className="font-medium tracking-tight text-2xl text-ink">{full ? "Credits used" : "Your credits used"}</h2>
               <p className="text-sm text-ink3">Last 30 days</p>
             </div>
             <Link href={`${base}/usage`} className="text-sm font-semibold text-acc-ink">
@@ -148,7 +148,7 @@ export function OrgOverview({ id, admin = false, base }: { id: string; admin?: b
           <AreaChart data={series} />
         </Card>
         <Card>
-          <h2 className="font-serif text-2xl text-ink">Where it goes</h2>
+          <h2 className="font-medium tracking-tight text-2xl text-ink">Where it goes</h2>
           <p className="mb-4 text-sm text-ink3">This month</p>
           <Split
             parts={[
@@ -165,7 +165,7 @@ export function OrgOverview({ id, admin = false, base }: { id: string; admin?: b
         <div className="grid gap-6 lg:grid-cols-2">
           <Card>
             <div className="mb-4 flex items-baseline justify-between">
-              <h2 className="font-serif text-2xl text-ink">Members this month</h2>
+              <h2 className="font-medium tracking-tight text-2xl text-ink">Members this month</h2>
               <Link href={`${base}/members`} className="text-sm font-semibold text-acc-ink">
                 Manage →
               </Link>
@@ -199,7 +199,7 @@ export function OrgOverview({ id, admin = false, base }: { id: string; admin?: b
           </Card>
           <Card>
             <div className="mb-4 flex items-baseline justify-between">
-              <h2 className="font-serif text-2xl text-ink">API keys this month</h2>
+              <h2 className="font-medium tracking-tight text-2xl text-ink">API keys this month</h2>
               <Link href={`${base}/keys`} className="text-sm font-semibold text-acc-ink">
                 Manage →
               </Link>

@@ -16,17 +16,6 @@ const geist = localFont({
   display: "swap",
 });
 
-const newsreader = localFont({
-  src: [
-    { path: "./fonts/Newsreader-Regular.ttf", weight: "400" },
-    { path: "./fonts/Newsreader-Italic.ttf", weight: "400", style: "italic" },
-    { path: "./fonts/Newsreader-Medium.ttf", weight: "500" },
-    { path: "./fonts/Newsreader-SemiBold.ttf", weight: "600" },
-  ],
-  variable: "--font-newsreader",
-  display: "swap",
-});
-
 const geistMono = localFont({
   src: [{ path: "./fonts/GeistMono-Regular.ttf", weight: "400" }],
   variable: "--font-geist-mono",
@@ -43,10 +32,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f5f3ee" },
-    { media: "(prefers-color-scheme: dark)", color: "#151513" },
-  ],
+  themeColor: "#050605",
 };
 
 /** This build's id, baked into every page at build time (see VersionGuard). */
@@ -62,15 +48,16 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* The chosen theme, applied before the first paint so the page never flashes. */}
+        {/* The chosen theme, applied before the first paint so the page never flashes.
+            Dark unless the person chose light, or chose "same as device" on a light device. */}
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "try{var t=localStorage.getItem('fct_theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}",
+              "try{var t=localStorage.getItem('fct_theme');if(t==='system')t=matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';document.documentElement.dataset.theme=t==='light'?'light':'dark'}catch(e){document.documentElement.dataset.theme='dark'}",
           }}
         />
       </head>
-      <body className={`${geist.variable} ${newsreader.variable} ${geistMono.variable} antialiased`}>
+      <body className={`${geist.variable} ${geistMono.variable} antialiased`}>
         {children}
         <VersionGuard build={buildId()} />
       </body>

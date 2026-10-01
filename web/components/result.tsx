@@ -114,16 +114,16 @@ export type Verdict = {
 // ---------------------------------------------------------------- words
 
 const VERDICT = {
-  TRUE: { word: "True", line: "Reliable sources confirm this", tone: "text-true", soft: "bg-true-soft" },
-  FALSE: { word: "False", line: "Reliable sources show this is false", tone: "text-false", soft: "bg-false-soft" },
-  PARTLY_TRUE: { word: "Partly true", line: "Some of this is right, some of it isn't", tone: "text-mis", soft: "bg-mis-soft" },
-  MISLEADING: { word: "Misleading", line: "True in part, but missing important context", tone: "text-mis", soft: "bg-mis-soft" },
-  UNCONFIRMED: { word: "Unconfirmed", line: "We couldn't confirm or rule this out yet", tone: "text-unc", soft: "bg-unc-soft" },
+  TRUE: { word: "True", line: "Reliable sources confirm this", tone: "text-true", soft: "bg-true-soft", grad: "from-true-soft" },
+  FALSE: { word: "False", line: "Reliable sources show this is false", tone: "text-false", soft: "bg-false-soft", grad: "from-false-soft" },
+  PARTLY_TRUE: { word: "Partly true", line: "Some of this is right, some of it isn't", tone: "text-mis", soft: "bg-mis-soft", grad: "from-mis-soft" },
+  MISLEADING: { word: "Misleading", line: "True in part, but missing important context", tone: "text-mis", soft: "bg-mis-soft", grad: "from-mis-soft" },
+  UNCONFIRMED: { word: "Unconfirmed", line: "We couldn't confirm or rule this out yet", tone: "text-unc", soft: "bg-unc-soft", grad: "from-unc-soft" },
 } as const;
 
 export const verdictStyle: Record<Verdict["verdict"], { word: string; tone: string; soft: string }> = VERDICT;
 
-const NOTHING = { word: "Nothing to fact-check", line: "No claim found in it", tone: "text-unc", soft: "bg-unc-soft" };
+const NOTHING = { word: "Nothing to fact-check", line: "No claim found in it", tone: "text-unc", soft: "bg-unc-soft", grad: "from-unc-soft" };
 
 const UNCONFIRMED_BODY =
   "We couldn't find enough reliable sources that address this directly. Treat it with caution until it's confirmed.";
@@ -356,7 +356,7 @@ function Underlined({ text, spans, cut }: { text: string; spans: ReturnType<type
   });
   if (at < text.length) parts.push(text.slice(at));
   return (
-    <p className="whitespace-pre-line font-serif text-[17px] leading-relaxed text-ink">
+    <p className="font-medium tracking-tight whitespace-pre-line text-[17px] leading-relaxed text-ink">
       &ldquo;{parts}
       {cut ? "…" : ""}&rdquo;
     </p>
@@ -367,20 +367,20 @@ function Underlined({ text, spans, cut }: { text: string; spans: ReturnType<type
 
 export function VerdictPill({ verdict }: { verdict: Verdict["verdict"] | "NOTHING" }) {
   const s = verdict === "NOTHING" ? { ...NOTHING, word: "Nothing to check" } : (VERDICT[verdict] ?? VERDICT.UNCONFIRMED);
-  return <span className={`inline-flex shrink-0 rounded-lg px-2.5 py-0.5 text-sm font-bold ${s.soft} ${s.tone}`}>{s.word}</span>;
+  return <span className={`inline-flex shrink-0 rounded-md px-2 py-0.5 text-xs font-medium ${s.soft} ${s.tone}`}>{s.word}</span>;
 }
 
 function Section({ title, note }: { title: string; note?: string }) {
   return (
     <div className="mb-2.5 mt-6 flex flex-wrap items-baseline justify-between gap-x-3 px-1">
-      <h3 className="font-serif text-xl text-ink">{title}</h3>
+      <h3 className="text-base font-medium text-ink">{title}</h3>
       {note && <span className="text-xs text-ink3">{note}</span>}
     </div>
   );
 }
 
 function Box({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <div className={`rounded-2xl border border-line bg-sf ${className}`}>{children}</div>;
+  return <div className={`rounded-[14px] border border-line bg-sf shadow-card ${className}`}>{children}</div>;
 }
 
 function Meter({ value, label, raised }: { value: number; label: string; raised?: boolean }) {
@@ -685,7 +685,7 @@ function RightAndWrong({ claims }: { claims: Claim[] }) {
                   {smaller?.source_excerpt?.trim() && (
                     <div className="mt-1.5 rounded-xl bg-mis-soft px-3 py-2">
                       <div className="text-xs font-semibold text-ink3">What sources actually report</div>
-                      <p className="mt-0.5 line-clamp-5 font-serif text-sm text-ink">&ldquo;{smaller.source_excerpt.trim()}&rdquo;</p>
+                      <p className="font-medium tracking-tight mt-0.5 line-clamp-5 text-sm text-ink">&ldquo;{smaller.source_excerpt.trim()}&rdquo;</p>
                       <div className="mt-0.5 text-xs font-semibold text-ink2">— {smaller.publisher || host(smaller.citation_url)}</div>
                     </div>
                   )}
@@ -709,7 +709,7 @@ function SourceCard({ e }: { e: Evidence }) {
       href={e.citation_url}
       target="_blank"
       rel="noopener noreferrer"
-      className="flex flex-col rounded-2xl border border-line bg-sf p-4 transition hover:border-acc hover:shadow-[var(--shadow)]"
+      className="flex flex-col rounded-[12px] border border-line bg-sf p-4 shadow-card transition hover:border-acc-ink/40"
     >
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
@@ -718,7 +718,7 @@ function SourceCard({ e }: { e: Evidence }) {
         </div>
         <span className={`shrink-0 rounded-lg px-2 py-0.5 text-xs font-bold ${tone}`}>{word}</span>
       </div>
-      {e.source_excerpt?.trim() && <p className="mt-2.5 line-clamp-4 font-serif text-[15px] leading-snug text-ink">&ldquo;{e.source_excerpt.trim()}&rdquo;</p>}
+      {e.source_excerpt?.trim() && <p className="font-medium tracking-tight mt-2.5 line-clamp-4 text-[15px] leading-snug text-ink">&ldquo;{e.source_excerpt.trim()}&rdquo;</p>}
       <div className="mt-auto flex items-center justify-between gap-2 pt-3 text-xs">
         <span className="truncate text-ink3">{meta}</span>
         <span className="shrink-0 font-semibold text-acc-ink">Read →</span>
@@ -803,27 +803,27 @@ export function Result({
   return (
     <div>
       {/* Verdict */}
-      <div className={`rounded-3xl p-5 sm:p-7 ${style.soft}`}>
-        <div className={`text-[11px] font-semibold tracking-[0.18em] ${style.tone}`}>VERDICT</div>
+      <div className={`rounded-[14px] border border-line2 bg-linear-to-b ${style.grad} via-sf to-sf p-5 shadow-card sm:p-6`}>
+        <div className={`font-mono text-[11px] tracking-[0.14em] ${style.tone}`}>VERDICT</div>
         <div className="mt-1 flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
-          <span className={`font-serif font-semibold leading-none ${style.tone} ${nothing || !decided ? "text-4xl sm:text-5xl" : "text-5xl sm:text-6xl"}`}>{style.word}</span>
-          {decided && v.confidence != null && <span className={`rounded-full bg-sf px-3 py-1 text-sm font-semibold ${style.tone}`}>{v.confidence}% confidence</span>}
+          <span className={`leading-none font-medium tracking-tight ${style.tone} ${nothing || !decided ? "text-[2.1rem] sm:text-[2.4rem]" : "text-[2.4rem] sm:text-[2.75rem]"}`}>{style.word}</span>
+          {decided && v.confidence != null && <span className={`rounded-md px-2 py-0.5 text-xs font-medium ${style.soft} ${style.tone}`}>{v.confidence}% confidence</span>}
         </div>
         <p className="mt-3 text-[15px] font-semibold text-ink">{line}</p>
         <p className="mt-1.5 text-[15px] leading-relaxed text-ink2">{summary}</p>
         {note && <p className="mt-2.5 text-[15px] font-semibold text-ink">{note}</p>}
         {v.from_cache && (
-          <span className="mt-3 inline-flex rounded-full bg-sf px-3 py-1 text-xs font-semibold text-ink2">
+          <span className="mt-3 inline-flex rounded-md bg-hover px-2 py-0.5 text-xs font-medium text-ink2">
             Checked earlier · reused from {day(v.retrieved_at, false) ?? "an earlier check"}
           </span>
         )}
         {searchUnavailable ? (
-          <p className="mt-3 rounded-xl bg-sf px-3 py-2.5 text-sm text-ink2">
+          <p className="mt-3 rounded-[10px] bg-hover px-3 py-2.5 text-sm text-ink2">
             Our news search couldn&apos;t be reached, so this wasn&apos;t checked against news reports. Check it again in a little while.
           </p>
         ) : (
           v.completeness_note && (
-            <p className="mt-3 rounded-xl bg-sf px-3 py-2.5 text-sm text-ink2">Some sources couldn&apos;t be checked in time, so this answer may be incomplete.</p>
+            <p className="mt-3 rounded-[10px] bg-hover px-3 py-2.5 text-sm text-ink2">Some sources couldn&apos;t be checked in time, so this answer may be incomplete.</p>
           )
         )}
         {!nothing && (
@@ -833,7 +833,7 @@ export function Result({
                 type="button"
                 onClick={copyCorrection}
                 disabled={correction === "busy"}
-                className="rounded-xl bg-ink px-4 py-2 text-sm font-semibold text-bg transition hover:opacity-90 disabled:opacity-60"
+                className="rounded-[9px] bg-acc px-4 py-2 text-sm font-medium text-on-acc transition-colors hover:bg-acc-h disabled:opacity-60"
               >
                 {correction === "copied" ? "Copied - paste it in the chat" : correction === "busy" ? "Preparing…" : shareWord}
               </button>
@@ -927,9 +927,9 @@ export function Result({
       )}
 
       {technique && (
-        <div className="mt-4 rounded-2xl bg-mis-soft p-4">
-          <div className="text-[11px] font-semibold tracking-[0.14em] text-mis">HOW POSTS LIKE THIS MISLEAD</div>
-          <div className="mt-1 font-serif text-xl text-ink">{technique[0]}</div>
+        <div className="mt-4 rounded-[14px] bg-mis-soft p-4">
+          <div className="font-mono text-[11px] tracking-[0.12em] text-mis">HOW POSTS LIKE THIS MISLEAD</div>
+          <div className="font-medium tracking-tight mt-1 text-xl text-ink">{technique[0]}</div>
           <p className="mt-1 text-sm leading-relaxed text-ink2">{technique[1]}</p>
         </div>
       )}
@@ -964,7 +964,7 @@ export function Result({
       )}
 
       {v.receipt?.receipt_id && (
-        <div className="mt-4 rounded-2xl border border-dashed border-line px-4 py-3 text-sm">
+        <div className="mt-4 rounded-[14px] border border-dashed border-line2 px-4 py-3 text-sm">
           {v.receipt.verified ? (
             <>
               <div className="font-semibold text-ink">Receipt verified</div>

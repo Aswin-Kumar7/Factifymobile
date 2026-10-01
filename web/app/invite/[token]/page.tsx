@@ -40,7 +40,7 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
   const here = `/invite/${token}`;
   return (
     <main className="flex min-h-dvh items-center justify-center px-4 py-10">
-      <div className="w-full max-w-md rounded-2xl border border-line bg-sf p-6 sm:p-8">
+      <div className="w-full max-w-md rounded-[14px] border border-line bg-sf p-6 sm:p-8">
         <Seal size={52} />
         {!invite && !error && (
           <p className="mt-6 flex items-center gap-2 text-ink2">
@@ -49,7 +49,7 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
         )}
         {invite && (
           <>
-            <h1 className="mt-6 font-serif text-3xl font-medium tracking-tight text-ink">Join {invite.org_name}</h1>
+            <h1 className="mt-6 text-3xl font-medium tracking-tight text-ink">Join {invite.org_name}</h1>
             <p className="mt-2 text-[15px] text-ink2">
               You&apos;re invited as a <strong>{roleName[invite.role]}</strong>, as {invite.email}. Checks you make for{" "}
               {invite.org_name} are paid from its credits.
@@ -70,7 +70,7 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
               </div>
             ) : (
               <div className="mt-6 grid gap-2">
-                <Link href={`/signup?next=${encodeURIComponent(here)}`} className="rounded-xl bg-acc py-3 text-center font-semibold text-on-acc">
+                <Link href={`/signup?next=${encodeURIComponent(here)}`} className="rounded-[9px] bg-acc py-3 text-center font-semibold text-on-acc">
                   Create an account to join
                 </Link>
                 <Link href={`/signin?next=${encodeURIComponent(here)}`} className="rounded-xl border border-line py-3 text-center font-semibold text-ink">

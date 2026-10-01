@@ -33,7 +33,7 @@ export default function AdminOrgLayout({ children, params }: { children: React.R
         <Avatar name={org?.name ?? "…"} size={56} />
         <div className="min-w-0 flex-1">
           <div className="text-xs font-semibold tracking-[0.12em] text-acc-ink uppercase">Organisation · admin view</div>
-          <h1 className="truncate font-serif text-[2rem] leading-tight font-medium tracking-tight text-ink sm:text-[2.4rem]">{org?.name ?? "…"}</h1>
+          <h1 className="truncate text-[2rem] leading-tight font-medium tracking-tight text-ink sm:text-[2.4rem]">{org?.name ?? "…"}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-ink3">
             {org && <Badge tone={org.status === "active" ? "acc" : "bad"}>{org.status}</Badge>}
             {org?.billing_email && <span>{org.billing_email}</span>}
