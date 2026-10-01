@@ -2,6 +2,7 @@ import Link from "next/link";
 import { DownloadHere, Features, HowItWorks, Pricing, ProductShot } from "@/components/landing";
 import { SiteFooter, SiteHeader } from "@/components/site";
 import { ApkFactsLine } from "@/lib/app-download";
+import { EXTRA_CHECK_INR } from "@/lib/plans";
 
 // The landing page: what Factify does, how, what it checks, the plans, the app, the
 // API, questions. Quiet by design; only the laptop in "How it works" moves.
@@ -21,27 +22,63 @@ const download = (
 const primary = "group inline-flex h-11 items-center gap-2 rounded-[10px] bg-acc px-5 text-[15px] font-medium text-on-acc transition-colors hover:bg-acc-h";
 const ghost = "inline-flex h-11 items-center gap-2 rounded-[10px] border border-line2 px-5 text-[15px] font-medium text-ink transition-colors hover:bg-hover";
 
-const FACTS = [
-  ["740", "vetted publishers and fact-checkers"],
-  ["12", "languages, English and Indian"],
-  ["5", "kinds of content"],
-  ["24 h", "then your pictures and videos are deleted"],
-];
+// How many sites web search may cite, counted by the API from the same list it uses
+// (GET /v1/sources/summary); null when the API can't be reached, as during a build.
+type SourceCounts = { sites: number; fact_checkers: number };
 
-const PRINCIPLES = [
-  ["A rulebook decides, not a chatbot.", "AI reads the pages; fixed rules make the call. Every verdict shows the sources it read and why it landed where it did."],
-  ["Only sources worth trusting.", "740 publishers and fact-checkers vetted against international fact-checking networks. Twenty copies of one wire story count once."],
-  ["Honest when unsure.", "Too new to confirm? You see “Unconfirmed” and the reason. Made-up news with a fake picture, reported by no one, is called out as False."],
-];
+async function sourceCounts(): Promise<SourceCounts | null> {
+  const api = (process.env.FACTIFY_API_INTERNAL || "http://localhost:8000").replace(/\/$/, "");
+  try {
+    const r = await fetch(`${api}/v1/sources/summary`, { next: { revalidate: 600 }, signal: AbortSignal.timeout(3000) });
+    return r.ok ? ((await r.json()) as SourceCounts) : null;
+  } catch {
+    return null;
+  }
+}
+
+const n = (value: number) => new Intl.NumberFormat("en-IN").format(value);
+
+function facts(counts: SourceCounts | null) {
+  return [
+    counts ? [n(counts.sites), `trusted sites, ${n(counts.fact_checkers)} of them fact-checkers`] : ["Vetted", "publishers and fact-checkers only"],
+    ["12", "languages, English and Indian"],
+    ["5", "kinds of content"],
+    ["0", "pictures, videos or PDFs stored after a check"],
+  ];
+}
+
+function principles(counts: SourceCounts | null) {
+  const list = counts ? `${n(counts.sites)} publishers, fact-checkers and official sites` : "Publishers, fact-checkers and official sites";
+  return [
+    ["A rulebook decides, not a chatbot.", "AI reads the pages; fixed rules make the call. Every verdict shows the sources it read and why it landed where it did."],
+    [
+      "Only sources worth trusting.",
+      `${list}, chosen by published criteria: fact-checkers verified by the IFCN or EFCSN (now or in the past), wire services, public broadcasters and established newsrooms, and no outlets owned by politicians. Twenty copies of one wire story count once.`,
+    ],
+    ["Honest when unsure.", "Too new to confirm? You see “Unconfirmed” and the reason. Made-up news with a fake picture, reported by no one, is called out as False."],
+  ];
+}
 
 const FAQ = [
   ["Is Factify a chatbot?", "No. AI finds the claims and reads the pages; a fixed rulebook makes the call, so the same claim gets the same answer on the website, the app and the API."],
-  ["What happens when I reach my monthly limit?", "Wait for it to reset on the 1st, upgrade, or - on a paid plan - turn on extra usage at ₹3 a check up to a monthly cap you choose. A check that fails costs nothing. A paid plan doesn't renew by itself: pay again to continue, or it goes back to Free at the end of its month."],
-  ["Why isn't the app on the Play Store?", "It's coming. Until then you install it from our site; Android asks you to allow the install once. The file is signed by us."],
-  ["Do you keep what I check?", "Your history is kept in your browser or on your phone. Pictures and videos are deleted from our servers after 24 hours, and location data is removed from photos before they're checked."],
+  [
+    "What happens when I reach my monthly limit?",
+    `Your plan's checks start again on the 1st of each month. If you need more before then, move to a bigger plan or, on a paid plan, turn on extra usage at ₹${EXTRA_CHECK_INR} a check, with a monthly cap if you want one. A check that fails costs nothing. A paid plan doesn't renew by itself: pay again to continue, or it goes back to Free at the end of its month.`,
+  ],
+  [
+    "Why isn't the app on the Play Store?",
+    "It's coming. Until then you download it from our site and install it directly; Android asks you once to allow installs from your browser.",
+  ],
+  [
+    "Do you keep what I check?",
+    "Not against your name. Your list of past checks is kept in your browser or on your phone. The claims, sources and verdict of a check are stored without your name, so the same claim is answered faster next time. Pictures, videos and PDFs are read and never stored; we keep only a fingerprint of a picture, to recognise it if it's sent again. Location data is removed from photos before they're checked. In an organisation, the owner can turn on a shared history of the organisation's checks.",
+  ],
 ];
 
-export default function Home() {
+export default async function Home() {
+  const counts = await sourceCounts();
+  const FACTS = facts(counts);
+  const PRINCIPLES = principles(counts);
   return (
     <>
       <SiteHeader />
@@ -70,9 +107,9 @@ export default function Home() {
         </section>
 
         {/* The product, clickable */}
-        <section className="mx-auto max-w-[1200px] px-4 pb-14 sm:px-8" aria-label="Factify on the web - click around">
+        <section className="mx-auto max-w-[1200px] px-4 pb-14 sm:px-8" aria-label="An example of Factify on the web">
           <ProductShot />
-          <p className="mt-3.5 text-center text-[13px] text-ink3">Click around — the sidebar works.</p>
+          <p className="mt-3.5 text-center text-[13px] text-ink3">An illustration with made-up example data, not a live account. Click the sidebar to see the other pages.</p>
         </section>
 
         {/* Quiet facts */}
@@ -210,18 +247,22 @@ export default function Home() {
             </div>
             <div className="overflow-hidden rounded-2xl border border-line bg-sf shadow-card">
               <div className="flex h-9.5 items-center gap-4 border-b border-line px-4 text-[12.5px] text-ink3">
-                <span className="text-ink">Request</span>
-                <span>Response</span>
+                <span className="text-ink">Request and response</span>
+                <span>shortened</span>
               </div>
               <pre className="overflow-x-auto p-5 font-mono text-[13px] leading-[1.9] text-ink2">
                 <span className="text-acc-ink">curl</span> https://factify-zeai.indiasouthcentral.cloudapp.azure.com/v1/verify \{"\n"}
-                {"  "}-H <span className="text-ink">&quot;Authorization: Bearer fct_live_…&quot;</span> \{"\n"}
-                {"  "}-d <span className="text-ink">&apos;{"{"}&quot;text&quot;: &quot;Govt to pay ₹5,000…&quot;{"}"}&apos;</span>
+                {"  "}-H <span className="text-ink">&quot;Authorization: Bearer $FACTIFY_KEY&quot;</span> \{"\n"}
+                {"  "}-H <span className="text-ink">&quot;Content-Type: application/json&quot;</span> \{"\n"}
+                {"  "}-d <span className="text-ink">&apos;{"{"}&quot;text&quot;: &quot;Govt to pay ₹5,000 a month to every woman&quot;{"}"}&apos;</span>
                 {"\n\n"}
                 {"{ "}
                 <span className="text-ink">&quot;verdict&quot;</span>: <span className="text-false">&quot;FALSE&quot;</span>, <span className="text-ink">&quot;confidence&quot;</span>: 89,{"\n"}
                 {"  "}
-                <span className="text-ink">&quot;claims&quot;</span>: [ … ], <span className="text-ink">&quot;sources&quot;</span>: [ … ] {"}"}
+                <span className="text-ink">&quot;summary&quot;</span>: &quot;…&quot;,{"\n"}
+                {"  "}
+                <span className="text-ink">&quot;claims&quot;</span>: [ {"{ "}
+                <span className="text-ink">&quot;status&quot;</span>: <span className="text-false">&quot;CONTRADICTED&quot;</span>, <span className="text-ink">&quot;evidence&quot;</span>: [ … ] {"}"} ], … {"}"}
               </pre>
             </div>
           </div>

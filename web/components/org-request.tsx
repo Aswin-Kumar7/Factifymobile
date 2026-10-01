@@ -73,7 +73,7 @@ export function OrgRequest() {
             <div>
               <div className="text-sm text-ink3">Your request</div>
               <div className="text-xl font-medium tracking-tight text-ink">{pending.org_name}</div>
-              <div className="text-sm text-ink2">Sent {when(pending.created_at, true)}. We usually reply within a day.</div>
+              <div className="text-sm text-ink2">Sent {when(pending.created_at, true)}. Factify&apos;s team reviews it; the answer appears on this page, so check back here.</div>
             </div>
             <div className="flex items-center gap-2">
               <Badge tone="warn">Waiting for review</Badge>

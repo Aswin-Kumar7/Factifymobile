@@ -4,10 +4,12 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useAccount } from "@/components/account";
 import { AdminRequests } from "@/components/admin-requests";
+import { AdminReviews } from "@/components/admin-reviews";
+import { auditAction, auditDetail } from "@/components/org-audit";
 import { AreaChart, daily, Split } from "@/components/charts";
 import { Icon } from "@/components/shell";
 import { Avatar, Badge, Button, Card, Field, Input, Modal, Notice, PageTitle, Progress, Spinner, Stat, Table } from "@/components/ui";
-import { api } from "@/lib/api";
+import { api, OrgMonth } from "@/lib/api";
 import { ago, inr, n, when } from "@/lib/format";
 
 type Stats = {
@@ -16,7 +18,7 @@ type Stats = {
   providers: { provider: string; calls: number; daily_cap: number }[];
   survey: { survey_state: string; role: string | null; n: number }[];
 };
-type AdminOrg = { id: string; name: string; status: string; created_at: string; billing_email: string | null; balance: number; members: number; active_keys: number; plan?: string; seats?: number };
+type AdminOrg = OrgMonth & { id: string; name: string; status: string; created_at: string; billing_email: string | null; balance: number; members: number; active_keys: number; plan?: string; seats?: number };
 type AdminUser = {
   id: string;
   email: string;
@@ -41,13 +43,14 @@ const roleWords: Record<string, string> = {
   curious: "Curious",
 };
 
-type Section = "Overview" | "Requests" | "Organisations" | "People" | "API keys" | "Audit";
+type Section = "Overview" | "Reports" | "Requests" | "Organisations" | "People" | "API keys" | "Audit";
 
 export function AdminSection({ section }: { section: Section }) {
   const { me } = useAccount();
   if (!me?.is_staff) return <Notice tone="info">This page is for the Factify team.</Notice>;
   const subs: Record<Section, string> = {
     Overview: "Everything on Factify at a glance.",
+    Reports: "Results people reported as wrong, and checks the system held back. Open each, then record your judgement beside the machine's.",
     Requests: "People asking for an organisation plan. Approving creates the organisation with them as owner.",
     Organisations: "Every organisation: credits, members, keys. Add credits or suspend.",
     People: "Everyone with an account. Add credits or disable.",
@@ -58,6 +61,7 @@ export function AdminSection({ section }: { section: Section }) {
     <>
       <PageTitle eyebrow="Factify admin" title={section === "Overview" ? "Platform" : section} sub={subs[section]} />
       {section === "Overview" && <Overview />}
+      {section === "Reports" && <AdminReviews />}
       {section === "Requests" && <AdminRequests />}
       {section === "Organisations" && <Orgs />}
       {section === "People" && <People />}
@@ -84,7 +88,9 @@ function Overview() {
   });
   const answered = stats.survey.filter((s) => s.survey_state === "answered");
   const maxCalls = Math.max(1, ...stats.providers.map((p) => Number(p.calls)));
-  const lowOrgs = orgs.filter((o) => o.status === "active" && o.balance < 50);
+  // Low on what the organisation can still check (its plan's checks and credits);
+  // one paying per check, or past its plan on extra usage, is not out.
+  const lowOrgs = orgs.filter((o) => o.status === "active" && !o.extra_open && o.checks_left < 50);
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
@@ -118,7 +124,7 @@ function Overview() {
           <p className="mb-4 text-sm text-ink3">Last 30 days</p>
           <Split
             parts={[
-              { label: "Free (personal)", value: Number(t.personal_credits_30d) },
+              { label: "Personal", value: Number(t.personal_credits_30d) },
               { label: "Organisations", value: Number(t.org_credits_30d) },
             ]}
           />
@@ -168,13 +174,13 @@ function Overview() {
                 <Link href={`/app/admin/organisations/${o.id}`} className="flex items-center gap-3 py-2.5 hover:opacity-80">
                   <Avatar name={o.name} size={32} />
                   <span className="min-w-0 flex-1 truncate font-medium text-ink">{o.name}</span>
-                  <Badge tone={o.balance <= 0 ? "bad" : "warn"}>{o.balance <= 0 ? "Out of credits" : `${n(o.balance)} left`}</Badge>
+                  <Badge tone={o.checks_left <= 0 ? "bad" : "warn"}>{o.checks_left <= 0 ? "No checks left: refused" : `${n(o.checks_left)} checks left`}</Badge>
                 </Link>
               </li>
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-ink3">Every active organisation has at least 50 credits.</p>
+          <p className="text-sm text-ink3">Every active organisation has at least 50 checks left this month, or pays per check.</p>
         )}
       </Card>
     </div>
@@ -252,7 +258,7 @@ function Orgs() {
         <Spinner />
       ) : (
         <Card className="p-0 sm:p-0">
-          <Table head={["Organisation", "Plan", "Credits", "Members", "Keys", "Created", ""]}>
+          <Table head={["Organisation", "Plan", "Checks left", "Credits", "Members", "Keys", "Created", ""]}>
             {rows.map((o) => (
               <tr key={o.id}>
                 <td>
@@ -266,6 +272,7 @@ function Orgs() {
                   </div>
                 </td>
                 <td className="whitespace-nowrap text-ink2">{o.plan === "team" ? `Team · ${n(o.seats)}` : o.plan === "api" ? "API" : "Packs"}</td>
+                <td className="whitespace-nowrap text-ink2">{o.pay_per_check ? "Pays per check" : n(Math.max(o.checks_left, 0))}{o.extra_open && !o.pay_per_check && o.checks_left <= 0 ? " · extra usage" : ""}</td>
                 <td className="text-ink2">{n(o.balance)}</td>
                 <td className="text-ink2">{n(o.members)}</td>
                 <td className="text-ink2">{n(o.active_keys)}</td>
@@ -430,8 +437,8 @@ function Audit() {
           <tr key={i}>
             <td className="whitespace-nowrap text-ink2">{when(r.at, true)}</td>
             <td className="max-w-[200px] truncate text-ink2">{r.actor_email || "system"}</td>
-            <td className="text-ink">{r.action}</td>
-            <td className="max-w-[320px] truncate text-xs text-ink3">{JSON.stringify(r.detail)}</td>
+            <td className="text-ink">{auditAction(r.action)}</td>
+            <td className="max-w-[320px] truncate text-xs text-ink3">{auditDetail(r.detail)}</td>
           </tr>
         ))}
       </Table>

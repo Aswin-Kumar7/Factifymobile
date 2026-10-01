@@ -11,9 +11,9 @@ import { Badge, Button, Card, Notice, PageTitle, Spinner, Table } from "@/compon
 import { api } from "@/lib/api";
 import { inr, n, when } from "@/lib/format";
 import { PERSONAL, perMonth, rupees } from "@/lib/plans";
-import { appHandoff, forgetHandoff, payForSubscription, Subscription } from "@/lib/razorpay";
+import { appHandoff, finishHandoff, forgetHandoff, payForSubscription, Subscription } from "@/lib/razorpay";
 
-type Sub = { id: string; plan: string; interval: string; status: string; kind?: string; amount_paise: number; current_end: string | null; created_at: string; test_mode: boolean };
+type Sub = { id: string; plan: string; interval: string; status: string; kind?: string; amount_paise: number; current_start?: string | null; current_end: string | null; created_at: string; test_mode: boolean; paid?: boolean };
 type Bill = { id: string; month: string; checks: number; amount_paise: number; status: string; short_url: string | null };
 type MyPlan = {
   plan: "free" | "plus" | "pro";
@@ -28,6 +28,8 @@ type MyPlan = {
   resets_at: string | null;
   credits: number;
   checks_left: number;
+  // Whether running out refuses checks (off during the preview).
+  enforced?: boolean;
   extra: { enabled: boolean; cap_paise: number | null; used_paise: number; price_paise: number; blocked: boolean };
   subscriptions: Sub[];
   bills: Bill[];
@@ -94,12 +96,29 @@ export default function PlanAndUsage() {
     }
   }
 
+  // The phone app sent the person here and waits; a choice that needs no payment
+  // (cancelling, extra usage, keeping the plan) ends that wait.
+  async function settleApp(): Promise<string> {
+    if (!fromApp) return "";
+    await finishHandoff();
+    setFromApp(null);
+    return " You can go back to the Factify app now.";
+  }
+
+  async function keepPlan() {
+    setBusy("keep");
+    const back = await settleApp();
+    setMessage({ tone: "info", text: `Nothing was changed or charged.${back}` });
+    setBusy(null);
+  }
+
   async function cancel() {
     if (!plan || !confirm(`Cancel ${plan.name}? You keep it until ${shortDate(plan.renews_at)}, then you're on Free.`)) return;
     setBusy("cancel");
     try {
       await api("/v1/me/plan/cancel", { method: "POST", account: "personal" });
-      setMessage({ tone: "info", text: `Cancelled. ${plan.name} stays until ${shortDate(plan.renews_at)}.` });
+      const back = await settleApp();
+      setMessage({ tone: "info", text: `Cancelled. ${plan.name} stays until ${shortDate(plan.renews_at)}.${back}` });
       await load();
     } catch (e) {
       setMessage({ tone: "error", text: (e as Error).message });
@@ -113,6 +132,8 @@ export default function PlanAndUsage() {
     try {
       const capInr = cap.trim() === "" ? null : Math.max(0, Math.round(Number(cap)));
       await api("/v1/me/plan/extra", { method: "PUT", json: { enabled, cap_inr: capInr }, account: "personal" });
+      const back = await settleApp();
+      if (back) setMessage({ tone: "success", text: `Extra usage is ${enabled ? "on" : "off"}.${back}` });
       await Promise.all([load(), refresh()]);
     } catch (e) {
       setMessage({ tone: "error", text: (e as Error).message });
@@ -148,7 +169,17 @@ export default function PlanAndUsage() {
   return (
     <div className="flex flex-col gap-4">
       <PageTitle title="Plan & usage" sub="Your plan, how much you've used, and what happens when you run out." />
-      {fromApp && !message && <Notice tone="info">Choose a plan below. When it&apos;s paid, the Factify app on your phone will know.</Notice>}
+      {fromApp && !message && (
+        <Notice tone="info">
+          Choose a plan below. When it&apos;s paid, the Factify app on your phone will know.{" "}
+          <button type="button" onClick={keepPlan} disabled={busy === "keep"} className="font-medium text-acc-ink underline-offset-4 hover:underline">
+            Keep {plan.name} and go back
+          </button>
+        </Notice>
+      )}
+      {!plan.enforced && plan.used >= plan.allowance && plan.credits <= 0 && !plan.extra.enabled && (
+        <Notice tone="info">You&apos;ve used this month&apos;s plan checks. During the preview you can keep checking after your plan&apos;s checks run out.</Notice>
+      )}
       {message && <Notice tone={message.tone}>{message.text}</Notice>}
       {daysLeft != null && daysLeft <= 5 && (
         <Notice tone="warning">
@@ -238,8 +269,8 @@ export default function PlanAndUsage() {
           <div>
             <h2 className="text-base font-medium text-ink">Extra usage</h2>
             <p className="mt-1 max-w-xl text-[14.5px] leading-relaxed text-ink2">
-              Keep checking after your plan&apos;s checks run out, at {rupees(plan.extra.price_paise / 100 || 3)} a check. You&apos;re sent one bill after the month ends,
-              never more than your cap.
+              Keep checking after your plan&apos;s checks run out, at {rupees(plan.extra.price_paise / 100 || 3)} a check. One bill for it appears below after the month ends, with a
+              link to pay it - never more than your cap.
             </p>
           </div>
           <button
@@ -345,7 +376,7 @@ export default function PlanAndUsage() {
           })}
         </div>
         <p className="text-xs text-ink3">
-          Prices in rupees, including GST. A plan is paid for a month or a year at a time and starts when the payment goes through. Paying again for the same plan adds the next
+          Prices in rupees, including GST at 18% (each invoice shows the taxable value and the GST). A plan is paid for a month or a year at a time and starts when the payment goes through. Paying again for the same plan adds the next
           period after the one you have; a different plan replaces it at once. Nothing renews by itself. Need more for a team?{" "}
           <Link href="/app/org/new" className="text-acc-ink">
             Create an organisation
@@ -365,13 +396,19 @@ export default function PlanAndUsage() {
           <Table head={["Date", "Description", "Amount", ""]}>
             {plan.subscriptions.map((s) => (
               <tr key={s.id}>
-                <td className="whitespace-nowrap text-ink2">{when(s.created_at)}</td>
+                <td className="whitespace-nowrap text-ink2">{when(s.current_start || s.created_at)}</td>
                 <td className="text-ink">
                   {s.plan === "plus" ? "Plus" : s.plan === "pro" ? "Pro" : s.plan} · {s.interval === "year" ? "yearly" : "monthly"}{" "}
                   <span className="text-ink3">({s.status === "replaced" ? "replaced" : s.status === "cancelling" ? "ending" : s.status})</span> {s.test_mode && <Badge tone="warn">Test</Badge>}
                 </td>
                 <td className="tabular whitespace-nowrap text-ink2">{inr(s.amount_paise / 100)}</td>
-                <td />
+                <td className="text-right">
+                  {(s.paid ?? !!s.current_start) && (
+                    <a href={`/api/f/v1/me/billing/plans/${s.id}/invoice`} target="_blank" rel="noopener" className="text-sm font-medium text-acc-ink">
+                      Invoice
+                    </a>
+                  )}
+                </td>
               </tr>
             ))}
             {plan.bills.map((b) => (
@@ -381,7 +418,9 @@ export default function PlanAndUsage() {
                 <td className="tabular whitespace-nowrap text-ink2">{inr(b.amount_paise / 100)}</td>
                 <td className="text-right">
                   {b.status === "paid" ? (
-                    <Badge tone="acc">Paid</Badge>
+                    <a href={`/api/f/v1/me/billing/bills/${b.id}/invoice`} target="_blank" rel="noopener" className="text-sm font-medium text-acc-ink">
+                      Invoice
+                    </a>
                   ) : b.short_url ? (
                     <a href={b.short_url} target="_blank" rel="noopener" className="text-sm font-medium text-acc-ink">
                       Pay

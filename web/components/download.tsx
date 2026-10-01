@@ -1,6 +1,6 @@
 "use client";
 
-// Getting the Android app while it is not on the Play Store: the signed APK from our
+// Getting the Android app while it is not on the Play Store: the APK from our
 // own server and the three taps to install it. An iPhone is told the truth - the app
 // is Android-only for now - and pointed to the website. On a computer, the page says
 // to open it on the phone. The tabs let anyone see either.
@@ -88,7 +88,10 @@ export function DownloadPanel() {
           </div>
           <details className="rounded-[14px] border border-line bg-sf p-4 text-sm text-ink2">
             <summary className="cursor-pointer text-ink">Why isn&apos;t it on the Play Store?</summary>
-            <p className="mt-2.5 leading-relaxed">It will be soon. Until then we publish the app here, signed by us{facts?.sha256 ? ". You can check the file you downloaded matches:" : "."}</p>
+            <p className="mt-2.5 leading-relaxed">
+              It will be soon. Until then you download the app from this page and install it directly; Android asks you once to allow installs from your browser
+              {facts?.sha256 ? ". To make sure the file you downloaded is the one we published, compare its SHA-256:" : "."}
+            </p>
             {facts?.sha256 && (
               <p className="mt-2 font-mono text-[11px] break-all text-ink3">
                 SHA-256 {facts.sha256}

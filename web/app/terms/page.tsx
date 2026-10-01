@@ -9,7 +9,7 @@ export default function Terms() {
       <SiteHeader />
       <Prose>
         <h1>Terms of service</h1>
-        <p>Last updated 30 September 2026.</p>
+        <p>Last updated 2 October 2026.</p>
 
         <h2>What Factify is</h2>
         <p>
@@ -26,9 +26,12 @@ export default function Terms() {
 
         <h2>Credits</h2>
         <p>
-          A check costs credits (one for text, a link, a picture or a PDF; three for a video). A check that fails is
-          not charged. Free credits are given once per account. Credits an organisation buys are for its members and
-          keys, are not refundable except where the law requires, and do not expire while the organisation is open.
+          A check uses one check from your plan for text, a link, a picture or a PDF, and three for a video. A check
+          that fails uses nothing. The Free plan gives 30 checks each calendar month. Paid plans are paid for a month or
+          a year at a time and do not renew by themselves; when the period you paid for ends, the account goes back to
+          Free. Extra usage, if you turn it on, is billed at the price shown on the pricing page. Credits an
+          organisation buys are for its members and keys, are not refundable except where the law requires, and do not
+          expire while the organisation is open.
         </p>
 
         <h2>Organisations</h2>

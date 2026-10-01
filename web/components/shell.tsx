@@ -8,13 +8,13 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { authAction } from "@/lib/api";
+import { api, authAction } from "@/lib/api";
 import { n, roleName } from "@/lib/format";
 import { useAccount } from "./account";
 import { ThemeButton } from "./theme";
 import { Avatar, Seal, Spinner } from "./ui";
 
-type Item = { href: string; label: string; icon: keyof typeof icons; exact?: boolean };
+type Item = { href: string; label: string; icon: keyof typeof icons; exact?: boolean; badge?: number };
 
 const icons = {
   check: "M8.5 12.2l2.4 2.4 4.6-4.9M20.5 12a8.5 8.5 0 11-17 0 8.5 8.5 0 0117 0z",
@@ -33,6 +33,7 @@ const icons = {
   bolt: "M13 2L4 14h7l-1 8 9-12h-7l1-8z",
   logout: "M14 5H6.5A1.5 1.5 0 005 6.5v11A1.5 1.5 0 006.5 19H14M10 12h10M16.5 8.5L20 12l-3.5 3.5",
   help: "M9.7 9.5a2.4 2.4 0 014.6 1c0 1.6-2.3 2-2.3 3.5M12 16.8v.2M20.5 12a8.5 8.5 0 11-17 0 8.5 8.5 0 0117 0z",
+  flag: "M5 21V4M5 4.5h11.5l-2 4 2 4H5",
 };
 
 export function Icon({ name, size = 18 }: { name: keyof typeof icons; size?: number }) {
@@ -128,6 +129,11 @@ function NavLink({ item, onClick }: { item: Item; onClick: () => void }) {
     >
       <Icon name={item.icon} />
       <span className="truncate">{item.label}</span>
+      {!!item.badge && (
+        <span className="tabular ml-auto rounded-full bg-mis-soft px-1.5 text-[11px] leading-[18px] font-semibold text-mis" aria-label={`${item.badge} waiting`}>
+          {item.badge > 99 ? "99+" : item.badge}
+        </span>
+      )}
     </Link>
   );
 }
@@ -141,10 +147,34 @@ function Group({ title, children }: { title?: string; children: React.ReactNode 
   );
 }
 
+/** What waits for the admin (GET /v1/admin/counts): there is no email, so these
+ * badges are how a new report or request gets noticed. Refreshed every minute and
+ * whenever the admin moves between pages. */
+function useAdminCounts() {
+  const path = usePathname();
+  const [counts, setCounts] = useState<{ reports: number; requests: number } | null>(null);
+  useEffect(() => {
+    let live = true;
+    const load = () =>
+      api<{ reports: number; requests: number }>("/v1/admin/counts", { account: "personal" })
+        .then((c) => live && setCounts(c))
+        .catch(() => undefined);
+    load();
+    const timer = setInterval(load, 60_000);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, [path]);
+  return counts;
+}
+
 function AdminNav({ onNavigate }: { onNavigate: () => void }) {
+  const counts = useAdminCounts();
   const items: Item[] = [
     { href: "/app/admin", label: "Overview", icon: "overview", exact: true },
-    { href: "/app/admin/requests", label: "Requests", icon: "plus" },
+    { href: "/app/admin/reports", label: "Reports", icon: "flag", badge: counts?.reports },
+    { href: "/app/admin/requests", label: "Requests", icon: "plus", badge: counts?.requests },
     { href: "/app/admin/organisations", label: "Organisations", icon: "building" },
     { href: "/app/admin/people", label: "People", icon: "members" },
     { href: "/app/admin/keys", label: "API keys", icon: "keys" },
@@ -206,13 +236,32 @@ function MonthMeter({ onNavigate }: { onNavigate: () => void }) {
   const { me, current } = useAccount();
   if (!me) return null;
   if (current) {
+    // What the organisation can still check: its plan's checks and its credits
+    // (the server's figures); on pay-per-check, what this month has cost so far.
+    const payPerCheck = current.pay_per_check;
+    const total = current.allowance;
+    const used = Math.min(current.plan_used, total);
     return (
       <Link href={`/app/org/${current.id}`} onClick={onNavigate} className="block rounded-[11px] border border-hero-line bg-hero p-3 text-hero-ink">
         <span className="flex justify-between gap-2 text-[13px] text-hero-ink2">
           <span className="truncate">{current.name}</span>
-          <span className="tabular font-medium text-hero-ink">{n(current.balance)}</span>
+          <span className="tabular font-medium text-hero-ink">{payPerCheck ? `₹${n(current.extra_used_paise / 100)}` : n(Math.max(current.checks_left, 0))}</span>
         </span>
-        <span className="mt-1 block text-xs text-hero-ink2">credits in the pool · you used {n(current.my_month_spend)} this month</span>
+        {total > 0 && (
+          <span className="my-2 block h-1 overflow-hidden rounded-full bg-hero-line">
+            <span className="block h-full rounded-full bg-hero-acc" style={{ width: `${Math.max(2, (used / total) * 100)}%` }} />
+          </span>
+        )}
+        <span className="mt-1 block text-xs text-hero-ink2">
+          {payPerCheck
+            ? `pay per check this month${current.checks_left > 0 ? ` · ${n(current.checks_left)} credits first` : ""}`
+            : current.checks_left > 0
+              ? `checks left${total > 0 ? ` · ${n(used)} of ${n(total)} plan checks used` : " (credits)"}`
+              : current.extra_open
+                ? "plan and credits used · extra usage on"
+                : "no checks left · checks are refused"}
+          {` · you used ${n(current.my_month_spend)}`}
+        </span>
       </Link>
     );
   }
@@ -220,6 +269,8 @@ function MonthMeter({ onNavigate }: { onNavigate: () => void }) {
   const total = p?.allowance ?? 0;
   const used = Math.min(p?.used ?? 0, total);
   const reset = p?.resets_at ? new Date(p.resets_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : null;
+  // Limits not enforced (the preview): running out never stops anyone.
+  const ranOut = used >= total && (p?.credits ?? 0) <= 0 && !p?.extra_enabled;
   return (
     <Link href="/app/credits" onClick={onNavigate} className="block rounded-[11px] border border-hero-line bg-hero p-3 text-hero-ink">
       <span className="flex items-baseline justify-between text-[13px] text-hero-ink2">
@@ -235,6 +286,7 @@ function MonthMeter({ onNavigate }: { onNavigate: () => void }) {
         <span>{reset ? `Resets on ${reset}` : "Resets on the 1st"}</span>
         {(p?.credits ?? 0) > 0 && <span className="tabular">+{n(p?.credits)} credits</span>}
       </span>
+      {ranOut && <span className="mt-1.5 block text-xs text-hero-ink2">{me.credits.limited ? "Plan checks used up: checks are refused until it resets." : "During the preview you can keep checking after your plan's checks run out."}</span>}
     </Link>
   );
 }
@@ -270,6 +322,7 @@ const titles: [RegExp, string][] = [
   [/^\/app\/profile/, "Settings"],
   [/^\/app\/org\/new/, "Create an organisation"],
   [/^\/app\/org\//, "Organisation"],
+  [/^\/app\/admin\/reports/, "Reports"],
   [/^\/app\/admin\/requests/, "Requests"],
   [/^\/app\/admin\/organisations/, "Organisations"],
   [/^\/app\/admin\/people/, "People"],
@@ -290,7 +343,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (loading || !me) return;
     const inAdmin = path.startsWith("/app/admin");
-    if (staff && !inAdmin && !path.startsWith("/app/org/")) router.replace("/app/admin");
+    // Staff may open a check's result (a reported case) from the admin panel.
+    const viewingCase = path === "/app/check" && new URLSearchParams(window.location.search).has("case");
+    if (staff && !inAdmin && !path.startsWith("/app/org/") && !viewingCase) router.replace("/app/admin");
     if (!staff && inAdmin) router.replace("/app/check");
   }, [loading, me, staff, path, router]);
 

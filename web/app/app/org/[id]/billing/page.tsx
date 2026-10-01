@@ -31,6 +31,11 @@ type Payment = {
   paid_at: string | null;
 };
 
+type PlanPayment = { id: string; plan: string; interval: string; seats: number; status: string; amount_paise: number; current_start: string | null; created_at: string; test_mode: boolean; paid?: boolean };
+type Bill = { id: string; month: string; checks: number; amount_paise: number; status: string; paid_at: string | null; short_url: string | null; test_mode: boolean };
+/** One row of the payments list: a pack, a Team plan payment or an extra usage bill. */
+type Row = { key: string; at: string; what: string; amount_paise: number; status: "paid" | "created" | "failed" | "other"; statusText?: string; test: boolean; invoice: string | null; pay?: string | null };
+
 type RazorpayResult = { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string };
 
 export default function Billing({ params }: { params: Promise<{ id: string }> }) {
@@ -39,11 +44,17 @@ export default function Billing({ params }: { params: Promise<{ id: string }> })
   const { refresh } = useAccount();
   const [packs, setPacks] = useState<Packs | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [plans, setPlans] = useState<{ subscriptions: PlanPayment[]; bills: Bill[] }>({ subscriptions: [], bills: [] });
   const [buying, setBuying] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string } | null>(null);
 
   const load = useCallback(async () => {
-    setPayments(await api<Payment[]>(`/v1/orgs/${id}/billing/payments`, { account: "personal" }).catch(() => []));
+    const [pays, plan] = await Promise.all([
+      api<Payment[]>(`/v1/orgs/${id}/billing/payments`, { account: "personal" }).catch(() => [] as Payment[]),
+      api<{ subscriptions: PlanPayment[]; bills: Bill[] }>(`/v1/orgs/${id}/plan`, { account: "personal" }).catch(() => ({ subscriptions: [], bills: [] })),
+    ]);
+    setPayments(pays);
+    setPlans({ subscriptions: plan.subscriptions ?? [], bills: plan.bills ?? [] });
   }, [id]);
   useEffect(() => {
     api<Packs>("/v1/billing/packs").then(setPacks).catch(() => undefined);
@@ -53,6 +64,40 @@ export default function Billing({ params }: { params: Promise<{ id: string }> })
   if (error) return <Notice tone="error">{error}</Notice>;
   if (!org) return <Spinner />;
   if (org.my_role !== "owner") return <Notice tone="info">Only owners can see billing.</Notice>;
+
+  const base = `/api/f/v1/orgs/${id}/billing`;
+  const rows: Row[] = [
+    ...payments.map((p) => ({
+      key: `pack-${p.id}`,
+      at: p.paid_at || p.created_at,
+      what: `${p.pack.charAt(0).toUpperCase()}${p.pack.slice(1)} pack · ${n(p.credits)} credits`,
+      amount_paise: p.amount_paise,
+      status: (p.status === "paid" || p.status === "failed" ? p.status : "created") as Row["status"],
+      test: p.test_mode,
+      invoice: p.status === "paid" ? `${base}/payments/${p.id}/invoice` : null,
+    })),
+    ...plans.subscriptions.map((s) => ({
+      key: `plan-${s.id}`,
+      at: s.current_start || s.created_at,
+      what: `Team · ${n(s.seats)} members · ${s.interval === "year" ? "a year" : "a month"}`,
+      amount_paise: s.amount_paise,
+      status: (s.current_start ? "paid" : s.status === "failed" ? "failed" : "other") as Row["status"],
+      statusText: s.current_start ? undefined : s.status,
+      test: s.test_mode,
+      invoice: s.current_start ? `${base}/plans/${s.id}/invoice` : null,
+    })),
+    ...plans.bills.map((b) => ({
+      key: `bill-${b.id}`,
+      at: b.paid_at || b.month,
+      what: `Extra usage · ${new Date(b.month).toLocaleDateString("en-IN", { month: "long", year: "numeric" })} · ${n(b.checks)} checks`,
+      amount_paise: b.amount_paise,
+      status: (b.status === "paid" ? "paid" : b.status === "created" ? "created" : "other") as Row["status"],
+      statusText: b.status === "created" || b.status === "paid" ? undefined : b.status,
+      test: b.test_mode,
+      invoice: b.status === "paid" ? `${base}/bills/${b.id}/invoice` : null,
+      pay: b.status === "created" ? b.short_url : null,
+    })),
+  ].sort((a, b) => (a.at < b.at ? 1 : -1));
 
   async function buy(pack: Pack) {
     setBuying(pack.id);
@@ -112,7 +157,7 @@ export default function Billing({ params }: { params: Promise<{ id: string }> })
       <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="afterInteractive" />
       <PageTitle eyebrow={org.name} title="Plan & billing" sub="The Team plan gives the organisation a monthly pool; credit packs top it up, with no subscription." />
       <div className="mb-8">
-        <OrgPlan id={id} members={org.members} onChange={() => Promise.all([reload(), refresh()])} />
+        <OrgPlan id={id} members={org.members} onChange={() => Promise.all([reload(), refresh(), load()])} />
       </div>
       <h2 className="mb-3 text-lg font-medium text-ink">Credit packs</h2>
       {packs?.test_mode && (
@@ -129,14 +174,14 @@ export default function Billing({ params }: { params: Promise<{ id: string }> })
         </div>
       )}
       <div className="mb-6 grid grid-cols-2 gap-3 sm:gap-4">
-        <Stat label="Credits available" value={n(org.balance - org.held)} />
+        <Stat label="Credits available" value={n(Math.max(org.month.credits, 0))} sub={org.month.allowance > 0 ? `besides ${n(Math.max(org.month.allowance - org.month.plan_used, 0))} plan checks left` : undefined} />
         <Stat label="Used this month" value={n(org.month_spend)} />
       </div>
 
       {!packs ? (
         <Spinner />
       ) : !packs.available ? (
-        <Notice tone="info">Payments aren&apos;t set up on this server. Email us and we&apos;ll add credits by invoice.</Notice>
+        <Notice tone="info">Payments aren&apos;t set up on this server, so packs can&apos;t be bought here. Factify&apos;s team can add credits to the organisation from the admin panel.</Notice>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {packs.packs.map((p) => (
@@ -155,40 +200,39 @@ export default function Billing({ params }: { params: Promise<{ id: string }> })
       )}
 
       <h2 className="mt-10 mb-3 text-lg font-medium text-ink">Payments</h2>
-      {payments.length === 0 ? (
+      {rows.length === 0 ? (
         <p className="text-sm text-ink3">No payments yet.</p>
       ) : (
         <Card className="p-0 sm:p-0">
-          <Table head={["Date", "Pack", "Credits", "Amount", "Status", ""]}>
-            {payments.map((p) => (
-              <tr key={p.id}>
-                <td className="whitespace-nowrap text-ink2">{when(p.paid_at || p.created_at)}</td>
-                <td className="text-ink capitalize">{p.pack}</td>
-                <td className="text-ink2">{n(p.credits)}</td>
-                <td className="whitespace-nowrap text-ink2">{inr(p.amount_paise / 100)}</td>
+          <Table head={["Date", "What", "Amount", "Status", ""]}>
+            {rows.map((r) => (
+              <tr key={r.key}>
+                <td className="whitespace-nowrap text-ink2">{when(r.at)}</td>
+                <td className="text-ink">{r.what}</td>
+                <td className="whitespace-nowrap text-ink2">{inr(r.amount_paise / 100)}</td>
                 <td>
                   <div className="flex gap-1.5">
-                    <Badge tone={p.status === "paid" ? "acc" : p.status === "failed" ? "bad" : "neutral"}>
-                      {p.status === "created" ? "Not paid" : p.status === "paid" ? "Paid" : "Failed"}
+                    <Badge tone={r.status === "paid" ? "acc" : r.status === "failed" ? "bad" : "neutral"}>
+                      {r.statusText ?? (r.status === "created" ? "Not paid" : r.status === "paid" ? "Paid" : "Failed")}
                     </Badge>
-                    {p.test_mode && <Badge tone="warn">Test</Badge>}
+                    {r.test && <Badge tone="warn">Test</Badge>}
                   </div>
                 </td>
                 <td className="text-right">
-                  {p.status === "paid" && (
-                    <a
-                      href={`/api/f/v1/orgs/${id}/billing/payments/${p.id}/invoice`}
-                      target="_blank"
-                      rel="noopener"
-                      className="text-sm font-semibold text-acc-ink"
-                    >
+                  {r.invoice ? (
+                    <a href={r.invoice} target="_blank" rel="noopener" className="text-sm font-semibold text-acc-ink">
                       Invoice
                     </a>
-                  )}
+                  ) : r.pay ? (
+                    <a href={r.pay} target="_blank" rel="noopener" className="text-sm font-semibold text-acc-ink">
+                      Pay
+                    </a>
+                  ) : null}
                 </td>
               </tr>
             ))}
           </Table>
+          <p className="px-4 pb-4 text-xs text-ink3 sm:px-5">Prices include GST at 18%; each invoice shows the taxable value and the GST.</p>
         </Card>
       )}
     </>

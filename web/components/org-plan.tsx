@@ -9,7 +9,7 @@ import { Badge, Button, Notice, Spinner } from "./ui";
 import { api } from "@/lib/api";
 import { inr, n } from "@/lib/format";
 import { API_CHECK_INR, perMonth, rupees, TEAM } from "@/lib/plans";
-import { appHandoff, forgetHandoff, payForSubscription, Subscription } from "@/lib/razorpay";
+import { appHandoff, finishHandoff, forgetHandoff, payForSubscription, Subscription } from "@/lib/razorpay";
 
 type OrgPlanState = {
   plan: "credits" | "team" | "api";
@@ -23,7 +23,16 @@ type OrgPlanState = {
   resets_at: string | null;
   credits: number;
   checks_left: number;
-  extra: { enabled: boolean; cap_paise: number | null; used_paise: number; price_paise: number; blocked: boolean };
+  pay_per_check?: boolean;
+  extra: {
+    enabled: boolean;
+    open?: boolean;
+    cap_paise: number | null;
+    used_paise: number;
+    price_paise: number;
+    blocked: boolean;
+    checks_left?: number | null;
+  };
   bills: { id: string; month: string; checks: number; amount_paise: number; status: string; short_url: string | null }[];
 };
 
@@ -46,11 +55,14 @@ export function OrgPlan({ id, members, onChange }: { id: string; members: number
     load().catch((e: Error) => setMessage({ tone: "error", text: e.message }));
   }, [load]);
 
-  async function act(name: string, work: () => Promise<string | null>) {
+  // `settles`: a choice that ends what the phone app sent the owner here for
+  // (cancelling, paying per check, extra usage), so the app stops waiting.
+  async function act(name: string, work: () => Promise<string | null>, settles = false) {
     setBusy(name);
     setMessage(null);
     try {
-      const text = await work();
+      let text = await work();
+      if (settles && (await finishHandoff(id))) text = `${text ?? "Saved."} You can go back to the Factify app now.`;
       if (text) setMessage({ tone: "success", text });
       await load();
       onChange();
@@ -134,7 +146,7 @@ export function OrgPlan({ id, members, onChange }: { id: string; members: number
               onClick={() => confirm(`Cancel Team? It stays until ${day(state.renews_at)}.`) && act("cancel", async () => {
                   await api(`/v1/orgs/${id}/plan/cancel`, { method: "POST", account: "personal" });
                   return "Cancelled at the end of the period.";
-                })}
+                }, true)}
               className="self-start text-sm text-hero-ink2 underline-offset-4 hover:text-hero-ink hover:underline disabled:opacity-60"
             >
               Cancel Team
@@ -146,8 +158,8 @@ export function OrgPlan({ id, members, onChange }: { id: string; members: number
               disabled={!!busy}
               onClick={() => act("api", async () => {
                   await api(`/v1/orgs/${id}/plan/api`, { method: "PUT", json: { enabled: state.plan !== "api" }, account: "personal" });
-                  return null;
-                })}
+                  return state.plan === "api" ? "The organisation pays from its credits again." : "The organisation now pays per check.";
+                }, true)}
               className="self-start text-sm text-hero-ink2 underline-offset-4 hover:text-hero-ink hover:underline disabled:opacity-60"
             >
               {state.plan === "api" ? "Stop paying per check" : `Pay per check instead (${rupees(API_CHECK_INR)} a check)`}
@@ -167,7 +179,10 @@ export function OrgPlan({ id, members, onChange }: { id: string; members: number
           <div className="h-2 overflow-hidden rounded-full bg-hover">
             <div className="h-full rounded-full bg-acc-ink" style={{ width: `${Math.max(2, share * 100)}%` }} />
           </div>
-          <div className="grid grid-cols-2 gap-2.5 text-[13px] text-ink2">
+          <div className="grid grid-cols-3 gap-2.5 text-[13px] text-ink2">
+            <span>
+              <span className="tabular block text-[17px] font-medium text-ink">{n(Math.max(state.checks_left, 0))}</span>checks left
+            </span>
             <span>
               <span className="tabular block text-[17px] font-medium text-ink">{n(Math.max(state.credits, 0))}</span>credits besides
             </span>
@@ -175,6 +190,13 @@ export function OrgPlan({ id, members, onChange }: { id: string; members: number
               <span className="tabular block text-[17px] font-medium text-ink">{inr(state.extra.used_paise / 100)}</span>extra usage so far
             </span>
           </div>
+          <p className="text-xs text-ink3">
+            {state.checks_left > 0
+              ? "Checks are paid from the plan first, then from credits."
+              : state.extra.open
+                ? `Checks now count as extra usage at ${rupees(state.extra.price_paise / 100)} each${state.extra.checks_left != null ? `; ${n(state.extra.checks_left)} more before the cap` : ""}.`
+                : "Nothing left to pay for checks: they are refused until credits are added or the month resets."}
+          </p>
         </section>
       </div>
 
@@ -249,8 +271,8 @@ export function OrgPlan({ id, members, onChange }: { id: string; members: number
                 disabled={!!busy}
                 onClick={() => act("extra", async () => {
                     await api(`/v1/orgs/${id}/plan/extra`, { method: "PUT", json: { enabled: !state.extra.enabled, cap_inr: cap === "" ? null : Number(cap) }, account: "personal" });
-                    return null;
-                  })}
+                    return state.extra.enabled ? "Extra usage is off." : "Extra usage is on.";
+                  }, true)}
                 className={`relative h-6 w-10.5 shrink-0 rounded-full transition-colors ${state.extra.enabled ? "bg-acc" : "bg-line2"}`}
               >
                 <span className={`absolute top-[3px] h-[18px] w-[18px] rounded-full bg-white shadow transition-[left] ${state.extra.enabled ? "left-[21px]" : "left-[3px]"}`} />
@@ -296,7 +318,12 @@ export function OrgPlan({ id, members, onChange }: { id: string; members: number
                   <span className="flex items-center gap-3">
                     <span className="tabular text-ink2">{inr(b.amount_paise / 100)}</span>
                     {b.status === "paid" ? (
-                      <Badge tone="acc">Paid</Badge>
+                      <>
+                        <Badge tone="acc">Paid</Badge>
+                        <a href={`/api/f/v1/orgs/${id}/billing/bills/${b.id}/invoice`} target="_blank" rel="noopener" className="font-medium text-acc-ink">
+                          Invoice
+                        </a>
+                      </>
                     ) : b.short_url ? (
                       <a href={b.short_url} target="_blank" rel="noopener" className="font-medium text-acc-ink">
                         Pay

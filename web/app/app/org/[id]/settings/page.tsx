@@ -112,17 +112,6 @@ export default function Settings({ params }: { params: Promise<{ id: string }> }
 
       <Domains orgId={id} />
 
-      <Card className="mt-6">
-        <h2 className="font-semibold text-ink">Single sign-on (SAML)</h2>
-        <p className="mt-1 text-sm text-ink2">
-          For organisations that sign in through Okta, Azure AD or Google Workspace. We set it up with you: email{" "}
-          <a className="text-acc-ink underline" href="mailto:aswin.aswin5640@gmail.com">
-            aswin.aswin5640@gmail.com
-          </a>
-          . Until then, a verified domain lets your staff join automatically.
-        </p>
-      </Card>
-
       <Card className="mt-6 border-false/40">
         <h2 className="font-semibold text-false">Close this organisation</h2>
         <p className="mt-1 text-sm text-ink2">All its API keys stop at once, and members can no longer check with its credits.</p>

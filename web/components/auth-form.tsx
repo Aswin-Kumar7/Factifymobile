@@ -157,7 +157,7 @@ export function AuthForm({ mode }: { mode: "signin" | "signup" }) {
         <Link href="/privacy" className="text-acc-ink">
           Privacy policy
         </Link>
-        . We never keep a record of what you check.
+        . Your past checks are listed only in your browser or on your phone; what you check is stored without your name.
       </p>
     </div>
   );
@@ -169,7 +169,7 @@ const EXAMPLES = [
   { kind: "Screenshot", claim: "Govt to pay ₹5,000 a month to every woman.", verdict: "Partly true", tone: "text-mis", source: "One state's scheme, not national" },
 ];
 
-/** A few answers, one at a time: what Factify gives back. */
+/** A few example answers, one at a time: what Factify gives back. Illustrations, labelled so. */
 function Examples() {
   const [i, setI] = useState(0);
   useEffect(() => {
@@ -180,7 +180,7 @@ function Examples() {
   return (
     <div className="relative mx-auto w-full max-w-[420px]">
       <div key={i} className="fade-in rounded-[20px] border border-line2 bg-sf/90 p-6 shadow-lift backdrop-blur-md">
-        <div className="text-[13px] text-ink3">{ex.kind}</div>
+        <div className="text-[13px] text-ink3">Example · {ex.kind}</div>
         <p className="mt-2.5 mb-4.5 text-[17px] leading-relaxed text-ink">“{ex.claim}”</p>
         <div className="flex items-center justify-between gap-3 border-t border-line pt-4">
           <span className={`text-[1.75rem] font-medium tracking-tight ${ex.tone}`}>{ex.verdict}</span>
@@ -196,7 +196,24 @@ function Examples() {
   );
 }
 
+/** How many sites web search may cite, counted by the API (GET /v1/sources/summary). */
+function useTrustedSites() {
+  const [sites, setSites] = useState<number | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetch("/v1/sources/summary")
+      .then((r) => (r.ok ? (r.json() as Promise<{ sites: number }>) : null))
+      .then((d) => live && d && typeof d.sites === "number" && setSites(d.sites))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+  return sites;
+}
+
 export function AuthShell({ children, mode = "signin" }: { children: React.ReactNode; mode?: "signin" | "signup" }) {
+  const sites = useTrustedSites();
   return (
     <div className="relative flex min-h-dvh flex-col overflow-hidden">
       <div className="pointer-events-none absolute -top-72 -right-48 h-[900px] w-[900px] rounded-full bg-[radial-gradient(circle,var(--glow),transparent_62%)]" aria-hidden="true" />
@@ -228,7 +245,7 @@ export function AuthShell({ children, mode = "signin" }: { children: React.React
           <Examples />
           <div className="relative flex gap-8 text-sm text-ink2">
             <span>
-              <strong className="block text-[22px] font-medium text-ink">740</strong>vetted publishers
+              <strong className="block text-[22px] font-medium text-ink">{sites === null ? "Vetted" : new Intl.NumberFormat("en-IN").format(sites)}</strong>trusted sites
             </span>
             <span>
               <strong className="block text-[22px] font-medium text-ink">12</strong>languages

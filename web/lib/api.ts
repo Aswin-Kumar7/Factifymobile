@@ -113,15 +113,49 @@ type PlanUsage = {
 
 export type Role = "owner" | "developer" | "member";
 
-export type MyOrg = {
+/** What an organisation can still check this month, as the server decides it
+ * (app/orgs/store.py month_summary): the plan's checks, its credits, extra usage. */
+export type OrgMonth = {
+  allowance: number;
+  plan_used: number;
+  credits: number;
+  checks_left: number;
+  pay_per_check: boolean;
+  extra_open: boolean;
+  extra_enabled: boolean;
+  extra_blocked: boolean;
+  extra_cap_paise: number | null;
+  extra_used_paise: number;
+  extra_price_paise: number;
+  /** Extra checks the cap still allows; null is no cap (or no extra usage). */
+  extra_checks_left: number | null;
+};
+
+export type MyOrg = OrgMonth & {
   id: string;
   name: string;
   status: string;
   role: Role;
   monthly_limit: number | null;
   member_status: string;
+  /** Bought credits only; `checks_left` is what can still be checked. */
   balance: number;
+  held: number;
+  plan: "credits" | "team" | "api";
+  seats: number;
   my_month_spend: number;
+};
+
+/** This calendar month's checks (India time): org-wide for owners, your own otherwise. */
+export type MonthBreakdown = {
+  total: number;
+  checks: number;
+  via_keys: number;
+  via_web: number;
+  plan: number;
+  credits: number;
+  extra: number;
+  scope: "organisation" | "mine";
 };
 
 export type Org = {
@@ -140,7 +174,11 @@ export type Org = {
   active_keys: number;
   my_role: Role;
   my_monthly_limit: number | null;
-  alerts: { level: "error" | "warning"; text: string }[];
+  plan: "credits" | "team" | "api";
+  seats: number;
+  month: OrgMonth;
+  month_breakdown: MonthBreakdown;
+  alerts: { level: "error" | "warning" | "info"; text: string }[];
 };
 
 export type Member = {

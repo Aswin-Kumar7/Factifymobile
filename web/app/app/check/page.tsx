@@ -13,7 +13,7 @@ import { Icon } from "@/components/shell";
 import { Button, Notice, Spinner } from "@/components/ui";
 import { api, ApiFailure, getAccount } from "@/lib/api";
 import { n } from "@/lib/format";
-import { addHistory } from "@/lib/history";
+import { addHistory, FAILED, PENDING, removeHistory, updateHistory } from "@/lib/history";
 
 type Accepted = { case_id: string; status?: string; claims_done?: number; claims_total?: number; elapsed_seconds?: number };
 
@@ -22,7 +22,7 @@ const URL_ONLY = /^https?:\/\/\S+$/i;
 // The server's upload limit (FACTIFY_LIMITS max_upload_bytes), said before uploading.
 const MAX_UPLOAD = 25 * 1024 * 1024;
 
-type Shown = { kind: "text" | "link" | "image" | "pdf"; submitted: string | null; preview: string | null; name?: string };
+type Shown = { kind: "text" | "link" | "image" | "pdf" | "video"; submitted: string | null; preview: string | null; name?: string };
 
 const EXAMPLES = [
   "Govt to pay ₹5,000 a month to every woman from 1 July",
@@ -30,11 +30,18 @@ const EXAMPLES = [
   "https://www.pib.gov.in/",
 ];
 
-function fileKind(file: File): "image" | "pdf" {
-  return file.type === "application/pdf" || /\.pdf$/i.test(file.name) ? "pdf" : "image";
+// As the server tells a video (`_is_video`): by its type, else by its name.
+const VIDEO_NAME = /\.(mp4|mov|m4v|webm|mkv|3gp|avi)$/i;
+
+function fileKind(file: File): "image" | "pdf" | "video" {
+  if (file.type === "application/pdf" || /\.pdf$/i.test(file.name)) return "pdf";
+  if (file.type.startsWith("video/") || VIDEO_NAME.test(file.name)) return "video";
+  return "image";
 }
 
-const kindWord = { text: "Message", link: "Link", image: "Picture", pdf: "PDF" } as const;
+const kindWord = { text: "Message", link: "Link", image: "Picture", pdf: "PDF", video: "Video" } as const;
+
+const SHOWN_KINDS = ["text", "link", "image", "pdf", "video"] as const;
 
 /** What was sent, kept small while it is checked. */
 function Sent({ shown, onCancel }: { shown: Shown | null; onCancel?: () => void }) {
@@ -42,7 +49,15 @@ function Sent({ shown, onCancel }: { shown: Shown | null; onCancel?: () => void 
     <div className="grid grid-cols-[34px_minmax(0,1fr)_auto] items-center gap-3 rounded-[14px] border border-line bg-sf px-3.5 py-3 shadow-card">
       <span className="flex h-8.5 w-8.5 items-center justify-center rounded-[9px] bg-hover text-ink2">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
-          <path d={shown?.kind === "image" || shown?.kind === "pdf" ? "M4 4.5h16v15H4zM6 17l4-3.5 3 2.5 2.5-2 3 3" : "M5 7h14M5 12h14M5 17h9"} />
+          <path
+            d={
+              shown?.kind === "video"
+                ? "M3.5 6h12v12h-12zM15.5 10.5l5-3v9l-5-3"
+                : shown?.kind === "image" || shown?.kind === "pdf"
+                  ? "M4 4.5h16v15H4zM6 17l4-3.5 3 2.5 2.5-2 3 3"
+                  : "M5 7h14M5 12h14M5 17h9"
+            }
+          />
         </svg>
       </span>
       <span className="min-w-0">
@@ -124,6 +139,8 @@ function CheckPage() {
   // What was checked, so the answer can quote it as the app does.
   const [shown, setShown] = useState<Shown | null>(null);
   const stop = useRef(false);
+  // The check running now, by the id the server accepted it under: what Stop stops.
+  const running = useRef<string | null>(null);
 
   const follow = useCallback(async (caseId: string) => {
     stop.current = false;
@@ -159,20 +176,48 @@ function CheckPage() {
   // Opened from History: follow that case, nothing else.
   useEffect(() => {
     if (!opened) return;
-    const k = params.get("kind");
-    setShown(k === "text" || k === "link" || k === "image" || k === "pdf" ? { kind: k, submitted: null, preview: null } : null);
+    const k = SHOWN_KINDS.find((kind) => kind === params.get("kind"));
+    setShown(k ? { kind: k, submitted: null, preview: null } : null);
     setResult(null);
     setError(null);
     setBusy(true);
     setStarted(Date.now());
     follow(opened)
-      .then(setResult)
-      .catch((e: Error) => e.message !== "stopped" && setError(e.message))
+      .then((answer) => {
+        setResult(answer);
+        // One left running in History: its verdict, now that it has one.
+        const title = headlineOf(answer);
+        updateHistory(opened, { case_id: answer.case_id, verdict: labelOf(answer), ...(title ? { title } : {}) });
+      })
+      .catch((e: Error) => {
+        if (e.message === "stopped") return;
+        if (e instanceof ApiFailure) updateHistory(opened, { verdict: FAILED });
+        setError(e.message);
+      })
       .finally(() => setBusy(false));
     return () => {
       stop.current = true;
     };
   }, [opened, params, follow]);
+
+  /** Stop the check on the server, so it is never charged; then it leaves History. */
+  async function cancel(caseId: string) {
+    try {
+      await api(`/v1/cases/${caseId}`, { method: "DELETE" });
+      removeHistory(caseId);
+    } catch (failure) {
+      // 409: it had already finished, and stays in History to collect its answer.
+      // 404 or 410: it is not running (any more), so there is nothing to keep.
+      if (failure instanceof ApiFailure && failure.status !== 409) removeHistory(caseId);
+    }
+  }
+
+  function stopCheck() {
+    const caseId = running.current;
+    running.current = null;
+    if (caseId) cancel(caseId).catch(() => undefined);
+    reset();
+  }
 
   async function run(e?: React.FormEvent) {
     e?.preventDefault();
@@ -192,6 +237,10 @@ function CheckPage() {
     );
     setBusy(true);
     setStarted(Date.now());
+    stop.current = false;
+    running.current = null;
+    const fallbackTitle = kind === "file" ? file?.name || "File" : input.slice(0, 140);
+    const historyKind = kind === "file" && file ? fileKind(file) : kind;
     try {
       let accepted: Accepted;
       if (tab === "file" && file) {
@@ -206,21 +255,45 @@ function CheckPage() {
           json: { ...(kind === "link" ? { url: input } : { text: input }), mode: "background" },
         });
       }
-      setProgress(accepted);
-      const answer = (accepted as unknown as Verdict).verdict ? (accepted as unknown as Verdict) : await follow(accepted.case_id);
+      const at = new Date().toISOString();
+      const answeredAtOnce = !!(accepted as unknown as Verdict).verdict;
+      let answer: Verdict;
+      if (answeredAtOnce) {
+        answer = accepted as unknown as Verdict;
+      } else {
+        // In History from the moment it is accepted, so leaving this page leaves it
+        // there; History fills in the verdict if it arrives while nobody is here.
+        running.current = accepted.case_id;
+        addHistory({ case_id: accepted.case_id, title: fallbackTitle, verdict: PENDING, kind: historyKind, at, account: getAccount() });
+        if (stop.current) {
+          // Stop was pressed before the server had accepted it.
+          running.current = null;
+          await cancel(accepted.case_id);
+          return;
+        }
+        setProgress(accepted);
+        answer = await follow(accepted.case_id);
+      }
+      running.current = null;
       setResult(answer);
-      addHistory({
-        case_id: answer.case_id,
+      const entry = {
         // The claim it is about - never a picture's own "published before?" question.
-        title: headlineOf(answer) || (kind === "file" ? file?.name || "File" : input.slice(0, 140)),
+        title: headlineOf(answer) || fallbackTitle,
         verdict: labelOf(answer),
-        kind: kind === "file" && file ? fileKind(file) : kind,
-        at: new Date().toISOString(),
-        account: getAccount(),
-      });
+      };
+      if (answeredAtOnce) {
+        addHistory({ case_id: answer.case_id, kind: historyKind, at, account: getAccount(), ...entry });
+      } else {
+        // A repeat served from the cache answers under the case it was first recorded as.
+        updateHistory(accepted.case_id, { case_id: answer.case_id, ...entry });
+      }
       refresh().catch(() => undefined);
     } catch (failure) {
       if ((failure as Error).message === "stopped") return;
+      // It ended without an answer, and cost nothing: nothing to reopen. One that is
+      // only taking long stays in History, still running.
+      if (failure instanceof ApiFailure && running.current) removeHistory(running.current);
+      running.current = null;
       if (failure instanceof ApiFailure && failure.status === 402) {
         setError(
           current
@@ -235,7 +308,14 @@ function CheckPage() {
     }
   }
 
-  const left = current ? `${n(current.balance)} credits left in ${current.name}` : `${n(me?.credits.balance)} checks left this month`;
+  // While plan limits are not enforced (the preview), none left does not stop a check.
+  const left = current
+    ? current.pay_per_check
+      ? `${current.name} pays per check`
+      : `${n(current.checks_left)} checks left in ${current.name} this month`
+    : me && !me.credits.limited && me.credits.balance <= 0
+      ? "No checks left this month · you can keep checking during the preview"
+      : `${n(me?.credits.balance)} checks left this month`;
 
   // ---- opened from History: the answer alone ----
   if (opened) {
@@ -260,7 +340,7 @@ function CheckPage() {
       <div className="mx-auto flex max-w-[860px] flex-col gap-4">
         {busy && (
           <>
-            <Sent shown={shown} onCancel={reset} />
+            <Sent shown={shown} onCancel={stopCheck} />
             <Progress progress={progress} started={started} />
           </>
         )}

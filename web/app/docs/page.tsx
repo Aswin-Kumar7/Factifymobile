@@ -77,8 +77,9 @@ console.log(answer.verdict, r.headers.get("Factify-Credits-Remaining"));`}</Code
         <h2>Check a picture, PDF or video</h2>
         <p>
           <code>POST /v1/verify/file</code> as a multipart form with <code>file</code> and{" "}
-          <code>consent_to_process_media=true</code>. A video always answers <code>202</code>; poll its{" "}
-          <code>case_id</code>.
+          <code>consent_to_process_media=true</code>, up to 25 MB. A video always answers <code>202</code>; poll its{" "}
+          <code>case_id</code>. A picture or PDF answers in the same request, or with <code>202</code> if you also
+          send <code>background=true</code>.
         </p>
         <Code>{`curl ${BASE}/v1/verify/file \\
   -H "Authorization: Bearer $FACTIFY_KEY" \\
@@ -86,10 +87,14 @@ console.log(answer.verdict, r.headers.get("Factify-Credits-Remaining"));`}</Code
 
         <h2>The answer</h2>
         <p>
-          <code>verdict</code> is <code>TRUE</code>, <code>FALSE</code>, <code>MISLEADING</code> or{" "}
-          <code>UNCONFIRMED</code>, with a <code>confidence</code> and a plain <code>summary</code>. Each of the{" "}
-          <code>claims</code> has its own status and <code>evidence</code>: the source&apos;s URL, publisher, the
-          excerpt that was read, and whether it supports or refutes the claim. The full schema is at{" "}
+          <code>verdict</code> is <code>TRUE</code>, <code>FALSE</code>, <code>PARTLY_TRUE</code>,{" "}
+          <code>MISLEADING</code> or <code>UNCONFIRMED</code>, with a <code>confidence</code> (50-97, or{" "}
+          <code>null</code> when nothing was decided) and a plain <code>summary</code>. Each of the <code>claims</code>{" "}
+          has its <code>text</code>, a <code>status</code> (<code>SUPPORTED</code>, <code>CONTRADICTED</code>,{" "}
+          <code>MISLEADING_CONTEXT</code> or <code>UNVERIFIED</code>) and its <code>evidence</code>: each source&apos;s{" "}
+          <code>citation_url</code>, <code>publisher</code>, the <code>source_excerpt</code> that was read, and its{" "}
+          <code>direction</code> (<code>supports</code>, <code>contradicts</code> or <code>contextualizes</code>). The
+          full schema is at{" "}
           <a href={`${BASE}/openapi.json`}>/openapi.json</a> (OpenAPI).
         </p>
 

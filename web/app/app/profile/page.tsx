@@ -1,13 +1,12 @@
 "use client";
 
-// Settings: your profile, the theme, your data, and signing out - one column of
-// sections, each with what it does on the left.
+// Settings: your profile, your data, and signing out - one column of sections,
+// each with what it does on the left.
 
 import { useState } from "react";
 import { useAccount } from "@/components/account";
-import { applyTheme, Mode, useTheme } from "@/components/theme";
 import { Avatar, Button, Field, Input, Notice, PageTitle } from "@/components/ui";
-import { api, authAction } from "@/lib/api";
+import { api, ApiFailure, authAction } from "@/lib/api";
 import { when } from "@/lib/format";
 import { clearHistory } from "@/lib/history";
 
@@ -23,19 +22,14 @@ function Section({ title, sub, children, first }: { title: string; sub: string; 
   );
 }
 
-const THEMES: [Mode, string, string][] = [
-  ["dark", "Dark", "linear-gradient(135deg, #0a0d0b 62%, #5be4a8 62%)"],
-  ["light", "Light", "linear-gradient(135deg, #f4f3ef 62%, #0e6b4f 62%)"],
-  ["system", "Same as device", "linear-gradient(90deg, #0a0d0b 50%, #f4f3ef 50%)"],
-];
-
 export default function Settings() {
   const { me, refresh } = useAccount();
-  const [mode] = useTheme();
   const [name, setName] = useState(me?.name ?? "");
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
   const [cleared, setCleared] = useState(false);
+  const [deleting, setDeleting] = useState<"ask" | "busy" | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   if (!me) return null;
   const shownName = me.name || me.email.split("@")[0];
 
@@ -51,6 +45,27 @@ export default function Settings() {
       setSaved((failure as Error).message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function signOut() {
+    await authAction("logout").catch(() => undefined);
+    try {
+      localStorage.removeItem("fct_account");
+    } catch {}
+    window.location.href = "/";
+  }
+
+  async function deleteAccount() {
+    setDeleting("busy");
+    setDeleteError(null);
+    try {
+      await api("/v1/me", { method: "DELETE", account: "personal" });
+      clearHistory();
+      await signOut();
+    } catch (failure) {
+      setDeleting("ask");
+      setDeleteError(failure instanceof ApiFailure ? failure.message : "That didn't work. Try again.");
     }
   }
 
@@ -82,27 +97,7 @@ export default function Settings() {
         </form>
       </Section>
 
-      <Section title="Appearance" sub="Dark, light, or whatever your device uses.">
-        <div role="radiogroup" aria-label="Theme" className="grid grid-cols-3 gap-3">
-          {THEMES.map(([id, label, preview]) => (
-            <button
-              key={id}
-              type="button"
-              role="radio"
-              aria-checked={mode === id}
-              onClick={() => applyTheme(id)}
-              className={`flex flex-col gap-2.5 rounded-[12px] border p-2.5 text-left text-[13px] text-ink transition-colors ${
-                mode === id ? "border-acc-ink ring-3 ring-acc-ink/15" : "border-line2 hover:border-ink3"
-              }`}
-            >
-              <span className="h-16 rounded-lg border border-line" style={{ background: preview }} />
-              {label}
-            </button>
-          ))}
-        </div>
-      </Section>
-
-      <Section title="Privacy & data" sub="Your history is kept in this browser only. Pictures and videos leave our servers after 24 hours.">
+      <Section title="Privacy & data" sub="Your list of past checks is kept in this browser only. Pictures, videos and PDFs you upload are never stored; we keep only a fingerprint of each picture, to recognise it if it's sent again.">
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
@@ -115,24 +110,43 @@ export default function Settings() {
           >
             {cleared ? "History cleared" : "Clear history on this device"}
           </Button>
-          <a href="mailto:aswin.aswin5640@gmail.com?subject=Delete%20my%20Factify%20account" className="inline-flex h-10 items-center rounded-[9px] border border-false/40 px-4 text-sm font-medium text-false hover:bg-false-soft">
-            Delete account
-          </a>
+          {deleting === null && (
+            <button
+              type="button"
+              onClick={() => setDeleting("ask")}
+              className="inline-flex h-10 items-center rounded-[9px] border border-false/40 px-4 text-sm font-medium text-false transition-colors hover:bg-false-soft"
+            >
+              Delete account
+            </button>
+          )}
         </div>
-        <p className="mt-2.5 text-xs text-ink3">Deleting is done by email from this address: we delete your account, credits and survey answers.</p>
+        {deleting !== null ? (
+          <div className="mt-4 rounded-[12px] border border-false/40 bg-false-soft p-4">
+            <p className="text-sm font-medium text-ink">Delete your account for good?</p>
+            <p className="mt-1 text-[13px] leading-relaxed text-ink2">
+              Your sign-in, credits, plan, payments and survey answers are deleted at once and can&apos;t be brought back. A plan you paid for stops with it.
+            </p>
+            {deleteError && (
+              <div className="mt-3">
+                <Notice tone="error">{deleteError}</Notice>
+              </div>
+            )}
+            <div className="mt-3.5 flex flex-wrap gap-2">
+              <Button variant="danger" busy={deleting === "busy"} onClick={deleteAccount}>
+                Delete for good
+              </Button>
+              <Button variant="outline" onClick={() => { setDeleting(null); setDeleteError(null); }} disabled={deleting === "busy"}>
+                Keep my account
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <p className="mt-2.5 text-xs text-ink3">Deleting removes your account, credits, plan and survey answers straight away.</p>
+        )}
       </Section>
 
       <Section title="Sign out" sub="Signs you out of this browser only.">
-        <Button
-          variant="outline"
-          onClick={async () => {
-            await authAction("logout").catch(() => undefined);
-            try {
-              localStorage.removeItem("fct_account");
-            } catch {}
-            window.location.href = "/";
-          }}
-        >
+        <Button variant="outline" onClick={signOut}>
           Log out
         </Button>
       </Section>

@@ -4,6 +4,8 @@
 // subscription the server made, and resolve with Razorpay's signed result (or null
 // when the person closes it). The server checks the signature; this only carries it.
 
+import { api } from "@/lib/api";
+
 /** What the server started: an auto-renewing subscription, or one order paying for a
  * single month or year (where the Razorpay account has no subscriptions). */
 export type Subscription = {
@@ -85,4 +87,15 @@ export function forgetHandoff() {
   try {
     sessionStorage.removeItem("fct_handoff");
   } catch {}
+}
+
+/** End the phone's payment handoff without a payment (the owner chose something
+ * that needs none: cancelling, extra usage, paying per check, or keeping the plan),
+ * so the app stops waiting. True when there was one to end. */
+export async function finishHandoff(orgId: string | null = null): Promise<boolean> {
+  const handoff = appHandoff(orgId);
+  if (!handoff) return false;
+  await api(`/v1/billing/handoff/${handoff}/finish`, { method: "POST", json: { status: "cancelled" }, account: "personal" }).catch(() => undefined);
+  forgetHandoff();
+  return true;
 }

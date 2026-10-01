@@ -49,7 +49,11 @@ export function OrgOverview({ id, admin = false, base }: { id: string; admin?: b
   if (!org || !usage) return <Spinner />;
 
   const full = admin || org.my_role === "owner";
-  const available = org.balance - org.held;
+  // What the organisation can still check this month, as the server decides it:
+  // the plan's checks left plus its credits (checks running now count as used).
+  const m = org.month;
+  const left = Math.max(m.checks_left, 0);
+  const split = org.month_breakdown;
   const series = daily(usage.by_day, 30);
   const checks = daily(usage.by_day, 30, "checks");
   const spark = series.map((p) => p.value);
@@ -60,8 +64,6 @@ export function OrgOverview({ id, admin = false, base }: { id: string; admin?: b
     label: `${roleName[r]}s`,
     value: members.filter((m) => m.role === r).length,
   }));
-  const keyShare = usage.by_key.reduce((s, k) => s + Number(k.credits), 0);
-  const webShare = Math.max(0, month - keyShare);
 
   return (
     <div className="space-y-6">
@@ -83,11 +85,34 @@ export function OrgOverview({ id, admin = false, base }: { id: string; admin?: b
               <Badge tone={org.status === "active" ? "acc" : "bad"}>{org.status === "active" ? "Active" : org.status}</Badge>
               <span className="text-sm text-ink3">since {when(org.created_at)}</span>
             </div>
-            <div className="mt-4 text-sm font-medium text-ink3">Credits available</div>
-            <div className="tabular text-6xl leading-none font-medium tracking-tight text-ink sm:text-7xl">{n(available)}</div>
+            <div className="mt-4 text-sm font-medium text-ink3">{m.pay_per_check ? "Extra usage this month" : "Checks left this month"}</div>
+            <div className="tabular text-6xl leading-none font-medium tracking-tight text-ink sm:text-7xl">
+              {m.pay_per_check ? inr(m.extra_used_paise / 100) : n(left)}
+            </div>
             <div className="mt-2 text-sm text-ink2">
-              {org.held > 0 && <>{n(org.held)} held by checks running now · </>}
-              {n(org.credits_added)} added in total · {n(org.lifetime_spend)} used
+              {m.pay_per_check ? (
+                <>Every check is billed at {inr(m.extra_price_paise / 100)} after the month ends{m.credits > 0 ? `; ${n(m.credits)} credits are used first` : ""}</>
+              ) : (
+                <>
+                  {m.allowance > 0 && (
+                    <>
+                      {n(Math.max(m.allowance - m.plan_used, 0))} of {n(m.allowance)} plan checks ·{" "}
+                    </>
+                  )}
+                  {n(Math.max(m.credits, 0))} credits
+                </>
+              )}
+              {org.held > 0 && <> · {n(org.held)} held by checks running now</>}
+            </div>
+            {!m.pay_per_check && left <= 0 && (
+              <div className="mt-1 text-sm text-ink2">
+                {m.extra_open
+                  ? `Now on extra usage at ${inr(m.extra_price_paise / 100)} a check${m.extra_checks_left != null ? `, ${n(m.extra_checks_left)} more before the cap` : ""}.`
+                  : "Checks are refused until credits are added or the month resets."}
+              </div>
+            )}
+            <div className="mt-1 text-xs text-ink3">
+              {n(org.credits_added)} credits added in total · {n(org.lifetime_spend)} used all time
             </div>
             <div className="mt-5 flex flex-wrap gap-2">
               {!admin && (
@@ -97,7 +122,7 @@ export function OrgOverview({ id, admin = false, base }: { id: string; admin?: b
               )}
               {full && !admin && (
                 <Link href={`${base}/billing`} className="rounded-xl border border-line bg-sf px-4 py-2.5 text-sm font-semibold text-ink hover:bg-sf2">
-                  Buy credits
+                  Plan &amp; credits
                 </Link>
               )}
               {admin && <AdminActions org={org} onDone={load} />}
@@ -106,7 +131,7 @@ export function OrgOverview({ id, admin = false, base }: { id: string; admin?: b
           <div className="flex items-center gap-5">
             <Ring
               used={month}
-              total={cap ?? Math.max(month, available + month, 1)}
+              total={cap ?? (m.pay_per_check ? Math.max(month, 1) : Math.max(month, left + month, 1))}
               label={n(month)}
               sub={cap != null ? `of ${n(cap)} cap` : "this month"}
             />
@@ -149,11 +174,19 @@ export function OrgOverview({ id, admin = false, base }: { id: string; admin?: b
         </Card>
         <Card>
           <h2 className="font-medium tracking-tight text-2xl text-ink">Where it goes</h2>
-          <p className="mb-4 text-sm text-ink3">This month</p>
+          <p className="mb-4 text-sm text-ink3">{split.scope === "mine" ? "Your checks, this month" : "This month"}</p>
           <Split
             parts={[
-              { label: "Dashboard and app", value: webShare },
-              { label: "API keys", value: keyShare },
+              { label: "Dashboard and app", value: split.via_web },
+              { label: "API keys", value: split.via_keys },
+            ]}
+          />
+          <h3 className="mt-6 mb-3 text-sm font-semibold text-ink">Paid from</h3>
+          <Split
+            parts={[
+              { label: "The plan", value: split.plan },
+              { label: "Credits", value: split.credits },
+              { label: "Extra usage", value: split.extra },
             ]}
           />
           <h3 className="mt-6 mb-3 text-sm font-semibold text-ink">Team</h3>
@@ -199,7 +232,7 @@ export function OrgOverview({ id, admin = false, base }: { id: string; admin?: b
           </Card>
           <Card>
             <div className="mb-4 flex items-baseline justify-between">
-              <h2 className="font-medium tracking-tight text-2xl text-ink">API keys this month</h2>
+              <h2 className="font-medium tracking-tight text-2xl text-ink">API keys, last 30 days</h2>
               <Link href={`${base}/keys`} className="text-sm font-semibold text-acc-ink">
                 Manage →
               </Link>

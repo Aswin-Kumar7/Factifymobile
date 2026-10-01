@@ -4,6 +4,7 @@
 // ("personal" or an organisation's id). The choice is remembered in this browser.
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { api, Me, MyOrg, setAccount } from "@/lib/api";
+import { setHistoryOwner } from "@/lib/history";
 
 type AccountState = {
   me: Me | null;
@@ -37,6 +38,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       api<Me>("/v1/me", { account: "personal" }),
       api<MyOrg[]>("/v1/orgs", { account: "personal" }).catch(() => [] as MyOrg[]),
     ]);
+    setHistoryOwner(who.id);
     setMe(who);
     setOrgs(mine);
     let saved = "personal";

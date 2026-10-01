@@ -1,8 +1,8 @@
 "use client";
 
 // Where the Android app is downloaded from, and what is said about the file. The
-// app is not on the Play Store yet: the signed release APK is served from our own
-// server at /downloads, beside factify.json, which scripts/publish_apk.py writes
+// app is not on the Play Store yet: the APK is served from our own server at
+// /downloads, beside factify.json, which scripts/publish_apk.py writes
 // with the version, size, SHA-256 and oldest Android it runs on. The page reads it
 // when it opens, so publishing a new APK needs no rebuild of the website.
 

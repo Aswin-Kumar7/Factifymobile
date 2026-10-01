@@ -1,7 +1,7 @@
 "use client";
 
 // The landing page's moving and clickable parts: the product shot you can click
-// around, the laptop that shows a check happening (the only animation on the page),
+// around (an illustration with made-up data, and labelled so), the laptop that shows a check happening (the only animation on the page),
 // the feature tabs and the price toggles.
 
 import Link from "next/link";
@@ -52,6 +52,7 @@ export function ProductShot() {
           <span className="h-2.5 w-2.5 rounded-full bg-line2" />
           <span className="h-2.5 w-2.5 rounded-full bg-line2" />
           <span className="mx-auto font-mono text-xs text-ink3">Factify · {path}</span>
+          <span className="rounded-md bg-hover px-2 py-0.5 text-[11px] text-ink2">Example</span>
         </div>
         <div className="grid h-[540px] grid-cols-1 sm:grid-cols-[210px_minmax(0,1fr)]">
           <div className="hidden flex-col gap-0.5 border-r border-side-line bg-side px-2.5 py-3.5 sm:flex">
@@ -199,7 +200,7 @@ export function ProductShot() {
                   <div className="flex flex-col gap-1.5 rounded-xl border border-hero-line bg-hero p-4 text-hero-ink">
                     <span className="text-xs text-hero-ink2">Current plan</span>
                     <span className="text-2xl font-medium">Plus</span>
-                    <span className="text-[12.5px] text-hero-ink2">₹299 a month · renews 1 Nov</span>
+                    <span className="text-[12.5px] text-hero-ink2">₹299 a month · paid until 1 Nov</span>
                   </div>
                   <div className="flex flex-col gap-2 rounded-xl border border-line bg-sf p-4">
                     <span className="text-xs text-ink3">This month</span>
@@ -292,7 +293,7 @@ export function HowItWorks() {
     <div ref={box} className="grid items-center gap-12 lg:grid-cols-[minmax(0,.72fr)_minmax(0,1.28fr)] lg:gap-18">
       <div>
         <span className="eyebrow">How it works</span>
-        <h2 className="mt-3.5 text-[2.1rem] leading-[1.08] font-medium tracking-tight text-balance text-ink sm:text-[2.4rem]">From forward to proof in under a minute.</h2>
+        <h2 className="mt-3.5 text-[2.1rem] leading-[1.08] font-medium tracking-tight text-balance text-ink sm:text-[2.4rem]">From forward to proof, usually in under a minute.</h2>
         <ol className="mt-9 border-b border-line">
           {STEPS.map(([title, body], i) => {
             const active = step === i;
@@ -335,7 +336,7 @@ export function HowItWorks() {
         </ol>
       </div>
 
-      <div role="img" aria-label="A forward is checked on a laptop: its claims are found, trusted sources are read, and the verdict is shown">
+      <div role="img" aria-label="An illustration: a forward is checked on a laptop, its claims are found, trusted sources are read, and the verdict is shown">
         <div className="lap-lid">
           <div className="grid aspect-[16/10] grid-cols-[46px_minmax(0,1fr)] overflow-hidden rounded-md bg-bg text-xs">
             <div className="flex flex-col items-center gap-3.5 border-r border-side-line bg-side pt-3.5">
@@ -420,6 +421,7 @@ export function HowItWorks() {
           </div>
         </div>
         <div className="lap-base" />
+        <p className="mt-4 text-center text-[13px] text-ink3">An illustration. Real checks show the actual sources read and the time taken.</p>
       </div>
     </div>
   );
@@ -450,7 +452,7 @@ const FEATURES = [
     name: "Videos",
     title: "Videos",
     body: "What's said in a video is turned into text and checked. Frames are checked for AI-made pictures, and the voice for signs of cloning.",
-    points: ["Speech checked, with the moment it was said", "Cloned-voice and AI-frame checks", "Up to 90 seconds · uses 3 checks"],
+    points: ["Speech checked, with the moment it was said", "Cloned-voice and AI-frame checks", "Speech in the first 3 minutes, frames in the first 90 seconds · uses 3 checks"],
   },
   {
     name: "PDFs",
@@ -774,18 +776,18 @@ export function Pricing() {
           cta: "Get an API key",
           href: `/signup?next=${encodeURIComponent("/app/org/new")}`,
           limit: "No monthly minimum",
-          features: ["Same answers as the app", "Rate limits and spend caps per key", "Usage by key", "Key rotation and IP allow-lists"],
+          features: ["Same answers as the app", "A monthly limit per key, 60 requests a minute", "Usage by key", "Key rotation and IP allow-lists"],
         },
         {
           name: "Enterprise",
           price: "Custom",
           per: "",
-          billed: "Annual agreement",
+          billed: "Agreed with you by email",
           blurb: "For large newsrooms and platforms.",
-          cta: "Contact us",
+          cta: "Email us",
           href: "mailto:aswin.aswin5640@gmail.com?subject=Factify%20Enterprise",
-          limit: "Volume you choose",
-          features: ["Everything in Team", "Volume pricing", "Sign-up by verified domain", "Direct support"],
+          limit: "Volume you need",
+          features: ["Everything in Team", "A price for your volume", "Members join by your verified email domain", "Questions answered by email"],
         },
       ]
     : PERSONAL.map((p) => personalRow(p, yearly));
@@ -864,15 +866,15 @@ export function Pricing() {
       <div className="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-line bg-sf px-7 py-5.5 shadow-card">
         <span>
           <span className="block text-[15.5px] font-medium text-ink">Extra usage</span>
-          <span className="block text-sm text-ink2">On any paid plan, keep checking past your limit at ₹{EXTRA_CHECK_INR} a check, up to a monthly cap you set.</span>
+          <span className="block text-sm text-ink2">On any paid plan, keep checking past your limit at ₹{EXTRA_CHECK_INR} a check, with a monthly cap if you want one.</span>
         </span>
         <Link href="/#faq" className="group inline-flex items-center gap-1.5 text-[15px] text-acc-ink">
           How it works {arrow}
         </Link>
       </div>
       <p className="mt-4 text-[13px] text-ink3">
-        Prices in Indian rupees, including GST. Plans don&apos;t renew by themselves: pay again to continue, or the plan stops at the end of its month. A video uses 3 checks. A check
-        that fails costs nothing.
+        Prices in Indian rupees; the price shown is the amount you pay. Plans don&apos;t renew by themselves: pay again to continue, or the plan stops at the end of the month or year
+        you paid for. A video uses 3 checks. A check that fails costs nothing.
       </p>
     </>
   );

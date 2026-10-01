@@ -49,6 +49,7 @@ type Claim = {
   sources_looked_at?: number | null;
   technique?: string | null;
   in_full?: string | null;
+  language?: string | null;
   input_anchor?: { char_start?: number | null; char_end?: number | null } | null;
 };
 
@@ -174,6 +175,20 @@ function nothingToCheck(v: Verdict): boolean {
 export function headlineOf(v: Verdict): string | null {
   const said = v.claims.filter((c) => c.claim_type !== "MEDIA");
   return (said.find((c) => c.importance === "HEADLINE") ?? said[0])?.text ?? null;
+}
+
+// The languages the message to send back is written in (CorrectionTextRequest).
+const CORRECTION_LANGUAGES = new Set(["en", "hi", "bn", "mr", "te", "ta", "gu", "ur", "kn", "or", "ml", "pa"]);
+
+/** The language to write the correction in: the language of what was checked - the
+ * main claim's, else what was read in the picture or heard in the video - when the
+ * message can be written in it; English otherwise (Hinglish too, as the server
+ * writes it). */
+function correctionLanguage(v: Verdict): string {
+  const said = v.claims.filter((c) => c.claim_type !== "MEDIA");
+  const main = said.find((c) => c.importance === "HEADLINE") ?? said[0];
+  const language = (main?.language || v.image_reading?.language || v.speech?.language || "en").toLowerCase();
+  return CORRECTION_LANGUAGES.has(language) ? language : "en";
 }
 
 /** What a kept check is labelled with: its verdict, or NOTHING. */
@@ -729,6 +744,8 @@ type Kind = "text" | "link" | "image" | "pdf";
 
 function kindOf(v: Verdict, given?: string | null): Kind {
   if (given === "text" || given === "link" || given === "pdf" || given === "image") return given;
+  // A video is shown from its frames, as a picture is.
+  if (given === "video") return "image";
   if (v.media_report || v.image_reading) return "image";
   return "text";
 }
@@ -779,7 +796,7 @@ export function Result({
   async function copyCorrection() {
     setCorrection("busy");
     try {
-      const r = await api<{ message: string }>(`/v1/cases/${v.case_id}/correction-text`, { method: "POST", json: { language: "en" } });
+      const r = await api<{ message: string }>(`/v1/cases/${v.case_id}/correction-text`, { method: "POST", json: { language: correctionLanguage(v) } });
       await navigator.clipboard.writeText(r.message);
       setCorrection("copied");
     } catch {

@@ -88,7 +88,10 @@ function PayPage() {
   const org = orgs.find((o) => o.id === account) ?? null;
   const list = useMemo(() => (org ? packs?.packs : packs?.personal_packs) ?? [], [org, packs]);
   const pack = list.find((p) => p.id === chosen) ?? list[Math.min(1, list.length - 1)];
-  const balance = org ? org.balance : (me?.credits.balance ?? 0);
+  // Credits only (bought packs, grants): a plan's monthly checks are counted apart,
+  // and a pack adds to the credits, not to the plan.
+  const balance = Math.max(org ? org.credits : (me?.plan_usage?.credits ?? 0), 0);
+  const planLeft = org ? Math.max(org.allowance - org.plan_used, 0) : Math.max((me?.plan_usage?.allowance ?? 0) - (me?.plan_usage?.used ?? 0), 0);
 
   async function pay() {
     if (!pack) return;
@@ -174,7 +177,7 @@ function PayPage() {
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-acc-soft text-3xl text-acc-ink">✓</div>
             <h1 className="font-medium tracking-tight mt-5 text-4xl text-ink">Payment complete</h1>
             <p className="mt-3 text-lg text-ink2">
-              {n(added)} credits were added to {org ? org.name : "your account"}. You now have {n(balance)}.
+              {n(added)} credits were added to {org ? org.name : "your account"}. You now have {n(balance)} credits{planLeft > 0 ? `, besides ${n(planLeft)} plan checks left this month` : ""}.
             </p>
             {handoff ? (
               <p className="mt-6 rounded-[14px] bg-sf2 p-4 text-ink">You can close this tab and go back to the Factify app. It has updated already.</p>
@@ -198,7 +201,7 @@ function PayPage() {
             <div className="text-xs font-semibold tracking-[0.12em] text-acc-ink uppercase">Buy credits</div>
             <h1 className="mt-1 text-4xl leading-tight font-medium tracking-tight text-ink sm:text-5xl">Choose a pack</h1>
             <p className="mt-2 text-ink2">
-              Signed in as {me.email}. One check is one credit; a video is three. Credits don&apos;t expire.
+              Signed in as {me.email}. One check is one credit; a video is three. Credits don&apos;t expire, and are used after the plan&apos;s monthly checks.
             </p>
 
             {orgs.length > 0 && (
@@ -251,6 +254,9 @@ function PayPage() {
                 <div className="text-sm font-semibold text-ink2">Summary</div>
                 <dl className="mt-3 space-y-2 text-[15px]">
                   <div className="flex justify-between gap-4"><dt className="text-ink2">Account</dt><dd className="text-right text-ink">{org ? org.name : "Personal"}</dd></div>
+                  {planLeft > 0 && (
+                    <div className="flex justify-between gap-4"><dt className="text-ink2">Plan checks left this month</dt><dd className="tabular text-ink">{n(planLeft)}</dd></div>
+                  )}
                   <div className="flex justify-between gap-4"><dt className="text-ink2">Credits now</dt><dd className="tabular text-ink">{n(balance)}</dd></div>
                   <div className="flex justify-between gap-4"><dt className="text-ink2">{pack.name}</dt><dd className="tabular text-ink">+{n(pack.credits)}</dd></div>
                   <div className="flex justify-between gap-4"><dt className="text-ink2">Credits after</dt><dd className="tabular font-semibold text-ink">{n(balance + pack.credits)}</dd></div>
