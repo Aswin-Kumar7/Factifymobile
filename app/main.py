@@ -80,9 +80,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ingestion = getattr(app.state, "ingestion", None)
         if ingestion is not None:
             ingestion.start()
+        # Last month's extra usage, billed once it is over (app/orgs/month_close.py).
+        monthly_billing = getattr(app.state, "monthly_billing", None)
+        if monthly_billing is not None:
+            monthly_billing.start()
 
         yield
 
+        if monthly_billing is not None:
+            await monthly_billing.stop()
         if ingestion is not None:
             await ingestion.stop()
 

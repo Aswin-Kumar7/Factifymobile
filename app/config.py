@@ -195,6 +195,9 @@ class BillingSettings(BaseModel):
     razorpay_key_id: str | None = None
     razorpay_key_secret: SecretStr | None = None
     razorpay_webhook_secret: SecretStr | None = None
+    # How often the server bills last month's extra usage (0008); 0 is never (then
+    # POST /v1/admin/billing/close-month does it by hand). Each month is billed once.
+    extra_usage_billing_hours: float = Field(default=6.0, ge=0)
 
 
 class LimitSettings(BaseModel):

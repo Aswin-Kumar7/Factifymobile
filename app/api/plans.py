@@ -6,6 +6,11 @@ three) or moves it to API (every check paid at the end of the month). Subscribin
 makes a Razorpay subscription the website opens in Checkout; the plan starts when its
 first payment is confirmed - by the website's signed result or Razorpay's webhook,
 whichever comes first - and follows Razorpay's webhooks after that.
+
+Where the Razorpay account has no subscriptions (its Plans API refuses), a plan is
+bought as one payment for a month or a year instead, an ordinary Razorpay order
+(0010): it does not renew by itself, and buying the same plan again adds the next
+period after the one paid for.
 """
 
 from __future__ import annotations
@@ -19,7 +24,7 @@ from pydantic import BaseModel, Field
 
 from app.api.admin import _staff
 from app.api.orgs import _access, _person, _razorpay, _store
-from app.orgs import payments, plans
+from app.orgs import month_close, payments, plans
 from app.orgs.errors import ApiError, bad_request
 from app.orgs.store import org_month
 
@@ -33,17 +38,22 @@ Interval = Literal["month", "year"]
 class Subscribe(BaseModel):
     plan: str
     interval: Interval = "month"
+    # The phone's payment handoff, when the app sent the person here to choose.
+    handoff_id: str | None = None
 
 
 class TeamSubscribe(BaseModel):
     interval: Interval = "month"
     seats: int = Field(ge=plans.TEAM.min_seats, le=10_000)
+    handoff_id: str | None = None
 
 
 class SubscriptionConfirm(BaseModel):
     payment_id: str
-    subscription_id: str
     signature: str
+    # One of the two: an auto-renewing subscription, or a plan paid by one order.
+    subscription_id: str | None = None
+    order_id: str | None = None
 
 
 class ExtraUsage(BaseModel):
@@ -59,6 +69,11 @@ class OrgApiPlan(BaseModel):
 class CloseMonth(BaseModel):
     # "YYYY-MM"; empty is last month.
     month: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}$")
+
+
+# Razorpay accounts (by key) found to have no subscriptions: their plans are paid a
+# period at a time, without asking again.
+_NO_SUBSCRIPTIONS: set[str] = set()
 
 
 def _iso(value: Any) -> str | None:
@@ -93,27 +108,61 @@ async def _razorpay_plan(request: Request, plan: plans.Plan, interval: str) -> s
 
 async def _start(
     request: Request, *, plan: plans.Plan, interval: str, seats: int, user_id: str | None,
-    org_id: str | None, actor: str, email: str,
+    org_id: str | None, actor: str, email: str, handoff_id: str | None = None,
 ) -> dict[str, Any]:  # fmt: skip
     razorpay = _razorpay(request)
-    try:
-        plan_id = await _razorpay_plan(request, plan, interval)
-        sub = await razorpay.create_subscription(
-            plan_id=plan_id, interval=interval, quantity=seats,
-            notes={"plan": plan.id, "user_id": user_id or "", "org_id": org_id or ""},
-        )  # fmt: skip
-    except payments.PaymentsUnavailable as error:
-        logger.warning("razorpay subscription failed: %s", error)
-        raise ApiError(502, "payments_unavailable", "the payment could not be started") from error
     amount = plan.price_paise(interval, seats)  # type: ignore[arg-type]
-    await _store(request).create_subscription(
-        user_id=user_id, org_id=org_id, plan=plan.id, interval=interval, seats=seats,
-        amount_paise=amount, razorpay_subscription_id=str(sub["id"]),
-        razorpay_plan_id=plan_id, test_mode=razorpay.test_mode, actor=actor,
-    )  # fmt: skip
     every = "a month" if interval == "month" else "a year"
+    notes = {
+        "plan": plan.id,
+        "interval": interval,
+        "user_id": user_id or "",
+        "org_id": org_id or "",
+    }
+    sub: dict[str, Any] | None = None
+    if razorpay.key_id not in _NO_SUBSCRIPTIONS:
+        try:
+            plan_id = await _razorpay_plan(request, plan, interval)
+            sub = await razorpay.create_subscription(
+                plan_id=plan_id, interval=interval, quantity=seats, notes=notes
+            )
+        except payments.PaymentsUnavailable as error:
+            # A refusal (not an outage) means the account has no subscriptions.
+            if any(code in str(error) for code in ("400", "401", "403", "404")):
+                _NO_SUBSCRIPTIONS.add(razorpay.key_id)
+            logger.warning("razorpay subscription unavailable, paying by order: %s", error)
+    if sub is not None:
+        await _store(request).create_subscription(
+            user_id=user_id, org_id=org_id, plan=plan.id, interval=interval, seats=seats,
+            amount_paise=amount, razorpay_subscription_id=str(sub["id"]),
+            razorpay_plan_id=plan_id, test_mode=razorpay.test_mode, actor=actor,
+            handoff_id=handoff_id,
+        )  # fmt: skip
+        mode, ids = "subscription", {"subscription_id": sub["id"]}
+    else:
+        try:
+            order_id = await razorpay.create_order(
+                amount_paise=amount,
+                receipt=f"plan-{plan.id}-{(user_id or org_id or '')[:8]}-"
+                f"{int(datetime.now(UTC).timestamp())}",
+                notes=notes,
+            )
+        except payments.PaymentsUnavailable as error:
+            logger.warning("razorpay order for a plan failed: %s", error)
+            raise ApiError(
+                502, "payments_unavailable", "the payment could not be started"
+            ) from error
+        await _store(request).create_subscription(
+            user_id=user_id, org_id=org_id, plan=plan.id, interval=interval, seats=seats,
+            amount_paise=amount, razorpay_subscription_id=None, razorpay_plan_id=None,
+            test_mode=razorpay.test_mode, actor=actor, handoff_id=handoff_id, kind="prepaid",
+            order_id=order_id,
+        )  # fmt: skip
+        mode, ids = "order", {"order_id": order_id}
+        every = "for a month" if interval == "month" else "for a year"
     return {
-        "subscription_id": sub["id"],
+        "mode": mode,
+        **ids,
         "key_id": razorpay.key_id,
         "amount": amount,
         "currency": "INR",
@@ -147,16 +196,55 @@ async def _activate(request: Request, subscription_id: str, actor: str) -> dict[
         subscription_id, current_start=start, current_end=end, actor=actor
     )
     for old in (row or {}).get("replaced", []):
-        try:
-            await razorpay.cancel_subscription(old, at_cycle_end=False)
-        except payments.PaymentsUnavailable:
-            logger.warning("could not cancel replaced subscription %s", old)
+        await _cancel_quietly(request, old)
     return row
+
+
+async def _confirm(
+    request: Request, payload: SubscriptionConfirm, actor: str, owner: tuple[str, str]
+) -> dict[str, Any]:
+    """Check Checkout's signed result and start the plan it paid for, if it is the
+    owner's (`owner` is ("user_id" or "org_id", its id))."""
+    razorpay = _razorpay(request)
+    store = _store(request)
+    if payload.order_id:
+        if not razorpay.payment_is_genuine(payload.order_id, payload.payment_id, payload.signature):
+            raise bad_request("the payment's signature doesn't match", "bad_signature")
+        sub = await store.subscription_by_order(payload.order_id)
+        if sub is None or sub.get(owner[0]) != owner[1]:
+            raise bad_request("unknown order")
+        row = await store.activate_prepaid(payload.order_id, payload.payment_id, actor)
+        for old in (row or {}).get("replaced", []):
+            await _cancel_quietly(request, old)
+    elif payload.subscription_id:
+        if not razorpay.subscription_is_genuine(
+            payload.payment_id, payload.subscription_id, payload.signature
+        ):
+            raise bad_request("the payment's signature doesn't match", "bad_signature")
+        sub = await store.subscription(payload.subscription_id)
+        if sub is None or sub.get(owner[0]) != owner[1]:
+            raise bad_request("unknown subscription")
+        await _activate(request, payload.subscription_id, actor)
+    else:
+        raise bad_request("say which payment this is")
+    return {"status": "active", "plan": sub["plan"], "seats": sub["seats"]}
+
+
+async def _cancel_quietly(request: Request, subscription_id: str) -> None:
+    try:
+        await _razorpay(request).cancel_subscription(subscription_id, at_cycle_end=False)
+    except payments.PaymentsUnavailable:
+        logger.warning("could not cancel replaced subscription %s", subscription_id)
 
 
 async def _cancel(request: Request, sub: dict[str, Any] | None) -> dict[str, str]:
     if sub is None:
         raise bad_request("there is no paid plan to cancel", "no_plan")
+    if sub.get("kind") == "prepaid":
+        raise bad_request(
+            "this plan was paid for one period and does not renew; it ends on its own",
+            "does_not_renew",
+        )
     try:
         await _razorpay(request).cancel_subscription(
             str(sub["razorpay_subscription_id"]), at_cycle_end=True
@@ -165,6 +253,14 @@ async def _cancel(request: Request, sub: dict[str, Any] | None) -> dict[str, str
         raise ApiError(502, "payments_unavailable", "the plan could not be cancelled") from error
     await _store(request).end_subscription(str(sub["razorpay_subscription_id"]), "cancelling")
     return {"status": "cancelling", "ends_at": str(sub.get("current_end") or "")}
+
+
+def _renewal(sub: dict[str, Any] | None) -> str | None:
+    """'auto' when the plan renews by itself, 'manual' when it is paid a period at a
+    time, None with no paid plan."""
+    if sub is None:
+        return None
+    return "manual" if sub.get("kind") == "prepaid" else "auto"
 
 
 # ---- a person's plan ----------------------------------------------------------------
@@ -194,6 +290,7 @@ async def my_plan(request: Request) -> dict[str, Any]:
             "price_paise": p.extra_price_paise,
             "blocked": p.extra_blocked,
         },
+        "renewal": _renewal(await store.current_subscription(user_id=user.id)),
         "subscriptions": await store.subscriptions(user_id=user.id),
         "bills": await store.usage_bills(user_id=user.id),
     }
@@ -205,24 +302,18 @@ async def subscribe(payload: Subscribe, request: Request) -> dict[str, Any]:
     plan = plans.personal(payload.plan)
     if plan is None or plan is plans.FREE:
         raise bad_request("choose Plus or Pro", "unknown_plan")
+    if payload.handoff_id:
+        await _store(request).handoff(user.id, payload.handoff_id)  # theirs, or 404
     return await _start(
         request, plan=plan, interval=payload.interval, seats=1, user_id=user.id, org_id=None,
-        actor=user.id, email=user.email,
+        actor=user.id, email=user.email, handoff_id=payload.handoff_id,
     )  # fmt: skip
 
 
 @router.post("/me/plan/confirm", summary="Confirm a subscription's first payment")
 async def confirm(payload: SubscriptionConfirm, request: Request) -> dict[str, Any]:
     user = await _person(request)
-    if not _razorpay(request).subscription_is_genuine(
-        payload.payment_id, payload.subscription_id, payload.signature
-    ):
-        raise bad_request("the payment's signature doesn't match", "bad_signature")
-    sub = await _store(request).subscription(payload.subscription_id)
-    if sub is None or sub.get("user_id") != user.id:
-        raise bad_request("unknown subscription")
-    await _activate(request, payload.subscription_id, user.id)
-    return {"status": "active", "plan": sub["plan"]}
+    return await _confirm(request, payload, user.id, ("user_id", user.id))
 
 
 @router.post("/me/plan/cancel", summary="Cancel at the end of the period")
@@ -279,6 +370,7 @@ async def org_plan(org_id: str, request: Request) -> dict[str, Any]:
             "price_paise": month.extra_price_paise,
             "blocked": month.extra_blocked,
         },
+        "renewal": _renewal(await store.current_subscription(org_id=org_id)),
         "subscriptions": await store.subscriptions(org_id=org_id),
         "bills": await store.usage_bills(org_id=org_id),
     }
@@ -287,9 +379,12 @@ async def org_plan(org_id: str, request: Request) -> dict[str, Any]:
 @router.post("/orgs/{org_id}/plan/subscribe", summary="Start a Team subscription")
 async def org_subscribe(org_id: str, payload: TeamSubscribe, request: Request) -> dict[str, Any]:
     user, _ = await _access(request, org_id, "owner")
+    if payload.handoff_id:
+        await _store(request).handoff(user.id, payload.handoff_id)  # theirs, or 404
     return await _start(
         request, plan=plans.TEAM, interval=payload.interval, seats=payload.seats,
         user_id=None, org_id=org_id, actor=user.id, email=user.email,
+        handoff_id=payload.handoff_id,
     )  # fmt: skip
 
 
@@ -298,15 +393,7 @@ async def org_confirm(
     org_id: str, payload: SubscriptionConfirm, request: Request
 ) -> dict[str, Any]:
     user, _ = await _access(request, org_id, "owner")
-    if not _razorpay(request).subscription_is_genuine(
-        payload.payment_id, payload.subscription_id, payload.signature
-    ):
-        raise bad_request("the payment's signature doesn't match", "bad_signature")
-    sub = await _store(request).subscription(payload.subscription_id)
-    if sub is None or sub.get("org_id") != org_id:
-        raise bad_request("unknown subscription")
-    await _activate(request, payload.subscription_id, user.id)
-    return {"status": "active", "plan": "team", "seats": sub["seats"]}
+    return await _confirm(request, payload, user.id, ("org_id", org_id))
 
 
 @router.post("/orgs/{org_id}/plan/cancel", summary="Cancel Team at the end of the period")
@@ -353,50 +440,30 @@ async def handle_webhook(request: Request, event: dict[str, Any]) -> None:
             await _activate(request, sub_id, "razorpay")
         else:
             await store.end_subscription(sub_id, status)
+    paid = payments.paid_order(event)
+    if paid is not None:
+        # A plan paid by one order; nothing for an order that was a credit pack.
+        row = await store.activate_prepaid(paid[0], paid[1], "razorpay")
+        for old in (row or {}).get("replaced", []):
+            await _cancel_quietly(request, old)
     link = payments.payment_link_event(event)
     if link is not None:
         await store.mark_bill(link[0], link[1])
 
 
-def _last_month(today: date) -> date:
-    first = today.replace(day=1)
-    return (first - timedelta(days=1)).replace(day=1)
-
-
 @router.post("/admin/billing/close-month", summary="Bill last month's extra usage")
 async def close_month(payload: CloseMonth, request: Request) -> dict[str, Any]:
-    """Send everyone with extra usage in the month a payment link for it - once."""
+    """Send everyone with extra usage in the month a payment link for it - once.
+    The server also does this on its own every few hours (app/orgs/month_close.py)."""
     user = await _staff(request)
-    india_today = (datetime.now(UTC) + timedelta(hours=5, minutes=30)).date()
-    month = date.fromisoformat(f"{payload.month}-01") if payload.month else _last_month(india_today)
-    if month >= india_today.replace(day=1):
-        raise bad_request("a month can be billed only after it ends", "month_not_over")
-    store = _store(request)
-    razorpay = _razorpay(request)
-    sent, failed = 0, 0
-    for row in await store.extra_usage_to_bill(month):
-        checks = int(row["checks"])
-        amount = checks * int(row["price_paise"])
-        if checks <= 0 or amount <= 0:
-            continue
-        owner = row.get("user_id") or row.get("org_id")
-        try:
-            link = await razorpay.create_payment_link(
-                amount_paise=amount,
-                description=f"Factify extra usage, {month:%B %Y}: {checks:,} checks",
-                email=row.get("email"),
-                reference=f"extra-{month:%Y%m}-{str(owner)[:8]}",
-                notes={"month": f"{month:%Y-%m}", "owner": str(owner)},
-            )
-        except payments.PaymentsUnavailable:
-            logger.exception("could not bill extra usage for %s", owner)
-            failed += 1
-            continue
-        await store.create_usage_bill(
-            user_id=row.get("user_id"), org_id=row.get("org_id"), month=month, checks=checks,
-            amount_paise=amount, payment_link_id=str(link["id"]),
-            short_url=link.get("short_url"), test_mode=razorpay.test_mode,
-        )  # fmt: skip
-        sent += 1
-    logger.info("closed %s: %d bills sent, %d failed (by %s)", month, sent, failed, user.email)
-    return {"month": f"{month:%Y-%m}", "sent": sent, "failed": failed}
+    month = (
+        date.fromisoformat(f"{payload.month}-01")
+        if payload.month
+        else month_close.last_month(month_close.india_today())
+    )
+    try:
+        billed = await month_close.bill_month(_store(request), _razorpay(request), month)
+    except ValueError as error:
+        raise bad_request(str(error), "month_not_over") from error
+    logger.info("%s closed %s by hand", user.email, month)
+    return {"month": f"{month:%Y-%m}", "sent": billed.sent, "failed": billed.failed}

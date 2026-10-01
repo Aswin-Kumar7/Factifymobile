@@ -54,3 +54,7 @@ Thumbs.db
 
 # Model weight cache (downloaded, never committed)
 .cache/
+
+# The Android app as published for download (scripts/publish_apk.py)
+/downloads/
+/web/public/downloads/

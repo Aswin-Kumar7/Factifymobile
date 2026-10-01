@@ -1439,7 +1439,14 @@ class OrgStore:
                   COALESCE((SELECT SUM(credits) FROM payment WHERE status = 'paid'), 0)
                       AS credits_sold,
                   COALESCE((SELECT SUM(amount_paise) FROM payment WHERE status = 'paid'), 0)
-                      AS revenue_paise
+                  -- Plans whose payment went through (0008, 0010), and paid
+                  -- extra-usage bills. A renewing subscription counts its first period.
+                  + COALESCE((SELECT SUM(amount_paise) FROM subscription
+                               WHERE current_start IS NOT NULL), 0)
+                  + COALESCE((SELECT SUM(amount_paise) FROM usage_bill WHERE status = 'paid'), 0)
+                      AS revenue_paise,
+                  (SELECT COUNT(*) FROM subscription WHERE status IN ('active', 'cancelling'))
+                      AS paid_plans
                 """,
             )
             by_day = await self._all(
@@ -1602,24 +1609,27 @@ class OrgStore:
 
     async def create_subscription(
         self, *, user_id: str | None, org_id: str | None, plan: str, interval: str,
-        seats: int, amount_paise: int, razorpay_subscription_id: str, razorpay_plan_id: str,
-        test_mode: bool, actor: str,
+        seats: int, amount_paise: int, razorpay_subscription_id: str | None,
+        razorpay_plan_id: str | None, test_mode: bool, actor: str,
+        handoff_id: str | None = None, kind: str = "subscription", order_id: str | None = None,
     ) -> Row:  # fmt: skip
-        """A subscription Razorpay made, waiting for its first payment."""
+        """A plan bought, waiting for its first payment: a Razorpay subscription, or
+        (`kind` "prepaid") one order paying for a single month or year (0010)."""
         async with self._db.transaction() as conn:
             row = await self._one(
                 conn,
                 """
                 INSERT INTO subscription (user_id, org_id, plan, interval, seats, amount_paise,
                                           razorpay_subscription_id, razorpay_plan_id,
-                                          test_mode, created_by)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                          test_mode, created_by, handoff_id, kind, order_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING *
                 """,
                 (
                     _uuid(user_id) if user_id else None, _uuid(org_id) if org_id else None,
                     plan, interval, seats, amount_paise, razorpay_subscription_id,
                     razorpay_plan_id, test_mode, _uuid(actor),
+                    _uuid(handoff_id) if handoff_id else None, kind, order_id,
                 ),
             )  # fmt: skip
             await self.audit(
@@ -1680,52 +1690,132 @@ class OrgStore:
                 """,
                 (current_start, current_end, sub["id"]),
             )
-            owner, value = (
-                ("user_id", sub["user_id"]) if sub["user_id"] else ("org_id", sub["org_id"])
-            )
-            replaced = await self._all(
-                conn,
-                f"""
-                UPDATE subscription SET status = 'replaced', updated_at = now()
-                 WHERE {owner} = %s AND id <> %s AND status IN ('active', 'cancelling')
-                RETURNING razorpay_subscription_id
-                """,
-                (value, sub["id"]),
-            )
             renews = current_end or sub["current_end"]
-            if sub["user_id"]:
-                await conn.execute(
-                    """
-                    UPDATE app_user
-                       SET plan = %s, plan_interval = %s, plan_renews_at = %s,
-                           plan_cancel_at_end = false
-                     WHERE id = %s
-                    """,
-                    (sub["plan"], sub["interval"], renews, sub["user_id"]),
-                )
-            else:
-                await conn.execute(
-                    """
-                    UPDATE organisation
-                       SET plan = 'team', seats = %s, plan_interval = %s, plan_renews_at = %s,
-                           plan_cancel_at_end = false
-                     WHERE id = %s
-                    """,
-                    (sub["seats"], sub["interval"], renews, sub["org_id"]),
-                )
-            if sub["status"] == "created":
-                await self.audit(
-                    conn, org_id=str(sub["org_id"]) if sub["org_id"] else None, actor=actor,
-                    action="plan.started",
-                    target=str(sub["user_id"]) if sub["user_id"] else None,
-                    detail={"plan": sub["plan"], "interval": sub["interval"],
-                            "seats": sub["seats"]},
-                )  # fmt: skip
+            replaced = await self._put_on_plan(conn, sub, renews, actor)
         out = _jsonable(sub) or {}
-        out["replaced"] = [
-            str(r["razorpay_subscription_id"]) for r in replaced if r["razorpay_subscription_id"]
-        ]
+        out["replaced"] = replaced
         return out
+
+    async def _put_on_plan(
+        self, conn: Any, sub: Row, renews: datetime | None, actor: str
+    ) -> list[str]:
+        """Inside the caller's transaction: the owner is on `sub`'s plan until `renews`;
+        whatever else they were paying for ends (an auto-renewing one is named in the
+        result, to be cancelled at Razorpay); the app that sent them is told."""
+        owner, value = ("user_id", sub["user_id"]) if sub["user_id"] else ("org_id", sub["org_id"])
+        # A plan paid a period at a time never renews by itself; nor does a cancelled one.
+        ending = sub["kind"] == "prepaid" or sub["status"] == "cancelling"
+        others = await self._all(
+            conn,
+            f"""
+            UPDATE subscription
+               SET status = CASE WHEN kind = 'prepaid' THEN 'ended' ELSE 'replaced' END,
+                   updated_at = now()
+             WHERE {owner} = %s AND id <> %s AND status IN ('active', 'cancelling')
+            RETURNING kind, razorpay_subscription_id
+            """,
+            (value, sub["id"]),
+        )
+        if sub["user_id"]:
+            await conn.execute(
+                """
+                UPDATE app_user
+                   SET plan = %s, plan_interval = %s, plan_renews_at = %s,
+                       plan_cancel_at_end = %s
+                 WHERE id = %s
+                """,
+                (sub["plan"], sub["interval"], renews, ending, sub["user_id"]),
+            )
+        else:
+            await conn.execute(
+                """
+                UPDATE organisation
+                   SET plan = 'team', seats = %s, plan_interval = %s, plan_renews_at = %s,
+                       plan_cancel_at_end = %s
+                 WHERE id = %s
+                """,
+                (sub["seats"], sub["interval"], renews, ending, sub["org_id"]),
+            )
+        if sub.get("handoff_id") is not None:
+            # The app that sent the person here is waiting: it is paid.
+            await conn.execute(
+                "UPDATE payment_handoff SET status = 'paid', finished_at = now()"
+                " WHERE id = %s AND status IN ('waiting', 'opened')",
+                (sub["handoff_id"],),
+            )
+        if sub["status"] == "created":
+            await self.audit(
+                conn, org_id=str(sub["org_id"]) if sub["org_id"] else None, actor=actor,
+                action="plan.started", target=str(sub["user_id"]) if sub["user_id"] else None,
+                detail={"plan": sub["plan"], "interval": sub["interval"], "seats": sub["seats"],
+                        "kind": sub["kind"]},
+            )  # fmt: skip
+        return [
+            str(o["razorpay_subscription_id"])
+            for o in others
+            if o["kind"] == "subscription" and o["razorpay_subscription_id"]
+        ]
+
+    async def activate_prepaid(self, order_id: str, payment_id: str, actor: str) -> Row | None:
+        """A plan paid by one order (0010): the owner is on it for a month or a year -
+        after the period already paid for, when it is the same plan again. Once,
+        whichever of the website or the webhook says so first; None for an order
+        that is not a plan's."""
+        async with self._db.transaction() as conn:
+            sub = await self._one(
+                conn, "SELECT * FROM subscription WHERE order_id = %s FOR UPDATE", (order_id,)
+            )
+            if sub is None or sub["status"] != "created":
+                out = _jsonable(sub)
+                if out is not None:
+                    out["replaced"] = []
+                return out
+            if sub["user_id"]:
+                owner = await self._one(
+                    conn,
+                    "SELECT plan, plan_renews_at, 0 AS seats FROM app_user WHERE id = %s"
+                    " FOR UPDATE",
+                    (sub["user_id"],),
+                )
+                same = owner is not None and owner["plan"] == sub["plan"]
+            else:
+                owner = await self._one(
+                    conn,
+                    "SELECT plan, plan_renews_at, seats FROM organisation WHERE id = %s FOR UPDATE",
+                    (sub["org_id"],),
+                )
+                same = (
+                    owner is not None and owner["plan"] == "team" and owner["seats"] == sub["seats"]
+                )
+            renews_at = owner["plan_renews_at"] if owner else None
+            start = renews_at if same and renews_at is not None and renews_at > _now() else _now()
+            period = await self._one(
+                conn,
+                "SELECT %s::timestamptz + make_interval(months => %s) AS ends",
+                (start, 1 if sub["interval"] == "month" else 12),
+            )
+            assert period is not None
+            await conn.execute(
+                """
+                UPDATE subscription
+                   SET status = 'active', current_start = %s, current_end = %s, payment_id = %s,
+                       updated_at = now()
+                 WHERE id = %s
+                """,
+                (start, period["ends"], payment_id, sub["id"]),
+            )
+            replaced = await self._put_on_plan(conn, sub, period["ends"], actor)
+        out = _jsonable(sub) or {}
+        out["current_end"] = period["ends"].isoformat()
+        out["replaced"] = replaced
+        return out
+
+    async def subscription_by_order(self, order_id: str) -> Row | None:
+        async with self._db.connection() as conn:
+            row = await self._one(
+                conn, "SELECT * FROM subscription WHERE order_id = %s", (order_id,)
+            )
+        return _jsonable(row)
 
     async def end_subscription(self, razorpay_subscription_id: str, status: str) -> Row | None:
         """Razorpay says the subscription is cancelling, cancelled, halted or failed.

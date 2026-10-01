@@ -216,7 +216,20 @@ class TestPlansInTheDatabase:
             current = await store.current_subscription(user_id=user)
             assert current is not None and current["razorpay_subscription_id"] == f"sub_{tag}_1"
 
-            await store.end_subscription(f"sub_{tag}_1", "cancelling")
+            # A plan bought from the phone tells the app waiting on it.
+            handoff, _token = await store.create_handoff(user, None)
+            await store.create_subscription(
+                user_id=user, org_id=None, plan="plus", interval="year", seats=1,
+                amount_paise=299_000, razorpay_subscription_id=f"sub_{tag}_2",
+                razorpay_plan_id="plan_y", test_mode=True, actor=user,
+                handoff_id=handoff["id"],
+            )  # fmt: skip
+            await store.activate_subscription(
+                f"sub_{tag}_2", current_start=None, current_end=end, actor="razorpay"
+            )
+            assert (await store.handoff(user, handoff["id"]))["status"] == "paid"
+
+            await store.end_subscription(f"sub_{tag}_2", "cancelling")
             async with database.connection() as conn:  # type: ignore[attr-defined]
                 ending = await AccountRepository(conn).month(user_id=user)
             assert ending is not None and ending["plan_cancel_at_end"] is True
@@ -270,3 +283,128 @@ class TestThePriceListEndpoint:
         response = TestClient(create_app()).post("/v1/me/plan/subscribe", json={"plan": "plus"})
 
         assert response.status_code in (401, 503)
+
+
+class TestBillingAMonth:
+    def test_last_month_is_the_month_before_in_india_time(self) -> None:
+        from app.orgs.month_close import india_today, last_month
+
+        assert last_month(date(2026, 10, 1)) == date(2026, 9, 1)
+        assert last_month(date(2026, 1, 15)) == date(2025, 12, 1)
+        # 20:00 UTC on 31 Oct is already 1 Nov in India.
+        assert india_today(datetime(2026, 10, 31, 20, 0, tzinfo=UTC)) == date(2026, 11, 1)
+
+    @pytest.mark.asyncio
+    async def test_each_owner_gets_one_link_and_a_failure_is_tried_again(self) -> None:
+        from app.orgs.month_close import bill_month
+        from app.orgs.payments import PaymentsUnavailable
+
+        class _Store:
+            def __init__(self) -> None:
+                self.bills: list[dict[str, object]] = []
+
+            async def extra_usage_to_bill(self, month: date) -> list[dict[str, object]]:
+                return [
+                    {
+                        "user_id": "u1",
+                        "org_id": None,
+                        "email": "a@x.in",
+                        "checks": 4,
+                        "price_paise": 300,
+                    },
+                    {
+                        "user_id": None,
+                        "org_id": "o1",
+                        "email": "b@x.in",
+                        "checks": 10,
+                        "price_paise": 400,
+                    },
+                ]
+
+            async def create_usage_bill(self, **kwargs: object) -> None:
+                self.bills.append(kwargs)
+
+        class _Razorpay:
+            test_mode = True
+
+            async def create_payment_link(self, **kwargs: object) -> dict[str, object]:
+                if kwargs["email"] == "b@x.in":
+                    raise PaymentsUnavailable("down")
+                return {"id": "pl_1", "short_url": "https://rzp.io/x"}
+
+        store = _Store()
+        billed = await bill_month(store, _Razorpay(), date(2026, 8, 1))
+
+        assert (billed.sent, billed.failed) == (1, 1)
+        assert store.bills[0]["amount_paise"] == 1_200 and store.bills[0]["user_id"] == "u1"
+
+    @pytest.mark.asyncio
+    async def test_a_month_not_over_is_never_billed(self) -> None:
+        from app.orgs.month_close import bill_month, india_today
+
+        with pytest.raises(ValueError):
+            await bill_month(object(), object(), india_today().replace(day=1))
+
+
+@requires_database
+@pytest.mark.asyncio
+class TestPlansPaidAPeriodAtATime:
+    async def test_paying_again_for_the_same_plan_adds_the_next_month(
+        self, database: object
+    ) -> None:
+        store = OrgStore(database)
+        tag = uuid4().hex[:8]
+        user = await _person(database, f"prepaid-{tag}@example.org")
+        try:
+            handoff, _token = await store.create_handoff(user, None)
+            for n in range(2):
+                await store.create_subscription(
+                    user_id=user, org_id=None, plan="plus", interval="month", seats=1,
+                    amount_paise=29_900, razorpay_subscription_id=None, razorpay_plan_id=None,
+                    test_mode=True, actor=user, kind="prepaid", order_id=f"order_{tag}_{n}",
+                    handoff_id=handoff["id"] if n == 0 else None,
+                )  # fmt: skip
+            first = await store.activate_prepaid(f"order_{tag}_0", "pay_1", user)
+            again = await store.activate_prepaid(f"order_{tag}_0", "pay_1", "razorpay")
+            second = await store.activate_prepaid(f"order_{tag}_1", "pay_2", user)
+            assert first is not None and second is not None and again is not None
+            assert again["status"] == "active"  # the webhook after the website: once only
+            one = datetime.fromisoformat(first["current_end"])
+            two = datetime.fromisoformat(second["current_end"])
+            assert 27 <= (two - one).days <= 31  # the second month follows the first
+
+            async with database.connection() as conn:  # type: ignore[attr-defined]
+                month = await AccountRepository(conn).month(user_id=user)
+            assert month is not None and month["plan"] == "plus"
+            assert month["plan_renews_at"] == two
+            assert month["plan_cancel_at_end"] is True  # paid for, not renewing by itself
+            assert (await store.handoff(user, handoff["id"]))["status"] == "paid"
+            statuses = {s["order_id"]: s["status"] for s in await store.subscriptions(user_id=user)}
+            assert statuses == {f"order_{tag}_0": "ended", f"order_{tag}_1": "active"}
+            assert await store.activate_prepaid("order_not_a_plan", "pay_x", "razorpay") is None
+        finally:
+            await _drop(database, orgs=[], users=[user])
+
+    async def test_a_team_paid_for_a_year(self, database: object) -> None:
+        store = OrgStore(database)
+        tag = uuid4().hex[:8]
+        owner = await _person(database, f"teamyear-{tag}@example.org")
+        org = await store.create_org(user_id=owner, name=f"Year {tag}", billing_email=None)
+        try:
+            await store.create_subscription(
+                user_id=None, org_id=org["id"], plan="team", interval="year", seats=4,
+                amount_paise=5_988 * 400, razorpay_subscription_id=None, razorpay_plan_id=None,
+                test_mode=True, actor=owner, kind="prepaid", order_id=f"order_{tag}",
+            )  # fmt: skip
+            row = await store.activate_prepaid(f"order_{tag}", "pay_1", owner)
+            assert row is not None
+            ends = datetime.fromisoformat(row["current_end"])
+            assert 360 <= (ends - datetime.now(UTC)).days <= 366
+            info = await store.org(org["id"])
+            assert (info["plan"], info["seats"]) == ("team", 4)
+            payer = Payer(org_id=org["id"], user_id=owner, role="owner")
+            hold = await store.hold(payer, 1)
+            assert hold.source == "plan"
+            await store.release(hold)
+        finally:
+            await _drop(database, orgs=[org["id"]], users=[owner])

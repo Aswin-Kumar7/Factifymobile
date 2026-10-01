@@ -428,11 +428,33 @@ async def build(settings: Settings) -> dict[str, Any]:
         if settings.auth.google_client_id and google_secret and settings.auth.public_url
         else None
     )
+    from app.orgs.month_close import MonthlyBilling
+    from app.orgs.payments import Razorpay
     from app.orgs.store import OrgStore
+
+    org_store = OrgStore(database)
+    billing = settings.billing
+    # Last month's extra usage, billed in the background once Razorpay is set up.
+    monthly_billing = (
+        MonthlyBilling(
+            store=org_store,
+            razorpay=Razorpay(
+                billing.razorpay_key_id,
+                billing.razorpay_key_secret.get_secret_value(),
+                billing.razorpay_webhook_secret.get_secret_value()
+                if billing.razorpay_webhook_secret
+                else None,
+            ),
+            interval_seconds=billing.extra_usage_billing_hours * 3600,
+        )
+        if billing.razorpay_key_id and billing.razorpay_key_secret
+        else None
+    )
 
     state: dict[str, Any] = {
         "database": database,
-        "orgs": OrgStore(database),
+        "orgs": org_store,
+        "monthly_billing": monthly_billing,
         "local_auth": local_auth,
         "google_oauth": google_oauth,
         # A request's session: this server's own first, then a Supabase session from

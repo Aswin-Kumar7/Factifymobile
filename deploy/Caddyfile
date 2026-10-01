@@ -9,6 +9,16 @@
 		max_size 60MB
 	}
 
+	# The Android app, while it is not on the Play Store: the signed APK and what is
+	# known about it (version, size, SHA-256), put there by scripts/publish_apk.py.
+	handle /downloads/* {
+		root * /srv
+		header /downloads/*.apk Content-Type application/vnd.android.package-archive
+		header /downloads/*.apk Content-Disposition "attachment; filename=factify.apk"
+		header /downloads/*.json Cache-Control "no-cache"
+		file_server
+	}
+
 	@api path /v1/* /healthz /readyz /openapi.json
 	handle @api {
 		reverse_proxy app:8080 {
