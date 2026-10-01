@@ -22,10 +22,12 @@ import '../models/account.dart';
 import '../theme/icons.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
+import '../widgets/brand.dart';
 import '../widgets/ui/fx_button.dart';
 import '../widgets/ui/fx_card.dart';
 import '../widgets/ui/fx_sheet.dart';
 import '../widgets/ui/fx_switch.dart';
+import 'payment_screen.dart';
 import 'welcome_screen.dart';
 
 /// Endonyms, deliberately outside the ARB files: each language reads the same in
@@ -132,7 +134,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   if (auth.signedIn && account != null) ...[
                     _Identity(auth: auth, account: account),
                     const SizedBox(height: 10),
-                    _Credits(account: account),
+                    _Credits(
+                      account: account,
+                      onBuy: () async {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute<bool>(builder: (_) => PaymentScreen(services: _services)),
+                        );
+                        unawaited(auth.refreshAccount());
+                      },
+                    ),
                     const SizedBox(height: 10),
                     _Stats(account: account),
                   ] else if (auth.signedIn && _accountFailed)
@@ -347,9 +357,12 @@ class _RenameSheetState extends State<_RenameSheet> {
 }
 
 class _Credits extends StatelessWidget {
-  const _Credits({required this.account});
+  const _Credits({required this.account, required this.onBuy});
 
   final Account account;
+
+  /// Opens the browser to buy credits (payment_screen.dart).
+  final VoidCallback onBuy;
 
   @override
   Widget build(BuildContext context) {
@@ -455,6 +468,34 @@ class _Credits extends StatelessWidget {
                       Text(l10n.creditsUsed(account.used)),
                       Text(l10n.creditCosts(account.checkCost)),
                     ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Material(
+                  color: Colors.white,
+                  shape: const StadiumBorder(),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: onBuy,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 46),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(FxIcons.openExternal, size: 18, color: FactifyBrand.emerald),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                l10n.buyCredits,
+                                style: FactifyText.sans(14.5, weight: FontWeight.w700, color: FactifyBrand.emerald),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ],

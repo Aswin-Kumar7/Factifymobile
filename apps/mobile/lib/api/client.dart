@@ -299,6 +299,49 @@ class FactifyClient {
     return Account.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 
+  /// A one-time link to buy credits in the browser (like Spotify's): new for every
+  /// purchase, single-use, valid 10 minutes. [orgId] buys for an organisation the
+  /// person owns; null buys their own credits.
+  Future<PaymentHandoff> startPayment({String? orgId}) async {
+    final auth = await _signedIn();
+    final response = await _send(
+      () => _http
+          .post(
+            Uri.parse('$baseUrl/v1/billing/handoff'),
+            headers: {'content-type': 'application/json', ...auth},
+            body: jsonEncode({'org_id': orgId}),
+          )
+          .timeout(const Duration(seconds: 20)),
+    );
+    return PaymentHandoff.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  /// Where a browser payment has got to: waiting, opened, paid, failed, cancelled or
+  /// expired.
+  Future<PaymentHandoff> paymentStatus(String id) async {
+    final auth = await _signedIn();
+    final response = await _send(
+      () => _http
+          .get(Uri.parse('$baseUrl/v1/billing/handoff/$id'), headers: auth)
+          .timeout(const Duration(seconds: 20)),
+    );
+    return PaymentHandoff.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  /// The person gave up waiting in the app.
+  Future<void> cancelPayment(String id) async {
+    final auth = await _signedIn();
+    await _send(
+      () => _http
+          .post(
+            Uri.parse('$baseUrl/v1/billing/handoff/$id/finish'),
+            headers: {'content-type': 'application/json', ...auth},
+            body: jsonEncode({'status': 'cancelled'}),
+          )
+          .timeout(const Duration(seconds: 20)),
+    );
+  }
+
   /// Answer the survey, or skip it with null. Asked once, after a new account.
   Future<Account> answerSurvey(SurveyAnswers? answers) async {
     final auth = await _signedIn();

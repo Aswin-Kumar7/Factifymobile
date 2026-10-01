@@ -113,3 +113,28 @@ class SurveyAnswers {
     'heard': heard,
   };
 }
+
+/// A purchase started in the app and finished in the browser.
+class PaymentHandoff {
+  const PaymentHandoff({required this.id, required this.status, this.url, this.credits});
+
+  final String id;
+
+  /// waiting, opened (the browser has it), paid, failed, cancelled or expired.
+  final String status;
+
+  /// The one-time page to open; only on the answer that created the handoff.
+  final String? url;
+
+  /// Credits added, once paid.
+  final int? credits;
+
+  bool get finished => const {'paid', 'failed', 'cancelled', 'expired'}.contains(status);
+
+  factory PaymentHandoff.fromJson(Map<String, dynamic> json) => PaymentHandoff(
+    id: json['id'] as String,
+    status: json['status'] as String? ?? 'waiting',
+    url: json['url'] as String?,
+    credits: (json['credits'] as num?)?.toInt(),
+  );
+}

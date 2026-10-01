@@ -31,6 +31,12 @@ class Disabled(BaseModel):
     disabled: bool
 
 
+class Decision(BaseModel):
+    approve: bool
+    note: str | None = Field(default=None, max_length=500)
+    grant_credits: int = Field(default=0, ge=0, le=1_000_000)
+
+
 async def _staff(request: Request) -> AuthUser:
     user = await _person(request)
     if not await _store(request).is_staff(
@@ -114,3 +120,21 @@ async def revoke_key(org_id: str, key_id: str, request: Request) -> Response:
 async def audit(request: Request) -> list[dict[str, Any]]:
     await _staff(request)
     return await _store(request).admin_audit()
+
+
+@router.get("/org-requests", summary="Requests for an organisation plan")
+async def org_requests(request: Request, status: str | None = None) -> list[dict[str, Any]]:
+    await _staff(request)
+    return await _store(request).org_requests(status or None)
+
+
+@router.post("/org-requests/{request_id}", summary="Approve or reject a request")
+async def decide(request_id: str, payload: Decision, request: Request) -> dict[str, Any]:
+    user = await _staff(request)
+    return await _store(request).decide_org_request(
+        request_id,
+        user.id,
+        approve=payload.approve,
+        note=payload.note,
+        grant_credits=payload.grant_credits if payload.approve else 0,
+    )

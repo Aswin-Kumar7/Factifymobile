@@ -17,7 +17,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app import __version__
-from app.api import accounts, admin, health, orgs, pages, verify
+from app.api import accounts, admin, billing, health, orgs, pages, verify
 from app.config import Settings, get_settings
 from app.observability import RequestContextMiddleware, configure
 from app.orchestration.background import BackgroundChecks
@@ -136,6 +136,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(accounts.router)
     app.include_router(orgs.router)
     app.include_router(admin.router)
+    app.include_router(billing.router)
     app.include_router(pages.router)
 
     # Excluded from the published schema and authenticated with a shared secret. It

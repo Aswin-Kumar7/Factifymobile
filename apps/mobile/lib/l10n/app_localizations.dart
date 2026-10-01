@@ -3559,6 +3559,114 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Start checking'**
   String get creditsStart;
+
+  /// No description provided for @buyCredits.
+  ///
+  /// In en, this message translates to:
+  /// **'Buy credits'**
+  String get buyCredits;
+
+  /// No description provided for @payTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish in your browser'**
+  String get payTitle;
+
+  /// No description provided for @payOpening.
+  ///
+  /// In en, this message translates to:
+  /// **'Opening the payment page…'**
+  String get payOpening;
+
+  /// No description provided for @payWaiting.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a pack and pay in the browser. This screen moves on by itself when the payment goes through.'**
+  String get payWaiting;
+
+  /// No description provided for @payOpened.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment page open. Waiting for your payment…'**
+  String get payOpened;
+
+  /// No description provided for @payReopen.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the payment page again'**
+  String get payReopen;
+
+  /// No description provided for @payCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get payCancel;
+
+  /// No description provided for @payPaidTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment complete'**
+  String get payPaidTitle;
+
+  /// No description provided for @payPaidBody.
+  ///
+  /// In en, this message translates to:
+  /// **'{credits} credits were added.'**
+  String payPaidBody(int credits);
+
+  /// No description provided for @payFailedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment didn\'t go through'**
+  String get payFailedTitle;
+
+  /// No description provided for @payFailedBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing was charged. Try again, or choose another way to pay.'**
+  String get payFailedBody;
+
+  /// No description provided for @payCancelledTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment cancelled'**
+  String get payCancelledTitle;
+
+  /// No description provided for @payCancelledBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing was charged.'**
+  String get payCancelledBody;
+
+  /// No description provided for @payExpiredTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'The payment link expired'**
+  String get payExpiredTitle;
+
+  /// No description provided for @payExpiredBody.
+  ///
+  /// In en, this message translates to:
+  /// **'It\'s only valid for 10 minutes. Start again to get a new one.'**
+  String get payExpiredBody;
+
+  /// No description provided for @payTryAgain.
+  ///
+  /// In en, this message translates to:
+  /// **'Start again'**
+  String get payTryAgain;
+
+  /// No description provided for @payDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get payDone;
+
+  /// No description provided for @payCouldNotStart.
+  ///
+  /// In en, this message translates to:
+  /// **'The payment couldn\'t be started. Check your connection and try again.'**
+  String get payCouldNotStart;
 }
 
 class _AppLocalizationsDelegate

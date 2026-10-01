@@ -82,6 +82,8 @@ class KeyUpdate(BaseModel):
 
 class OrderCreate(BaseModel):
     pack: str
+    # Set when the purchase started in the app (app/api/billing.py).
+    handoff_id: str | None = None
 
 
 class PaymentConfirm(BaseModel):
@@ -146,7 +148,13 @@ async def my_orgs(request: Request) -> list[dict[str, Any]]:
 
 @router.post("/orgs", status_code=status.HTTP_201_CREATED, summary="Create an organisation")
 async def create_org(payload: OrgCreate, request: Request) -> dict[str, Any]:
+    """Factify's admin creates organisations; everyone else asks for one
+    (POST /v1/org-requests) and an admin approves it."""
     user = await _person(request)
+    if not await _store(request).is_staff(
+        user.id, user.email, request.app.state.settings.auth.staff_emails
+    ):
+        raise forbidden("ask for an organisation plan; Factify reviews requests")
     return await _store(request).create_org(
         user_id=user.id, name=payload.name, billing_email=payload.billing_email or user.email
     )
@@ -426,6 +434,10 @@ async def packs(request: Request) -> dict[str, Any]:
             {"id": p.id, "name": p.name, "credits": p.credits, "price_inr": p.price_inr}
             for p in payments.PACKS
         ],
+        "personal_packs": [
+            {"id": p.id, "name": p.name, "credits": p.credits, "price_inr": p.price_inr}
+            for p in payments.PERSONAL_PACKS
+        ],
         "available": bool(key and billing.razorpay_key_secret),
         "test_mode": key.startswith("rzp_test_"),
         "costs": {
@@ -458,7 +470,7 @@ async def create_order(org_id: str, payload: OrderCreate, request: Request) -> d
     store = _store(request)
     await store.create_payment(
         org_id, user.id, order_id=order_id, pack=chosen.id, credits=chosen.credits,
-        amount_paise=amount, test_mode=razorpay.test_mode,
+        amount_paise=amount, test_mode=razorpay.test_mode, handoff_id=payload.handoff_id,
     )  # fmt: skip
     org = await store.org(org_id)
     return {
@@ -504,6 +516,9 @@ async def razorpay_webhook(request: Request) -> JSONResponse:
     paid = payments.paid_order(event)
     if paid is not None:
         await _store(request).mark_paid(paid[0], paid[1], "razorpay")
+    failed = payments.failed_order(event)
+    if failed is not None:
+        await _store(request).mark_failed(failed)
     return JSONResponse({"status": "ok"})
 
 
@@ -523,6 +538,16 @@ async def invoice(org_id: str, payment_id: str, request: Request) -> HTMLRespons
     p = await _store(request).payment(org_id, payment_id)
     if p["status"] != "paid":
         raise bad_request("only a paid order has an invoice")
+    return invoice_html(p)
+
+
+def _pack_name(pack_id: str) -> str:
+    chosen = payments.pack(pack_id) or payments.personal_pack(pack_id)
+    return chosen.name if chosen else pack_id.title()
+
+
+def invoice_html(p: dict[str, Any]) -> HTMLResponse:
+    """A paid order as a printable invoice (an organisation's or a person's)."""
     from html import escape
 
     amount = p["amount_paise"] / 100
@@ -542,7 +567,7 @@ h1{{font-family:Georgia,serif}}@media print{{button{{display:none}}}}</style></h
 <p><b>Billed to</b><br>{escape(p["org_name"])}<br>{escape(p.get("billing_email") or "")}
 {("<br>GSTIN: " + escape(p["gst_number"])) if p.get("gst_number") else ""}</p>
 <table><tr><th>Item</th><th>Credits</th><th>Amount</th></tr>
-<tr><td>{escape(p["pack"].title())} credit pack</td><td>{p["credits"]:,}</td><td>&#8377;{amount:,.2f}</td></tr>
+<tr><td>{escape(_pack_name(p["pack"]))} credit pack</td><td>{p["credits"]:,}</td><td>&#8377;{amount:,.2f}</td></tr>
 <tr><th colspan="2">Total (INR)</th><th>&#8377;{amount:,.2f}</th></tr></table>
 <p>Razorpay order {escape(p["order_id"])}<br>Payment {escape(p.get("payment_id") or "")}</p>
 <button onclick="print()">Print or save as PDF</button></body></html>"""

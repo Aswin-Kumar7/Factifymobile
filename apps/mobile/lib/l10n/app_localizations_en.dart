@@ -2368,4 +2368,64 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get creditsStart => 'Start checking';
+
+  @override
+  String get buyCredits => 'Buy credits';
+
+  @override
+  String get payTitle => 'Finish in your browser';
+
+  @override
+  String get payOpening => 'Opening the payment page…';
+
+  @override
+  String get payWaiting =>
+      'Choose a pack and pay in the browser. This screen moves on by itself when the payment goes through.';
+
+  @override
+  String get payOpened => 'Payment page open. Waiting for your payment…';
+
+  @override
+  String get payReopen => 'Open the payment page again';
+
+  @override
+  String get payCancel => 'Cancel';
+
+  @override
+  String get payPaidTitle => 'Payment complete';
+
+  @override
+  String payPaidBody(int credits) {
+    return '$credits credits were added.';
+  }
+
+  @override
+  String get payFailedTitle => 'Payment didn\'t go through';
+
+  @override
+  String get payFailedBody =>
+      'Nothing was charged. Try again, or choose another way to pay.';
+
+  @override
+  String get payCancelledTitle => 'Payment cancelled';
+
+  @override
+  String get payCancelledBody => 'Nothing was charged.';
+
+  @override
+  String get payExpiredTitle => 'The payment link expired';
+
+  @override
+  String get payExpiredBody =>
+      'It\'s only valid for 10 minutes. Start again to get a new one.';
+
+  @override
+  String get payTryAgain => 'Start again';
+
+  @override
+  String get payDone => 'Done';
+
+  @override
+  String get payCouldNotStart =>
+      'The payment couldn\'t be started. Check your connection and try again.';
 }

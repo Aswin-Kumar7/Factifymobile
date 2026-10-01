@@ -1446,5 +1446,30 @@
   "creditsWelcomeTitle": "You're in",
   "creditsLabel": "free checks",
   "creditsBody": "They're on us. Each check uses one, and your balance is always in Profile.",
-  "creditsStart": "Start checking"
+  "creditsStart": "Start checking",
+  "buyCredits": "Buy credits",
+  "payTitle": "Finish in your browser",
+  "payOpening": "Opening the payment page…",
+  "payWaiting": "Choose a pack and pay in the browser. This screen moves on by itself when the payment goes through.",
+  "payOpened": "Payment page open. Waiting for your payment…",
+  "payReopen": "Open the payment page again",
+  "payCancel": "Cancel",
+  "payPaidTitle": "Payment complete",
+  "payPaidBody": "{credits} credits were added.",
+  "@payPaidBody": {
+    "placeholders": {
+      "credits": {
+        "type": "int"
+      }
+    }
+  },
+  "payFailedTitle": "Payment didn't go through",
+  "payFailedBody": "Nothing was charged. Try again, or choose another way to pay.",
+  "payCancelledTitle": "Payment cancelled",
+  "payCancelledBody": "Nothing was charged.",
+  "payExpiredTitle": "The payment link expired",
+  "payExpiredBody": "It's only valid for 10 minutes. Start again to get a new one.",
+  "payTryAgain": "Start again",
+  "payDone": "Done",
+  "payCouldNotStart": "The payment couldn't be started. Check your connection and try again."
 }

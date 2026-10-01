@@ -997,18 +997,24 @@ class OrgStore:
     # ---- payments ----------------------------------------------------------------
 
     async def create_payment(
-        self, org_id: str, actor: str, *, order_id: str, pack: str, credits: int,
-        amount_paise: int, test_mode: bool,
+        self, org_id: str | None, actor: str, *, order_id: str, pack: str, credits: int,
+        amount_paise: int, test_mode: bool, for_user: str | None = None,
+        handoff_id: str | None = None,
     ) -> None:  # fmt: skip
+        """An order for an organisation's pool, or (`for_user`) a person's own credits."""
         async with self._db.connection() as conn:
             await conn.execute(
                 """
-                INSERT INTO payment (org_id, order_id, pack, credits, amount_paise, test_mode,
-                                     created_by)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO payment (org_id, user_id, order_id, pack, credits, amount_paise,
+                                     test_mode, created_by, handoff_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
-                (_uuid(org_id), order_id, pack, credits, amount_paise, test_mode, _uuid(actor)),
-            )
+                (
+                    _uuid(org_id) if org_id else None, _uuid(for_user) if for_user else None,
+                    order_id, pack, credits, amount_paise, test_mode, _uuid(actor),
+                    _uuid(handoff_id) if handoff_id else None,
+                ),
+            )  # fmt: skip
 
     async def mark_paid(self, order_id: str, payment_id: str, actor: str) -> Row | None:
         """Credit a paid order - once, whichever of the app or the webhook says so first."""
@@ -1026,11 +1032,275 @@ class OrgStore:
                     """,
                     (payment_id, order_id),
                 )
-                await self.add_credits(
-                    str(row["org_id"]), int(row["credits"]), reason="purchase", actor=actor,
-                    request_key=f"payment:{order_id}", note=f"{row['pack']} pack", conn=conn,
-                )  # fmt: skip
+                if row["org_id"] is not None:
+                    await self.add_credits(
+                        str(row["org_id"]), int(row["credits"]), reason="purchase",
+                        actor=actor, request_key=f"payment:{order_id}",
+                        note=f"{row['pack']} pack", conn=conn,
+                    )  # fmt: skip
+                else:
+                    # A person's own credits: their ledger, keyed so it is added once.
+                    await conn.execute(
+                        """
+                        INSERT INTO credit_ledger (user_id, delta, reason, request_key)
+                        VALUES (%s, %s, 'purchase', %s)
+                        ON CONFLICT (user_id, request_key) DO NOTHING
+                        """,
+                        (row["user_id"], int(row["credits"]), f"payment:{order_id}"),
+                    )
+                    await self.audit(
+                        conn, org_id=None, actor=actor, action="credits.personal_purchase",
+                        target=str(row["user_id"]), detail={"credits": int(row["credits"])},
+                    )  # fmt: skip
+                if row["handoff_id"] is not None:
+                    await conn.execute(
+                        "UPDATE payment_handoff SET status = 'paid', finished_at = now()"
+                        " WHERE id = %s",
+                        (row["handoff_id"],),
+                    )
         return _jsonable(row)
+
+    async def mark_failed(self, order_id: str) -> None:
+        """A payment Razorpay says failed: the order, and the app waiting on it."""
+        async with self._db.transaction() as conn:
+            row = await self._one(
+                conn,
+                """
+                UPDATE payment SET status = 'failed'
+                 WHERE order_id = %s AND status = 'created'
+                RETURNING handoff_id
+                """,
+                (order_id,),
+            )
+            if row and row["handoff_id"] is not None:
+                await conn.execute(
+                    "UPDATE payment_handoff SET status = 'failed', finished_at = now()"
+                    " WHERE id = %s AND status IN ('waiting', 'opened')",
+                    (row["handoff_id"],),
+                )
+
+    async def my_payments(self, user_id: str) -> list[Row]:
+        async with self._db.connection() as conn:
+            rows = await self._all(
+                conn,
+                "SELECT * FROM payment WHERE user_id = %s ORDER BY created_at DESC",
+                (_uuid(user_id),),
+            )
+        return _rows(rows)
+
+    async def my_payment(self, user_id: str, payment_ref: str) -> Row:
+        async with self._db.connection() as conn:
+            row = await self._one(
+                conn,
+                """
+                SELECT p.*, u.email AS billing_email, u.display_name AS org_name,
+                       NULL AS gst_number
+                  FROM payment p JOIN app_user u ON u.id = p.user_id
+                 WHERE p.user_id = %s AND p.id = %s
+                """,
+                (_uuid(user_id), _uuid(payment_ref)),
+            )
+        if row is None:
+            raise not_found("payment not found")
+        out = _jsonable(row) or {}
+        out["org_name"] = out.get("org_name") or out.get("billing_email")
+        return out
+
+    # ---- paying from the phone (handoff) -------------------------------------------
+
+    async def create_handoff(self, user_id: str, org_id: str | None) -> tuple[Row, str]:
+        token = keyfmt.new_token()
+        async with self._db.connection() as conn:
+            row = await self._one(
+                conn,
+                """
+                INSERT INTO payment_handoff (user_id, org_id, token_hash, expires_at)
+                VALUES (%s, %s, %s, now() + interval '10 minutes')
+                RETURNING id, status, expires_at
+                """,
+                (_uuid(user_id), _uuid(org_id) if org_id else None, keyfmt.hash_token(token)),
+            )
+        return _jsonable(row) or {}, token
+
+    async def use_handoff(self, token: str) -> Row:
+        """The person a handoff token signs in - once, and only while it is fresh."""
+        async with self._db.transaction() as conn:
+            row = await self._one(
+                conn,
+                """
+                UPDATE payment_handoff h SET used_at = now(), status = 'opened'
+                  FROM app_user u
+                 WHERE h.token_hash = %s AND u.id = h.user_id AND h.used_at IS NULL
+                   AND h.expires_at > now() AND NOT u.disabled
+                RETURNING h.id, h.user_id, h.org_id, u.email, u.display_name, u.avatar_url
+                """,
+                (keyfmt.hash_token(token),),
+            )
+        if row is None:
+            raise ApiError(
+                410, "handoff_expired",
+                "this payment link has expired or was already used; start again from the app",
+            )  # fmt: skip
+        return _jsonable(row) or {}
+
+    async def handoff(self, user_id: str, handoff_id: str) -> Row:
+        async with self._db.connection() as conn:
+            row = await self._one(
+                conn,
+                """
+                SELECT h.id, h.status, h.org_id, h.created_at, h.expires_at, h.used_at,
+                       h.finished_at,
+                       (SELECT credits FROM payment p WHERE p.handoff_id = h.id
+                          AND p.status = 'paid' ORDER BY paid_at DESC LIMIT 1) AS credits,
+                       (h.used_at IS NULL AND h.expires_at <= now()) AS expired
+                  FROM payment_handoff h WHERE h.id = %s AND h.user_id = %s
+                """,
+                (_uuid(handoff_id), _uuid(user_id)),
+            )
+        if row is None:
+            raise not_found("payment not found")
+        return _jsonable(row) or {}
+
+    async def finish_handoff(self, user_id: str, handoff_id: str, status: str) -> None:
+        if status not in ("cancelled", "failed"):
+            raise bad_request("unknown status")
+        async with self._db.connection() as conn:
+            await conn.execute(
+                """
+                UPDATE payment_handoff SET status = %s, finished_at = now()
+                 WHERE id = %s AND user_id = %s AND status IN ('waiting', 'opened')
+                """,
+                (status, _uuid(handoff_id), _uuid(user_id)),
+            )
+
+    # ---- organisation plans by request --------------------------------------------
+
+    async def create_org_request(self, user_id: str, fields: dict[str, Any]) -> Row:
+        async with self._db.transaction() as conn:
+            existing = await self._one(
+                conn,
+                "SELECT id FROM org_request WHERE user_id = %s AND status = 'pending'",
+                (_uuid(user_id),),
+            )
+            if existing is not None:
+                raise bad_request(
+                    "you already have a request waiting for review", "request_pending"
+                )
+            row = await self._one(
+                conn,
+                """
+                INSERT INTO org_request (user_id, org_name, billing_email, use_case,
+                                         expected_checks, website)
+                VALUES (%s, %s, %s, %s, %s, %s) RETURNING *
+                """,
+                (
+                    _uuid(user_id), fields["org_name"], fields.get("billing_email"),
+                    fields.get("use_case"), fields.get("expected_checks"), fields.get("website"),
+                ),
+            )  # fmt: skip
+            await self.audit(
+                conn, org_id=None, actor=user_id, action="org_request.created",
+                detail={"org_name": fields["org_name"]},
+            )  # fmt: skip
+        return _jsonable(row) or {}
+
+    async def my_org_requests(self, user_id: str) -> list[Row]:
+        async with self._db.connection() as conn:
+            rows = await self._all(
+                conn,
+                "SELECT * FROM org_request WHERE user_id = %s ORDER BY created_at DESC",
+                (_uuid(user_id),),
+            )
+        return _rows(rows)
+
+    async def withdraw_org_request(self, user_id: str, request_id: str) -> None:
+        async with self._db.connection() as conn:
+            await conn.execute(
+                """
+                UPDATE org_request SET status = 'withdrawn', decided_at = now()
+                 WHERE id = %s AND user_id = %s AND status = 'pending'
+                """,
+                (_uuid(request_id), _uuid(user_id)),
+            )
+
+    async def org_requests(self, status: str | None = None) -> list[Row]:
+        async with self._db.connection() as conn:
+            rows = await self._all(
+                conn,
+                """
+                SELECT r.*, u.email, u.display_name AS name, d.email AS decided_by_email,
+                       COALESCE((SELECT SUM(delta) FROM credit_ledger c
+                                  WHERE c.user_id = r.user_id), 0) AS personal_balance,
+                       (SELECT COUNT(*) FROM credit_ledger c WHERE c.user_id = r.user_id
+                          AND c.delta < 0) AS personal_checks
+                  FROM org_request r JOIN app_user u ON u.id = r.user_id
+                  LEFT JOIN app_user d ON d.id = r.decided_by
+                 WHERE %s::text IS NULL OR r.status = %s
+                 ORDER BY (r.status = 'pending') DESC, r.created_at DESC
+                 LIMIT 300
+                """,
+                (status, status),
+            )
+        return _rows(rows)
+
+    async def decide_org_request(
+        self, request_id: str, actor: str, *, approve: bool, note: str | None,
+        grant_credits: int = 0,
+    ) -> Row:  # fmt: skip
+        async with self._db.transaction() as conn:
+            req = await self._one(
+                conn, "SELECT * FROM org_request WHERE id = %s FOR UPDATE", (_uuid(request_id),)
+            )
+            if req is None:
+                raise not_found("request not found")
+            if req["status"] != "pending":
+                raise bad_request("this request was already decided", "already_decided")
+            org_id = None
+            if approve:
+                org = await self._one(
+                    conn,
+                    """
+                    INSERT INTO organisation (name, billing_email, created_by)
+                    VALUES (%s, %s, %s) RETURNING id
+                    """,
+                    (req["org_name"], req["billing_email"], req["user_id"]),
+                )
+                assert org is not None
+                org_id = org["id"]
+                await conn.execute(
+                    "INSERT INTO org_member (org_id, user_id, role) VALUES (%s, %s, 'owner')",
+                    (org_id, req["user_id"]),
+                )
+                await self.audit(
+                    conn, org_id=str(org_id), actor=actor, action="org.created",
+                    detail={"name": req["org_name"], "from_request": str(req["id"])},
+                )  # fmt: skip
+                if grant_credits > 0:
+                    await self.add_credits(
+                        str(org_id), grant_credits, reason="grant", actor=actor,
+                        request_key=f"request:{req['id']}", note="Starting credits",
+                        conn=conn,
+                    )  # fmt: skip
+            await conn.execute(
+                """
+                UPDATE org_request SET status = %s, decided_by = %s, decided_at = now(),
+                       decision_note = %s, org_id = %s
+                 WHERE id = %s
+                """,
+                (
+                    "approved" if approve else "rejected", _uuid(actor), note, org_id,
+                    req["id"],
+                ),
+            )  # fmt: skip
+            await self.audit(
+                conn, org_id=str(org_id) if org_id else None, actor=actor,
+                action="admin.org_request_approved" if approve else "admin.org_request_rejected",
+                target=str(req["user_id"]), detail={"org_name": req["org_name"], "note": note},
+            )  # fmt: skip
+        return {
+            "status": "approved" if approve else "rejected",
+            "org_id": str(org_id) if org_id else None,
+        }
 
     async def payments(self, org_id: str) -> list[Row]:
         async with self._db.connection() as conn:

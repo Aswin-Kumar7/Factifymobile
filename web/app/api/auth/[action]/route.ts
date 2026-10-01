@@ -41,6 +41,24 @@ export async function POST(request: NextRequest, context: { params: Promise<{ ac
     return adopt(body as Session);
   }
 
+  if (action === "handoff") {
+    // The app's one-time payment link: traded once for a short session.
+    let upstream: Response;
+    try {
+      upstream = await fetch(`${apiBase()}/v1/billing/handoff/exchange`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token: String(body.token ?? "") }),
+      });
+    } catch {
+      return Response.json({ detail: "The Factify service can't be reached right now." }, { status: 502 });
+    }
+    const answer = await upstream.json().catch(() => ({}));
+    if (!upstream.ok) return Response.json(answer, { status: upstream.status });
+    jar.set(SESSION_COOKIE, answer.access_token, cookieOptions(new Date(answer.expires_at)));
+    return Response.json({ email: answer.email, handoff_id: answer.handoff_id, org_id: answer.org_id });
+  }
+
   if (action !== "login" && action !== "register") {
     return Response.json({ detail: "not found" }, { status: 404 });
   }

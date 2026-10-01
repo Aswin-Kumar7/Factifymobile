@@ -2365,4 +2365,64 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get creditsStart => 'जाँच शुरू करें';
+
+  @override
+  String get buyCredits => 'क्रेडिट खरीदें';
+
+  @override
+  String get payTitle => 'ब्राउज़र में पूरा करें';
+
+  @override
+  String get payOpening => 'भुगतान पेज खुल रहा है…';
+
+  @override
+  String get payWaiting =>
+      'ब्राउज़र में पैक चुनें और भुगतान करें। भुगतान होते ही यह स्क्रीन अपने-आप आगे बढ़ जाएगी।';
+
+  @override
+  String get payOpened => 'भुगतान पेज खुला है। आपके भुगतान का इंतज़ार है…';
+
+  @override
+  String get payReopen => 'भुगतान पेज फिर से खोलें';
+
+  @override
+  String get payCancel => 'रद्द करें';
+
+  @override
+  String get payPaidTitle => 'भुगतान पूरा हुआ';
+
+  @override
+  String payPaidBody(int credits) {
+    return '$credits क्रेडिट जोड़ दिए गए।';
+  }
+
+  @override
+  String get payFailedTitle => 'भुगतान नहीं हुआ';
+
+  @override
+  String get payFailedBody =>
+      'कोई पैसा नहीं कटा। फिर से कोशिश करें या भुगतान का कोई और तरीका चुनें।';
+
+  @override
+  String get payCancelledTitle => 'भुगतान रद्द किया गया';
+
+  @override
+  String get payCancelledBody => 'कोई पैसा नहीं कटा।';
+
+  @override
+  String get payExpiredTitle => 'भुगतान लिंक की अवधि खत्म हो गई';
+
+  @override
+  String get payExpiredBody =>
+      'यह सिर्फ़ 10 मिनट के लिए होता है। नया लिंक पाने के लिए फिर से शुरू करें।';
+
+  @override
+  String get payTryAgain => 'फिर से शुरू करें';
+
+  @override
+  String get payDone => 'हो गया';
+
+  @override
+  String get payCouldNotStart =>
+      'भुगतान शुरू नहीं हो सका। अपना कनेक्शन जाँचें और फिर कोशिश करें।';
 }

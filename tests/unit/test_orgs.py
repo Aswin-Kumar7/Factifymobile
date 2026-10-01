@@ -176,3 +176,68 @@ class TestThePool:
             assert (await store.org(org["id"]))["balance"] == 1000
         finally:
             await _cleanup(database, org["id"], [owner])
+
+
+@requires_database
+@pytest.mark.asyncio
+class TestPersonalBilling:
+    async def test_a_personal_purchase_from_the_phone_is_credited_once(
+        self, database: object
+    ) -> None:
+        store = OrgStore(database)
+        tag = uuid4().hex[:8]
+        user = await _person(database, f"buyer-{tag}@example.org")
+        try:
+            handoff, token = await store.create_handoff(user, None)
+            opened = await store.use_handoff(token)
+            assert opened["user_id"] == user
+            # The link works once.
+            with pytest.raises(ApiError) as again:
+                await store.use_handoff(token)
+            assert again.value.error_code == "handoff_expired"
+
+            await store.create_payment(
+                None, user, order_id=f"order_{tag}", pack="p200", credits=200,
+                amount_paise=19900, test_mode=True, for_user=user, handoff_id=handoff["id"],
+            )  # fmt: skip
+            await store.mark_paid(f"order_{tag}", "pay_1", user)
+            await store.mark_paid(f"order_{tag}", "pay_1", "razorpay")
+            async with database.connection() as conn:  # type: ignore[attr-defined]
+                cur = await conn.execute(
+                    "SELECT COALESCE(SUM(delta), 0) AS b FROM credit_ledger WHERE user_id = %s",
+                    (user,),
+                )
+                assert (await cur.fetchone())["b"] == 200
+            state = await store.handoff(user, handoff["id"])
+            assert state["status"] == "paid" and state["credits"] == 200
+        finally:
+            async with database.connection() as conn:  # type: ignore[attr-defined]
+                await conn.execute("DELETE FROM app_user WHERE id = %s", (user,))
+
+    async def test_an_organisation_plan_is_granted_by_approving_a_request(
+        self, database: object
+    ) -> None:
+        store = OrgStore(database)
+        tag = uuid4().hex[:8]
+        user = await _person(database, f"asker-{tag}@example.org")
+        admin = await _person(database, f"admin-{tag}@example.org")
+        org_id = None
+        try:
+            req = await store.create_org_request(user, {"org_name": f"Desk {tag}"})
+            with pytest.raises(ApiError) as twice:
+                await store.create_org_request(user, {"org_name": "Another"})
+            assert twice.value.error_code == "request_pending"
+            decided = await store.decide_org_request(
+                req["id"], admin, approve=True, note="ok", grant_credits=500
+            )
+            org_id = decided["org_id"]
+            assert (await store.member(org_id, user))["role"] == "owner"
+            assert (await store.org(org_id))["balance"] == 500
+            with pytest.raises(ApiError):
+                await store.decide_org_request(req["id"], admin, approve=False, note=None)
+        finally:
+            async with database.connection() as conn:  # type: ignore[attr-defined]
+                if org_id:
+                    await conn.execute("DELETE FROM audit_log WHERE tenant_id = %s", (org_id,))
+                    await conn.execute("DELETE FROM organisation WHERE id = %s", (org_id,))
+                await conn.execute("DELETE FROM app_user WHERE id IN (%s, %s)", (user, admin))

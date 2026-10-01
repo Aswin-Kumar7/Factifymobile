@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useAccount } from "@/components/account";
+import { AdminRequests } from "@/components/admin-requests";
 import { AreaChart, daily, Split } from "@/components/charts";
 import { Icon } from "@/components/shell";
 import { Avatar, Badge, Button, Card, Field, Input, Modal, Notice, PageTitle, Progress, Spinner, Stat, Table } from "@/components/ui";
@@ -39,13 +40,14 @@ const roleWords: Record<string, string> = {
   curious: "Curious",
 };
 
-export type Section = "Overview" | "Organisations" | "People" | "API keys" | "Audit";
+export type Section = "Overview" | "Requests" | "Organisations" | "People" | "API keys" | "Audit";
 
 export function AdminSection({ section }: { section: Section }) {
   const { me } = useAccount();
   if (!me?.is_staff) return <Notice tone="info">This page is for the Factify team.</Notice>;
   const subs: Record<Section, string> = {
     Overview: "Everything on Factify at a glance.",
+    Requests: "People asking for an organisation plan. Approving creates the organisation with them as owner.",
     Organisations: "Every organisation: credits, members, keys. Add credits or suspend.",
     People: "Everyone with an account. Add credits or disable.",
     "API keys": "Find any key by its prefix or name, and revoke it.",
@@ -55,6 +57,7 @@ export function AdminSection({ section }: { section: Section }) {
     <>
       <PageTitle eyebrow="Factify admin" title={section === "Overview" ? "Platform" : section} sub={subs[section]} />
       {section === "Overview" && <Overview />}
+      {section === "Requests" && <AdminRequests />}
       {section === "Organisations" && <Orgs />}
       {section === "People" && <People />}
       {section === "API keys" && <Keys />}

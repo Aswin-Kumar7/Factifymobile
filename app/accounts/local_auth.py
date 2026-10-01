@@ -202,9 +202,16 @@ class LocalAuth:
         if token.startswith(TOKEN_PREFIX):
             await self._store.delete_session(_hash(token))
 
-    async def _open(self, user: AuthUser, method: str) -> IssuedSession:
+    async def open_handoff_session(self, user: AuthUser) -> IssuedSession:
+        """A short web session for paying, opened from the app (payment_handoff)."""
+        return await self._open(user, "handoff", hours=2)
+
+    async def _open(
+        self, user: AuthUser, method: str, *, hours: int | None = None
+    ) -> IssuedSession:
         token = TOKEN_PREFIX + secrets.token_urlsafe(32)
-        expires = self._clock() + timedelta(days=self._session_days)
+        life = timedelta(hours=hours) if hours else timedelta(days=self._session_days)
+        expires = self._clock() + life
         await self._store.create_session(
             token_hash=_hash(token), user_id=user.id, method=method, expires_at=expires
         )

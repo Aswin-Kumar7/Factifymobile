@@ -37,8 +37,20 @@ PACKS: tuple[Pack, ...] = (
 )
 
 
+# For one person's own credits: smaller packs, a little dearer per check.
+PERSONAL_PACKS: tuple[Pack, ...] = (
+    Pack("p200", "200 checks", 200, 199),
+    Pack("p500", "500 checks", 500, 449),
+    Pack("p1000", "1,000 checks", 1_000, 849),
+)
+
+
 def pack(pack_id: str) -> Pack | None:
     return next((p for p in PACKS if p.id == pack_id), None)
+
+
+def personal_pack(pack_id: str) -> Pack | None:
+    return next((p for p in PERSONAL_PACKS if p.id == pack_id), None)
 
 
 class PaymentsUnavailable(Exception):
@@ -81,6 +93,15 @@ class Razorpay:
             return False
         expected = hmac.new(self._webhook_secret.encode(), body, hashlib.sha256).hexdigest()
         return hmac.compare_digest(expected, signature or "")
+
+
+def failed_order(event: dict[str, Any]) -> str | None:
+    """The order id of a webhook event that means "this payment failed", else None."""
+    if event.get("event") != "payment.failed":
+        return None
+    payment = ((event.get("payload") or {}).get("payment") or {}).get("entity") or {}
+    order_id = payment.get("order_id")
+    return str(order_id) if order_id else None
 
 
 def paid_order(event: dict[str, Any]) -> tuple[str, str] | None:

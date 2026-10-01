@@ -120,7 +120,7 @@ function Switcher({ onPick }: { onPick: () => void }) {
             }}
             className="mt-1 flex items-center gap-2 rounded-xl border-t border-line px-2.5 py-2.5 text-sm font-semibold text-acc-ink hover:bg-sf2"
           >
-            <Icon name="plus" size={18} /> Create an organisation
+            <Icon name="building" size={18} /> Request an organisation plan
           </Link>
         </div>
       )}
@@ -161,6 +161,7 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
 function AdminNav({ onNavigate }: { onNavigate: () => void }) {
   const items: Item[] = [
     { href: "/app/admin", label: "Overview", icon: "overview", exact: true },
+    { href: "/app/admin/requests", label: "Requests", icon: "plus" },
     { href: "/app/admin/organisations", label: "Organisations", icon: "building" },
     { href: "/app/admin/people", label: "People", icon: "members" },
     { href: "/app/admin/keys", label: "API keys", icon: "keys" },
@@ -249,9 +250,17 @@ function AccountMenu({ onSignOut }: { onSignOut: () => void }) {
             <ThemeToggle />
           </div>
           {!me.is_staff && (
-            <Link href="/app/profile" onClick={() => setOpen(false)} className="block rounded-xl px-2 py-2 text-sm text-ink hover:bg-sf2">
-              Profile
-            </Link>
+            <>
+              <Link href="/pay" onClick={() => setOpen(false)} className="block rounded-xl px-2 py-2 text-sm font-semibold text-acc-ink hover:bg-sf2">
+                Buy credits
+              </Link>
+              <Link href="/app/org/new" onClick={() => setOpen(false)} className="block rounded-xl px-2 py-2 text-sm text-ink hover:bg-sf2">
+                Request an organisation plan
+              </Link>
+              <Link href="/app/profile" onClick={() => setOpen(false)} className="block rounded-xl px-2 py-2 text-sm text-ink hover:bg-sf2">
+                Profile
+              </Link>
+            </>
           )}
           <button onClick={onSignOut} className="w-full rounded-xl px-2 py-2 text-left text-sm font-semibold text-false hover:bg-false-soft">
             Sign out
@@ -269,11 +278,11 @@ function CreditsPill() {
   const low = value <= 10;
   return (
     <Link
-      href={current ? (current.role === "owner" ? `/app/org/${current.id}/billing` : `/app/org/${current.id}`) : "/app/credits"}
+      href={current ? (current.role === "owner" ? `/app/org/${current.id}/billing` : `/app/org/${current.id}`) : "/pay"}
       className={`tabular hidden items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-semibold sm:inline-flex ${
         low ? "border-false/30 bg-false-soft text-false" : "border-line bg-sf text-ink hover:bg-sf2"
       }`}
-      title={current ? `${current.name}'s credits` : "Your free credits"}
+      title={current ? `${current.name}'s credits` : "Your credits: buy more"}
     >
       <span className={`h-2 w-2 rounded-full ${low ? "bg-false" : "bg-acc"}`} />
       {n(value)} credits

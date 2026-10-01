@@ -66,7 +66,7 @@ export async function api<T = unknown>(
   return body as T;
 }
 
-export async function authAction(action: "login" | "register" | "logout" | "session", json?: unknown) {
+export async function authAction(action: "login" | "register" | "logout" | "session" | "handoff", json?: unknown) {
   const response = await fetch(`/api/auth/${action}`, {
     method: "POST",
     headers: { "content-type": "application/json" },

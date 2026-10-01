@@ -201,6 +201,9 @@ void main() {
         ProfileScreen(services: services, onOpenHistory: () => opened++),
       );
 
+      // Further down since the credits card gained its Buy credits button.
+      await tester.ensureVisible(find.text('Saved checks'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Saved checks'));
       expect(opened, 1);
 
@@ -209,6 +212,8 @@ void main() {
       await tester.tap(find.text('हिन्दी'));
       await tester.pumpAndSettle();
       expect(services.language.value?.languageCode, 'hi');
+      await tester.drag(find.byType(ListView).first, const Offset(0, 3000));
+      await tester.pumpAndSettle();
       expect(find.text('प्रोफ़ाइल'), findsOneWidget);
     });
   });
