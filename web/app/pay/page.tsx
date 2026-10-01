@@ -61,6 +61,11 @@ function PayPage() {
           try {
             sessionStorage.setItem("fct_handoff", JSON.stringify(opened));
           } catch {}
+          // The app asked to choose a plan rather than buy a pack.
+          if (params.get("then") === "plans") {
+            router.replace(opened.org_id ? `/app/org/${opened.org_id}/billing` : "/app/credits");
+            return;
+          }
         } else {
           try {
             const saved = JSON.parse(sessionStorage.getItem("fct_handoff") || "null");

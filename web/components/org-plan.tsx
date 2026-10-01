@@ -9,7 +9,7 @@ import { Badge, Button, Notice, Spinner } from "./ui";
 import { api } from "@/lib/api";
 import { inr, n } from "@/lib/format";
 import { API_CHECK_INR, perMonth, rupees, TEAM } from "@/lib/plans";
-import { payForSubscription, Subscription } from "@/lib/razorpay";
+import { appHandoff, forgetHandoff, payForSubscription, Subscription } from "@/lib/razorpay";
 
 type OrgPlanState = {
   plan: "credits" | "team" | "api";
@@ -17,6 +17,7 @@ type OrgPlanState = {
   interval: "month" | "year" | null;
   renews_at: string | null;
   cancel_at_end: boolean;
+  renewal?: "auto" | "manual" | null;
   allowance: number;
   used: number;
   resets_at: string | null;
@@ -62,15 +63,21 @@ export function OrgPlan({ id, members, onChange }: { id: string; members: number
 
   const subscribe = () =>
     act("team", async () => {
-      const sub = await api<Subscription>(`/v1/orgs/${id}/plan/subscribe`, { method: "POST", json: { interval: yearly ? "year" : "month", seats }, account: "personal" });
+      const handoff = appHandoff(id);
+      const sub = await api<Subscription>(`/v1/orgs/${id}/plan/subscribe`, {
+        method: "POST",
+        json: { interval: yearly ? "year" : "month", seats, handoff_id: handoff },
+        account: "personal",
+      });
       const paid = await payForSubscription(sub);
       if (!paid) return null;
       await api(`/v1/orgs/${id}/plan/confirm`, {
         method: "POST",
-        json: { payment_id: paid.razorpay_payment_id, subscription_id: paid.razorpay_subscription_id, signature: paid.razorpay_signature },
+        json: paid,
         account: "personal",
       });
-      return `Team is on: ${n(seats * TEAM.monthlyChecks)} checks a month for the organisation.`;
+      if (handoff) forgetHandoff();
+      return `Team is on: ${n(seats * TEAM.monthlyChecks)} checks a month for the organisation.${handoff ? " You can go back to the Factify app now." : ""}`;
     });
 
   if (!state)
@@ -81,6 +88,7 @@ export function OrgPlan({ id, members, onChange }: { id: string; members: number
     );
 
   const onTeam = state.plan === "team" && state.allowance > 0;
+  const manual = onTeam && state.renewal === "manual";
   const paidPlan = state.plan === "team" || state.plan === "api";
   const share = state.allowance ? Math.min(1, state.used / state.allowance) : 0;
 
@@ -95,15 +103,15 @@ export function OrgPlan({ id, members, onChange }: { id: string; members: number
               <div className="mt-0.5 text-[1.6rem] font-medium tracking-tight">{onTeam ? `Team · ${n(state.seats)} members` : state.plan === "api" ? "API · pay per check" : "Credit packs"}</div>
             </div>
             {onTeam && (
-              <span className={`rounded-md px-2 py-0.5 text-xs font-medium ${state.cancel_at_end ? "bg-mis-soft text-mis" : "bg-hero-acc/15 text-hero-acc"}`}>
-                {state.cancel_at_end ? "Ending" : "Active"}
+              <span className={`rounded-md px-2 py-0.5 text-xs font-medium ${state.cancel_at_end && !manual ? "bg-mis-soft text-mis" : "bg-hero-acc/15 text-hero-acc"}`}>
+                {manual ? "Paid" : state.cancel_at_end ? "Ending" : "Active"}
               </span>
             )}
           </div>
           <p className="text-[14.5px] leading-relaxed text-hero-ink2">
             {onTeam ? (
               <>
-                {n(state.allowance)} checks a month, pooled · {state.cancel_at_end ? "ends" : "renews"} on {day(state.renews_at)}
+                {n(state.allowance)} checks a month, pooled · {manual ? "paid until" : state.cancel_at_end ? "ends on" : "renews on"} {day(state.renews_at)}
               </>
             ) : state.plan === "api" ? (
               <>Every check is billed at {rupees(API_CHECK_INR)} after the month ends, up to your cap. Credits the organisation holds are used first.</>
@@ -111,7 +119,7 @@ export function OrgPlan({ id, members, onChange }: { id: string; members: number
               <>The organisation pays from credits it has bought. Move to Team for a monthly pool, or to pay-per-check for the API.</>
             )}
           </p>
-          {onTeam && !state.cancel_at_end && (
+          {onTeam && !state.cancel_at_end && !manual && (
             <button
               type="button"
               disabled={!!busy}
@@ -124,7 +132,7 @@ export function OrgPlan({ id, members, onChange }: { id: string; members: number
               Cancel Team
             </button>
           )}
-          {state.plan !== "team" && (
+          {(state.plan !== "team" || manual) && (
             <button
               type="button"
               disabled={!!busy}
@@ -166,7 +174,7 @@ export function OrgPlan({ id, members, onChange }: { id: string; members: number
         <section className="flex flex-col gap-4 rounded-[14px] border border-acc-ink/30 bg-hi p-5.5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="text-base font-medium text-ink">Team plan</h3>
+              <h3 className="text-base font-medium text-ink">{manual ? "Pay for the next period" : "Team plan"}</h3>
               <p className="mt-0.5 text-sm text-ink2">
                 {n(TEAM.monthlyChecks)} checks a member each month, in one pool. From {TEAM.minSeats} members.
               </p>
@@ -209,7 +217,7 @@ export function OrgPlan({ id, members, onChange }: { id: string; members: number
               <span className="tabular text-[17px] font-medium text-ink">{n(seats * TEAM.monthlyChecks)}</span>
             </span>
             <Button onClick={subscribe} busy={busy === "team"} disabled={!!busy}>
-              Start Team
+              {manual ? "Pay" : "Start Team"}
             </Button>
           </div>
         </section>

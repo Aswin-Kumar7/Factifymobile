@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { DownloadHere, Features, HowItWorks, Pricing, ProductShot } from "@/components/landing";
 import { SiteFooter, SiteHeader } from "@/components/site";
-import { apkFacts } from "@/lib/app-download";
+import { ApkFactsLine } from "@/lib/app-download";
 
 // The landing page: what Factify does, how, what it checks, the plans, the app, the
 // API, questions. Quiet by design; only the laptop in "How it works" moves.
@@ -131,7 +131,7 @@ export default function Home() {
               </p>
               <div className="mt-2 flex flex-col gap-4">
                 <DownloadHere />
-                <span className="text-[13.5px] text-ink3">{apkFacts()}</span>
+                <ApkFactsLine className="text-[13.5px] text-ink3" />
                 <Link href="/download" className={`${primary} self-start`}>
                   {download} Download the app
                 </Link>

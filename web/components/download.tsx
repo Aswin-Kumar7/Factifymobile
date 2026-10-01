@@ -7,13 +7,14 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { APK_SHA256, APK_URL, apkFacts } from "@/lib/app-download";
+import { APK_URL, describeApk, useApkFacts } from "@/lib/app-download";
 
 type Device = "android" | "iphone" | "computer";
 
 export function DownloadPanel() {
   const [device, setDevice] = useState<Device>("android");
   const [shown, setShown] = useState<"android" | "iphone">("android");
+  const facts = useApkFacts();
   useEffect(() => {
     const ua = navigator.userAgent;
     const d: Device = /android/i.test(ua) ? "android" : /iphone|ipad|ipod/i.test(ua) ? "iphone" : "computer";
@@ -55,7 +56,7 @@ export function DownloadPanel() {
             </span>
             <span>
               <span className="block text-xl font-medium tracking-tight text-ink">Factify for Android</span>
-              <span className="block text-[13px] text-ink3">{apkFacts()}</span>
+              <span className="block text-[13px] text-ink3">{describeApk(facts)}</span>
             </span>
           </div>
           {device === "computer" && (
@@ -87,10 +88,10 @@ export function DownloadPanel() {
           </div>
           <details className="rounded-[14px] border border-line bg-sf p-4 text-sm text-ink2">
             <summary className="cursor-pointer text-ink">Why isn&apos;t it on the Play Store?</summary>
-            <p className="mt-2.5 leading-relaxed">It will be soon. Until then we publish the app here, signed by us.</p>
-            {APK_SHA256 && (
+            <p className="mt-2.5 leading-relaxed">It will be soon. Until then we publish the app here, signed by us{facts?.sha256 ? ". You can check the file you downloaded matches:" : "."}</p>
+            {facts?.sha256 && (
               <p className="mt-2 font-mono text-[11px] break-all text-ink3">
-                SHA-256 {APK_SHA256}
+                SHA-256 {facts.sha256}
               </p>
             )}
           </details>

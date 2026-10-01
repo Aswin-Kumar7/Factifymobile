@@ -16,7 +16,7 @@ type Stats = {
   providers: { provider: string; calls: number; daily_cap: number }[];
   survey: { survey_state: string; role: string | null; n: number }[];
 };
-type AdminOrg = { id: string; name: string; status: string; created_at: string; billing_email: string | null; balance: number; members: number; active_keys: number };
+type AdminOrg = { id: string; name: string; status: string; created_at: string; billing_email: string | null; balance: number; members: number; active_keys: number; plan?: string; seats?: number };
 type AdminUser = {
   id: string;
   email: string;
@@ -27,6 +27,7 @@ type AdminUser = {
   disabled: boolean;
   survey_state: string;
   balance: number;
+  plan?: string;
   orgs: string | null;
 };
 type AdminKey = { id: string; org_id: string; org_name: string; name: string; prefix: string; created_at: string; last_used_at: string | null; revoked_at: string | null; created_by_email: string | null };
@@ -90,7 +91,7 @@ function Overview() {
         <Stat label="People" value={n(t.users)} sub={`${n(t.users_7d)} new this week`} icon={<Icon name="members" size={17} />} tone="acc" />
         <Stat label="Organisations" value={n(t.orgs)} sub={`${n(t.active_keys)} active API keys`} icon={<Icon name="building" size={17} />} />
         <Stat label="Checks, 24 h" value={n(t.checks_24h)} sub={`${n(t.checks_30d)} in 30 days`} icon={<Icon name="check" size={17} />} />
-        <Stat label="Revenue" value={inr((t.revenue_paise ?? 0) / 100)} sub={`${n(t.credits_sold)} credits sold`} icon={<Icon name="billing" size={17} />} tone="warn" />
+        <Stat label="Revenue" value={inr((t.revenue_paise ?? 0) / 100)} sub={`${n(t.paid_plans ?? 0)} paid ${(t.paid_plans ?? 0) === 1 ? "plan" : "plans"} · ${n(t.credits_sold)} credits sold`} icon={<Icon name="billing" size={17} />} tone="warn" />
       </div>
 
       <Card>
@@ -251,7 +252,7 @@ function Orgs() {
         <Spinner />
       ) : (
         <Card className="p-0 sm:p-0">
-          <Table head={["Organisation", "Credits", "Members", "Keys", "Created", ""]}>
+          <Table head={["Organisation", "Plan", "Credits", "Members", "Keys", "Created", ""]}>
             {rows.map((o) => (
               <tr key={o.id}>
                 <td>
@@ -264,6 +265,7 @@ function Orgs() {
                     {o.status !== "active" && <Badge tone="bad">{o.status}</Badge>}
                   </div>
                 </td>
+                <td className="whitespace-nowrap text-ink2">{o.plan === "team" ? `Team · ${n(o.seats)}` : o.plan === "api" ? "API" : "Packs"}</td>
                 <td className="text-ink2">{n(o.balance)}</td>
                 <td className="text-ink2">{n(o.members)}</td>
                 <td className="text-ink2">{n(o.active_keys)}</td>
@@ -317,7 +319,7 @@ function People() {
         <Spinner />
       ) : (
         <Card className="p-0 sm:p-0">
-          <Table head={["Person", "Credits", "Organisations", "Joined", "Last seen", ""]}>
+          <Table head={["Person", "Plan", "Credits", "Organisations", "Joined", "Last seen", ""]}>
             {rows.map((u) => (
               <tr key={u.id}>
                 <td>
@@ -328,6 +330,7 @@ function People() {
                     {u.disabled && <Badge tone="bad">Disabled</Badge>}
                   </div>
                 </td>
+                <td className="text-ink2 capitalize">{u.plan ?? "free"}</td>
                 <td className="text-ink2">{n(u.balance)}</td>
                 <td className="max-w-[180px] truncate text-ink2">{u.orgs || "—"}</td>
                 <td className="whitespace-nowrap text-ink2">{when(u.created_at)}</td>

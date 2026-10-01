@@ -312,7 +312,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </Link>
         {staff && <span className="ml-auto rounded-md bg-mis-soft px-2 py-0.5 text-xs font-medium text-mis">Admin</span>}
       </div>
-      {staff ? (
+      {!me ? (
+        // Until we know who this is, neither a person's nor the admin's pages.
+        <div className="h-[86px]" aria-hidden="true" />
+      ) : staff ? (
         <div className="flex items-center gap-2.5 rounded-[9px] border border-side-line px-2.5 py-2">
           <span className="text-mis">
             <Icon name="admin" />
@@ -330,16 +333,16 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </Link>
         </>
       )}
-      <div className="min-h-0 flex-1">{staff ? <AdminNav onNavigate={close} /> : <Nav onNavigate={close} />}</div>
+      <div className="min-h-0 flex-1">{!me ? null : staff ? <AdminNav onNavigate={close} /> : <Nav onNavigate={close} />}</div>
       <div className="flex flex-col gap-2">
-        {!staff && <MonthMeter onNavigate={close} />}
+        {me && !staff && <MonthMeter onNavigate={close} />}
         <Me staff={staff} onSignOut={signOut} />
       </div>
     </div>
   );
 
   const title = titles.find(([re]) => re.test(path))?.[1] ?? "";
-  const where = staff ? "Admin" : current ? current.name : "Personal";
+  const where = !me ? "" : staff ? "Admin" : current ? current.name : "Personal";
 
   return (
     <div className="min-h-dvh bg-bg lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">

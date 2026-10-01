@@ -11,7 +11,7 @@ import { Badge, Button, Card, Notice, PageTitle, Spinner, Table } from "@/compon
 import { api } from "@/lib/api";
 import { inr, n, when } from "@/lib/format";
 import { PERSONAL, perMonth, rupees } from "@/lib/plans";
-import { payForSubscription, Subscription } from "@/lib/razorpay";
+import { appHandoff, forgetHandoff, payForSubscription, Subscription } from "@/lib/razorpay";
 
 type Sub = { id: string; plan: string; interval: string; status: string; amount_paise: number; current_end: string | null; created_at: string; test_mode: boolean };
 type Bill = { id: string; month: string; checks: number; amount_paise: number; status: string; short_url: string | null };
@@ -21,6 +21,8 @@ type MyPlan = {
   interval: "month" | "year" | null;
   renews_at: string | null;
   cancel_at_end: boolean;
+  // "auto": renews by itself; "manual": paid a month or a year at a time.
+  renewal?: "auto" | "manual" | null;
   allowance: number;
   used: number;
   resets_at: string | null;
@@ -42,6 +44,9 @@ export default function PlanAndUsage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error" | "info"; text: string } | null>(null);
   const [cap, setCap] = useState("");
+  // Sent here by the phone app to choose a plan: it is waiting to hear back.
+  const [fromApp, setFromApp] = useState<string | null>(null);
+  useEffect(() => setFromApp(appHandoff()), []);
 
   const load = useCallback(async () => {
     const [p, pays] = await Promise.all([
@@ -61,7 +66,11 @@ export default function PlanAndUsage() {
     setBusy(planId);
     setMessage(null);
     try {
-      const sub = await api<Subscription>("/v1/me/plan/subscribe", { method: "POST", json: { plan: planId, interval: yearly ? "year" : "month" }, account: "personal" });
+      const sub = await api<Subscription>("/v1/me/plan/subscribe", {
+        method: "POST",
+        json: { plan: planId, interval: yearly ? "year" : "month", handoff_id: fromApp },
+        account: "personal",
+      });
       const paid = await payForSubscription(sub);
       if (!paid) {
         setMessage({ tone: "info", text: "Nothing was charged." });
@@ -69,10 +78,14 @@ export default function PlanAndUsage() {
       }
       await api("/v1/me/plan/confirm", {
         method: "POST",
-        json: { payment_id: paid.razorpay_payment_id, subscription_id: paid.razorpay_subscription_id, signature: paid.razorpay_signature },
+        json: paid,
         account: "personal",
       });
-      setMessage({ tone: "success", text: "You're on the new plan. Its checks are yours from now." });
+      setMessage({ tone: "success", text: fromApp ? "You're on the new plan. You can go back to the Factify app now." : "You're on the new plan. Its checks are yours from now." });
+      if (fromApp) {
+        forgetHandoff();
+        setFromApp(null);
+      }
       await Promise.all([load(), refresh()]);
     } catch (e) {
       setMessage({ tone: "error", text: (e as Error).message });
@@ -117,6 +130,7 @@ export default function PlanAndUsage() {
     );
 
   const paid = plan.plan !== "free";
+  const manual = paid && plan.renewal === "manual";
   const left = Math.max(plan.allowance - plan.used, 0);
   const share = plan.allowance ? Math.min(1, plan.used / plan.allowance) : 0;
   const current = PERSONAL.find((p) => p.id === plan.plan) ?? PERSONAL[0];
@@ -127,6 +141,7 @@ export default function PlanAndUsage() {
   return (
     <div className="flex flex-col gap-4">
       <PageTitle title="Plan & usage" sub="Your plan, how much you've used, and what happens when you run out." />
+      {fromApp && !message && <Notice tone="info">Choose a plan below. When it&apos;s paid, the Factify app on your phone will know.</Notice>}
       {message && <Notice tone={message.tone}>{message.text}</Notice>}
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -137,8 +152,8 @@ export default function PlanAndUsage() {
               <div className="text-[13px] text-hero-ink2">Current plan</div>
               <div className="mt-0.5 text-[1.75rem] font-medium tracking-tight">{plan.name}</div>
             </div>
-            <span className={`rounded-md px-2 py-0.5 text-xs font-medium ${plan.cancel_at_end ? "bg-mis-soft text-mis" : "bg-hero-acc/15 text-hero-acc"}`}>
-              {plan.cancel_at_end ? "Ending" : "Active"}
+            <span className={`rounded-md px-2 py-0.5 text-xs font-medium ${plan.cancel_at_end && !manual ? "bg-mis-soft text-mis" : "bg-hero-acc/15 text-hero-acc"}`}>
+              {manual ? "Paid" : plan.cancel_at_end ? "Ending" : "Active"}
             </span>
           </div>
           <p className="text-[14.5px] leading-relaxed text-hero-ink2">
@@ -146,7 +161,8 @@ export default function PlanAndUsage() {
               <>
                 {rupees(plan.interval === "year" ? current.yearInr : current.monthInr)} a {plan.interval === "year" ? "year" : "month"} · {n(plan.allowance)} checks a month
                 <br />
-                {plan.cancel_at_end ? "Ends" : "Renews"} on {shortDate(plan.renews_at)}
+                {manual ? "Paid until" : plan.cancel_at_end ? "Ends" : "Renews"} {manual ? "" : "on "}
+                {shortDate(plan.renews_at)}
               </>
             ) : (
               <>
@@ -156,7 +172,7 @@ export default function PlanAndUsage() {
               </>
             )}
           </p>
-          {paid && !plan.cancel_at_end && (
+          {paid && !plan.cancel_at_end && !manual && (
             <div>
               <button type="button" onClick={cancel} disabled={busy === "cancel"} className="text-sm text-hero-ink2 underline-offset-4 hover:text-hero-ink hover:underline disabled:opacity-60">
                 {busy === "cancel" ? "Cancelling…" : "Cancel plan"}
@@ -278,7 +294,8 @@ export default function PlanAndUsage() {
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           {PERSONAL.filter((p) => p.id !== "free").map((p) => {
-            const mine = p.id === plan.plan && (plan.interval === "year") === yearly && !plan.cancel_at_end;
+            const same = p.id === plan.plan && (plan.interval === "year") === yearly;
+            const mine = same && !manual && !plan.cancel_at_end;
             return (
               <div key={p.id} className={`flex flex-col gap-3 rounded-[12px] border p-4.5 ${p.popular ? "border-acc-ink/35 bg-hi" : "border-line"}`}>
                 <div className="flex items-center justify-between">
@@ -291,7 +308,13 @@ export default function PlanAndUsage() {
                 </div>
                 <div className="text-sm text-ink2">{n(p.monthlyChecks)} checks a month</div>
                 <Button variant={p.popular ? "primary" : "outline"} disabled={mine || !!busy} busy={busy === p.id} onClick={() => subscribe(p.id)}>
-                  {mine ? "Your plan" : p.id === plan.plan ? `Switch to ${yearly ? "yearly" : "monthly"}` : `Get ${p.name}`}
+                  {mine
+                    ? "Your plan"
+                    : same && manual
+                      ? `Pay for another ${yearly ? "year" : "month"}`
+                      : p.id === plan.plan
+                        ? `Switch to ${yearly ? "yearly" : "monthly"}`
+                        : `Get ${p.name}`}
                 </Button>
               </div>
             );
