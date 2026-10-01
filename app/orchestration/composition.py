@@ -81,7 +81,10 @@ logger = logging.getLogger("factify.composition")
 # model call legitimately takes tens of seconds; a news page that has not answered in
 # twenty is not going to. One shared timeout meant every dead source burned the
 # model's budget — measured in the audit, where fetch timeouts outlasted verification.
-SOURCE_TIMEOUT_SECONDS = 20.0
+# Twelve, not twenty: a page that has not answered by then goes to the search
+# provider's copy instead, and a check of a picture waited 20 s on one dead page and
+# then on that copy (2026-10-02).
+SOURCE_TIMEOUT_SECONDS = 12.0
 
 # A link the person submitted gets less patience than a source, because it has a
 # second reader behind it and the person is waiting. The Hindu took 15 seconds to

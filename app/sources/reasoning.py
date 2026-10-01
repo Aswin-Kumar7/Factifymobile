@@ -58,7 +58,7 @@ from app.sources.local_reading import local_reading, local_same_claim
 logger = logging.getLogger("factify.sources.reasoning")
 
 PROVIDER = "llm"
-REASONER_VERSION = "2026.10.01.2"
+REASONER_VERSION = "2026.10.02.1"
 
 # How many passages go to the model in one call. One call per source, not one per
 # passage: the model needs to see the alternatives to judge which actually bears on
@@ -979,7 +979,11 @@ For each judgement:
     once; if they could, it is not INCOMPATIBLE. "At least 170", "more than 170",
     "over 170" or "about 170" can be true at the same time as "170 people died": a
     rounded or approximate figure, or a toll reported later after it rose, is the
-    same count and supports the claim.
+    same count and supports the claim. Compare like with like: a smaller figure for
+    a narrower count - deaths an inquiry linked to one cause, confirmed cases, one
+    district - is not a different total for the whole. "Sewage caused 24 of the 36
+    deaths" does not contradict "the tragedy claimed more than 30 lives": the
+    passage's own total is 36, which agrees. Use DIFFERENT_DETAILS for that.
   * DIFFERENT_DETAILS - the passage is about the same event but names other or
     additional details, or leaves some of the claim's details out, without saying
     that any detail in the claim is wrong. A report that the dinner menu included

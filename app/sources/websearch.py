@@ -70,7 +70,7 @@ _MAX_QUERIES = 4
 _READ_TTL_SECONDS = 90.0
 
 NAME = "web_search"
-VERSION = "2026.09.29.1"
+VERSION = "2026.10.02.1"
 PROVIDER = "web_search"
 
 # How many credible sources to read. Each is a metered model call, and corroboration
@@ -176,6 +176,11 @@ _FACT_CHECK_BONUS = 0.1
 _SCORING = asyncio.Semaphore(2)
 
 
+# The search provider's copy of a page we could not read is a second chance, not a
+# second full wait: one such copy took 36 s and held a whole check (2026-10-02).
+_EXTRACT_TIMEOUT_SECONDS = 12.0
+
+
 class _SearchFailed(Exception):
     """One search call that did not return results: the provider refused or failed."""
 
@@ -183,6 +188,9 @@ class _SearchFailed(Exception):
 # A page that presents itself as a fact-check, in its headline or its address.
 _FACT_CHECK_WORDS = re.compile(
     r"fact[\s_-]?check|webqoof|\bfake\b|\bhoax|\bviral\b|\bmisleading\b|"
+    r"\bfalse(ly)?\b|\bdebunk|\bdoctored\b|\bmorphed\b|\bedited\b|\bclipped\b|"
+    r"\bmisattributed\b|\bsatir|\bdeepfake|\bai[\s-]generated\b|\bdigitally altered\b|"
+    r"\bold (video|photo|image|clip)\b|\bunrelated\b|^\s*no,\s|"
     r"फ़र्ज़ी|फर्जी|फेक|भ्रामक|वायरल|पड़ताल",
     re.IGNORECASE,
 )
@@ -269,17 +277,27 @@ class WebSearchResolver:
     def classify(self, snapshot: SourceSnapshot) -> tuple[Tier, EvidenceKind, Method]:
         """What class of finding a page from this publisher is.
 
-        A page on a verified fact-checker is a published adjudication — the same thing
-        the fact-check API returns, reached by another route — so it is Tier C, and
-        one of them settles a claim. Everything else is a credible publisher's
-        reporting that bears on the claim: Tier D corroboration.
+        A fact-check on a verified fact-checker's site is a published adjudication —
+        the same thing the fact-check API returns, reached by another route — so it is
+        Tier C, and one of them settles a claim. Everything else is a credible
+        publisher's reporting that bears on the claim: Tier D corroboration.
+
+        Including fact-checkers' own news. The Logical Indian is IFCN-verified and
+        also reports the news; its "Indore deaths to sewage-contaminated water" was
+        cited as a published fact-check and, misread, turned a Hindu report on the
+        Indore inquiry FALSE (2026-10-02). A page is a fact-check when its headline or
+        address says so.
 
         Both are `PASSAGE_ENTAILMENT` rather than `SEARCH_SNIPPET`: the page was
         fetched, read and quoted verbatim. A snippet nobody opened is what that other
         method names, and it is excluded from deciding anything for good reason.
         """
         source = snapshot.final_url or snapshot.url
-        if self._credibility.is_fact_checker(source) and source not in self._reports:
+        if (
+            self._credibility.is_fact_checker(source)
+            and source not in self._reports
+            and _reads_as_a_fact_check(snapshot.title, source)
+        ):
             return Tier.C, EvidenceKind.FACT_CHECK, Method.CLAIM_REVIEW
         return Tier.D, EvidenceKind.CORROBORATION, Method.PASSAGE_ENTAILMENT
 
@@ -648,7 +666,10 @@ class WebSearchResolver:
                 self._read_event("web.fetched", url, len(body))
                 return body, "web.fetched", fetched.final_url or url
 
-        body = await self._vendor_extract(url)
+        try:
+            body = await asyncio.wait_for(self._vendor_extract(url), _EXTRACT_TIMEOUT_SECONDS)
+        except TimeoutError:
+            body = ""
         if body:
             route = f"web.{self._provider}_extract"
             self._read_event(route, url, len(body))

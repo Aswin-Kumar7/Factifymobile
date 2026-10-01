@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import replace
 from pathlib import Path
 
 from app.sources.credibility import SourceCredibility
@@ -299,6 +300,16 @@ class TestFactCheckerClassification:
         )
         # Credible reporting that bears on the claim.
         assert resolver.classify(_snapshot("https://www.bbc.com/news/x")) == (
+            Tier.D,
+            EvidenceKind.CORROBORATION,
+            Method.PASSAGE_ENTAILMENT,
+        )
+        # A fact-checker's own news report is reporting, not an adjudication.
+        news = replace(
+            _snapshot("https://www.altnews.in/indore-water-deaths/"),
+            title="Indore deaths to sewage-contaminated water",
+        )
+        assert resolver.classify(news) == (
             Tier.D,
             EvidenceKind.CORROBORATION,
             Method.PASSAGE_ENTAILMENT,

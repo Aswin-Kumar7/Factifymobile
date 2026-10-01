@@ -42,7 +42,7 @@ PROVIDER = "llm"
 
 # Bumped whenever the prompt or the schema changes, because either changes what the
 # same document extracts to — and the extraction cache is keyed on it.
-EXTRACTOR_VERSION = "2026.09.30.1"
+EXTRACTOR_VERSION = "2026.10.02.1"
 
 MAX_CLAIMS_PER_DOCUMENT = 7
 
@@ -193,6 +193,12 @@ _SYSTEM_INSTRUCTION = (
     "ministry, not an EVENT about a bridge; 'A farmers' union threatens a "
     "nationwide strike if the bill is passed' is an ATTRIBUTION about the union, not "
     "an EVENT about a strike. "
+    "Name the speaker plainly, without carrying another claim's facts into a "
+    "descriptive clause: 'The judicial commission on the Indore water contamination "
+    "said the tragedy was preventable', not 'The judicial commission formed to probe "
+    "the deaths of more than 30 people in Indore said the tragedy was preventable'. "
+    "The death toll is a claim of its own; folded into this one, a source confirming "
+    "what the commission found no longer confirms the claim. "
     "One case runs the other way. When a message asserts something itself and names "
     "an authority only to lend it weight - 'Doctors at Tata Memorial Hospital confirm "
     "that drinking hot water with lemon kills cancer cells', 'NASA has said the Earth "
