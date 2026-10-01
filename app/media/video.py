@@ -138,6 +138,10 @@ async def _run(
     return completed.returncode, completed.stdout, completed.stderr
 
 
+# Lets the JPEG writer take limited-range video (see `_scene_frames`).
+_JPEG_COMPAT = ("-strict", "-1")
+
+
 def ffmpeg_available() -> bool:
     """Whether the toolchain is present. Absence degrades; it does not crash."""
     return shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not None
@@ -285,6 +289,11 @@ class KeyframeExtractor:
                 str(self._max_keyframes),
                 "-q:v",
                 "3",
+                # ffmpeg 8 refuses to write a JPEG from limited-range video without it
+                # ("Non full-range YUV is non-standard"), and every keyframe was lost:
+                # the face check then read three spread frames instead of up to twelve
+                # (2026-10-01). Older ffmpeg accepts it and changes nothing.
+                *_JPEG_COMPAT,
                 str(output),
             ],
             timeout=90.0,
@@ -320,6 +329,7 @@ class KeyframeExtractor:
                 str(EVEN_FRAMES),
                 "-q:v",
                 "3",
+                *_JPEG_COMPAT,
                 str(folder / "even-%03d.jpg"),
             ],
             timeout=90.0,
@@ -360,6 +370,7 @@ class KeyframeExtractor:
                     f"scale=-2:{self._max_height}",
                     "-q:v",
                     "3",
+                    *_JPEG_COMPAT,
                     str(target),
                 ],
                 timeout=30.0,

@@ -3,7 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useAccount } from "@/components/account";
-import { Result, Verdict } from "@/components/result";
+import { headlineOf, labelOf, Result, Verdict } from "@/components/result";
 import { Button, Notice, PageTitle, Spinner } from "@/components/ui";
 import { api, ApiFailure, getAccount } from "@/lib/api";
 import { addHistory } from "@/lib/history";
@@ -12,6 +12,15 @@ import { n } from "@/lib/format";
 type Accepted = { case_id: string; status?: string; claims_done?: number; claims_total?: number; elapsed_seconds?: number };
 
 const URL_ONLY = /^https?:\/\/\S+$/i;
+
+// The server's upload limit (FACTIFY_LIMITS max_upload_bytes), said before uploading.
+const MAX_UPLOAD = 25 * 1024 * 1024;
+
+type Shown = { kind: "text" | "link" | "image" | "pdf"; submitted: string | null; preview: string | null };
+
+function fileKind(file: File): "image" | "pdf" {
+  return file.type === "application/pdf" || /\.pdf$/i.test(file.name) ? "pdf" : "image";
+}
 
 function CheckPage() {
   const { me, current, refresh } = useAccount();
@@ -23,6 +32,8 @@ function CheckPage() {
   const [progress, setProgress] = useState<Accepted | null>(null);
   const [result, setResult] = useState<Verdict | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // What was checked, so the answer can quote it as the app does.
+  const [shown, setShown] = useState<Shown | null>(null);
   const stop = useRef(false);
 
   const follow = useCallback(async (caseId: string) => {
@@ -39,6 +50,8 @@ function CheckPage() {
   useEffect(() => {
     const caseId = params.get("case");
     if (!caseId) return;
+    const k = params.get("kind");
+    setShown(k === "text" || k === "link" || k === "image" || k === "pdf" ? { kind: k, submitted: null, preview: null } : null);
     setBusy(true);
     follow(caseId)
       .then(setResult)
@@ -57,10 +70,19 @@ function CheckPage() {
     setBusy(true);
     const input = text.trim();
     const kind = tab === "file" ? "file" : URL_ONLY.test(input) ? "link" : "text";
+    if (shown?.preview) URL.revokeObjectURL(shown.preview);
+    setShown(
+      tab === "file"
+        ? file
+          ? { kind: fileKind(file), submitted: null, preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : null }
+          : null
+        : { kind: kind === "link" ? "link" : "text", submitted: input, preview: null },
+    );
     try {
       let accepted: Accepted;
       if (tab === "file") {
         if (!file) throw new Error("Choose a picture, PDF or video first.");
+        if (file.size > MAX_UPLOAD) throw new Error("That file is over 25 MB. Choose a smaller one.");
         const form = new FormData();
         form.append("file", file);
         form.append("consent_to_process_media", "true");
@@ -78,9 +100,10 @@ function CheckPage() {
       setResult(answer);
       addHistory({
         case_id: answer.case_id,
-        title: answer.claims[0]?.text || (kind === "file" ? file?.name || "File" : input.slice(0, 140)),
-        verdict: answer.verdict,
-        kind,
+        // The claim it is about - never a picture's own "published before?" question.
+        title: headlineOf(answer) || (kind === "file" ? file?.name || "File" : input.slice(0, 140)),
+        verdict: labelOf(answer),
+        kind: kind === "file" && file ? fileKind(file) : kind,
         at: new Date().toISOString(),
         account: getAccount(),
       });
@@ -161,13 +184,13 @@ function CheckPage() {
           <label className="flex min-h-40 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-line px-4 py-8 text-center hover:bg-sf2">
             <input
               type="file"
-              accept="image/*,application/pdf,video/*,audio/*"
+              accept="image/*,application/pdf,video/*"
               className="sr-only"
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
             <span className="font-semibold text-ink">{file ? file.name : "Choose a file"}</span>
             <span className="text-sm text-ink3">
-              {file ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : "Pictures, PDFs and videos up to 60 MB"}
+              {file ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : "Pictures, PDFs and videos up to 25 MB"}
             </span>
           </label>
         )}
@@ -192,7 +215,7 @@ function CheckPage() {
             </span>
           </div>
         )}
-        {result && <Result result={result} />}
+        {result && <Result result={result} kind={shown?.kind} submitted={shown?.submitted} preview={shown?.preview} />}
       </div>
     </>
   );

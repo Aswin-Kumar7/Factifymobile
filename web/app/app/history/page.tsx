@@ -22,7 +22,7 @@ function Row({ href, title, verdict, meta }: { href: string; title: string; verd
           <div className="truncate font-medium text-ink">{title}</div>
           <div className="truncate text-xs text-ink3">{meta}</div>
         </div>
-        {verdict && <VerdictPill verdict={verdict as Verdict["verdict"]} />}
+        {verdict && <VerdictPill verdict={verdict as Verdict["verdict"] | "NOTHING"} />}
       </Link>
     </li>
   );
@@ -92,7 +92,7 @@ export default function History() {
           {mine.map((h) => (
             <Row
               key={h.case_id}
-              href={`/app/check?case=${h.case_id}`}
+              href={`/app/check?case=${h.case_id}${h.kind && h.kind !== "file" ? `&kind=${h.kind}` : ""}`}
               title={h.title}
               verdict={h.verdict}
               meta={`${when(h.at, true)} · ${name(h.account)}`}

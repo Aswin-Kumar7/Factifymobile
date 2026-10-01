@@ -7,7 +7,7 @@ export type HistoryItem = {
   case_id: string;
   title: string;
   verdict: string;
-  kind: "text" | "link" | "file";
+  kind: "text" | "link" | "file" | "image" | "pdf";
   at: string;
   account: string;
 };
