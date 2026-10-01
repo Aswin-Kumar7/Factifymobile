@@ -1,13 +1,15 @@
 """Accounts: who is checking, and the credit book that decides what they may spend.
 
-Everything is decided on the server. Until plans exist, usage is recorded and nothing
-is refused; the tests hold both halves — recorded now, refusable later by a setting.
+Everything is decided on the server. A check is paid from the person's monthly plan,
+then their credits, then extra usage (0008). With enforcement off usage is recorded
+and nothing is refused; the tests hold both halves - recorded, and refusable by a
+setting.
 """
 
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -15,10 +17,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.accounts import AuthUser, CreditBook, IdentityUnavailable, SupabaseIdentity
+from app.orgs import plans
 from app.security.fetcher import FetchFailure, FetchResult
 from tests.unit.test_orchestration import _result
 
 PERSON = AuthUser(id=str(uuid4()), email="asha@example.org", name="Asha")
+FREE_CHECKS = plans.FREE.monthly_checks
 
 
 def _answer(status: int, payload: object) -> FetchResult:
@@ -52,6 +56,8 @@ class _Store:
     def __init__(self) -> None:
         self.users: dict[str, dict[str, object]] = {}
         self.ledger: list[tuple[str, int, str, str]] = []
+        # What paid for each check, by its request key (0008).
+        self.sources: dict[str, str] = {}
 
     async def upsert(self, user: AuthUser) -> bool:
         created = user.id not in self.users
@@ -70,7 +76,37 @@ class _Store:
 
     async def totals(self, user_id: str) -> tuple[int, int, int]:
         mine = [e[1] for e in self.ledger if e[0] == user_id]
-        return sum(mine), -sum(d for d in mine if d < 0), sum(1 for d in mine if d < 0)
+        return self._balance(user_id), -sum(d for d in mine if d < 0), sum(1 for d in mine if d < 0)
+
+    def _balance(self, user_id: str) -> int:
+        return sum(
+            e[1] for e in self.ledger
+            if e[0] == user_id and self.sources.get(e[3], "credits") == "credits"
+        )  # fmt: skip
+
+    def _spent(self, user_id: str, source: str) -> int:
+        return -sum(
+            e[1] for e in self.ledger if e[0] == user_id and self.sources.get(e[3]) == source
+        )
+
+    async def month(self, user_id: str) -> dict[str, object] | None:
+        user = self.users.get(user_id, {})
+        return {
+            "plan": user.get("plan", "free"),
+            "plan_renews_at": user.get("plan_renews_at"),
+            "extra_usage": user.get("extra_usage", False),
+            "extra_cap_paise": user.get("extra_cap_paise"),
+            "used": self._spent(user_id, "plan"),
+            "extra_checks": self._spent(user_id, "extra"),
+            "balance": self._balance(user_id),
+        }
+
+    async def charge_check(self, user_id: str, cost: int, reason: str, request_key: str) -> str:
+        month = plans.personal_month(await self.month(user_id) or {}, datetime.now(UTC))
+        source = plans.source_for(month, cost) or "credits"
+        self.sources[request_key] = source
+        await self.record(user_id, -cost, reason, request_key)
+        return source
 
     async def profile(self, user_id: str) -> dict[str, object] | None:
         return self.users.get(user_id)
@@ -142,8 +178,10 @@ class TestTheCreditBook:
         first = await book.account(PERSON)
         again = await book.account(PERSON)
 
-        assert first.balance == again.balance == 100
+        # The Free plan's checks this month, and the grant on top.
+        assert first.balance == again.balance == FREE_CHECKS + 100
         assert first.used == 0
+        assert first.position is not None and first.position.plan == "free"
 
     @pytest.mark.anyio
     async def test_someone_their_login_made_is_granted_on_arrival_once(self) -> None:
@@ -154,29 +192,75 @@ class TestTheCreditBook:
         first = await book.account(PERSON, arriving=True)
         again = await book.account(PERSON, arriving=True)
 
-        assert first.balance == again.balance == 100
+        assert first.balance == again.balance == FREE_CHECKS + 100
 
     @pytest.mark.anyio
     async def test_a_check_is_recorded_and_nothing_is_refused_while_unlimited(self) -> None:
         book = CreditBook(_Store(), signup_credits=1)
 
-        for _ in range(3):
+        # The plan's checks, the one credit, and two more past everything.
+        for _ in range(FREE_CHECKS + 3):
             assert (await book.authorize(PERSON, 1)).allowed
             await book.charge(PERSON, 1, "check")
 
         account = await book.account(PERSON)
         assert account.balance == -2  # recorded honestly, not capped
-        assert account.used == 3 and account.checks == 3
+        assert account.used == FREE_CHECKS + 3 and account.checks == FREE_CHECKS + 3
 
     @pytest.mark.anyio
     async def test_when_enforced_an_empty_balance_is_refused(self) -> None:
         book = CreditBook(_Store(), signup_credits=1, enforce=True)
 
-        assert (await book.authorize(PERSON, 1)).allowed
-        await book.charge(PERSON, 1, "check")
+        for _ in range(FREE_CHECKS + 1):
+            assert (await book.authorize(PERSON, 1)).allowed
+            await book.charge(PERSON, 1, "check")
 
         decision = await book.authorize(PERSON, 1)
         assert not decision.allowed and decision.balance == 0
+
+    @pytest.mark.anyio
+    async def test_the_plan_pays_first_then_credits(self) -> None:
+        store = _Store()
+        book = CreditBook(store, signup_credits=5)
+
+        for _ in range(FREE_CHECKS + 2):
+            await book.charge(PERSON, 1, "check")
+
+        paid_by = list(store.sources.values())
+        assert paid_by.count("plan") == FREE_CHECKS and paid_by[-2:] == ["credits", "credits"]
+        account = await book.account(PERSON)
+        assert account.position is not None and account.position.used == FREE_CHECKS
+        assert account.balance == 3  # the plan is spent; three credits are left
+
+    @pytest.mark.anyio
+    async def test_a_paid_plan_gives_more_checks_and_extra_usage_within_its_cap(self) -> None:
+        store = _Store()
+        book = CreditBook(store, signup_credits=0, enforce=True)
+        await book.account(PERSON)
+        store.users[PERSON.id].update(
+            plan="plus", plan_renews_at=datetime.now(UTC) + timedelta(days=20),
+            extra_usage=True, extra_cap_paise=2 * plans.EXTRA_CHECK_PAISE,
+        )  # fmt: skip
+
+        for _ in range(plans.PLUS.monthly_checks + 2):
+            assert (await book.authorize(PERSON, 1)).allowed
+            await book.charge(PERSON, 1, "check")
+
+        assert list(store.sources.values()).count("extra") == 2
+        assert not (await book.authorize(PERSON, 1)).allowed  # the cap is reached
+        position = await book.position(PERSON.id)
+        assert position.plan == "plus" and position.extra_used_paise == 600
+
+    @pytest.mark.anyio
+    async def test_a_paid_plan_that_was_not_renewed_is_free_again(self) -> None:
+        store = _Store()
+        book = CreditBook(store, signup_credits=0)
+        await book.account(PERSON)
+        store.users[PERSON.id].update(
+            plan="pro", plan_renews_at=datetime.now(UTC) - timedelta(days=10)
+        )
+
+        assert (await book.position(PERSON.id)).plan == "free"
 
     @pytest.mark.anyio
     async def test_the_ledger_records_that_a_check_happened_not_what_it_was(self) -> None:
@@ -188,6 +272,7 @@ class TestTheCreditBook:
         ((_, delta, reason, key),) = store.ledger
         assert (delta, reason) == (-1, "check")
         assert key.startswith("check:")  # a random key, linked to no case
+        assert store.sources[key] == "plan"
 
 
 class TestTheAccountEndpoints:
@@ -230,7 +315,9 @@ class TestTheAccountEndpoints:
         body = TestClient(app).get("/v1/me", headers={"Authorization": "Bearer good"}).json()
 
         assert body["email"] == PERSON.email and body["name"] == "Asha"
-        assert body["credits"]["balance"] == 100
+        assert body["credits"]["balance"] == FREE_CHECKS + 100
+        assert body["plan_usage"]["plan"] == "free"
+        assert body["plan_usage"]["allowance"] == FREE_CHECKS
         assert body["credits"]["check_cost"] == 1
         assert body["credits"]["limited"] is False
 
@@ -247,7 +334,12 @@ class TestTheAccountEndpoints:
         assert [(e[1], e[2]) for e in store.ledger] == [(100, "signup_grant"), (-1, "check")]
 
     def test_an_empty_balance_is_refused_only_when_credits_are_enforced(self) -> None:
-        app, _, ran = self._app(enforce=True, balance=0)
+        app, store, ran = self._app(enforce=True, balance=0)
+        # This month's Free checks are all used.
+        store.users[PERSON.id] = {"email": PERSON.email, "plan": "free"}
+        for n in range(FREE_CHECKS):
+            store.sources[f"check:{n}"] = "plan"
+            store.ledger.append((PERSON.id, -1, "check", f"check:{n}"))
 
         response = TestClient(app).post(
             "/v1/verify", json={"text": "A forward."}, headers={"Authorization": "Bearer good"}

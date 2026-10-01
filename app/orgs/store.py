@@ -8,17 +8,24 @@ shows what these answer. The pool's credits are held before a check and settled
 after it (`hold` / `settle`), inside a transaction that locks the organisation's
 row, so parallel requests can never spend more than the pool, a member's limit,
 a key's limit or the organisation's monthly cap allows.
+
+Plans (0008): an organisation on Team gets 300 checks a member each month; a check
+is paid from those first, then from the pool's credits, then from extra usage (on
+Team, if the owner turned it on; on API, always, up to the cap). Every check is a
+ledger row as before; its `source` says what paid, and the credit balance counts
+only rows paid from credits.
 """
 
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
 from app.orgs import keys as keyfmt
+from app.orgs import plans
 from app.orgs.errors import ApiError, bad_request, forbidden, invalid_key, not_allowed, not_found
 
 ROLES = ("owner", "developer", "member")
@@ -49,6 +56,7 @@ class Hold:
     payer: Payer
     amount: int
     remaining: int
+    source: str = "credits"
 
 
 def _now() -> datetime:
@@ -82,6 +90,37 @@ def _rows(rows: list[Row]) -> list[Row]:
 
 _MONTH = "date_trunc('month', now())"
 _OPEN_HOLD = "settled_at IS NULL AND released_at IS NULL AND expires_at > now()"
+# A plan's month: the calendar month in India time (0008).
+_PLAN_MONTH = "(date_trunc('month', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata')"
+_PLAN_MONTH_END = (
+    "((date_trunc('month', now() AT TIME ZONE 'Asia/Kolkata') + interval '1 month')"
+    " AT TIME ZONE 'Asia/Kolkata')"
+)
+# Ledger rows that move the credit balance: everything but checks a plan or extra
+# usage paid for (NULL is a row from before plans).
+_CREDITS = "COALESCE(l.source, 'credits') = 'credits'"
+
+
+def org_month(row: Row, now: datetime) -> plans.Month:
+    """An organisation's `plans.Month` from the row `OrgStore.hold` reads."""
+    plan = str(row.get("plan") or "credits")
+    renews = row.get("plan_renews_at")
+    lapsed = renews is not None and renews + timedelta(days=plans.RENEWAL_GRACE_DAYS) < now
+    team = plan == "team" and not lapsed
+    api = plan == "api"
+    cap = row.get("extra_cap_paise")
+    price = plans.API_CHECK_PAISE if api else plans.EXTRA_CHECK_PAISE
+    return plans.Month(
+        allowance=plans.TEAM.monthly_checks * int(row.get("seats") or 0) if team else 0,
+        used=int(row.get("plan_used") or 0),
+        balance=int(row.get("credits") or 0),
+        paid=team or api,
+        extra_enabled=api or bool(row.get("extra_usage")),
+        extra_cap_paise=int(cap) if cap is not None else None,
+        extra_used_paise=int(row.get("extra_checks") or 0) * price,
+        extra_price_paise=price,
+        extra_blocked=bool(row.get("extra_blocked")),
+    )
 
 
 class OrgStore:
@@ -161,8 +200,9 @@ class OrgStore:
                 conn,
                 f"""
                 SELECT o.id, o.name, o.status, m.role, m.monthly_limit, m.status AS member_status,
-                       COALESCE((SELECT SUM(delta) FROM org_ledger l WHERE l.org_id = o.id), 0)
-                           AS balance,
+                       COALESCE((SELECT SUM(delta) FROM org_ledger l WHERE l.org_id = o.id
+                                    AND {_CREDITS}), 0) AS balance,
+                       o.plan, o.seats,
                        COALESCE((SELECT -SUM(delta) FROM org_ledger l
                                   WHERE l.org_id = o.id AND l.user_id = m.user_id
                                     AND l.reason = 'check' AND l.created_at >= {_MONTH}), 0)
@@ -181,10 +221,17 @@ class OrgStore:
                 conn,
                 f"""
                 SELECT o.*,
-                  COALESCE((SELECT SUM(delta) FROM org_ledger l WHERE l.org_id = o.id), 0)
-                      AS balance,
+                  COALESCE((SELECT SUM(delta) FROM org_ledger l WHERE l.org_id = o.id
+                               AND {_CREDITS}), 0) AS balance,
                   COALESCE((SELECT SUM(amount) FROM credit_hold h
                              WHERE h.org_id = o.id AND {_OPEN_HOLD}), 0) AS held,
+                  COALESCE((SELECT -SUM(delta) FROM org_ledger l WHERE l.org_id = o.id
+                               AND l.source = 'plan' AND created_at >= {_PLAN_MONTH}), 0)
+                      AS plan_used,
+                  COALESCE((SELECT -SUM(delta) FROM org_ledger l WHERE l.org_id = o.id
+                               AND l.source = 'extra' AND created_at >= {_PLAN_MONTH}), 0)
+                      AS extra_checks,
+                  {_PLAN_MONTH_END} AS plan_resets_at,
                   COALESCE((SELECT -SUM(delta) FROM org_ledger l WHERE l.org_id = o.id
                                AND reason = 'check' AND created_at >= {_MONTH}), 0)
                       AS month_spend,
@@ -628,7 +675,11 @@ class OrgStore:
         async with self._db.transaction() as conn:
             org = await self._one(
                 conn,
-                "SELECT status, monthly_spend_limit FROM organisation WHERE id = %s FOR UPDATE",
+                """
+                SELECT status, monthly_spend_limit, plan, seats, plan_renews_at,
+                       extra_usage, extra_cap_paise
+                  FROM organisation WHERE id = %s FOR UPDATE
+                """,
                 (org_id,),
             )
             if org is None:
@@ -646,9 +697,28 @@ class OrgStore:
                 conn,
                 f"""
                 SELECT
-                  COALESCE((SELECT SUM(delta) FROM org_ledger WHERE org_id = %(o)s), 0) AS balance,
+                  COALESCE((SELECT SUM(delta) FROM org_ledger l WHERE l.org_id = %(o)s
+                             AND {_CREDITS}), 0) AS balance,
                   COALESCE((SELECT SUM(amount) FROM credit_hold
                              WHERE org_id = %(o)s AND {_OPEN_HOLD}), 0) AS held,
+                  COALESCE((SELECT SUM(amount) FROM credit_hold
+                             WHERE org_id = %(o)s AND source = 'credits' AND {_OPEN_HOLD}), 0)
+                      AS held_credits,
+                  COALESCE((SELECT SUM(amount) FROM credit_hold
+                             WHERE org_id = %(o)s AND source = 'plan' AND {_OPEN_HOLD}), 0)
+                      AS held_plan,
+                  COALESCE((SELECT SUM(amount) FROM credit_hold
+                             WHERE org_id = %(o)s AND source = 'extra' AND {_OPEN_HOLD}), 0)
+                      AS held_extra,
+                  COALESCE((SELECT -SUM(delta) FROM org_ledger WHERE org_id = %(o)s
+                             AND source = 'plan' AND created_at >= {_PLAN_MONTH}), 0) AS plan_used,
+                  COALESCE((SELECT -SUM(delta) FROM org_ledger WHERE org_id = %(o)s
+                             AND source = 'extra' AND created_at >= {_PLAN_MONTH}), 0)
+                      AS extra_checks,
+                  EXISTS (SELECT 1 FROM usage_bill b WHERE b.org_id = %(o)s
+                           AND b.status = 'created'
+                           AND b.created_at < now() - make_interval(days => %(g)s))
+                      AS extra_blocked,
                   COALESCE((SELECT SUM(amount) FROM credit_hold
                              WHERE org_id = %(o)s AND user_id = %(u)s AND {_OPEN_HOLD}), 0)
                       AS held_mine,
@@ -663,11 +733,22 @@ class OrgStore:
                              AND reason = 'check' AND created_at >= {_MONTH}), 0) AS spent_key,
                   (SELECT monthly_limit FROM api_key WHERE id = %(k)s) AS key_limit
                 """,
-                {"o": org_id, "u": user_id, "k": key_id},
+                {"o": org_id, "u": user_id, "k": key_id, "g": plans.UNPAID_GRACE_DAYS},
             )
             assert sums is not None
-            available = int(sums["balance"]) - int(sums["held"])
-            if available < cost:
+            month = org_month(
+                {
+                    **org,
+                    "plan_used": int(sums["plan_used"]) + int(sums["held_plan"]),
+                    "extra_checks": int(sums["extra_checks"]) + int(sums["held_extra"]),
+                    "credits": int(sums["balance"]) - int(sums["held_credits"]),
+                    "extra_blocked": sums["extra_blocked"],
+                },
+                _now(),
+            )
+            source = plans.source_for(month, cost)
+            available = plans.checks_left(month)
+            if source is None:
                 raise ApiError(
                     402, "insufficient_credits",
                     f"out of credits: this check costs {cost} and the organisation has "
@@ -700,13 +781,17 @@ class OrgStore:
             row = await self._one(
                 conn,
                 """
-                INSERT INTO credit_hold (org_id, user_id, api_key_id, amount, expires_at)
-                VALUES (%s, %s, %s, %s, %s) RETURNING id
+                INSERT INTO credit_hold (org_id, user_id, api_key_id, amount, expires_at, source)
+                VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
                 """,
-                (org_id, user_id, key_id, cost, _now() + timedelta(minutes=HOLD_MINUTES)),
-            )
+                (
+                    org_id, user_id, key_id, cost,
+                    _now() + timedelta(minutes=HOLD_MINUTES), source,
+                ),
+            )  # fmt: skip
             assert row is not None
-        return Hold(id=str(row["id"]), payer=payer, amount=cost, remaining=available - cost)
+        remaining = max(available - cost, 0) if source != "extra" else available
+        return Hold(id=str(row["id"]), payer=payer, amount=cost, remaining=remaining, source=source)
 
     async def settle(self, hold: Hold) -> None:
         async with self._db.transaction() as conn:
@@ -715,7 +800,7 @@ class OrgStore:
                 """
                 UPDATE credit_hold SET settled_at = now()
                  WHERE id = %s AND settled_at IS NULL AND released_at IS NULL
-                RETURNING org_id, user_id, api_key_id, amount
+                RETURNING org_id, user_id, api_key_id, amount, source
                 """,
                 (_uuid(hold.id),),
             )
@@ -723,8 +808,9 @@ class OrgStore:
                 return
             await conn.execute(
                 """
-                INSERT INTO org_ledger (org_id, delta, reason, user_id, api_key_id, request_key)
-                VALUES (%s, %s, 'check', %s, %s, %s)
+                INSERT INTO org_ledger (org_id, delta, reason, user_id, api_key_id,
+                                        request_key, source)
+                VALUES (%s, %s, 'check', %s, %s, %s, %s)
                 ON CONFLICT (org_id, request_key) DO NOTHING
                 """,
                 (
@@ -733,6 +819,7 @@ class OrgStore:
                     row["user_id"],
                     row["api_key_id"],
                     f"hold:{hold.id}",
+                    row["source"],
                 ),
             )
 
@@ -1230,7 +1317,9 @@ class OrgStore:
                 """
                 SELECT r.*, u.email, u.display_name AS name, d.email AS decided_by_email,
                        COALESCE((SELECT SUM(delta) FROM credit_ledger c
-                                  WHERE c.user_id = r.user_id), 0) AS personal_balance,
+                                  WHERE c.user_id = r.user_id
+                                    AND COALESCE(c.source, 'credits') = 'credits'), 0)
+                           AS personal_balance,
                        (SELECT COUNT(*) FROM credit_ledger c WHERE c.user_id = r.user_id
                           AND c.delta < 0) AS personal_checks
                   FROM org_request r JOIN app_user u ON u.id = r.user_id
@@ -1390,8 +1479,10 @@ class OrgStore:
                 conn,
                 """
                 SELECT o.id, o.name, o.status, o.created_at, o.billing_email,
-                  COALESCE((SELECT SUM(delta) FROM org_ledger l WHERE l.org_id = o.id), 0)
+                  COALESCE((SELECT SUM(delta) FROM org_ledger l WHERE l.org_id = o.id
+                             AND COALESCE(l.source, 'credits') = 'credits'), 0)
                       AS balance,
+                  o.plan, o.seats,
                   (SELECT COUNT(*) FROM org_member m WHERE m.org_id = o.id) AS members,
                   (SELECT COUNT(*) FROM api_key k WHERE k.org_id = o.id
                       AND k.revoked_at IS NULL) AS active_keys
@@ -1422,8 +1513,10 @@ class OrgStore:
                 """
                 SELECT u.id, u.email, u.display_name AS name, u.created_at, u.last_seen_at,
                        u.is_staff, u.disabled, u.survey_state,
-                       COALESCE((SELECT SUM(delta) FROM credit_ledger c WHERE c.user_id = u.id), 0)
+                       COALESCE((SELECT SUM(delta) FROM credit_ledger c WHERE c.user_id = u.id
+                                  AND COALESCE(c.source, 'credits') = 'credits'), 0)
                            AS balance,
+                       u.plan,
                        (SELECT string_agg(o.name, ', ') FROM org_member m
                           JOIN organisation o ON o.id = m.org_id WHERE m.user_id = u.id) AS orgs
                   FROM app_user u
@@ -1489,5 +1582,309 @@ class OrgStore:
                  ORDER BY a.at DESC LIMIT %s
                 """,
                 (limit,),
+            )
+        return _rows(rows)
+
+    # ---- plans and subscriptions (0008) ---------------------------------------------
+
+    async def razorpay_plan_id(self, key: str) -> str | None:
+        async with self._db.connection() as conn:
+            row = await self._one(conn, "SELECT plan_id FROM razorpay_plan WHERE key = %s", (key,))
+        return str(row["plan_id"]) if row else None
+
+    async def save_razorpay_plan(self, key: str, plan_id: str) -> None:
+        async with self._db.connection() as conn:
+            await conn.execute(
+                "INSERT INTO razorpay_plan (key, plan_id) VALUES (%s, %s)"
+                " ON CONFLICT (key) DO NOTHING",
+                (key, plan_id),
+            )
+
+    async def create_subscription(
+        self, *, user_id: str | None, org_id: str | None, plan: str, interval: str,
+        seats: int, amount_paise: int, razorpay_subscription_id: str, razorpay_plan_id: str,
+        test_mode: bool, actor: str,
+    ) -> Row:  # fmt: skip
+        """A subscription Razorpay made, waiting for its first payment."""
+        async with self._db.transaction() as conn:
+            row = await self._one(
+                conn,
+                """
+                INSERT INTO subscription (user_id, org_id, plan, interval, seats, amount_paise,
+                                          razorpay_subscription_id, razorpay_plan_id,
+                                          test_mode, created_by)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING *
+                """,
+                (
+                    _uuid(user_id) if user_id else None, _uuid(org_id) if org_id else None,
+                    plan, interval, seats, amount_paise, razorpay_subscription_id,
+                    razorpay_plan_id, test_mode, _uuid(actor),
+                ),
+            )  # fmt: skip
+            await self.audit(
+                conn, org_id=org_id, actor=actor, action="plan.subscribe_started",
+                target=user_id, detail={"plan": plan, "interval": interval, "seats": seats},
+            )  # fmt: skip
+        return _jsonable(row) or {}
+
+    async def subscription(self, razorpay_subscription_id: str) -> Row | None:
+        async with self._db.connection() as conn:
+            row = await self._one(
+                conn,
+                "SELECT * FROM subscription WHERE razorpay_subscription_id = %s",
+                (razorpay_subscription_id,),
+            )
+        return _jsonable(row)
+
+    async def current_subscription(
+        self, *, user_id: str | None = None, org_id: str | None = None
+    ) -> Row | None:
+        """The owner's subscription that is paying now (or ending at its period's end)."""
+        owner, value = ("user_id", user_id) if user_id else ("org_id", org_id)
+        async with self._db.connection() as conn:
+            row = await self._one(
+                conn,
+                f"""
+                SELECT * FROM subscription
+                 WHERE {owner} = %s AND status IN ('active', 'cancelling')
+                 ORDER BY created_at DESC LIMIT 1
+                """,
+                (_uuid(str(value)),),
+            )
+        return _jsonable(row)
+
+    async def activate_subscription(
+        self, razorpay_subscription_id: str, *, current_start: datetime | None,
+        current_end: datetime | None, actor: str,
+    ) -> Row | None:  # fmt: skip
+        """A subscription's payment went through: put its owner on the plan until
+        `current_end`. Any other subscription the owner was paying for is marked
+        replaced and named in the result (`replaced`) so it can be cancelled at
+        Razorpay. One still waiting at checkout is left alone: it may yet be paid."""
+        async with self._db.transaction() as conn:
+            sub = await self._one(
+                conn,
+                "SELECT * FROM subscription WHERE razorpay_subscription_id = %s FOR UPDATE",
+                (razorpay_subscription_id,),
+            )
+            if sub is None or sub["status"] in ("cancelled", "replaced", "failed"):
+                return _jsonable(sub)
+            await conn.execute(
+                """
+                UPDATE subscription
+                   SET status = CASE WHEN status = 'cancelling' THEN 'cancelling' ELSE 'active' END,
+                       current_start = COALESCE(%s, current_start),
+                       current_end = COALESCE(%s, current_end), updated_at = now()
+                 WHERE id = %s
+                """,
+                (current_start, current_end, sub["id"]),
+            )
+            owner, value = (
+                ("user_id", sub["user_id"]) if sub["user_id"] else ("org_id", sub["org_id"])
+            )
+            replaced = await self._all(
+                conn,
+                f"""
+                UPDATE subscription SET status = 'replaced', updated_at = now()
+                 WHERE {owner} = %s AND id <> %s AND status IN ('active', 'cancelling')
+                RETURNING razorpay_subscription_id
+                """,
+                (value, sub["id"]),
+            )
+            renews = current_end or sub["current_end"]
+            if sub["user_id"]:
+                await conn.execute(
+                    """
+                    UPDATE app_user
+                       SET plan = %s, plan_interval = %s, plan_renews_at = %s,
+                           plan_cancel_at_end = false
+                     WHERE id = %s
+                    """,
+                    (sub["plan"], sub["interval"], renews, sub["user_id"]),
+                )
+            else:
+                await conn.execute(
+                    """
+                    UPDATE organisation
+                       SET plan = 'team', seats = %s, plan_interval = %s, plan_renews_at = %s,
+                           plan_cancel_at_end = false
+                     WHERE id = %s
+                    """,
+                    (sub["seats"], sub["interval"], renews, sub["org_id"]),
+                )
+            if sub["status"] == "created":
+                await self.audit(
+                    conn, org_id=str(sub["org_id"]) if sub["org_id"] else None, actor=actor,
+                    action="plan.started",
+                    target=str(sub["user_id"]) if sub["user_id"] else None,
+                    detail={"plan": sub["plan"], "interval": sub["interval"],
+                            "seats": sub["seats"]},
+                )  # fmt: skip
+        out = _jsonable(sub) or {}
+        out["replaced"] = [
+            str(r["razorpay_subscription_id"]) for r in replaced if r["razorpay_subscription_id"]
+        ]
+        return out
+
+    async def end_subscription(self, razorpay_subscription_id: str, status: str) -> Row | None:
+        """Razorpay says the subscription is cancelling, cancelled, halted or failed.
+
+        The owner keeps the plan until the period they paid for ends
+        (`plans.effective_plan` reads `plan_renews_at`); a cancelling one is shown
+        as ending.
+        """
+        async with self._db.transaction() as conn:
+            sub = await self._one(
+                conn,
+                """
+                UPDATE subscription SET status = %s, updated_at = now()
+                 WHERE razorpay_subscription_id = %s AND status NOT IN ('replaced', 'cancelled')
+                RETURNING *
+                """,
+                (status, razorpay_subscription_id),
+            )
+            if sub is None:
+                return None
+            ending = status == "cancelling"
+            table, value = (
+                ("app_user", sub["user_id"]) if sub["user_id"] else ("organisation", sub["org_id"])
+            )
+            await conn.execute(
+                f"UPDATE {table} SET plan_cancel_at_end = %s WHERE id = %s",
+                (ending or status in ("cancelled", "halted"), value),
+            )
+            await self.audit(
+                conn, org_id=str(sub["org_id"]) if sub["org_id"] else None, actor="razorpay",
+                action=f"plan.{status}",
+                target=str(sub["user_id"]) if sub["user_id"] else None,
+                detail={"plan": sub["plan"]},
+            )  # fmt: skip
+        return _jsonable(sub)
+
+    async def subscriptions(
+        self, *, user_id: str | None = None, org_id: str | None = None
+    ) -> list[Row]:
+        owner, value = ("user_id", user_id) if user_id else ("org_id", org_id)
+        async with self._db.connection() as conn:
+            rows = await self._all(
+                conn,
+                f"""
+                SELECT * FROM subscription WHERE {owner} = %s AND status <> 'created'
+                 ORDER BY created_at DESC LIMIT 50
+                """,
+                (_uuid(str(value)),),
+            )
+        return _rows(rows)
+
+    async def set_extra_usage(
+        self, *, user_id: str | None = None, org_id: str | None = None, enabled: bool,
+        cap_paise: int | None, actor: str,
+    ) -> None:  # fmt: skip
+        table, value = ("app_user", user_id) if user_id else ("organisation", org_id)
+        async with self._db.transaction() as conn:
+            await conn.execute(
+                f"UPDATE {table} SET extra_usage = %s, extra_cap_paise = %s WHERE id = %s",
+                (enabled, cap_paise, _uuid(str(value))),
+            )
+            await self.audit(
+                conn, org_id=org_id, actor=actor, action="plan.extra_usage", target=user_id,
+                detail={"enabled": enabled, "cap_paise": cap_paise},
+            )  # fmt: skip
+
+    async def set_org_plan(self, org_id: str, plan: str, actor: str) -> None:
+        """Move an organisation to API (pay per check) or back to credit packs only."""
+        async with self._db.transaction() as conn:
+            await conn.execute(
+                "UPDATE organisation SET plan = %s, extra_usage = %s WHERE id = %s",
+                (plan, plan == "api", _uuid(org_id)),
+            )
+            await self.audit(
+                conn, org_id=org_id, actor=actor, action="plan.changed", detail={"plan": plan}
+            )
+
+    # ---- extra usage bills (0008) ---------------------------------------------------
+
+    async def extra_usage_to_bill(self, month: date) -> list[Row]:
+        """Every person and organisation with extra usage in `month` (India time) and
+        no bill for it yet: who, how many checks, and the price a check."""
+
+        def bounds(t: str) -> str:
+            return (
+                f"{t}.created_at >= (%(m)s::timestamp AT TIME ZONE 'Asia/Kolkata')"
+                f" AND {t}.created_at < ((%(m)s::timestamp + interval '1 month')"
+                " AT TIME ZONE 'Asia/Kolkata')"
+            )
+
+        async with self._db.connection() as conn:
+            people = await self._all(
+                conn,
+                f"""
+                SELECT c.user_id, NULL::uuid AS org_id, u.email, -SUM(c.delta) AS checks
+                  FROM credit_ledger c JOIN app_user u ON u.id = c.user_id
+                 WHERE c.source = 'extra' AND {bounds("c")}
+                   AND NOT EXISTS (SELECT 1 FROM usage_bill b
+                                    WHERE b.user_id = c.user_id AND b.month = %(m)s)
+                 GROUP BY c.user_id, u.email
+                """,
+                {"m": month},
+            )
+            orgs = await self._all(
+                conn,
+                f"""
+                SELECT NULL::uuid AS user_id, l.org_id, o.billing_email AS email, o.plan,
+                       -SUM(l.delta) AS checks
+                  FROM org_ledger l JOIN organisation o ON o.id = l.org_id
+                 WHERE l.source = 'extra' AND {bounds("l")}
+                   AND NOT EXISTS (SELECT 1 FROM usage_bill b
+                                    WHERE b.org_id = l.org_id AND b.month = %(m)s)
+                 GROUP BY l.org_id, o.billing_email, o.plan
+                """,
+                {"m": month},
+            )
+        out = []
+        for r in people + orgs:
+            price = plans.API_CHECK_PAISE if r.get("plan") == "api" else plans.EXTRA_CHECK_PAISE
+            out.append({**(_jsonable(r) or {}), "price_paise": price})
+        return out
+
+    async def create_usage_bill(
+        self, *, user_id: str | None, org_id: str | None, month: date, checks: int,
+        amount_paise: int, payment_link_id: str, short_url: str | None, test_mode: bool,
+    ) -> None:  # fmt: skip
+        async with self._db.connection() as conn:
+            await conn.execute(
+                """
+                INSERT INTO usage_bill (user_id, org_id, month, checks, amount_paise,
+                                        payment_link_id, short_url, test_mode)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT DO NOTHING
+                """,
+                (
+                    _uuid(user_id) if user_id else None, _uuid(org_id) if org_id else None,
+                    month, checks, amount_paise, payment_link_id, short_url, test_mode,
+                ),
+            )  # fmt: skip
+
+    async def mark_bill(self, payment_link_id: str, status: str) -> None:
+        async with self._db.connection() as conn:
+            await conn.execute(
+                """
+                UPDATE usage_bill
+                   SET status = %s, paid_at = CASE WHEN %s = 'paid' THEN now() ELSE paid_at END
+                 WHERE payment_link_id = %s AND status = 'created'
+                """,
+                (status, status, payment_link_id),
+            )
+
+    async def usage_bills(
+        self, *, user_id: str | None = None, org_id: str | None = None
+    ) -> list[Row]:
+        owner, value = ("user_id", user_id) if user_id else ("org_id", org_id)
+        async with self._db.connection() as conn:
+            rows = await self._all(
+                conn,
+                f"SELECT * FROM usage_bill WHERE {owner} = %s ORDER BY month DESC LIMIT 24",
+                (_uuid(str(value)),),
             )
         return _rows(rows)

@@ -49,7 +49,7 @@ from app.domain.enums import (
 # `receipt`, so the seal shows without a second call; and progress events for a check
 # the app follows by `request_id`. Additive: a 1.2 client ignores all of it. See
 # docs/contract-changelog.md.
-CONTRACT_VERSION = "1.6"
+CONTRACT_VERSION = "1.7"
 
 
 # ------------------------------------------------------------------------ requests

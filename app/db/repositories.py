@@ -17,8 +17,19 @@ from uuid import UUID
 
 from psycopg import AsyncConnection
 
+from app.orgs import plans
+
 Row = dict[str, Any]
 Conn = AsyncConnection[Row]
+
+# A plan's month is the calendar month in India, where its people are: it resets at
+# midnight on the 1st, India time (0008).
+PLAN_MONTH = "(date_trunc('month', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata')"
+PLAN_MONTH_END = (
+    "((date_trunc('month', now() AT TIME ZONE 'Asia/Kolkata') + interval '1 month')"
+    " AT TIME ZONE 'Asia/Kolkata')"
+)
+UNPAID_GRACE_DAYS = plans.UNPAID_GRACE_DAYS
 
 
 class _Repository:
@@ -1187,11 +1198,65 @@ class AccountRepository(_Repository):
         )
         return row is not None
 
+    async def month(self, *, user_id: str, lock: bool = False) -> Row | None:
+        """The person's plan and this month's use of it (0008), for `plans.Month`.
+
+        `lock` holds the person's row for the transaction, so two checks finishing
+        together cannot both spend the plan's last check.
+        """
+        # Interpolated: fixed SQL fragments only; the person's id is a bound parameter.
+        return await self._one(
+            f"""
+            SELECT u.plan, u.plan_interval, u.plan_renews_at, u.plan_cancel_at_end,
+                   u.extra_usage, u.extra_cap_paise,
+                   COALESCE((SELECT -SUM(c.delta) FROM credit_ledger c
+                              WHERE c.user_id = u.id AND c.source = 'plan'
+                                AND c.created_at >= {PLAN_MONTH}), 0)            AS used,
+                   COALESCE((SELECT -SUM(c.delta) FROM credit_ledger c
+                              WHERE c.user_id = u.id AND c.source = 'extra'
+                                AND c.created_at >= {PLAN_MONTH}), 0)            AS extra_checks,
+                   COALESCE((SELECT SUM(c.delta) FROM credit_ledger c
+                              WHERE c.user_id = u.id
+                                AND COALESCE(c.source, 'credits') = 'credits'), 0) AS balance,
+                   EXISTS (SELECT 1 FROM usage_bill b
+                            WHERE b.user_id = u.id AND b.status = 'created'
+                              AND b.created_at < now() - interval '{UNPAID_GRACE_DAYS} days')
+                                                                                  AS extra_blocked,
+                   {PLAN_MONTH_END}                                               AS resets_at
+              FROM app_user u
+             WHERE u.id = %s
+             {"FOR UPDATE OF u" if lock else ""}
+            """,  # noqa: S608
+            (UUID(user_id),),
+        )
+
+    async def charge_check(self, *, user_id: str, cost: int, reason: str, request_key: str) -> str:
+        """Record one finished check, paid from the plan, credits or extra usage -
+        whichever `plans.source_for` picks. Run it inside a transaction: it locks the
+        person's row. With nothing left (the check already ran, so it is never
+        refused here) it is recorded against credits, which may go below zero."""
+        row = await self.month(user_id=user_id, lock=True)
+        if row is None:
+            return "credits"
+        source = plans.source_for(plans.personal_month(row, datetime.now(UTC)), cost) or "credits"
+        await self._one(
+            """
+            INSERT INTO credit_ledger (user_id, delta, reason, request_key, source)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (user_id, request_key) DO NOTHING
+            RETURNING id
+            """,
+            (UUID(user_id), -cost, reason, request_key, source),
+        )
+        return source
+
     async def totals(self, *, user_id: str) -> tuple[int, int, int]:
-        """(balance, credits used, checks paid for)."""
+        """(credit balance, credits used, checks paid for). The balance is credits
+        only: checks a plan or extra usage paid for never touch it (0008)."""
         row = await self._one(
             """
-            SELECT COALESCE(SUM(delta), 0)                          AS balance,
+            SELECT COALESCE(SUM(delta) FILTER (
+                       WHERE COALESCE(source, 'credits') = 'credits'), 0) AS balance,
                    COALESCE(-SUM(delta) FILTER (WHERE delta < 0), 0) AS used,
                    COUNT(*) FILTER (WHERE delta < 0)                 AS checks
               FROM credit_ledger

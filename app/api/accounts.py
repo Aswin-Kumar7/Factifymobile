@@ -74,8 +74,31 @@ class CreditsResponse(BaseModel):
     # Kept for an app built before 1.4, which reads it; there is one kind of check
     # now, so it is the same as `check_cost`.
     deep_check_cost: int
-    # False while plans do not exist: usage is recorded and nothing is refused.
+    # False while enforcement is off: usage is recorded and nothing is refused.
     limited: bool
+
+
+class PlanUsageResponse(BaseModel):
+    """The person's monthly plan and this month's use of it (contract 1.7)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    plan: str
+    name: str
+    interval: str | None = None
+    renews_at: str | None = None
+    cancel_at_end: bool = False
+    # Checks the plan gives this month, and how many it has paid for so far.
+    allowance: int
+    used: int
+    resets_at: str | None = None
+    # Credits held besides the plan (bought packs, a sign-up grant).
+    credits: int
+    extra_enabled: bool = False
+    extra_cap_paise: int | None = None
+    extra_used_paise: int = 0
+    extra_price_paise: int = 0
+    extra_blocked: bool = False
 
 
 class AccountResponse(BaseModel):
@@ -93,6 +116,7 @@ class AccountResponse(BaseModel):
     survey_due: bool = False
     # Factify's own admins see the admin panel.
     is_staff: bool = False
+    plan_usage: PlanUsageResponse | None = None
 
 
 class RenameRequest(BaseModel):
@@ -534,4 +558,27 @@ def _account_response(request: Request, account: Account) -> AccountResponse:
             limited=book.enforced,
         ),
         survey_due=account.survey_due,
+        plan_usage=_plan_usage(account),
+    )
+
+
+def _plan_usage(account: Account) -> PlanUsageResponse | None:
+    p = account.position
+    if p is None:
+        return None
+    return PlanUsageResponse(
+        plan=p.plan,
+        name=p.name,
+        interval=p.interval,
+        renews_at=p.renews_at.isoformat() if p.renews_at else None,
+        cancel_at_end=p.cancel_at_end,
+        allowance=p.allowance,
+        used=p.used,
+        resets_at=p.resets_at.isoformat() if p.resets_at else None,
+        credits=p.credits,
+        extra_enabled=p.extra_enabled,
+        extra_cap_paise=p.extra_cap_paise,
+        extra_used_paise=p.extra_used_paise,
+        extra_price_paise=p.extra_price_paise,
+        extra_blocked=p.extra_blocked,
     )

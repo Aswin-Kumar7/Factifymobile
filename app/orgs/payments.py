@@ -1,4 +1,12 @@
-"""Buying credits with Razorpay, and proving a domain with a DNS TXT record.
+"""Paying with Razorpay - credit packs, monthly plans, extra usage - and proving a
+domain with a DNS TXT record.
+
+Plans (0008) are Razorpay subscriptions: the server makes (once) a Razorpay plan
+for each of our plans and intervals, starts a subscription for the person or
+organisation, and the website opens Checkout on it. Its first payment is confirmed
+by the website handing back the signed result or by the webhook; renewals,
+cancellations and failures arrive by webhook. A month's extra usage is billed after
+the month ends as a Razorpay payment link.
 
 Razorpay: the server creates an order for a credit pack; the website opens
 Razorpay Checkout for it; the payment is confirmed either by the website handing
@@ -14,6 +22,7 @@ import hashlib
 import hmac
 import json
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from app.security.fetcher import FetchResult, SecureFetcher
@@ -96,6 +105,101 @@ class Razorpay:
         ).hexdigest()
         return hmac.compare_digest(expected, signature or "")
 
+    def subscription_is_genuine(
+        self, payment_id: str, subscription_id: str, signature: str
+    ) -> bool:
+        """Checkout's signature for a subscription's first payment."""
+        expected = hmac.new(
+            self._secret.encode(), f"{payment_id}|{subscription_id}".encode(), hashlib.sha256
+        ).hexdigest()
+        return hmac.compare_digest(expected, signature or "")
+
+    def _headers(self) -> dict[str, str]:
+        basic = base64.b64encode(f"{self.key_id}:{self._secret}".encode()).decode()
+        return {"Authorization": f"Basic {basic}"}
+
+    async def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        result = await SecureFetcher(timeout_seconds=20.0).post_json(
+            f"{_API}{path}", payload, provider="razorpay", headers=self._headers()
+        )
+        if not isinstance(result, FetchResult):
+            raise PaymentsUnavailable(f"Razorpay refused or could not be reached: {result}")
+        body: dict[str, Any] = json.loads(result.body or b"{}")
+        return body
+
+    async def _get(self, path: str) -> dict[str, Any]:
+        result = await SecureFetcher(timeout_seconds=20.0).get_json(
+            f"{_API}{path}", provider="razorpay", headers=self._headers()
+        )
+        if not isinstance(result, FetchResult) or result.status_code >= 400:
+            raise PaymentsUnavailable(f"Razorpay refused or could not be reached: {result}")
+        body: dict[str, Any] = json.loads(result.body or b"{}")
+        return body
+
+    async def create_plan(self, *, interval: str, amount_paise: int, name: str) -> str:
+        """A Razorpay plan billing `amount_paise` every month or every year."""
+        body = await self._post(
+            "/plans",
+            {
+                "period": "monthly" if interval == "month" else "yearly",
+                "interval": 1,
+                "item": {"name": name, "amount": amount_paise, "currency": "INR"},
+            },
+        )
+        if not body.get("id"):
+            raise PaymentsUnavailable("Razorpay did not return a plan id")
+        return str(body["id"])
+
+    async def create_subscription(
+        self, *, plan_id: str, interval: str, quantity: int, notes: dict[str, str]
+    ) -> dict[str, Any]:
+        """A subscription to `plan_id`; it starts with its first payment in Checkout."""
+        body = await self._post(
+            "/subscriptions",
+            {
+                "plan_id": plan_id,
+                # Razorpay needs an end: ten years of renewals, which is "until cancelled".
+                "total_count": 120 if interval == "month" else 10,
+                "quantity": quantity,
+                "customer_notify": 1,
+                "notes": notes,
+            },
+        )
+        if not body.get("id"):
+            raise PaymentsUnavailable("Razorpay did not return a subscription id")
+        return body
+
+    async def fetch_subscription(self, subscription_id: str) -> dict[str, Any]:
+        return await self._get(f"/subscriptions/{subscription_id}")
+
+    async def cancel_subscription(self, subscription_id: str, *, at_cycle_end: bool) -> None:
+        await self._post(
+            f"/subscriptions/{subscription_id}/cancel",
+            {"cancel_at_cycle_end": 1 if at_cycle_end else 0},
+        )
+
+    async def create_payment_link(
+        self, *, amount_paise: int, description: str, email: str | None, reference: str,
+        notes: dict[str, str],
+    ) -> dict[str, Any]:  # fmt: skip
+        """A payment link for a month's extra usage, sent by Razorpay to `email`."""
+        body = await self._post(
+            "/payment_links",
+            {
+                "amount": amount_paise,
+                "currency": "INR",
+                "description": description,
+                "reference_id": reference[:40],
+                "customer": {"email": email} if email else {},
+                "notify": {"email": bool(email), "sms": False},
+                "reminder_enable": True,
+                "notes": notes,
+            },
+        )
+        if not body.get("id"):
+            raise PaymentsUnavailable("Razorpay did not return a payment link")
+        return body
+
     def webhook_is_genuine(self, body: bytes, signature: str) -> bool:
         if not self._webhook_secret:
             return False
@@ -138,3 +242,51 @@ async def txt_records(name: str) -> list[str]:
         raise PaymentsUnavailable("DNS could not be asked")
     answers = json.loads(result.body or b"{}").get("Answer") or []
     return [str(a.get("data", "")).strip('"') for a in answers if a.get("type") == 16]
+
+
+def _moment(value: Any) -> datetime | None:
+    try:
+        return datetime.fromtimestamp(int(value), UTC) if value else None
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+# What a subscription webhook means for us: the subscription's new status.
+_SUBSCRIPTION_EVENTS = {
+    "subscription.activated": "active",
+    "subscription.charged": "active",
+    "subscription.resumed": "active",
+    "subscription.cancelled": "cancelled",
+    "subscription.completed": "cancelled",
+    "subscription.halted": "halted",
+}
+
+
+def subscription_event(
+    event: dict[str, Any],
+) -> tuple[str, str, datetime | None, datetime | None] | None:
+    """(subscription id, new status, period start, period end) from a webhook event
+    about a subscription, else None."""
+    status = _SUBSCRIPTION_EVENTS.get(str(event.get("event")))
+    if status is None:
+        return None
+    entity = ((event.get("payload") or {}).get("subscription") or {}).get("entity") or {}
+    if not entity.get("id"):
+        return None
+    return (
+        str(entity["id"]),
+        status,
+        _moment(entity.get("current_start")),
+        _moment(entity.get("current_end")),
+    )
+
+
+def payment_link_event(event: dict[str, Any]) -> tuple[str, str] | None:
+    """(payment link id, "paid" or "cancelled") from a webhook event, else None."""
+    kind = str(event.get("event"))
+    status = {"payment_link.paid": "paid", "payment_link.cancelled": "cancelled",
+              "payment_link.expired": "cancelled"}.get(kind)  # fmt: skip
+    if status is None:
+        return None
+    entity = ((event.get("payload") or {}).get("payment_link") or {}).get("entity") or {}
+    return (str(entity["id"]), status) if entity.get("id") else None

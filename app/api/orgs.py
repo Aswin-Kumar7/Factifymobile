@@ -501,7 +501,7 @@ async def confirm_payment(org_id: str, payload: PaymentConfirm, request: Request
 @router.post("/billing/razorpay/webhook", include_in_schema=False)
 async def razorpay_webhook(request: Request) -> JSONResponse:
     """Razorpay's own word that an order was paid - credits once, even if the
-    browser never came back."""
+    browser never came back - and every change to a subscription or a bill."""
     body = await request.body()
     if not _razorpay(request).webhook_is_genuine(
         body, request.headers.get("x-razorpay-signature", "")
@@ -519,6 +519,10 @@ async def razorpay_webhook(request: Request) -> JSONResponse:
     failed = payments.failed_order(event)
     if failed is not None:
         await _store(request).mark_failed(failed)
+    # Subscriptions and extra usage bills (0008).
+    from app.api.plans import handle_webhook
+
+    await handle_webhook(request, event)
     return JSONResponse({"status": "ok"})
 
 

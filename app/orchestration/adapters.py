@@ -184,6 +184,16 @@ class PoolAccountStore:
         async with self._database.connection() as conn:
             return await AccountRepository(conn).totals(user_id=user_id)
 
+    async def month(self, user_id: str) -> dict[str, object] | None:
+        async with self._database.connection() as conn:
+            return await AccountRepository(conn).month(user_id=user_id)
+
+    async def charge_check(self, user_id: str, cost: int, reason: str, request_key: str) -> str:
+        async with self._database.transaction() as conn:
+            return await AccountRepository(conn).charge_check(
+                user_id=user_id, cost=cost, reason=reason, request_key=request_key
+            )
+
     async def profile(self, user_id: str) -> dict[str, object] | None:
         async with self._database.connection() as conn:
             return await AccountRepository(conn).profile(user_id=user_id)

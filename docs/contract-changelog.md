@@ -6,6 +6,23 @@ nothing that was there changes name, type or meaning. A client built against an 
 version keeps working and simply does not show the new fields. 1.4 adds a value to
 `verdict`; see below for how an older client reads it.
 
+## 1.7 (2026-10-01): monthly plans
+
+Additive. `/v1/me` gains `plan_usage`: the person's plan (`plan` free, plus or pro;
+`name`, `interval`, `renews_at`, `cancel_at_end`), this month's `allowance` and `used`,
+`resets_at` (midnight on the 1st, India time), `credits` held besides the plan, and
+extra usage (`extra_enabled`, `extra_cap_paise`, `extra_used_paise`,
+`extra_price_paise`, `extra_blocked`). `credits.balance` now means the checks the
+person can still make this month - the plan's left plus their credits - so an older
+app's "checks left" stays right. `plan` is the plan in force (a lapsed paid plan reads
+`free`).
+
+New endpoints: `GET /v1/plans` (the price list, public); `GET /v1/me/plan`,
+`POST /v1/me/plan/subscribe|confirm|cancel`, `PUT /v1/me/plan/extra`; the same under
+`/v1/orgs/{id}/plan` for Team (and `PUT .../plan/api` for pay-per-check); and
+`POST /v1/admin/billing/close-month`. A 402 can now also mean the plan, credits and
+extra usage are all spent.
+
 ## 1.6 (2026-10-01): what is known about a link's website
 
 Additive. `source_profile`, on the result of a submitted link (or a forward carrying

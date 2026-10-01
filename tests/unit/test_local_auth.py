@@ -353,6 +353,7 @@ class TestTheSignInApi:
     @pytest.mark.anyio
     async def test_a_new_account_starts_with_its_signup_credits(self) -> None:
         from app.accounts.credits import CreditBook
+        from app.orgs import plans
         from tests.unit.test_accounts import _Store as _Accounts
 
         class _MadeByTheLogin(_Accounts):
@@ -374,7 +375,9 @@ class TestTheSignInApi:
             me = await api.get(
                 "/v1/me", headers={"authorization": f"Bearer {made.json()['access_token']}"}
             )
-        assert me.json()["credits"]["balance"] == 100
+        # The grant, once, on top of the Free plan's checks this month.
+        assert me.json()["credits"]["balance"] == 100 + plans.FREE.monthly_checks
+        assert me.json()["plan_usage"]["credits"] == 100
 
     @pytest.mark.anyio
     async def test_a_check_without_an_account_is_refused(self) -> None:

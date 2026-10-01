@@ -164,7 +164,8 @@ class AuthSettings(BaseModel):
     # Off only for a deliberately open server, and for tests that are not about
     # accounts (tests/conftest.py).
     required: bool = True
-    signup_credits: int = Field(default=100, ge=0)
+    # Credits a new account starts with on top of its Free plan; 0 since plans (0008).
+    signup_credits: int = Field(default=0, ge=0)
     check_cost: int = Field(default=1, ge=0)
     # Off until plans exist: usage is recorded, nothing is refused.
     enforce_credits: bool = False
