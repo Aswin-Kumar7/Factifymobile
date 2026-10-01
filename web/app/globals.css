@@ -7,7 +7,6 @@
    (app/layout.tsx). */
 :root {
   --bg: #050605;
-  --bg-deep: #030403;
   --sf: #0a0d0b;
   --sf2: #0f1412;
   --ink: #eef3ef;
@@ -63,7 +62,6 @@
 
 :root[data-theme="light"] {
   --bg: #f4f3ef;
-  --bg-deep: #eeede8;
   --sf: #ffffff;
   --sf2: #eeede8;
   --ink: #111513;
@@ -117,7 +115,6 @@
 
 @theme inline {
   --color-bg: var(--bg);
-  --color-bg-deep: var(--bg-deep);
   --color-sf: var(--sf);
   --color-sf2: var(--sf2);
   --color-ink: var(--ink);
@@ -131,7 +128,6 @@
   --color-acc-ink: var(--acc-ink);
   --color-acc-soft: var(--acc-soft);
   --color-on-acc: var(--on-acc);
-  --color-mint: var(--mint);
   --color-true: var(--true);
   --color-true-soft: var(--true-soft);
   --color-false: var(--false);
@@ -152,10 +148,6 @@
   --color-hero-acc: var(--hero-acc);
   --color-hi: var(--hi);
   --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-grid: var(--grid);
   --shadow-card: var(--shadow);
   --shadow-lift: var(--shadow-lg);
   --font-sans: var(--font-geist);

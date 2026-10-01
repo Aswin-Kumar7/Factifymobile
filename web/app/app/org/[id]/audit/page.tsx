@@ -41,13 +41,14 @@ function describe(detail: Record<string, unknown>) {
 
 export default function Audit({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { org } = useOrg(id);
+  const { org, error } = useOrg(id);
   const [entries, setEntries] = useState<Entry[] | null>(null);
 
   useEffect(() => {
     api<Entry[]>(`/v1/orgs/${id}/audit`, { account: "personal" }).then(setEntries).catch(() => setEntries([]));
   }, [id]);
 
+  if (error) return <Notice tone="error">{error}</Notice>;
   if (!org) return <Spinner />;
   if (org.my_role !== "owner") return <Notice tone="info">Only owners can see the audit log.</Notice>;
 

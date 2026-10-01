@@ -16,11 +16,10 @@ import { Avatar, Seal, Spinner } from "./ui";
 
 type Item = { href: string; label: string; icon: keyof typeof icons; exact?: boolean };
 
-export const icons = {
+const icons = {
   check: "M8.5 12.2l2.4 2.4 4.6-4.9M20.5 12a8.5 8.5 0 11-17 0 8.5 8.5 0 0117 0z",
   history: "M12 8v4.5l3 1.8M4 12a8 8 0 102.3-5.6M4 4.5v3.6h3.6",
   credits: "M3.5 6h17v12h-17zM3.5 10h17",
-  profile: "M16 7a4 4 0 11-8 0 4 4 0 018 0zM4 21a8 8 0 0116 0",
   overview: "M4 19.5h16M7 16V11M12 16V6.5M17 16v-3.5",
   members: "M9 12a3 3 0 100-6 3 3 0 000 6zM3.5 18.5c.6-3 2.8-4.5 5.5-4.5s4.9 1.5 5.5 4.5M16 6.5a3 3 0 010 5.6M17.5 14.3c1.6.6 2.7 2 3 4.2",
   keys: "M15 7a4 4 0 11-3.9 4.9L3 20v-3h3v-3h3l2.1-2.1A4 4 0 0115 7z",

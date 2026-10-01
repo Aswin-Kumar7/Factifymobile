@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import { AreaChart, daily } from "@/components/charts";
-import { Card, PageTitle, Select, Spinner, Stat, Table } from "@/components/ui";
+import { Card, Notice, PageTitle, Select, Spinner, Stat, Table } from "@/components/ui";
 import { api, Usage } from "@/lib/api";
 import { n, when } from "@/lib/format";
 import { useOrg } from "@/lib/use-org";
@@ -17,7 +17,7 @@ const reasons: Record<string, string> = {
 
 export default function UsagePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { org } = useOrg(id);
+  const { org, error } = useOrg(id);
   const [days, setDays] = useState(30);
   const [usage, setUsage] = useState<Usage | null>(null);
 
@@ -26,6 +26,7 @@ export default function UsagePage({ params }: { params: Promise<{ id: string }> 
     api<Usage>(`/v1/orgs/${id}/usage?days=${days}`, { account: "personal" }).then(setUsage).catch(() => undefined);
   }, [id, days]);
 
+  if (error) return <Notice tone="error">{error}</Notice>;
   if (!org) return <Spinner />;
   const owner = org.my_role === "owner";
   const total = (usage?.by_day ?? []).reduce((s, d) => s + Number(d.credits), 0);

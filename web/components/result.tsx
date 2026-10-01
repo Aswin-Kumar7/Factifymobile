@@ -16,7 +16,7 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 
-export type Evidence = {
+type Evidence = {
   id: string;
   tier: string;
   kind?: string;
@@ -34,7 +34,7 @@ export type Evidence = {
   input_anchor?: { char_start?: number | null; char_end?: number | null } | null;
 };
 
-export type Claim = {
+type Claim = {
   id: string;
   text: string;
   claim_type?: string;
@@ -121,8 +121,6 @@ const VERDICT = {
   UNCONFIRMED: { word: "Unconfirmed", line: "We couldn't confirm or rule this out yet", tone: "text-unc", soft: "bg-unc-soft", grad: "from-unc-soft" },
 } as const;
 
-export const verdictStyle: Record<Verdict["verdict"], { word: string; tone: string; soft: string }> = VERDICT;
-
 const NOTHING = { word: "Nothing to fact-check", line: "No claim found in it", tone: "text-unc", soft: "bg-unc-soft", grad: "from-unc-soft" };
 
 const UNCONFIRMED_BODY =
@@ -164,7 +162,7 @@ const READING_CHECKS = new Set(["claim_extraction", "image_text", "document_text
 /** Nothing in it a source could settle: no claim, only opinion, or only a picture's
  * own history with no earlier copy found. Not "unconfirmed" - there is nothing to
  * confirm. Never when reading failed. (Verdict.nothingToCheck in the app.) */
-export function nothingToCheck(v: Verdict): boolean {
+function nothingToCheck(v: Verdict): boolean {
   if (v.verdict !== "UNCONFIRMED") return false;
   const quiet = v.claims.every(
     (c) => (c.claim_type === "MEDIA" && c.status === "UNVERIFIED" && c.evidence.length === 0) || c.claim_type === "OPINION",

@@ -19,15 +19,20 @@ export type Subscription = {
 };
 
 /** Checkout's signed result, as the server's confirm endpoints take it. */
-export type PlanPaid = { payment_id: string; signature: string; subscription_id?: string; order_id?: string };
+type PlanPaid = { payment_id: string; signature: string; subscription_id?: string; order_id?: string };
 
 type Checkout = new (options: Record<string, unknown>) => { open: () => void; on: (e: string, f: (r: unknown) => void) => void };
+
+declare global {
+  interface Window {
+    Razorpay?: Checkout;
+  }
+}
 
 let loading: Promise<void> | null = null;
 
 function load(): Promise<void> {
-  const w = window as unknown as { Razorpay?: Checkout };
-  if (w.Razorpay) return Promise.resolve();
+  if (window.Razorpay) return Promise.resolve();
   loading ??= new Promise((resolve, reject) => {
     const script = document.createElement("script");
     script.src = "https://checkout.razorpay.com/v1/checkout.js";
@@ -43,7 +48,7 @@ function load(): Promise<void> {
 
 export async function payForSubscription(sub: Subscription): Promise<PlanPaid | null> {
   await load();
-  const Razorpay = (window as unknown as { Razorpay: Checkout }).Razorpay;
+  const Razorpay = window.Razorpay!;
   const byOrder = sub.mode === "order" || (!sub.subscription_id && !!sub.order_id);
   return new Promise((resolve, reject) => {
     const checkout = new Razorpay({

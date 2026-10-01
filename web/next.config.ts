@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const api = (process.env.FACTIFY_API_INTERNAL || "http://localhost:8000").replace(/\/$/, "");
 
 const nextConfig: NextConfig = {
-  // A small self-contained server for the Docker image (deploy/web.Dockerfile).
+  // A small self-contained server for the Docker image (web/Dockerfile).
   output: "standalone",
   poweredByHeader: false,
   // On the server Caddy sends /v1 straight to the API; locally, this does.

@@ -18,7 +18,7 @@ const roleHelp: Record<Role, string> = {
 
 export default function Members({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { org } = useOrg(id);
+  const { org, error: orgError } = useOrg(id);
   const { me, refresh } = useAccount();
   const router = useRouter();
   const [members, setMembers] = useState<Member[] | null>(null);
@@ -53,7 +53,9 @@ export default function Members({ params }: { params: Promise<{ id: string }> })
     }
   }
 
-  if (!org || !members) return <Spinner />;
+  if (orgError) return <Notice tone="error">{orgError}</Notice>;
+  if (!org) return <Spinner />;
+  if (!members) return error ? <Notice tone="error">{error}</Notice> : <Spinner />;
 
   return (
     <>
@@ -143,7 +145,7 @@ export default function Members({ params }: { params: Promise<{ id: string }> })
                       size="sm"
                       className="text-false"
                       onClick={async () => {
-                        await api(`/v1/orgs/${id}/invites/${i.id}`, { method: "DELETE", account: "personal" });
+                        await api(`/v1/orgs/${id}/invites/${i.id}`, { method: "DELETE", account: "personal" }).catch((e: Error) => setError(e.message));
                         load();
                       }}
                     >

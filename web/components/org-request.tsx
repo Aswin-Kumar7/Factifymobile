@@ -81,7 +81,8 @@ export function OrgRequest() {
                 variant="ghost"
                 size="sm"
                 onClick={async () => {
-                  await api(`/v1/org-requests/${pending.id}`, { method: "DELETE", account: "personal" });
+                  setError(null);
+                  await api(`/v1/org-requests/${pending.id}`, { method: "DELETE", account: "personal" }).catch((failure: Error) => setError(failure.message));
                   load();
                 }}
               >
@@ -130,6 +131,7 @@ export function OrgRequest() {
           </form>
         </Card>
       )}
+      {pending && error && <Notice tone="error">{error}</Notice>}
 
       {requests && requests.filter((r) => r.status !== "pending").length > 0 && (
         <Card>

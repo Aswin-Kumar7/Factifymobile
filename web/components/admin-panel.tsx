@@ -41,7 +41,7 @@ const roleWords: Record<string, string> = {
   curious: "Curious",
 };
 
-export type Section = "Overview" | "Requests" | "Organisations" | "People" | "API keys" | "Audit";
+type Section = "Overview" | "Requests" | "Organisations" | "People" | "API keys" | "Audit";
 
 export function AdminSection({ section }: { section: Section }) {
   const { me } = useAccount();
@@ -241,7 +241,7 @@ function Orgs() {
   const [rows, setRows] = useState<AdminOrg[] | null>(null);
   const [q, setQ] = useState("");
   const [granting, setGranting] = useState<AdminOrg | null>(null);
-  const load = useCallback(() => api<AdminOrg[]>(`/v1/admin/orgs?q=${encodeURIComponent(q)}`, { account: "personal" }).then(setRows), [q]);
+  const load = useCallback(() => api<AdminOrg[]>(`/v1/admin/orgs?q=${encodeURIComponent(q)}`, { account: "personal" }).then(setRows).catch(() => setRows([])), [q]);
   useEffect(() => {
     load();
   }, [load]);
@@ -283,7 +283,7 @@ function Orgs() {
                         const next = o.status === "active" ? "suspended" : "active";
                         const reason = prompt(`Why ${next === "suspended" ? "suspend" : "restore"} ${o.name}?`);
                         if (!reason) return;
-                        await api(`/v1/admin/orgs/${o.id}/status`, { method: "POST", json: { status: next, reason }, account: "personal" });
+                        await api(`/v1/admin/orgs/${o.id}/status`, { method: "POST", json: { status: next, reason }, account: "personal" }).catch((e: Error) => alert(e.message));
                         load();
                       }}
                     >
@@ -308,7 +308,7 @@ function People() {
   const [rows, setRows] = useState<AdminUser[] | null>(null);
   const [q, setQ] = useState("");
   const [granting, setGranting] = useState<AdminUser | null>(null);
-  const load = useCallback(() => api<AdminUser[]>(`/v1/admin/users?q=${encodeURIComponent(q)}`, { account: "personal" }).then(setRows), [q]);
+  const load = useCallback(() => api<AdminUser[]>(`/v1/admin/users?q=${encodeURIComponent(q)}`, { account: "personal" }).then(setRows).catch(() => setRows([])), [q]);
   useEffect(() => {
     load();
   }, [load]);
@@ -346,7 +346,7 @@ function People() {
                       className={u.disabled ? "" : "text-false"}
                       onClick={async () => {
                         if (!confirm(`${u.disabled ? "Enable" : "Disable"} ${u.email}?`)) return;
-                        await api(`/v1/admin/users/${u.id}/disabled`, { method: "POST", json: { disabled: !u.disabled }, account: "personal" });
+                        await api(`/v1/admin/users/${u.id}/disabled`, { method: "POST", json: { disabled: !u.disabled }, account: "personal" }).catch((e: Error) => alert(e.message));
                         load();
                       }}
                     >
@@ -369,7 +369,7 @@ function People() {
 function Keys() {
   const [rows, setRows] = useState<AdminKey[] | null>(null);
   const [q, setQ] = useState("");
-  const load = useCallback(() => api<AdminKey[]>(`/v1/admin/keys?q=${encodeURIComponent(q)}`, { account: "personal" }).then(setRows), [q]);
+  const load = useCallback(() => api<AdminKey[]>(`/v1/admin/keys?q=${encodeURIComponent(q)}`, { account: "personal" }).then(setRows).catch(() => setRows([])), [q]);
   useEffect(() => {
     load();
   }, [load]);
@@ -400,7 +400,7 @@ function Keys() {
                       className="text-false"
                       onClick={async () => {
                         if (!confirm(`Revoke ${k.prefix}… (${k.org_name})?`)) return;
-                        await api(`/v1/admin/orgs/${k.org_id}/keys/${k.id}`, { method: "DELETE", account: "personal" });
+                        await api(`/v1/admin/orgs/${k.org_id}/keys/${k.id}`, { method: "DELETE", account: "personal" }).catch((e: Error) => alert(e.message));
                         load();
                       }}
                     >

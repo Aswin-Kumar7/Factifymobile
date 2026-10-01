@@ -11,7 +11,7 @@ import { useEffect, useState } from "react";
 export const APK_URL = process.env.NEXT_PUBLIC_APK_URL || "/downloads/factify.apk";
 const FACTS_URL = process.env.NEXT_PUBLIC_APK_FACTS_URL || "/downloads/factify.json";
 
-export type ApkFacts = { version?: string; size?: string; sha256?: string; min_android?: string };
+type ApkFacts = { version?: string; size?: string; sha256?: string; min_android?: string };
 
 let cached: Promise<ApkFacts | null> | null = null;
 

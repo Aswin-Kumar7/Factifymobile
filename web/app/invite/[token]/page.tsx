@@ -58,7 +58,7 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
               <Notice tone="info">This invitation has already been used.</Notice>
             ) : signedIn === undefined ? null : signedIn ? (
               <div className="mt-6 space-y-3">
-                {signedIn.toLowerCase() !== invite.email && (
+                {signedIn.toLowerCase() !== invite.email.toLowerCase() && (
                   <Notice tone="warning">
                     You&apos;re signed in as {signedIn}. This invitation is for {invite.email}; sign in with that email to
                     accept it.

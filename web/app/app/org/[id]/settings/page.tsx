@@ -18,7 +18,7 @@ type Domain = {
 
 export default function Settings({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { org, reload } = useOrg(id);
+  const { org, error, reload } = useOrg(id);
   const { refresh, choose } = useAccount();
   const router = useRouter();
   const [form, setForm] = useState({ name: "", billing_email: "", gst_number: "", limit: "", shared: false });
@@ -36,6 +36,7 @@ export default function Settings({ params }: { params: Promise<{ id: string }> }
       });
   }, [org]);
 
+  if (error) return <Notice tone="error">{error}</Notice>;
   if (!org) return <Spinner />;
   if (org.my_role !== "owner") return <Notice tone="info">Only owners can change settings.</Notice>;
 
@@ -130,7 +131,12 @@ export default function Settings({ params }: { params: Promise<{ id: string }> }
           className="mt-3"
           onClick={async () => {
             if (prompt(`Type the organisation's name to close it: ${org.name}`) !== org.name) return;
-            await api(`/v1/orgs/${id}`, { method: "DELETE", account: "personal" });
+            try {
+              await api(`/v1/orgs/${id}`, { method: "DELETE", account: "personal" });
+            } catch (failure) {
+              setMessage({ tone: "error", text: (failure as Error).message });
+              return;
+            }
             choose("personal");
             await refresh();
             router.push("/app/check");
@@ -198,7 +204,8 @@ function Domains({ orgId }: { orgId: string }) {
                 size="sm"
                 className="text-false"
                 onClick={async () => {
-                  await api(`/v1/orgs/${orgId}/domains/${d.domain}`, { method: "DELETE", account: "personal" });
+                  setError(null);
+                  await api(`/v1/orgs/${orgId}/domains/${d.domain}`, { method: "DELETE", account: "personal" }).catch((failure: Error) => setError(failure.message));
                   load();
                 }}
               >
@@ -251,7 +258,7 @@ function Domains({ orgId }: { orgId: string }) {
                         method: "PATCH",
                         json: { auto_join: e.target.checked },
                         account: "personal",
-                      });
+                      }).catch((failure: Error) => setError(failure.message));
                       load();
                     }}
                   />
@@ -265,7 +272,7 @@ function Domains({ orgId }: { orgId: string }) {
                       method: "PATCH",
                       json: { default_role: e.target.value },
                       account: "personal",
-                    });
+                    }).catch((failure: Error) => setError(failure.message));
                     load();
                   }}
                 >

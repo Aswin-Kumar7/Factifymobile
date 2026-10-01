@@ -12,7 +12,7 @@ import { Avatar, Badge, Button, Card, Field, Input, Modal, Notice, Progress, Spi
 import { api, Member, Org, Usage } from "@/lib/api";
 import { ago, inr, n, roleName, when } from "@/lib/format";
 
-export type OrgDetail = Org & {
+type OrgDetail = Org & {
   credits_added: number;
   lifetime_spend: number;
   lifetime_checks: number;

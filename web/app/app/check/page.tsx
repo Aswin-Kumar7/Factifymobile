@@ -339,7 +339,14 @@ function CheckPage() {
             className="block w-full resize-y bg-transparent px-1 py-1 text-[17px] leading-relaxed text-ink placeholder:text-ink3 focus:outline-none"
           />
         ) : (
-          <label className="flex min-h-40 cursor-pointer flex-col items-center justify-center gap-2 rounded-[11px] border border-dashed border-line2 px-4 py-8 text-center transition-colors hover:bg-hover">
+          <label
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (e.dataTransfer.files?.[0]) setFile(e.dataTransfer.files[0]);
+            }}
+            className="flex min-h-40 cursor-pointer flex-col items-center justify-center gap-2 rounded-[11px] border border-dashed border-line2 px-4 py-8 text-center transition-colors hover:bg-hover"
+          >
             <input type="file" accept="image/*,application/pdf,video/*" className="sr-only" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="text-acc-ink" aria-hidden="true">
               <path d="M12 16V5M7.5 9.5L12 5l4.5 4.5M5 15v2.5A1.5 1.5 0 006.5 19h11a1.5 1.5 0 001.5-1.5V15" />

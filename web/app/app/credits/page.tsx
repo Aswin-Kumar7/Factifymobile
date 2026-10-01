@@ -123,7 +123,9 @@ export default function PlanAndUsage() {
 
   if (!me) return null;
   if (!plan)
-    return (
+    return message ? (
+      <Notice tone={message.tone}>{message.text}</Notice>
+    ) : (
       <div className="flex items-center gap-2 py-16 text-ink2">
         <Spinner /> Loading your plan…
       </div>

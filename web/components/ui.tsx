@@ -308,31 +308,6 @@ export function Modal({
   );
 }
 
-/** Credits by day, as bars. The number each bar stands for is in its label. */
-export function Bars({ data }: { data: { label: string; value: number }[] }) {
-  if (!data.length) return <div className="py-8 text-center text-sm text-ink3">No checks in this period yet.</div>;
-  const max = Math.max(...data.map((d) => d.value), 1);
-  return (
-    <div>
-      <div className="flex h-40 items-end gap-[3px]" role="img" aria-label="Credits used per day">
-        {data.map((d) => (
-          <div key={d.label} className="group relative flex h-full min-w-0 flex-1 items-end">
-            <div
-              className="w-full rounded-t-[4px] bg-chart-1/70 transition-colors group-hover:bg-chart-1"
-              style={{ height: `${Math.max(3, (d.value / max) * 100)}%` }}
-              title={`${d.label}: ${d.value} credits`}
-            />
-          </div>
-        ))}
-      </div>
-      <div className="mt-2 flex justify-between text-xs text-ink3">
-        <span>{data[0].label}</span>
-        <span>{data[data.length - 1].label}</span>
-      </div>
-    </div>
-  );
-}
-
 export function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
   return (
     <Button

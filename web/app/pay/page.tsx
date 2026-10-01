@@ -18,11 +18,6 @@ type Pack = { id: string; name: string; credits: number; price_inr: number };
 type Packs = { packs: Pack[]; personal_packs: Pack[]; available: boolean; test_mode: boolean };
 type Order = { order_id: string; key_id: string; amount: number; currency: string; name: string; description: string; prefill: { email: string } };
 type RazorpayResult = { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string };
-declare global {
-  interface Window {
-    Razorpay?: new (options: Record<string, unknown>) => { open: () => void; on: (e: string, f: (r: unknown) => void) => void };
-  }
-}
 
 function PayPage() {
   const router = useRouter();

@@ -6,7 +6,7 @@
 import { useId, useMemo, useRef, useState } from "react";
 import { n } from "@/lib/format";
 
-export type Point = { label: string; value: number; extra?: number };
+type Point = { label: string; value: number; extra?: number };
 
 /** Days as an area chart with gridlines and a hover read-out. */
 export function AreaChart({

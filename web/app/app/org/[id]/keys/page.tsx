@@ -16,7 +16,7 @@ function state(k: ApiKey): [string, "acc" | "warn" | "bad" | "neutral"] {
 
 export default function Keys({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { org } = useOrg(id);
+  const { org, error: orgError } = useOrg(id);
   const [keys, setKeys] = useState<ApiKey[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<ApiKey | null>(null);
@@ -38,6 +38,7 @@ export default function Keys({ params }: { params: Promise<{ id: string }> }) {
       </>
     );
   }
+  if (orgError) return <Notice tone="error">{orgError}</Notice>;
   if (!org || (!keys && !error)) return <Spinner />;
 
   async function rotate(k: ApiKey) {

@@ -81,7 +81,9 @@ export function OrgPlan({ id, members, onChange }: { id: string; members: number
     });
 
   if (!state)
-    return (
+    return message ? (
+      <Notice tone={message.tone}>{message.text}</Notice>
+    ) : (
       <div className="flex items-center gap-2 py-6 text-ink2">
         <Spinner /> Loading the plan…
       </div>
@@ -176,7 +178,7 @@ export function OrgPlan({ id, members, onChange }: { id: string; members: number
         </section>
       </div>
 
-      {state.plan !== "team" && (
+      {(!onTeam || manual) && (
         <section className="flex flex-col gap-4 rounded-[14px] border border-acc-ink/30 bg-hi p-5.5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>

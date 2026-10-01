@@ -37,7 +37,7 @@ export function AdminRequests() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(() => api<OrgRequestRow[]>("/v1/admin/org-requests", { account: "personal" }).then(setRows), []);
+  const load = useCallback(() => api<OrgRequestRow[]>("/v1/admin/org-requests", { account: "personal" }).then(setRows).catch(() => setRows([])), []);
   useEffect(() => {
     load();
   }, [load]);

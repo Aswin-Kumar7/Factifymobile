@@ -32,15 +32,10 @@ type Payment = {
 };
 
 type RazorpayResult = { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string };
-declare global {
-  interface Window {
-    Razorpay?: new (options: Record<string, unknown>) => { open: () => void; on: (e: string, f: (r: unknown) => void) => void };
-  }
-}
 
 export default function Billing({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { org, reload } = useOrg(id);
+  const { org, error, reload } = useOrg(id);
   const { refresh } = useAccount();
   const [packs, setPacks] = useState<Packs | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -55,6 +50,7 @@ export default function Billing({ params }: { params: Promise<{ id: string }> })
     load();
   }, [load]);
 
+  if (error) return <Notice tone="error">{error}</Notice>;
   if (!org) return <Spinner />;
   if (org.my_role !== "owner") return <Notice tone="info">Only owners can see billing.</Notice>;
 

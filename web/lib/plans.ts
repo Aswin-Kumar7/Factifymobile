@@ -2,7 +2,7 @@
 // here too so the landing page renders without a round trip; the server is the one
 // that charges, so a change there must be made here as well.
 
-export type PlanId = "free" | "plus" | "pro" | "team";
+type PlanId = "free" | "plus" | "pro" | "team";
 
 export type Plan = {
   id: PlanId;
