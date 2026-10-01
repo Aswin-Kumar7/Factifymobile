@@ -47,6 +47,9 @@ from PIL import Image, ImageDraw, ImageFont  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 DEMO = ROOT / "data" / "demo"
 
+# Set by --fresh: every check skips the stored answer, as "Check again" does.
+FRESH = False
+
 
 @dataclass
 class Result:
@@ -87,11 +90,16 @@ def _answer(client: httpx.Client, started: httpx.Response) -> dict[str, Any]:
 
 
 def _text(client: httpx.Client, text: str) -> dict[str, Any]:
-    return _answer(client, client.post("/v1/verify", json={"text": text, "mode": "background"}))
+    return _answer(
+        client,
+        client.post("/v1/verify", json={"text": text, "mode": "background", "recheck": FRESH}),
+    )
 
 
 def _link(client: httpx.Client, url: str) -> dict[str, Any]:
-    return _answer(client, client.post("/v1/verify", json={"url": url, "mode": "background"}))
+    return _answer(
+        client, client.post("/v1/verify", json={"url": url, "mode": "background", "recheck": FRESH})
+    )
 
 
 def _file(client: httpx.Client, name: str, data: bytes, mime: str) -> dict[str, Any]:
@@ -100,7 +108,11 @@ def _file(client: httpx.Client, name: str, data: bytes, mime: str) -> dict[str, 
         client.post(
             "/v1/verify/file",
             files={"file": (name, data, mime)},
-            data={"consent_to_process_media": "true", "background": "true"},
+            data={
+                "consent_to_process_media": "true",
+                "background": "true",
+                "recheck": "true" if FRESH else "false",
+            },
         ),
     )
 
@@ -305,7 +317,8 @@ def report(base: str, results: list[Result]) -> str:
     lines = [
         "# Factify - deliverables, proven live",
         "",
-        f"Server: {base} · run {time.strftime('%Y-%m-%d %H:%M')}",
+        f"Server: {base} · run {time.strftime('%Y-%m-%d %H:%M')}"
+        + (" · every check run in full (--fresh)" if FRESH else ""),
         "",
         "| Deliverable | Test | Result |",
         "|---|---|---|",
@@ -326,7 +339,12 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="http://127.0.0.1:8000")
     parser.add_argument("--out", default=None)
+    parser.add_argument(
+        "--fresh", action="store_true", help="skip stored answers: every check runs in full"
+    )
     args = parser.parse_args()
+    global FRESH
+    FRESH = args.fresh
     results = run(args.base)
     text = report(args.base, results)
     print(text)
