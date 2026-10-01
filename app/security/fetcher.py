@@ -14,6 +14,7 @@ for us would take that hop before we ever see it.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from dataclasses import dataclass, field
@@ -135,6 +136,28 @@ def _retry_delay(response: httpx.Response, attempt: int, *, cap: float) -> float
         return min(max(float(header), 0.0), cap)
     except ValueError:
         return _BACKOFF_SECONDS[min(attempt, len(_BACKOFF_SECONDS) - 1)]
+
+
+def _provider_error(body: bytes) -> str:
+    """The provider's own error code and message, briefly, or "".
+
+    "provider returned 400" said nothing of why: a model provider refusing a picture
+    of a news graphic once, and accepting the same request four times after, left no
+    trace of what it had objected to (2026-10-01). The code and the first words of
+    the message are kept; nothing from the request is echoed.
+    """
+    try:
+        error = json.loads(body.decode("utf-8", errors="replace")).get("error")
+    except (ValueError, AttributeError):
+        return ""
+    if isinstance(error, dict):
+        code = str(error.get("code") or error.get("status") or "").strip()
+        message = " ".join(str(error.get("message") or "").split())[:120]
+        said = ": ".join(part for part in (code, message) if part)
+        return f" ({said})" if said else ""
+    if isinstance(error, str):
+        return f" ({' '.join(error.split())[:120]})"
+    return ""
 
 
 class SecureFetcher:
@@ -419,7 +442,7 @@ class SecureFetcher:
         if response.status_code >= 400:
             return self._failure(
                 url,
-                f"provider returned {response.status_code}",
+                f"provider returned {response.status_code}{_provider_error(body)}",
                 kind="provider_error",
                 provider=provider,
             )

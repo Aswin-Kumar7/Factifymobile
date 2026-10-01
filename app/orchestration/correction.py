@@ -26,6 +26,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from app.domain.enums import ClaimStatus, Verdict
+from app.verdict.engine import FABRICATED_OPENING
 from app.verdict.wording import WORDING
 
 # The summary is cut here, at a word boundary.
@@ -65,6 +66,21 @@ _UNCONFIRMED = {
         "नमस्ते! आगे भेजने से पहले मैंने इसे जाँचने की कोशिश की। Factify को अभी तक "
         "भरोसेमंद स्रोतों से इसकी पुष्टि नहीं मिली, इसलिए फ़िलहाल इसे आगे न भेजना "
         "बेहतर होगा।"
+    ),
+}
+
+# An AI-made picture or video presented as news, of an event no outlet reports
+# (`rollup.fabricated_unreported`): False with no source contradicting it, because
+# there is nothing published to contradict. Said as what it is, not as "couldn't
+# confirm", which read as a shrug under a False verdict (2026-10-01).
+_FABRICATED = {
+    "en": (
+        "Hi! I checked this before forwarding. Factify says it's likely fabricated: "
+        "the picture was made by AI, and no reliable news outlet reports what it shows."
+    ),
+    "hi": (
+        "नमस्ते! आगे भेजने से पहले मैंने इसे जाँचा। Factify के अनुसार यह शायद गढ़ी हुई "
+        "ख़बर है: तस्वीर AI से बनी है, और कोई भरोसेमंद समाचार स्रोत यह ख़बर नहीं देता।"
     ),
 }
 
@@ -111,6 +127,12 @@ def correction_message(case: Any, language: str) -> CorrectionMessage:
     language = language if language in _OPENING else "en"
     verdict = Verdict(case.verdict)
     sources = _sources(case, verdict)
+    if (
+        verdict is Verdict.FALSE
+        and not sources
+        and str(getattr(case, "action_reason", "") or "").startswith(FABRICATED_OPENING)
+    ):
+        return CorrectionMessage(message=_FABRICATED.get(language, _FABRICATED["en"]), links=())
     if verdict is Verdict.UNCONFIRMED or not sources:
         # A decided verdict always has a source by the contract; if one ever did
         # not, the message falls back to claiming nothing rather than naming none.

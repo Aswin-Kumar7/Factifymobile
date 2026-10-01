@@ -1700,6 +1700,24 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pcNote => 'Not part of the verdict';
 
   @override
+  String get sourceProfileTitle => 'About this website';
+
+  @override
+  String sourceProfileTrusted(String level) {
+    return 'Trusted · $level';
+  }
+
+  @override
+  String get sourceProfileFactChecker => 'Fact-checker';
+
+  @override
+  String get sourceProfileUnlisted => 'Not on our trusted list';
+
+  @override
+  String get sourceProfileNote =>
+      'What we know about the site itself. It never makes a claim true or false.';
+
+  @override
   String get pcCredentials => 'Content credentials';
 
   @override
@@ -2235,7 +2253,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get onbMediaVideos => 'Videos';
 
   @override
-  String get onbMediaVoice => 'Voice notes';
+  String get onbMediaVoice => 'Voices in videos';
 
   @override
   String get onbMediaPdfs => 'PDFs';

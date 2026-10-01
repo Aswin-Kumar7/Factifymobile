@@ -831,6 +831,46 @@ class ImageReading {
   bool get hasText => text.trim().isNotEmpty;
 }
 
+/// The website a submitted link comes from: listed or not, and what was observed.
+/// Never a finding about the claims (app/sources/source_profile.py).
+class SourceProfile {
+  const SourceProfile({
+    required this.domain,
+    required this.trusted,
+    this.trust,
+    this.factChecker = false,
+    this.level = 'UNKNOWN',
+    this.findings = const [],
+    this.warnings = const [],
+  });
+
+  final String domain;
+  final bool trusted;
+  final String? trust;
+  final bool factChecker;
+  final String level;
+  final List<String> findings;
+  final List<String> warnings;
+
+  static SourceProfile? tryParse(Object? json) {
+    if (json is! Map) return null;
+    final map = json.cast<String, dynamic>();
+    final domain = map['domain'] as String?;
+    if (domain == null || domain.isEmpty) return null;
+    List<String> strings(Object? value) =>
+        ((value as List?) ?? const []).whereType<String>().toList();
+    return SourceProfile(
+      domain: domain,
+      trusted: map['trusted'] as bool? ?? false,
+      trust: map['trust'] as String?,
+      factChecker: map['fact_checker'] as bool? ?? false,
+      level: map['level'] as String? ?? 'UNKNOWN',
+      findings: strings(map['findings']),
+      warnings: strings(map['warnings']),
+    );
+  }
+}
+
 /// A complete verification result.
 class Verdict {
   const Verdict({
@@ -855,6 +895,7 @@ class Verdict {
     this.imageReading,
     this.mediaReport,
     this.speech,
+    this.sourceProfile,
     this.raw = const {},
   });
 
@@ -901,6 +942,9 @@ class Verdict {
 
   /// For an uploaded video: what is said in it (contract 1.5), checked as a message is.
   final SpokenWords? speech;
+
+  /// For a submitted link: what is known about its website.
+  final SourceProfile? sourceProfile;
 
   /// The claim the checked thing is mainly about: the headline claim, else the
   /// first. Null when nothing checkable was found.
@@ -959,6 +1003,7 @@ class Verdict {
         : ImageReading.fromJson((json['image_reading'] as Map).cast<String, dynamic>()),
     mediaReport: MediaReport.tryParse(json['media_report']),
     speech: SpokenWords.tryParse(json['speech']),
+    sourceProfile: SourceProfile.tryParse(json['source_profile']),
     raw: json,
   );
 

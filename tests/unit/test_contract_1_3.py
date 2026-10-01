@@ -253,7 +253,7 @@ class TestAdditiveOnly:
     def test_the_version_is_1_5(self) -> None:
         # 1.4 (2026-09-28): the PARTLY_TRUE verdict and checks in the background.
         # 1.5 (2026-09-29): why a picture check did not run.
-        assert CONTRACT_VERSION == "1.5"
+        assert CONTRACT_VERSION == "1.6"
 
     def test_a_computer_voice_is_said_against_the_model_s_own_line(self) -> None:
         from app.api.schemas import media_report_to_response
@@ -292,7 +292,11 @@ class TestAdditiveOnly:
     def test_every_1_2_field_is_kept_and_the_new_ones_are_optional(self) -> None:
         for model, old, new in (
             (ClaimResponse, _CLAIM_1_2, {"input_anchor", "technique", "language", "in_full"}),
-            (VerifyResponse, _RESULT_1_2, {"receipt", "request_id", "media_report", "speech"}),
+            (
+                VerifyResponse,
+                _RESULT_1_2,
+                {"receipt", "request_id", "media_report", "speech", "source_profile"},
+            ),
         ):
             fields = model.model_fields
             assert set(fields) == old | new

@@ -34,7 +34,7 @@ from app.domain.publishers import publishers_of
 
 # Stamped on every verdict. A cached verdict produced under older rules is therefore
 # identifiable, and the cache can refuse to serve it (M13).
-RULE_VERSION = "2026.10.01.2"
+RULE_VERSION = "2026.10.01.3"
 
 # Default number of genuinely independent origins required before corroboration can
 # support a claim. Tenant-configurable later; never below two, because one origin is
@@ -599,6 +599,51 @@ _VERDICT_OF = {
     Action.WAIT_AND_RECHECK: Verdict.UNCONFIRMED,
     Action.SEND_TO_REVIEW: Verdict.UNCONFIRMED,
 }
+
+
+# An AI-made picture or video, presented as news, of an event no reliable outlet
+# reports (see `fabricated_news`), and the most confidence that can carry.
+FABRICATED_RULE = "rollup.fabricated_unreported"
+FABRICATED_CAP = 70
+
+# How many trusted pages must have been read, and none of them report it, before
+# that silence counts against a picture that is itself AI-made.
+FABRICATED_MIN_READ = 8
+
+# How its reason begins, so the correction message can recognise it.
+FABRICATED_OPENING = "This picture was likely made by AI"
+
+
+def fabricated_news(claim_text: str, pages_read: int) -> CaseDecision:
+    """FALSE for an AI-made picture or video dressed as news, whose main claim - an
+    event that would certainly be reported - no reliable outlet reports.
+
+    "Massive lithium reserves discovered in Antarctica", on a LIVE / BREAKING NEWS
+    graphic with Elon Musk at a UN podium, came back Unconfirmed: 17 trusted pages
+    read, none reporting it, and the picture 100% AI-made by our detector
+    (2026-10-01). Each half alone decides nothing - silence is not a contradiction
+    (rule 5 in the reader), and a detector's estimate is never evidence - so neither
+    is used alone. Together they are what a fabricated news item looks like: a made-up
+    picture of a world event that did not happen.
+
+    Kept narrow by the caller (`Orchestrator._fabricated`): the claim must be the one
+    the piece rests on, typed as an event, expected to be widely covered, searched in
+    full with at least FABRICATED_MIN_READ pages read, and nothing in the piece
+    confirmed. Confidence is capped at FABRICATED_CAP: a brand-new real event can be
+    unreported for a while.
+    """
+    return CaseDecision(
+        action=Action.DO_NOT_SHARE,
+        rule_id=FABRICATED_RULE,
+        reason=(
+            f"{FABRICATED_OPENING} and presented as news, and no reliable "
+            f"outlet reports what it shows: “{claim_text.strip().rstrip('.')}”. "
+            f"We read {pages_read} pages from trusted news and fact-checkers and none "
+            "carries it. Treat it as fabricated."
+        ),
+        verdict=Verdict.FALSE,
+        confidence=FABRICATED_CAP,
+    )
 
 
 def verdict_for(action: Action) -> Verdict:

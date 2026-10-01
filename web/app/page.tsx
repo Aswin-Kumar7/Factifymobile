@@ -38,7 +38,7 @@ const kinds = [
   ["News links", "We read the article and check each claim in it."],
   ["Pictures", "Text in the picture is read and checked; AI-made pictures are flagged."],
   ["Videos", "What's said is transcribed and checked; face swaps are flagged."],
-  ["Voice notes", "Machine-made voices are flagged."],
+  ["Voices in videos", "Machine-made voices in a video are flagged."],
   ["PDFs", "Circulars and documents, claim by claim."],
 ];
 
@@ -53,13 +53,13 @@ const plans = [
     name: "Free",
     price: "₹0",
     note: "for everyone",
-    items: ["100 checks to start", "Phone app and website", "Every source shown"],
+    items: ["100 checks to start", "Phone app and website", "Every source shown", "Then packs from ₹249 for 50 checks"],
     cta: ["Start free", "/signup"],
   },
   {
     name: "Organisation",
-    price: "from ₹999",
-    note: "credit packs, no subscription",
+    price: "from ₹5,999",
+    note: "1,000 checks · credit packs, no subscription",
     items: [
       "One shared credit pool for your team",
       "Members with monthly limits",
@@ -92,7 +92,7 @@ export default function Landing() {
               Know what&apos;s true before you share it
             </h1>
             <p className="mt-5 max-w-xl text-lg leading-relaxed text-ink2">
-              Factify checks forwards, news links, pictures, videos and voice notes against reliable sources, and
+              Factify checks forwards, news links, pictures, videos and PDFs against reliable sources, and
               shows you every source it used. When the sources don&apos;t settle it, it says so.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">

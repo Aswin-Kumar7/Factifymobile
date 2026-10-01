@@ -26,7 +26,7 @@ import asyncio
 import logging
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -45,6 +45,7 @@ from app.domain.enums import (
     EvidenceKind,
     Importance,
     SourceRisk,
+    Verdict,
 )
 from app.domain.evidence import Advisory, Evidence
 from app.domain.publishers import registrable_domain
@@ -67,11 +68,13 @@ from app.sources.factcheck import shared_review_for
 from app.sources.reasoning import REASONER_VERSION
 from app.sources.verification import SourceVerification, dedupe, page_key
 from app.verdict.engine import (
+    FABRICATED_MIN_READ,
     RULE_VERSION,
     CaseDecision,
     Decision,
     blocks_clearance,
     decide,
+    fabricated_news,
     roll_up,
     verdict_for,
 )
@@ -493,8 +496,12 @@ class Orchestrator:
         started_at: float | None = None,
         fresh: bool = False,
         own_pages: frozenset[str] = frozenset(),
+        synthetic: Callable[[], Awaitable[bool]] | None = None,
     ) -> VerificationResult:
         """Run one verification end to end.
+
+        `synthetic`, for an uploaded picture or video, says whether its own checks found
+        it AI-made. Asked only when a claim could make it matter (`_fabricated`).
 
         `fresh` skips the stored verdict: a person pressed "Check again", and the
         answer from an hour ago is exactly what they are asking to replace.
@@ -573,6 +580,9 @@ class Orchestrator:
         case_decision = roll_up(
             [(outcome.claim, outcome.decision) for outcome in outcomes], source_risk=source_risk
         )
+        fabricated = await self._fabricated(outcomes, case_decision, synthetic)
+        if fabricated is not None:
+            case_decision = fabricated
 
         result = VerificationResult(
             case_id=case_id,
@@ -771,6 +781,51 @@ class Orchestrator:
         finally:
             for task in tasks.values():
                 task.cancel()
+
+    async def _fabricated(
+        self,
+        outcomes: list[ClaimOutcome],
+        case: CaseDecision,
+        synthetic: Callable[[], Awaitable[bool]] | None,
+    ) -> CaseDecision | None:
+        """FALSE for an AI-made picture or video passing off an unreported world event
+        as news (`fabricated_news`), or None to leave the case as it was decided."""
+        if synthetic is None or case.verdict is not Verdict.UNCONFIRMED:
+            return None
+        if any(o.decision.status is ClaimStatus.SUPPORTED for o in outcomes):
+            return None
+        unreported = [
+            o
+            for o in outcomes
+            if o.decision.status is ClaimStatus.UNVERIFIED
+            and not o.decision.conflicting
+            and o.claim.claim_type in (ClaimType.EVENT, ClaimType.STATISTIC)
+            and o.claim.coverage_expectation is CoverageExpectation.HIGH
+            and blocks_clearance(o.claim)
+            and not o.claim.within_developing_window
+            and o.search == "searched"
+            and o.looked_at >= FABRICATED_MIN_READ
+            and not any(e.direction is Direction.SUPPORTS for e in o.evidence)
+        ]
+        if not unreported:
+            return None
+        try:
+            made_by_ai = await synthetic()
+        except Exception:  # the picture's checks failing leaves the answer as it was
+            logger.exception("the picture's checks could not be read for the case")
+            return None
+        if not made_by_ai:
+            return None
+        main = unreported[0]
+        event(
+            logger,
+            "fabricated news",
+            module="orchestration",
+            outcome="ok",
+            claim=main.claim.text[:120],
+            pages_read=main.looked_at,
+        )
+        return fabricated_news(main.claim.text, main.looked_at)
 
     async def _in_english(self, claims: list[Claim]) -> list[Claim]:
         """Each claim not made in English, with its English translation beside it.

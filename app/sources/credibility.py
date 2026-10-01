@@ -230,6 +230,11 @@ class SourceCredibility:
             frozenset(certified),
         )
 
+    @property
+    def trusted_hosts(self) -> frozenset[str]:
+        """Every listed host, for telling a look-alike name (`app/sources/risk.py`)."""
+        return self._trusted
+
     def is_credible(self, url_or_domain: str | None) -> bool:
         """Whether this source may be cited as open-web evidence."""
         domain = self._domain_of(url_or_domain)

@@ -39,7 +39,7 @@ export default function Credits() {
             You&apos;ve used {n(me.credits.used)} on {n(me.credits.checks)} checks. The same balance is in the phone app.
           </p>
           <Link href="/pay" className="mt-4 inline-flex rounded-xl border border-line bg-sf px-4 py-2 text-sm font-semibold text-ink hover:bg-sf2">
-            Top up from ₹199
+            Top up from ₹249
           </Link>
         </div>
       </section>

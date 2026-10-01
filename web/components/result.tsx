@@ -97,6 +97,18 @@ export type Verdict = {
   image_reading?: { text?: string; description?: string | null; kind?: string | null; publisher?: string | null; language?: string | null } | null;
   media_report?: MediaReport | null;
   speech?: { text?: string; language?: string | null; cut_off?: boolean } | null;
+  source_risk?: string | null;
+  source_profile?: {
+    domain: string;
+    trusted: boolean;
+    trust?: string | null;
+    fact_checker?: boolean;
+    level?: string;
+    findings?: string[];
+    warnings?: string[];
+    domain_age_days?: number | null;
+  } | null;
+  recurrence?: { times_seen?: number; first_verified_at?: string | null; distinct_captions?: number; summary: string } | null;
 };
 
 // ---------------------------------------------------------------- words
@@ -834,6 +846,42 @@ export function Result({
       <div className="mt-4">
         <WhatWeChecked v={v} kind={kind} submitted={submitted} preview={preview} />
       </div>
+
+      {v.source_profile && (
+        <>
+          <Section title="About this website" note="Not part of the verdict" />
+          <Box className="p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-semibold text-ink">{v.source_profile.domain}</span>
+              <span
+                className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                  v.source_profile.trusted ? "bg-true-soft text-true" : v.source_profile.level === "HIGH" || v.source_profile.level === "MEDIUM" ? "bg-mis-soft text-mis" : "bg-unc-soft text-unc"
+                }`}
+              >
+                {v.source_profile.fact_checker ? "Fact-checker" : v.source_profile.trusted ? `Trusted · ${v.source_profile.trust}` : "Not on our trusted list"}
+              </span>
+            </div>
+            <ul className="mt-2 space-y-1 text-sm text-ink2">
+              {(v.source_profile.findings ?? []).map((f) => (
+                <li key={f}>{f}</li>
+              ))}
+              {(v.source_profile.warnings ?? []).map((w) => (
+                <li key={w} className="font-semibold text-mis">
+                  {w}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-ink3">What we know about the site itself. It never makes a claim true or false.</p>
+          </Box>
+        </>
+      )}
+
+      {v.recurrence?.summary && (v.recurrence.times_seen ?? 0) > 0 && (
+        <Box className="mt-4 p-4">
+          <div className="text-xs font-semibold text-ink3">Seen before</div>
+          <p className="mt-1 text-sm text-ink2">{v.recurrence.summary}</p>
+        </Box>
+      )}
 
       {mixed && (
         <>

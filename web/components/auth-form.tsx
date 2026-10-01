@@ -159,7 +159,7 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
             &ldquo;Every answer comes with its sources. When they don&apos;t settle it, Factify says so.&rdquo;
           </p>
         </blockquote>
-        <p className="text-sm opacity-80">Text, links, pictures, videos and voice notes, in 12 languages.</p>
+        <p className="text-sm opacity-80">Text, links, pictures, videos and PDFs, in 12 languages.</p>
       </aside>
     </main>
   );

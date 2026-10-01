@@ -36,7 +36,7 @@ const geistMono = localFont({
 export const metadata: Metadata = {
   title: { default: "Factify: know what's true before you share it", template: "%s · Factify" },
   description:
-    "Factify checks forwards, news links, pictures, videos and voice notes against reliable sources, and shows every source it used.",
+    "Factify checks forwards, news links, pictures, videos and PDFs against reliable sources, and shows every source it used.",
   icons: { icon: "/seal.svg" },
 };
 

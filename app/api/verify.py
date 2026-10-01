@@ -20,6 +20,7 @@ import re
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from typing import Annotated, Any
@@ -47,6 +48,7 @@ from app.api.schemas import (
     ReviewItemResponse,
     ReviewLabelRequest,
     SkippedCheckResponse,
+    SourceProfileResponse,
     SourceReaderResponse,
     SpeechResponse,
     StrengthResponse,
@@ -58,7 +60,7 @@ from app.api.schemas import (
     media_report_to_response,
 )
 from app.domain.claim import Claim, ClaimAnchor
-from app.domain.enums import ClaimType, Importance, Severity
+from app.domain.enums import ClaimType, Importance, Severity, SourceRisk
 from app.extraction.claimreview import ClaimReview, read_claim_reviews
 from app.extraction.claims import ExtractedClaims
 from app.extraction.language import detect
@@ -92,7 +94,7 @@ from app.orchestration.pipeline import (
 from app.orchestration.progress import CheckProgress, current_progress, valid_key
 from app.orchestration.review import HumanLabel
 from app.orchestration.summary import case_summary
-from app.security.fetcher import FetchResult
+from app.security.fetcher import FetchResult, SecureFetcher
 from app.security.patience import PATIENT, current_patience
 from app.sources.base import check_seconds, current_reference_date
 from app.sources.credibility import SourceCredibility
@@ -104,6 +106,7 @@ from app.sources.factcheck import (
 )
 from app.sources.outlets import outlet_name
 from app.sources.reader import SourceViews, read_source
+from app.sources.source_profile import SourceReport, profile_link, rdap_fetcher
 from app.sources.verification import page_key
 from app.verdict.technique import technique_for
 
@@ -218,6 +221,49 @@ async def extract_claims_for(request: Request, intake: NormalisedIntake) -> Extr
         )
         current_shared_review.set(shared)
     return extracted
+
+
+# The website of the link read for this request, set where the page is read
+# (`_read_linked_article`) and put on the answer by `_checked`.
+_LINK_PROFILE: ContextVar[SourceReport | None] = ContextVar("_LINK_PROFILE", default=None)
+_RDAP: SecureFetcher | None = None
+
+
+def _rdap() -> SecureFetcher:
+    global _RDAP
+    if _RDAP is None:
+        _RDAP = rdap_fetcher()
+    return _RDAP
+
+
+def _profile_response(report: SourceReport | None) -> SourceProfileResponse | None:
+    if report is None:
+        return None
+    return SourceProfileResponse(
+        domain=report.domain,
+        trusted=report.trusted,
+        trust=report.trust,
+        fact_checker=report.fact_checker,
+        level=report.level,
+        findings=report.findings,
+        warnings=report.warnings,
+        domain_age_days=report.domain_age_days,
+    )
+
+
+async def _profile_url(request: Request, url: str) -> SourceReport | None:
+    """A link's website, for an answer served from the cache (no page was read)."""
+    reader = getattr(request.app.state, "url_reader", None)
+    html = ""
+    if reader is not None:
+        fetched = await reader.fetch(url, provider="url_intake")
+        if isinstance(fetched, FetchResult):
+            html = fetched.text
+    try:
+        return await profile_link(url, html=html, credibility=_credibility(), rdap=_rdap())
+    except Exception:
+        logger.exception("the link's website could not be profiled")
+        return None
 
 
 def _credibility() -> SourceCredibility:
@@ -549,6 +595,14 @@ async def _read_linked_article(request: Request, url: str) -> LinkedPage | None:
     if not reviews and _credibility().is_fact_checker(url):
         reviews = await _indexed_reviews(request, url)
     reviewed = tuple(review.claim_reviewed for review in reviews)
+    try:
+        _LINK_PROFILE.set(
+            await profile_link(
+                url, html=html or "", text=body or "", credibility=_credibility(), rdap=_rdap()
+            )
+        )
+    except Exception:  # what is known about the site is a help, never a dependency
+        logger.exception("the link's website could not be profiled")
     return LinkedPage("\n\n".join(parts), partial, reviewed, published, reviews) if parts else None
 
 
@@ -1009,6 +1063,7 @@ async def _checked(
         ) from rejected
 
     case_id = case_id or uuid4()
+    _LINK_PROFILE.set(None)
 
     # A repeat is answered before anything is spent on it. Extraction is a metered
     # model call — and for a link, a page fetch as well — and it used to run first,
@@ -1029,9 +1084,20 @@ async def _checked(
             from_cache=True,
             elapsed_ms=hit.elapsed_ms,
         )
-        return await cached_full_response(request, hit) or to_response(hit)
+        served = await cached_full_response(request, hit) or to_response(hit)
+        if intake.input_type is InputType.URL and intake.primary.source_url:
+            report = await _profile_url(request, intake.primary.source_url)
+            if report is not None:
+                served = served.model_copy(
+                    update={
+                        "source_profile": _profile_response(report),
+                        "source_risk": report.level,
+                    }
+                )
+        return served
 
     extracted = await extract_claims_for(request, intake)
+    profile = _LINK_PROFILE.get()
 
     # A link nobody could open is not a verdict about the link.
     #
@@ -1073,11 +1139,19 @@ async def _checked(
         started_at=arrived,
         fresh=payload.recheck,
         own_pages=frozenset(own_pages),
+        # A site with strong warnings can hold the answer back from "True", never
+        # make a claim false (`roll_up`).
+        source_risk=profile.level if profile is not None else SourceRisk.UNKNOWN,
+    )
+    shown: dict[str, Any] = (
+        {"source_profile": _profile_response(profile), "source_risk": profile.level}
+        if profile is not None
+        else {}
     )
 
     cached = await cached_full_response(request, result)
     if cached is not None:
-        return cached
+        return cached.model_copy(update=shown)
 
     # Extraction failing is a gap in the answer, not a failure of the request. It is
     # attached so the response can say the text could not be read into claims rather
@@ -1097,7 +1171,7 @@ async def _checked(
         from_cache=result.from_cache,
         elapsed_ms=result.elapsed_ms,
     )
-    return to_response(result)
+    return to_response(result).model_copy(update=shown)
 
 
 @router.get(
@@ -1349,8 +1423,32 @@ async def _checked_picture(
     # The picture's own checks - credentials, earlier copies, the AI and editing
     # signals - run alongside the reading and the fact-check, and join the answer.
     inspection = _inspect_picture(request, intake)
-    response = await _checked_upload(request, intake, case_id=case_id, recheck=recheck)
+    response = await _checked_upload(
+        request,
+        intake,
+        case_id=case_id,
+        recheck=recheck,
+        synthetic=(lambda: _made_by_ai(inspection)) if inspection is not None else None,
+    )
     return await _with_media(response, inspection)
+
+
+def ai_made(report: MediaReportResponse) -> bool:
+    """Whether an upload's own checks say it was made or altered by AI: its file says
+    so, the picture detectors agree, or a face or the voice in a video is past its
+    model's line. Never a verdict on its own (`Orchestrator._fabricated`)."""
+    detector = report.detector
+    return bool(
+        report.credentials.declares_ai
+        or detector.agreement == "likely_ai"
+        or detector.face_swapped
+        or detector.machine_voice
+    )
+
+
+async def _made_by_ai(inspection: asyncio.Task[_MediaShown]) -> bool:
+    media, _ = await inspection
+    return ai_made(media)
 
 
 async def _checked_upload(
@@ -1360,9 +1458,13 @@ async def _checked_upload(
     case_id: UUID,
     recheck: bool,
     spoken: str | None = None,
+    synthetic: Callable[[], Awaitable[bool]] | None = None,
 ) -> VerifyResponse:
     """A picture or a PDF, read and checked. Also a video's representative frame,
-    with what is `spoken` in the video checked beside the words on it."""
+    with what is `spoken` in the video checked beside the words on it.
+
+    `synthetic` says whether the upload's own checks found it AI-made; the pipeline
+    asks it only when that could decide the case (`Orchestrator._fabricated`)."""
     orchestrator = get_orchestrator(request)
 
     # Probed before media preparation (hashing, embedding, OCR), for the same reason
@@ -1417,6 +1519,7 @@ async def _checked_upload(
         claims=claims,
         fresh=recheck,
         own_pages=frozenset(own_pages),
+        synthetic=synthetic,
     )
 
     response = await cached_full_response(request, result) or to_response(result)
@@ -1626,6 +1729,12 @@ async def _checked_video(
     )
     # What is said in it, read while the frames are checked (`app/media/speech.py`).
     speech = await _spoken(request, data)
+
+    async def video_made_by_ai() -> bool:
+        if inspection is None:
+            return False
+        return ai_made(media_report_to_response(await inspection, thumbnails=_THUMBNAILS))
+
     response = await _checked_upload(
         request,
         middle,
@@ -1633,6 +1742,7 @@ async def _checked_video(
         # The answer stored for this frame may be for another video's words.
         recheck=recheck or speech is not None,
         spoken=speech.text if speech is not None else None,
+        synthetic=video_made_by_ai,
     )
     notes = (
         SkippedCheckResponse(

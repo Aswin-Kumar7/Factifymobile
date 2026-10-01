@@ -49,7 +49,7 @@ from app.domain.enums import (
 # `receipt`, so the seal shows without a second call; and progress events for a check
 # the app follows by `request_id`. Additive: a 1.2 client ignores all of it. See
 # docs/contract-changelog.md.
-CONTRACT_VERSION = "1.5"
+CONTRACT_VERSION = "1.6"
 
 
 # ------------------------------------------------------------------------ requests
@@ -336,6 +336,24 @@ class MediaProvenanceResponse(BaseModel):
     summary: str
 
 
+class SourceProfileResponse(BaseModel):
+    """The website a submitted link comes from (`app/sources/source_profile.py`).
+
+    Itemised observations, never a score, and never a finding about the claims.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    domain: str
+    trusted: bool
+    trust: str | None = None
+    fact_checker: bool = False
+    level: SourceRisk = SourceRisk.UNKNOWN
+    findings: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+    domain_age_days: int | None = None
+
+
 class RecurrenceResponse(BaseModel):
     """How often this has been verified before, and under what captions (M39)."""
 
@@ -581,6 +599,8 @@ class VerifyResponse(BaseModel):
     advisories: tuple[AdvisoryResponse, ...] = ()
 
     source_risk: SourceRisk = SourceRisk.UNKNOWN
+    # For a submitted link: what is known about its website.
+    source_profile: SourceProfileResponse | None = None
     media_provenance: MediaProvenanceResponse | None = None
     recurrence: RecurrenceResponse | None = None
 

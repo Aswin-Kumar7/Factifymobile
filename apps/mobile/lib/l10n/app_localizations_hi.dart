@@ -1698,6 +1698,24 @@ class AppLocalizationsHi extends AppLocalizations {
   String get pcNote => 'फ़ैसले का हिस्सा नहीं';
 
   @override
+  String get sourceProfileTitle => 'इस वेबसाइट के बारे में';
+
+  @override
+  String sourceProfileTrusted(String level) {
+    return 'भरोसेमंद · $level';
+  }
+
+  @override
+  String get sourceProfileFactChecker => 'फ़ैक्ट-चेकर';
+
+  @override
+  String get sourceProfileUnlisted => 'हमारी भरोसेमंद सूची में नहीं';
+
+  @override
+  String get sourceProfileNote =>
+      'यह साइट के बारे में जानकारी है। इससे कोई दावा सच या झूठ नहीं बनता।';
+
+  @override
   String get pcCredentials => 'कंटेंट क्रेडेंशियल';
 
   @override
@@ -2232,7 +2250,7 @@ class AppLocalizationsHi extends AppLocalizations {
   String get onbMediaVideos => 'वीडियो';
 
   @override
-  String get onbMediaVoice => 'वॉइस नोट';
+  String get onbMediaVoice => 'वीडियो की आवाज़';
 
   @override
   String get onbMediaPdfs => 'PDF';

@@ -169,7 +169,7 @@ class TestThePool:
         try:
             await store.create_payment(
                 org["id"], owner, order_id=f"order_{tag}", pack="starter", credits=1000,
-                amount_paise=99900, test_mode=True,
+                amount_paise=599900, test_mode=True,
             )  # fmt: skip
             await store.mark_paid(f"order_{tag}", "pay_1", owner)
             await store.mark_paid(f"order_{tag}", "pay_1", "razorpay")
@@ -197,8 +197,8 @@ class TestPersonalBilling:
             assert again.value.error_code == "handoff_expired"
 
             await store.create_payment(
-                None, user, order_id=f"order_{tag}", pack="p200", credits=200,
-                amount_paise=19900, test_mode=True, for_user=user, handoff_id=handoff["id"],
+                None, user, order_id=f"order_{tag}", pack="p50", credits=50,
+                amount_paise=24900, test_mode=True, for_user=user, handoff_id=handoff["id"],
             )  # fmt: skip
             await store.mark_paid(f"order_{tag}", "pay_1", user)
             await store.mark_paid(f"order_{tag}", "pay_1", "razorpay")
@@ -207,9 +207,9 @@ class TestPersonalBilling:
                     "SELECT COALESCE(SUM(delta), 0) AS b FROM credit_ledger WHERE user_id = %s",
                     (user,),
                 )
-                assert (await cur.fetchone())["b"] == 200
+                assert (await cur.fetchone())["b"] == 50
             state = await store.handoff(user, handoff["id"])
-            assert state["status"] == "paid" and state["credits"] == 200
+            assert state["status"] == "paid" and state["credits"] == 50
         finally:
             async with database.connection() as conn:  # type: ignore[attr-defined]
                 await conn.execute("DELETE FROM app_user WHERE id = %s", (user,))

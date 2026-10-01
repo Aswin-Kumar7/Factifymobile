@@ -6,6 +6,23 @@ nothing that was there changes name, type or meaning. A client built against an 
 version keeps working and simply does not show the new fields. 1.4 adds a value to
 `verdict`; see below for how an older client reads it.
 
+## 1.6 (2026-10-01): what is known about a link's website
+
+Additive. `source_profile`, on the result of a submitted link (or a forward carrying
+one): `domain`, `trusted` (on Factify's trusted-source list), `trust` ("highly
+credible", "credible", "listed"), `fact_checker`, `level` (the source-risk level from
+its observations), `findings` (plain lines to show) and `warnings` (lines to show
+raised: a name imitating a trusted outlet, a domain registered weeks ago, no contact
+page or named author, hidden instructions aimed at automated checkers), and
+`domain_age_days` when the public registry says. Never a finding about a claim: a
+site with strong warnings can only hold an answer back from True. `source_risk`, which
+was always UNKNOWN, now carries the same level. Absent for anything but a link.
+
+A new case rule, `rollup.fabricated_unreported`: an AI-made picture or video
+presented as news, whose main claim is a world event that no trusted outlet reports
+after a full search, is FALSE at no more than 70% confidence. The verdict's
+`action_reason` says why; its claims stay unconfirmed, as no source contradicts them.
+
 ## 1.5 (2026-09-29): why a picture check did not run
 
 Additive. `media_report.detector.why` and `media_report.history.why` say why a check

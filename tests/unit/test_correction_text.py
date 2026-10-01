@@ -24,6 +24,7 @@ from app.api.schemas import (
     VerifyResponse,
 )
 from app.orchestration.correction import correction_message
+from app.verdict.engine import fabricated_news
 
 PIB = "https://pib.gov.in/factcheck/5000-scheme"
 BLOG = "https://example-blog.in/post"
@@ -123,6 +124,17 @@ class TestTheMessage:
         )
         built = correction_message(case, "en")
         assert "false" not in built.message.lower() and built.links == ()
+
+    def test_a_fabricated_news_picture_is_called_fabricated_not_unconfirmed(self) -> None:
+        # rollup.fabricated_unreported: False with nothing published to contradict it.
+        case = _case("FALSE", _claim("UNVERIFIED", "HEADLINE"), summary=None).model_copy(
+            update={"action_reason": fabricated_news("Lithium found in Antarctica", 17).reason}
+        )
+        built = correction_message(case, "en")
+        assert "likely fabricated" in built.message
+        assert "made by AI" in built.message
+        assert built.links == ()
+        assert "गढ़ी हुई" in correction_message(case, "hi").message
 
     def test_the_source_comes_from_the_most_important_deciding_claim(self) -> None:
         case = _case(

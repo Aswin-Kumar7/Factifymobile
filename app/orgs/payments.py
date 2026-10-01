@@ -29,19 +29,27 @@ class Pack:
     price_inr: int
 
 
+# Priced from what a check costs us (measured 2026-10-01): a check answered from the
+# cache is free to serve, one our own records settle about Rs 0.6, and a full
+# open-web check about Rs 5-6 (some 49,000 model tokens and five searches). The
+# first prices - Rs 0.50 to Rs 1 a check - were set for testing and lost money on
+# every new question. Every organisation price covers even a full open-web check
+# today; every pack covers the blended cost of a check at launch (about Rs 2.9),
+# with the margin growing as more answers come from the cache and our own records.
 PACKS: tuple[Pack, ...] = (
-    Pack("starter", "Starter", 1_000, 999),
-    Pack("team", "Team", 5_000, 3_999),
-    Pack("newsroom", "Newsroom", 20_000, 12_999),
-    Pack("enterprise", "Enterprise", 100_000, 49_999),
+    Pack("starter", "Starter", 1_000, 5_999),
+    Pack("team", "Team", 5_000, 24_999),
+    Pack("newsroom", "Newsroom", 20_000, 89_999),
+    Pack("enterprise", "Enterprise", 100_000, 399_999),
 )
 
 
-# For one person's own credits: smaller packs, a little dearer per check.
+# For one person's own credits: smaller packs, priced for people rather than
+# companies, and still above what a check costs on average.
 PERSONAL_PACKS: tuple[Pack, ...] = (
-    Pack("p200", "200 checks", 200, 199),
-    Pack("p500", "500 checks", 500, 449),
-    Pack("p1000", "1,000 checks", 1_000, 849),
+    Pack("p50", "50 checks", 50, 249),
+    Pack("p150", "150 checks", 150, 599),
+    Pack("p400", "400 checks", 400, 1_399),
 )
 
 

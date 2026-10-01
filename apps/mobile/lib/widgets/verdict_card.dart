@@ -383,6 +383,10 @@ class _Body extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _WhatWeChecked(card: card),
+        if (verdict.sourceProfile case final site?) ...[
+          _SectionTitle(title: l10n.sourceProfileTitle, note: l10n.pcNote),
+          _SiteCard(site: site),
+        ],
         if (RightAndWrong.shows(verdict, claims)) ...[
           _SectionTitle(title: l10n.rightWrongTitle),
           RightAndWrong(claims: claims),
@@ -616,6 +620,56 @@ class _Body extends StatelessWidget {
   }
 }
 
+/// The website a link comes from: on our list or not, and what was observed.
+class _SiteCard extends StatelessWidget {
+  const _SiteCard({required this.site});
+
+  final SourceProfile site;
+
+  @override
+  Widget build(BuildContext context) {
+    final k = FactifyTokens.of(context);
+    final l10n = AppLocalizations.of(context);
+    final warned = site.level == 'HIGH' || site.level == 'MEDIUM';
+    final (badge, colour, tint) = site.factChecker
+        ? (l10n.sourceProfileFactChecker, k.tC, k.tS)
+        : site.trusted
+        ? (l10n.sourceProfileTrusted(site.trust ?? ''), k.tC, k.tS)
+        : (l10n.sourceProfileUnlisted, warned ? k.mC : k.uC, warned ? k.mS : k.uS);
+    return FxCard(
+      padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(site.domain, style: FactifyText.sans(14, weight: FontWeight.w600, color: k.ink)),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                decoration: BoxDecoration(color: tint, borderRadius: BorderRadius.circular(10)),
+                child: Text(badge, style: FactifyText.sans(11.5, weight: FontWeight.w600, color: colour)),
+              ),
+            ],
+          ),
+          for (final line in site.findings) ...[
+            const SizedBox(height: 6),
+            Text(line, style: FactifyText.sans(13, color: k.ink2).copyWith(height: 1.4)),
+          ],
+          for (final line in site.warnings) ...[
+            const SizedBox(height: 6),
+            Text(line, style: FactifyText.sans(13, weight: FontWeight.w600, color: k.mC).copyWith(height: 1.4)),
+          ],
+          const SizedBox(height: 8),
+          Text(l10n.sourceProfileNote, style: FactifyText.sans(11.5, color: k.ink3)),
+        ],
+      ),
+    );
+  }
+}
+
 class _SectionTitle extends StatelessWidget {
   const _SectionTitle({required this.title, this.note});
 
@@ -633,13 +687,16 @@ class _SectionTitle extends StatelessWidget {
         children: [
           // A title with no note beside it may wrap: a long one ("What's right,
           // what's wrong", in Hindi at 130%) ran off the screen.
+          // Nor may one beside a note: "About this website" and "Not part of the
+          // verdict" overran a phone by half a pixel.
           if (note == null)
             Flexible(child: Text(title, style: FactifyText.of(context).section))
           else
-            Text(title, style: FactifyText.of(context).section),
+            Flexible(flex: 3, child: Text(title, style: FactifyText.of(context).section)),
           const SizedBox(width: 12),
           if (note != null)
             Expanded(
+              flex: 2,
               child: Text(
                 note!,
                 textAlign: TextAlign.end,

@@ -2534,6 +2534,36 @@ abstract class AppLocalizations {
   /// **'Not part of the verdict'**
   String get pcNote;
 
+  /// Section title: what is known about the website a submitted link comes from.
+  ///
+  /// In en, this message translates to:
+  /// **'About this website'**
+  String get sourceProfileTitle;
+
+  /// Badge: the site is on the trusted list, with its level as the server words it.
+  ///
+  /// In en, this message translates to:
+  /// **'Trusted · {level}'**
+  String sourceProfileTrusted(String level);
+
+  /// No description provided for @sourceProfileFactChecker.
+  ///
+  /// In en, this message translates to:
+  /// **'Fact-checker'**
+  String get sourceProfileFactChecker;
+
+  /// No description provided for @sourceProfileUnlisted.
+  ///
+  /// In en, this message translates to:
+  /// **'Not on our trusted list'**
+  String get sourceProfileUnlisted;
+
+  /// No description provided for @sourceProfileNote.
+  ///
+  /// In en, this message translates to:
+  /// **'What we know about the site itself. It never makes a claim true or false.'**
+  String get sourceProfileNote;
+
   /// No description provided for @pcCredentials.
   ///
   /// In en, this message translates to:
@@ -3311,7 +3341,7 @@ abstract class AppLocalizations {
   /// No description provided for @onbMediaVoice.
   ///
   /// In en, this message translates to:
-  /// **'Voice notes'**
+  /// **'Voices in videos'**
   String get onbMediaVoice;
 
   /// No description provided for @onbMediaPdfs.

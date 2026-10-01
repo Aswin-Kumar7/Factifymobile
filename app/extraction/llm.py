@@ -20,6 +20,7 @@ to abstain rather than to be fed.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
@@ -339,6 +340,14 @@ _RESPONSE_SCHEMA: dict[str, Any] = {
 }
 
 
+def _worth_another_try(reason: str) -> bool:
+    """A provider error that a second identical request can clear: a 400 from a
+    model provider's filters, which is not always the same answer twice, or a 5xx."""
+    return reason.startswith(("provider returned 400", "provider returned 5")) or (
+        "timed out" in reason
+    )
+
+
 class LLMExtractor:
     """Structured extraction over a governed, fenced, cached call."""
 
@@ -421,6 +430,22 @@ class LLMExtractor:
             temperature=0.0,
         )
         response = await self._fetcher.post_json(url, body, provider=PROVIDER, headers=headers)
+        if not isinstance(response, FetchResult) and _worth_another_try(response.reason):
+            # Once more, after a moment. The model provider refused the AI-made
+            # "lithium in Antarctica" news graphic with a 400 once and took the very
+            # same request four times after; that one refusal lost every claim in the
+            # picture, and a fabricated news item came back "Unconfirmed" (2026-10-01).
+            event(
+                logger,
+                "extraction refused; trying once more",
+                module="extraction.llm",
+                outcome="degraded",
+                provider=PROVIDER,
+                model_id=model_id,
+                failure_reason=response.reason,
+            )
+            await asyncio.sleep(1.5)
+            response = await self._fetcher.post_json(url, body, provider=PROVIDER, headers=headers)
 
         if not isinstance(response, FetchResult):
             return ExtractionOutcome(
