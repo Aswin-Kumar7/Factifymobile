@@ -72,6 +72,65 @@ class TestWhatPaysForACheck:
         assert plans.TEAM.price_paise("year", seats=3) == 5_988 * 100 * 3
 
 
+class TestHowAPlanIsPaid:
+    """Prepaid unless auto-renew is switched on: one payment a month or a year."""
+
+    async def _start(self, monkeypatch: pytest.MonkeyPatch, *, auto_renew: bool) -> dict:
+        from types import SimpleNamespace
+
+        from app.api import plans as api
+
+        made: list[str] = []
+
+        class _Razorpay:
+            key_id = f"rzp_test_{uuid4().hex[:6]}"
+            test_mode = True
+
+            async def create_plan(self, **_: object) -> str:
+                made.append("plan")
+                return "plan_1"
+
+            async def create_subscription(self, **_: object) -> dict:
+                made.append("subscription")
+                return {"id": "sub_1"}
+
+            async def create_order(self, **_: object) -> str:
+                made.append("order")
+                return "order_1"
+
+        class _Store:
+            async def razorpay_plan_id(self, key: str) -> None:
+                return None
+
+            async def save_razorpay_plan(self, key: str, plan_id: str) -> None: ...
+
+            async def create_subscription(self, **_: object) -> None: ...
+
+        monkeypatch.setattr(api, "_razorpay", lambda request: _Razorpay())
+        monkeypatch.setattr(api, "_store", lambda request: _Store())
+        billing = SimpleNamespace(auto_renew=auto_renew)
+        request = SimpleNamespace(
+            app=SimpleNamespace(state=SimpleNamespace(settings=SimpleNamespace(billing=billing)))
+        )
+        started = await api._start(
+            request, plan=plans.PLUS, interval="month", seats=1, user_id="u1", org_id=None,
+            actor="u1", email="a@example.org",
+        )  # fmt: skip
+        return {"mode": started["mode"], "made": made}
+
+    async def test_a_plan_is_one_payment_while_auto_renew_is_off(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        started = await self._start(monkeypatch, auto_renew=False)
+
+        assert started == {"mode": "order", "made": ["order"]}
+
+    async def test_auto_renew_makes_a_subscription(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        started = await self._start(monkeypatch, auto_renew=True)
+
+        assert started == {"mode": "subscription", "made": ["plan", "subscription"]}
+
+
 class TestRazorpaySubscriptions:
     def test_a_subscriptions_checkout_signature(self) -> None:
         pay = Razorpay("rzp_test_x", "secret", "hook")

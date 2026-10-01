@@ -184,6 +184,10 @@ class BillingSettings(BaseModel):
     # Factify's own GSTIN, printed on every invoice when set (prices include GST at
     # 18%; invoices show the taxable value and the GST either way).
     gstin: str | None = Field(default=None, max_length=15)
+    # Plans that renew by themselves, through Razorpay Subscriptions. Off: a plan is
+    # paid a month or a year at a time by one payment (any method Razorpay offers),
+    # and stops at the end of what was paid unless the person pays again.
+    auto_renew: bool = False
     # How often the server bills last month's extra usage (0008); 0 is never (then
     # POST /v1/admin/billing/close-month does it by hand). Each month is billed once.
     extra_usage_billing_hours: float = Field(default=6.0, ge=0)

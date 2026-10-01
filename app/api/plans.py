@@ -119,7 +119,8 @@ async def _start(
         "org_id": org_id or "",
     }
     sub: dict[str, Any] | None = None
-    if razorpay.key_id not in _NO_SUBSCRIPTIONS:
+    renews = request.app.state.settings.billing.auto_renew
+    if renews and razorpay.key_id not in _NO_SUBSCRIPTIONS:
         try:
             plan_id = await _razorpay_plan(request, plan, interval)
             sub = await razorpay.create_subscription(
