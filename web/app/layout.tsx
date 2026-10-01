@@ -1,5 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { VersionGuard } from "@/components/version-guard";
 import "./globals.css";
 
 const geist = localFont({
@@ -46,6 +49,15 @@ export const viewport: Viewport = {
   ],
 };
 
+/** This build's id, baked into every page at build time (see VersionGuard). */
+function buildId() {
+  try {
+    return readFileSync(path.join(process.cwd(), ".next", "BUILD_ID"), "utf8").trim();
+  } catch {
+    return "dev";
+  }
+}
+
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" suppressHydrationWarning>
@@ -60,6 +72,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       </head>
       <body className={`${geist.variable} ${newsreader.variable} ${geistMono.variable} antialiased`}>
         {children}
+        <VersionGuard build={buildId()} />
       </body>
     </html>
   );
