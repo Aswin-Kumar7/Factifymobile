@@ -58,6 +58,8 @@ class _Store:
         self.ledger: list[tuple[str, int, str, str]] = []
         # What paid for each check, by its request key (0008).
         self.sources: dict[str, str] = {}
+        # Organisations a person is the last owner of.
+        self.owns: dict[str, str] = {}
 
     async def upsert(self, user: AuthUser) -> bool:
         created = user.id not in self.users
@@ -116,6 +118,12 @@ class _Store:
 
     async def set_survey(self, user_id: str, state: str, answers: dict[str, object] | None) -> None:
         self.users[user_id].update(survey_state=state, survey=answers)
+
+    async def delete(self, user_id: str) -> list[str]:
+        if user_id in self.owns:
+            return [self.owns[user_id]]
+        self.users.pop(user_id, None)
+        return []
 
 
 class TestSignInIsCheckedWithSupabase:
@@ -320,6 +328,29 @@ class TestTheAccountEndpoints:
         assert body["plan_usage"]["allowance"] == FREE_CHECKS
         assert body["credits"]["check_cost"] == 1
         assert body["credits"]["limited"] is False
+
+    def test_deleting_your_account_removes_it(self) -> None:
+        app, store, _ = self._app()
+        client = TestClient(app)
+        signed = {"Authorization": "Bearer good"}
+        client.get("/v1/me", headers=signed)
+
+        assert client.delete("/v1/me").status_code == 401
+        assert client.delete("/v1/me", headers=signed).status_code == 204
+        assert PERSON.id not in store.users
+
+    def test_the_last_owner_of_an_organisation_cannot_delete_their_account(self) -> None:
+        app, store, _ = self._app()
+        client = TestClient(app)
+        signed = {"Authorization": "Bearer good"}
+        client.get("/v1/me", headers=signed)
+        store.owns[PERSON.id] = "Newsroom"
+
+        refused = client.delete("/v1/me", headers=signed)
+
+        assert refused.status_code == 409
+        assert "Newsroom" in refused.text
+        assert PERSON.id in store.users
 
     def test_a_signed_in_check_costs_one_credit_and_an_anonymous_one_nothing(self) -> None:
         app, store, _ = self._app()

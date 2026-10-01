@@ -138,3 +138,18 @@ async def decide(request_id: str, payload: Decision, request: Request) -> dict[s
         note=payload.note,
         grant_credits=payload.grant_credits if payload.approve else 0,
     )
+
+
+@router.get("/counts", summary="What waits for the admin: reports and requests")
+async def counts(request: Request) -> dict[str, int]:
+    """The admin menu's badges - there is no email; this is how admins notice."""
+    await _staff(request)
+    return await _store(request).admin_counts()
+
+
+@router.get("/reviews", summary="Reported and held cases, with what was checked")
+async def reviews(request: Request, status: str = "pending") -> list[dict[str, Any]]:
+    """The review queue for the admin panel: `pending` (default) or `reviewed`. A
+    label is recorded with POST /v1/review/{item_id}, beside the machine's verdict."""
+    await _staff(request)
+    return await _store(request).admin_reviews(reviewed=status == "reviewed")

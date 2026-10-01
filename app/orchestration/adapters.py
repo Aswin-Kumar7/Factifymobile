@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from app.cache.keys import CacheKeyParts
 from app.cache.service import CachedVerdict, CacheService
@@ -144,13 +145,36 @@ class PoolReviewQueue:
 
         The reason string names the source so a reviewer can tell "the system was
         unsure" from "a person disagreed" — those want different attention.
+
+        Once per case until it is reviewed: a report on a case already waiting for a
+        reviewer returns that item instead of queueing it again. Pressing Report
+        twice, or again after reopening the result from History, queued the same case
+        twice for the same reviewer (2026-10-02). The lock makes two reports arriving
+        together one item too.
         """
         from app.db.repositories import ReviewRepository
         from app.orchestration.review import ReviewReason
 
-        async with self._database.connection() as conn:
+        reason = ReviewReason.USER_REPORTED.value
+        async with self._database.transaction() as conn:
+            await conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtext('review_item:' || %s::text))",
+                (str(case_id),),
+            )
+            cursor = await conn.execute(
+                """
+                SELECT id FROM review_item
+                 WHERE case_id = %s AND reason = %s AND reviewed_at IS NULL
+                 ORDER BY created_at
+                 LIMIT 1
+                """,
+                (case_id, reason),
+            )
+            waiting = await cursor.fetchone()
+            if waiting is not None:
+                return UUID(str(waiting["id"]))
             return await ReviewRepository(conn).enqueue(
-                case_id=case_id, reason=ReviewReason.USER_REPORTED.value, machine_status=None
+                case_id=case_id, reason=reason, machine_status=None
             )
 
 
@@ -197,6 +221,10 @@ class PoolAccountStore:
     async def set_survey(self, user_id: str, state: str, answers: dict[str, object] | None) -> None:
         async with self._database.connection() as conn:
             await AccountRepository(conn).set_survey(user_id=user_id, state=state, answers=answers)
+
+    async def delete(self, user_id: str) -> list[str]:
+        async with self._database.transaction() as conn:
+            return await AccountRepository(conn).delete(user_id=user_id)
 
 
 class PoolLoginStore:

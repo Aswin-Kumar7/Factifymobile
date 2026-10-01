@@ -6,6 +6,33 @@ nothing that was there changes name, type or meaning. A client built against an 
 version keeps working and simply does not show the new fields. 1.4 adds a value to
 `verdict`; see below for how an older client reads it.
 
+## 2026-10-02: endpoints behind the dashboard and app (contract still 1.7)
+
+The result's shape is unchanged; these are endpoints and response fields the website
+and app now use.
+
+- `DELETE /v1/me` deletes the account: 204, or 409 `owns_organisations` while the
+  person is the last owner of an open organisation.
+- `DELETE /v1/cases/{id}` stops a running check its starter owns: 204 (also when
+  already stopped), 404, or 409 once it has its answer. A stopped check costs nothing,
+  and `GET /v1/cases/{id}` then answers 410.
+- A video is charged when it has its answer, not when it is accepted.
+- `POST /v1/cases/{id}/report` returns the waiting report's `item_id` when the case
+  was already reported.
+- A cached result's `case_id` is always the stored case it came from.
+- `GET /v1/sources/summary` (public): `sites` and `fact_checkers` on the trusted list.
+- `GET /v1/admin/counts`, `GET /v1/admin/reviews?status=pending|reviewed` (staff).
+- Invoices for every payment: `GET /v1/me/billing/plans/{id}/invoice`,
+  `/v1/me/billing/bills/{id}/invoice`, and the same under `/v1/orgs/{id}/billing/`.
+  `FACTIFY_BILLING__GSTIN` prints Factify's GSTIN on them when set.
+- `GET /v1/orgs` and `/v1/orgs/{id}` gain `month` (what the organisation can still
+  check this month, from its plan, credits and extra usage) and `month_breakdown`;
+  organisation "this month" is the calendar month in India time throughout.
+- `GET /v1/me/plan` gains `enforced`; plan payments gain `paid`.
+- `GET /v1/orgs/{id}/history` rows gain `name`, and `input_type` is filled in.
+- A payment handoff expires 10 minutes after it was made if never opened, and 30
+  minutes after it was opened if nothing finished it.
+
 ## 1.7 (2026-10-01): monthly plans
 
 Additive. `/v1/me` gains `plan_usage`: the person's plan (`plan` free, plus or pro;

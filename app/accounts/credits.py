@@ -122,6 +122,7 @@ class AccountStore(Protocol):
     async def set_survey(
         self, user_id: str, state: str, answers: dict[str, object] | None
     ) -> None: ...
+    async def delete(self, user_id: str) -> list[str]: ...
 
 
 class CreditBook:
@@ -223,6 +224,11 @@ class CreditBook:
         await self.account(user)
         await self._store.set_name(user.id, name)
         return await self.account(user)
+
+    async def delete_account(self, user: AuthUser) -> list[str]:
+        """Delete the account; the organisations that stop it, when it is their last
+        owner (and then nothing is deleted)."""
+        return await self._store.delete(user.id)
 
     async def answer_survey(self, user: AuthUser, answers: SurveyAnswers | None) -> Account:
         """Record the survey: the answers, or None when the person skipped it."""

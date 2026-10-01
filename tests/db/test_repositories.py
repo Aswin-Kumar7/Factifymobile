@@ -378,6 +378,33 @@ class TestReview:
         pending = await review.pending()
         assert item_id not in {row["id"] for row in pending}
 
+    async def test_a_case_reported_twice_is_queued_once(self, conn: Any) -> None:
+        # Report pressed twice, or again after reopening the result from History.
+        from contextlib import asynccontextmanager
+
+        from app.orchestration.adapters import PoolReviewQueue
+
+        class _Database:
+            @asynccontextmanager
+            async def transaction(self) -> Any:
+                yield conn
+
+        case_id, _ = await _case_with_claim(conn)
+        queue = PoolReviewQueue(_Database())  # type: ignore[arg-type]
+
+        first = await queue.report(case_id)
+        again = await queue.report(case_id)
+
+        assert again == first
+        cursor = await conn.execute("SELECT id FROM review_item WHERE case_id = %s", (case_id,))
+        assert [row["id"] for row in await cursor.fetchall()] == [first]
+
+        # Once a reviewer has labelled it, a new report is a new item.
+        await ReviewRepository(conn).record_human_label(
+            item_id=first, human_label="UNVERIFIED", reviewer="analyst"
+        )
+        assert await queue.report(case_id) != first
+
 
 class TestAudit:
     async def test_audit_events_round_trip(self, conn: Any) -> None:

@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 
 from app.accounts import AuthUser
 from app.api.accounts import signed_in
-from app.orgs import payments
+from app.orgs import invoices, payments
 from app.orgs.errors import ApiError, bad_request, forbidden
 from app.orgs.store import KEY_ROLES, OrgStore
 
@@ -162,26 +162,76 @@ async def create_org(payload: OrgCreate, request: Request) -> dict[str, Any]:
 
 @router.get("/orgs/{org_id}", summary="An organisation, its pool and this month's spend")
 async def get_org(org_id: str, request: Request) -> dict[str, Any]:
-    _, member = await _access(request, org_id)
-    org = await _store(request).org(org_id)
+    user, member = await _access(request, org_id)
+    store = _store(request)
+    org = await store.org(org_id)
     org["my_role"] = member["role"]
     # Factify staff looking at someone else's organisation, not a member of it.
     org["viewing_as_staff"] = bool(member.get("staff"))
     org["my_monthly_limit"] = member.get("monthly_limit")
+    # This calendar month (India time): org-wide for owners, your own otherwise.
+    org["month_breakdown"] = await store.month_breakdown(
+        org_id, user_id=None if member["role"] == "owner" else user.id
+    )
     org["alerts"] = _alerts(org)
     return org
 
 
 def _alerts(org: dict[str, Any]) -> list[dict[str, str]]:
-    """What an owner should know now: a low pool, a monthly cap nearly reached."""
-    alerts = []
-    balance = int(org.get("balance") or 0) - int(org.get("held") or 0)
+    """What an owner should know now, from what `OrgStore.hold` would allow: the
+    plan's checks and the credits left, extra usage, and the monthly cap. An
+    organisation's checks are refused when nothing can pay for them."""
+    alerts: list[dict[str, str]] = []
+    m = org.get("month") or {}
+    left = int(m.get("checks_left") or 0)
     spend = int(org.get("month_spend") or 0)
-    if balance <= 0:
-        alerts.append({"level": "error", "text": "The credit pool is empty; checks are refused."})
-    elif spend and balance < spend * 0.2:
+    price = int(m.get("extra_price_paise") or 0) / 100
+    if org.get("status") == "suspended":
         alerts.append(
-            {"level": "warning", "text": "Credits are running low for this month's pace."}
+            {
+                "level": "error",
+                "text": "Factify has suspended this organisation; checks are refused.",
+            }
+        )
+    if m.get("extra_blocked") and m.get("extra_enabled"):
+        alerts.append(
+            {
+                "level": "error",
+                "text": "An extra usage bill is unpaid, so checks past the plan and credits are refused until it is paid.",
+            }
+        )
+    if left <= 0:
+        if m.get("extra_open"):
+            extra_left = m.get("extra_checks_left")
+            if extra_left is not None and int(extra_left) <= 0:
+                alerts.append(
+                    {
+                        "level": "error",
+                        "text": "The extra usage cap for this month is reached; checks are refused until the cap is raised or the month ends.",
+                    }
+                )
+            elif not m.get("pay_per_check"):
+                alerts.append(
+                    {
+                        "level": "warning",
+                        "text": f"The plan's checks and the credits are used up; checks now count as extra usage at ₹{price:g} each, billed after the month ends.",
+                    }
+                )
+        elif not m.get("extra_blocked"):
+            fix = (
+                "Buy credits, or turn on extra usage."
+                if org.get("plan") == "team"
+                else "Buy credits, or move to Team or to paying per check."
+            )
+            alerts.append(
+                {
+                    "level": "error",
+                    "text": f"No checks left: the plan's checks and the credits are used up, so checks are refused. {fix}",
+                }
+            )
+    elif not m.get("pay_per_check") and spend and left < spend * 0.2:
+        alerts.append(
+            {"level": "warning", "text": f"Only {left:,} checks left for this month's pace."}
         )
     cap = org.get("monthly_spend_limit")
     if cap:
@@ -191,7 +241,12 @@ def _alerts(org: dict[str, Any]) -> list[dict[str, str]]:
                 alerts.append(
                     {
                         "level": "error" if mark == 1.0 else "warning",
-                        "text": f"{int(mark * 100)}% of the monthly spending limit is used.",
+                        "text": f"{int(mark * 100)}% of the monthly spending limit is used."
+                        + (
+                            " Checks are refused until next month or a higher limit."
+                            if mark == 1.0
+                            else ""
+                        ),
                     }
                 )
                 break
@@ -535,14 +590,36 @@ async def payment_list(org_id: str, request: Request) -> list[dict[str, Any]]:
 @router.get(
     "/orgs/{org_id}/billing/payments/{payment_id}/invoice",
     response_class=HTMLResponse,
-    summary="A printable invoice",
+    summary="A printable invoice for a credit pack",
 )
 async def invoice(org_id: str, payment_id: str, request: Request) -> HTMLResponse:
     await _access(request, org_id, "owner")
     p = await _store(request).payment(org_id, payment_id)
     if p["status"] != "paid":
         raise bad_request("only a paid order has an invoice")
-    return invoice_html(p)
+    return invoice_html(p, request)
+
+
+@router.get(
+    "/orgs/{org_id}/billing/plans/{subscription_id}/invoice",
+    response_class=HTMLResponse,
+    summary="A printable invoice for a Team plan payment",
+)
+async def plan_invoice(org_id: str, subscription_id: str, request: Request) -> HTMLResponse:
+    await _access(request, org_id, "owner")
+    s = await _store(request).plan_payment(subscription_id, org_id=org_id)
+    return plan_invoice_html(s, request)
+
+
+@router.get(
+    "/orgs/{org_id}/billing/bills/{bill_id}/invoice",
+    response_class=HTMLResponse,
+    summary="A printable invoice for a paid extra usage bill",
+)
+async def bill_invoice(org_id: str, bill_id: str, request: Request) -> HTMLResponse:
+    await _access(request, org_id, "owner")
+    b = await _store(request).usage_bill(bill_id, org_id=org_id)
+    return bill_invoice_html(b, request)
 
 
 def _pack_name(pack_id: str) -> str:
@@ -550,32 +627,27 @@ def _pack_name(pack_id: str) -> str:
     return chosen.name if chosen else pack_id.title()
 
 
-def invoice_html(p: dict[str, Any]) -> HTMLResponse:
-    """A paid order as a printable invoice (an organisation's or a person's)."""
-    from html import escape
+def _seller_gstin(request: Request) -> str | None:
+    gstin = request.app.state.settings.billing.gstin
+    return str(gstin).strip() or None if gstin else None
 
-    amount = p["amount_paise"] / 100
-    test = (
-        "<p style='color:#b45309'><b>Test mode: no money was charged.</b></p>"
-        if p["test_mode"]
-        else ""
-    )
-    return HTMLResponse(
-        f"""<!doctype html><html><head><meta charset="utf-8"><title>Invoice {escape(p["id"][:8])}</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>body{{font:15px/1.6 system-ui,sans-serif;max-width:680px;margin:40px auto;padding:0 20px;color:#1c1b18}}
-table{{width:100%;border-collapse:collapse;margin:20px 0}}td,th{{border-bottom:1px solid #e2ded4;padding:8px;text-align:left}}
-h1{{font-family:Georgia,serif}}@media print{{button{{display:none}}}}</style></head><body>
-<h1>Factify - Invoice</h1>{test}
-<p>Invoice no. FCT-{escape(p["id"][:8].upper())}<br>Date: {escape(str(p.get("paid_at") or "")[:10])}</p>
-<p><b>Billed to</b><br>{escape(p["org_name"])}<br>{escape(p.get("billing_email") or "")}
-{("<br>GSTIN: " + escape(p["gst_number"])) if p.get("gst_number") else ""}</p>
-<table><tr><th>Item</th><th>Credits</th><th>Amount</th></tr>
-<tr><td>{escape(_pack_name(p["pack"]))} credit pack</td><td>{p["credits"]:,}</td><td>&#8377;{amount:,.2f}</td></tr>
-<tr><th colspan="2">Total (INR)</th><th>&#8377;{amount:,.2f}</th></tr></table>
-<p>Razorpay order {escape(p["order_id"])}<br>Payment {escape(p.get("payment_id") or "")}</p>
-<button onclick="print()">Print or save as PDF</button></body></html>"""
-    )
+
+def invoice_html(p: dict[str, Any], request: Request) -> HTMLResponse:
+    """A paid credit pack as a printable invoice (an organisation's or a person's)."""
+    return HTMLResponse(invoices.for_pack(p, _pack_name(p["pack"]), _seller_gstin(request)))
+
+
+def plan_invoice_html(s: dict[str, Any], request: Request) -> HTMLResponse:
+    """A plan's payment as a printable invoice - once the payment went through."""
+    if not s.get("current_start"):
+        raise bad_request("only a paid plan has an invoice")
+    return HTMLResponse(invoices.for_plan(s, _seller_gstin(request)))
+
+
+def bill_invoice_html(b: dict[str, Any], request: Request) -> HTMLResponse:
+    if b.get("status") != "paid":
+        raise bad_request("only a paid bill has an invoice")
+    return HTMLResponse(invoices.for_usage_bill(b, _seller_gstin(request)))
 
 
 # ---- domains and sign-in -------------------------------------------------------------

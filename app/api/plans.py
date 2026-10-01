@@ -26,7 +26,6 @@ from app.api.admin import _staff
 from app.api.orgs import _access, _person, _razorpay, _store
 from app.orgs import month_close, payments, plans
 from app.orgs.errors import ApiError, bad_request
-from app.orgs.store import org_month
 
 logger = logging.getLogger("factify.api.plans")
 
@@ -283,6 +282,8 @@ async def my_plan(request: Request) -> dict[str, Any]:
         "resets_at": _iso(p.resets_at),
         "credits": p.credits,
         "checks_left": max(p.allowance - p.used, 0) + max(p.credits, 0),
+        # Whether running out refuses checks; off, checks go on past the plan.
+        "enforced": bool(getattr(book, "enforced", False)),
         "extra": {
             "enabled": p.extra_enabled,
             "cap_paise": p.extra_cap_paise,
@@ -343,32 +344,28 @@ async def org_plan(org_id: str, request: Request) -> dict[str, Any]:
     await _access(request, org_id)
     store = _store(request)
     org = await store.org(org_id)
-    renews = org.get("plan_renews_at")
-    month = org_month(
-        {
-            **org,
-            "plan_renews_at": datetime.fromisoformat(renews) if renews else None,
-            "credits": int(org.get("balance") or 0) - int(org.get("held") or 0),
-        },
-        datetime.now(UTC),
-    )
+    # The same figures `OrgStore.hold` decides by (checks still running count as used).
+    m = org["month"]
     return {
         "plan": org.get("plan"),
         "seats": org.get("seats"),
         "interval": org.get("plan_interval"),
-        "renews_at": renews,
+        "renews_at": org.get("plan_renews_at"),
         "cancel_at_end": org.get("plan_cancel_at_end"),
-        "allowance": month.allowance,
-        "used": month.used,
+        "allowance": m["allowance"],
+        "used": m["plan_used"],
         "resets_at": org.get("plan_resets_at"),
-        "credits": month.balance,
-        "checks_left": plans.checks_left(month),
+        "credits": m["credits"],
+        "checks_left": m["checks_left"],
+        "pay_per_check": m["pay_per_check"],
         "extra": {
-            "enabled": month.extra_enabled,
-            "cap_paise": month.extra_cap_paise,
-            "used_paise": month.extra_used_paise,
-            "price_paise": month.extra_price_paise,
-            "blocked": month.extra_blocked,
+            "enabled": m["extra_enabled"],
+            "open": m["extra_open"],
+            "cap_paise": m["extra_cap_paise"],
+            "used_paise": m["extra_used_paise"],
+            "price_paise": m["extra_price_paise"],
+            "blocked": m["extra_blocked"],
+            "checks_left": m["extra_checks_left"],
         },
         "renewal": _renewal(await store.current_subscription(org_id=org_id)),
         "subscriptions": await store.subscriptions(org_id=org_id),

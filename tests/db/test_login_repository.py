@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.db.repositories import LoginRepository
+from app.db.repositories import AccountRepository, LoginRepository
 from tests.conftest import requires_database
 
 pytestmark = [pytest.mark.anyio, requires_database]
@@ -77,3 +77,41 @@ class TestSessions:
         assert await repo.session_person("h1", now + timedelta(days=2)) is None  # expired
         await repo.close_session("h1")
         assert await repo.session_person("h1", now) is None  # signed out
+
+
+class TestDeletingAnAccount:
+    async def _org(self, conn: Any, *owners: str) -> None:
+        cur = await conn.execute("INSERT INTO organisation (name) VALUES ('Newsroom') RETURNING id")
+        org_id = (await cur.fetchone())["id"]
+        for owner in owners:
+            await conn.execute(
+                "INSERT INTO org_member (org_id, user_id, role) VALUES (%s, %s, 'owner')",
+                (org_id, owner),
+            )
+
+    async def test_the_account_and_its_sessions_go(self, conn: Any) -> None:
+        user_id = await _make(conn, "asha@example.org")
+        repo = LoginRepository(conn)
+        now = datetime.now(UTC)
+        await repo.open_session(
+            token_hash="h1", user_id=user_id, method="password", expires_at=now + timedelta(days=1)
+        )
+
+        assert await AccountRepository(conn).delete(user_id=user_id) == []
+
+        assert await repo.session_person("h1", now) is None
+        assert await repo.by_email("asha@example.org") is None
+
+    async def test_the_last_owner_of_an_open_organisation_is_refused(self, conn: Any) -> None:
+        user_id = await _make(conn, "asha@example.org")
+        await self._org(conn, user_id)
+
+        assert await AccountRepository(conn).delete(user_id=user_id) == ["Newsroom"]
+        assert await LoginRepository(conn).by_email("asha@example.org") is not None
+
+    async def test_another_owner_lets_the_account_go(self, conn: Any) -> None:
+        user_id = await _make(conn, "asha@example.org")
+        other = await _make(conn, "ravi@example.org")
+        await self._org(conn, user_id, other)
+
+        assert await AccountRepository(conn).delete(user_id=user_id) == []

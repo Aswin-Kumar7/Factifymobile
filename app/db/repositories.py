@@ -1233,6 +1233,32 @@ class AccountRepository(_Repository):
             "UPDATE app_user SET display_name = %s WHERE id = %s", (name, UUID(user_id))
         )
 
+    async def delete(self, *, user_id: str) -> list[str]:
+        """Delete the person and everything that is theirs alone, unless they are the
+        last owner of an organisation still open: then nothing is deleted and those
+        organisations' names come back, since deleting would leave them ownerless.
+
+        Sessions, sign-in, credits, payments and plans go with the row (ON DELETE
+        CASCADE); organisation records they made keep the record and lose the name.
+        """
+        blocking = await self._all(
+            """
+            SELECT o.name FROM organisation o
+              JOIN org_member m ON m.org_id = o.id AND m.user_id = %s AND m.role = 'owner'
+             WHERE o.status <> 'closed'
+               AND NOT EXISTS (
+                   SELECT 1 FROM org_member other
+                    WHERE other.org_id = o.id AND other.role = 'owner'
+                      AND other.status = 'active' AND other.user_id <> m.user_id)
+             ORDER BY o.name
+            """,
+            (UUID(user_id),),
+        )
+        if blocking:
+            return [str(row["name"]) for row in blocking]
+        await self._execute("DELETE FROM app_user WHERE id = %s", (UUID(user_id),))
+        return []
+
     async def set_survey(
         self, *, user_id: str, state: str, answers: dict[str, object] | None
     ) -> None:

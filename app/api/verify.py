@@ -691,7 +691,7 @@ async def cached_full_response(
 
     `None` when the hit is not ledger-backed (older cache rows, or the original
     ledger write failed): the caller serves the thin result, which is everything
-    those rows actually hold.
+    those rows actually hold (`_thin`).
     """
     if not result.from_cache or result.source_case_id is None:
         return None
@@ -725,6 +725,29 @@ async def cached_full_response(
 
 
 _VIDEO_SUFFIXES = (".mp4", ".mov", ".m4v", ".webm", ".mkv", ".3gp", ".avi")
+
+
+def _thin(result: VerificationResult) -> VerifyResponse:
+    """A cache hit's thin result, under the case it was recorded as.
+
+    The thin result used to carry the id minted for this request, a case that was
+    never written: Report, the correction to send back and the source reader all
+    answered 404 on it. The original case is in the ledger even when its claims could
+    not be read back, so the thin result is served under that. Only a row older than
+    the field has no case to name (none is reachable since the rule version moved on);
+    it keeps the minted id, as before.
+    """
+    response = to_response(result)
+    if result.source_case_id is None:
+        return response
+    return response.model_copy(update={"case_id": str(result.source_case_id)})
+
+
+async def _from_cache(request: Request, result: VerificationResult) -> VerifyResponse | None:
+    """What a cache hit is served as - in full, else thin - or None for a fresh result."""
+    if not result.from_cache:
+        return None
+    return await cached_full_response(request, result) or _thin(result)
 
 
 def _is_video(file: UploadFile) -> bool:
@@ -1004,13 +1027,15 @@ def _in_background(
     *,
     user: Any,
     cost: int,
+    estimated_seconds: int = 90,
 ) -> JSONResponse:
     """Run a check in the background and answer with its case id at once (202).
 
     Every claim is searched and read, with up to `BACKGROUND_SECONDS` to do it and
     patience with a busy provider, while the app shows "3 of 7 claims checked" from
     `/v1/cases/{id}` and each source from the event stream. Charged only when it
-    finishes with an answer.
+    finishes with an answer: one that fails, or that the person who started it stops
+    (`DELETE /v1/cases/{id}`), costs nothing and gives back what was held for it.
     """
     runs: BackgroundChecks = request.app.state.background_checks
 
@@ -1025,6 +1050,10 @@ def _in_background(
                 except BaseException:
                     await release_credit(request)
                     raise
+                # The answer is in: from here it is charged, and can no longer be stopped.
+                run = runs.get(str(case_id))
+                if run is not None:
+                    run.settling = True
                 await charge(request, user, cost, response=response)
                 if watching is not None:
                     await watching.done(str(case_id))
@@ -1034,12 +1063,17 @@ def _in_background(
             check_seconds.reset(budget)
         return response
 
-    runs.start(str(case_id), work)
+    runs.start(
+        str(case_id),
+        work,
+        owner=getattr(user, "id", None),
+        on_cancel=lambda: release_credit(request),
+    )
     accepted = AcceptedResponse(
         case_id=str(case_id),
         poll_url=f"/v1/cases/{case_id}",
         # An article of seven claims measures two to three minutes; a forward, one.
-        estimated_seconds=90,
+        estimated_seconds=estimated_seconds,
     )
     return JSONResponse(
         status_code=status.HTTP_202_ACCEPTED, content=accepted.model_dump(mode="json")
@@ -1085,7 +1119,7 @@ async def _checked(
             from_cache=True,
             elapsed_ms=hit.elapsed_ms,
         )
-        served = await cached_full_response(request, hit) or to_response(hit)
+        served = await cached_full_response(request, hit) or _thin(hit)
         if intake.input_type is InputType.URL and intake.primary.source_url:
             report = await _profile_url(request, intake.primary.source_url)
             if report is not None:
@@ -1150,7 +1184,7 @@ async def _checked(
         else {}
     )
 
-    cached = await cached_full_response(request, result)
+    cached = await _from_cache(request, result)
     if cached is not None:
         return cached.model_copy(update=shown)
 
@@ -1200,6 +1234,11 @@ async def get_case(case_id: UUID, request: Request) -> VerifyResponse | JSONResp
             )
         if run.status == "failed":
             return JSONResponse(status_code=run.error_status, content={"detail": run.error_detail})
+        if run.status == "cancelled":
+            return JSONResponse(
+                status_code=status.HTTP_410_GONE,
+                content={"detail": "this check was stopped before it finished; it cost nothing"},
+            )
         return run.response  # type: ignore[no-any-return]
 
     cases = getattr(request.app.state, "case_reader", None)
@@ -1215,6 +1254,45 @@ async def get_case(case_id: UUID, request: Request) -> VerifyResponse | JSONResp
             detail="the stored case could not be read in the current contract",
         )
     return await with_receipt(request, stored)
+
+
+@router.delete(
+    "/cases/{case_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Stop a check still running in the background",
+)
+async def cancel_case(case_id: UUID, request: Request) -> Response:
+    """Stop a background check, so it is never charged (the website's Stop button).
+
+    Stop used to stop only the page following the check: the check ran on to the
+    end and was charged for an answer nobody was waiting for.
+
+    Only the person who started it may stop it; anyone else is told there is no such
+    check (404), as for a case id that never existed. 204 when stopped, and again for
+    a check already stopped; 409 when it has finished, or has its answer and is being
+    charged - too late to stop. Whatever was held for it is given back.
+    """
+    runs: BackgroundChecks | None = getattr(request.app.state, "background_checks", None)
+    run = runs.get(str(case_id)) if runs is not None else None
+    user = await signed_in(request)
+    if (
+        run is None
+        or runs is None
+        or (run.owner is not None and run.owner != getattr(user, "id", None))
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="no check of yours is running under that id",
+        )
+    if not await runs.cancel(run):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="this check has already finished; collect its answer instead",
+        )
+    event(
+        logger, "background check stopped", module="api.verify", outcome="ok", case_id=str(case_id)
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # How long one stream stays open: past a background check's five minutes.
@@ -1342,9 +1420,9 @@ async def verify_file(
             intake, data = await _read_upload(request, file, consent_to_process_media)
             case_id = uuid4()
             if intake.input_type is InputType.VIDEO:
-                accepted = _start_video(request, intake, data, case_id=case_id, recheck=recheck)
-                await charge(request, user, cost)
-                return accepted
+                return _start_video(
+                    request, intake, data, case_id=case_id, recheck=recheck, user=user, cost=cost
+                )
             return _in_background(
                 request,
                 case_id,
@@ -1354,15 +1432,17 @@ async def verify_file(
             )
 
         try:
-            response = await _checked_file(request, file, consent_to_process_media, recheck)
+            response = await _checked_file(
+                request, file, consent_to_process_media, recheck, user=user, cost=cost
+            )
             if isinstance(response, VerifyResponse):
                 response = _echo(await with_receipt(request, response), key)
         except BaseException:
             await release_credit(request)
             raise
-        await charge(
-            request, user, cost, response=response if isinstance(response, VerifyResponse) else None
-        )
+        # A video is charged by its background check, when it has its answer.
+        if isinstance(response, VerifyResponse):
+            await charge(request, user, cost, response=response)
         if watching is not None:
             # A video is answered with a case id to poll, which is where it ends too.
             answered = (
@@ -1375,14 +1455,22 @@ async def verify_file(
 
 
 async def _checked_file(
-    request: Request, file: UploadFile, consent_to_process_media: bool, recheck: bool
+    request: Request,
+    file: UploadFile,
+    consent_to_process_media: bool,
+    recheck: bool,
+    *,
+    user: Any,
+    cost: int,
 ) -> VerifyResponse | JSONResponse:
-    """The upload check itself; `verify_file` above meters it."""
+    """The upload check itself; `verify_file` above meters it (a video meters itself)."""
     intake, data = await _read_upload(request, file, consent_to_process_media)
     case_id = uuid4()
 
     if intake.input_type is InputType.VIDEO:
-        return _start_video(request, intake, data, case_id=case_id, recheck=recheck)
+        return _start_video(
+            request, intake, data, case_id=case_id, recheck=recheck, user=user, cost=cost
+        )
     return await _checked_picture(request, intake, case_id=case_id, recheck=recheck)
 
 
@@ -1476,7 +1564,7 @@ async def _checked_upload(
         None if recheck else await orchestrator.cached(intake, case_id=case_id)  # type: ignore[attr-defined]
     )
     if hit is not None:
-        served = await cached_full_response(request, hit) or to_response(hit)
+        served = await cached_full_response(request, hit) or _thin(hit)
         shown = readings.get(intake.primary.sha256)
         if shown is None and intake.input_type is InputType.IMAGE:
             # Remembered only in memory, so a repeat after a restart reads the picture
@@ -1523,7 +1611,7 @@ async def _checked_upload(
         synthetic=synthetic,
     )
 
-    response = await cached_full_response(request, result) or to_response(result)
+    response = await _from_cache(request, result) or to_response(result)
     shown = _reading_response(reading)
     if shown is not None:
         _remember(readings, intake.primary.sha256, shown)
@@ -1649,7 +1737,14 @@ def _remembered_media(request: Request) -> dict[str, _MediaShown]:
 
 
 def _start_video(
-    request: Request, intake: NormalisedIntake, data: bytes, *, case_id: UUID, recheck: bool
+    request: Request,
+    intake: NormalisedIntake,
+    data: bytes,
+    *,
+    case_id: UUID,
+    recheck: bool,
+    user: Any,
+    cost: int,
 ) -> JSONResponse:
     """Check a video in the background and answer with its case id at once.
 
@@ -1657,36 +1752,18 @@ def _start_video(
     empty case. It is now checked from its still frames (`app/media/video.py`) - the
     middle one read and fact-checked like a picture, and every one put through the
     picture checks - and the app collects the answer from `/v1/cases/{id}`.
+
+    Charged as any background check is, when it has its answer. It was charged when
+    it was accepted, so a video whose check failed, or that was stopped, still cost
+    three checks, against "a check that fails costs nothing" (2026-10-02).
     """
-    runs: BackgroundChecks = request.app.state.background_checks
-
-    async def work(progress: Any) -> VerifyResponse:
-        # Every claim in its frames checked, with the time that takes, as any
-        # background check is.
-        budget = check_seconds.set(BACKGROUND_SECONDS)
-        patience = current_patience.set(PATIENT)
-        counting = claim_progress.set(progress)
-        try:
-            # Followed by its case id, which the app has from the 202.
-            async with _watched(request, str(case_id)) as watching:
-                response = await with_receipt(
-                    request,
-                    await _checked_video(request, intake, data, case_id=case_id, recheck=recheck),
-                )
-                if watching is not None:
-                    await watching.done(str(case_id))
-        finally:
-            claim_progress.reset(counting)
-            current_patience.reset(patience)
-            check_seconds.reset(budget)
-        return response
-
-    runs.start(str(case_id), work)
-    accepted = AcceptedResponse(
-        case_id=str(case_id), poll_url=f"/v1/cases/{case_id}", estimated_seconds=45
-    )
-    return JSONResponse(
-        status_code=status.HTTP_202_ACCEPTED, content=accepted.model_dump(mode="json")
+    return _in_background(
+        request,
+        case_id,
+        lambda: _checked_video(request, intake, data, case_id=case_id, recheck=recheck),
+        user=user,
+        cost=cost,
+        estimated_seconds=45,
     )
 
 
@@ -2181,6 +2258,9 @@ async def report_case(case_id: UUID, request: Request) -> dict[str, str]:
     abstention routing, because "the system was unsure" and "a person disagreed"
     deserve different reviewer attention. 404 when the case does not exist: a report
     must point at a verdict that was actually issued.
+
+    Once per case while it waits for a reviewer: a second report, from the same person
+    or another, answers the same way with the item already queued.
     """
     queue = _review_queue(request)
     reader = getattr(request.app.state, "case_reader", None)

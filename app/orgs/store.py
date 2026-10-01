@@ -89,11 +89,44 @@ def _rows(rows: list[Row]) -> list[Row]:
     return [r for r in (_jsonable(x) for x in rows) if r is not None]
 
 
-_MONTH = "date_trunc('month', now())"
+# "This month" everywhere is the calendar month in India time, the month plans and
+# extra usage bills count in - so caps, limits and the dashboard's figures agree.
+_MONTH = PLAN_MONTH
 _OPEN_HOLD = "settled_at IS NULL AND released_at IS NULL AND expires_at > now()"
 # Ledger rows that move the credit balance: everything but checks a plan or extra
 # usage paid for (NULL is a row from before plans).
 _CREDITS = "COALESCE(l.source, 'credits') = 'credits'"
+# A payment link opened in the browser (from the app) that nothing finished counts
+# as expired this long after it was opened, so the app waiting on it stops.
+HANDOFF_OPEN_MINUTES = 30
+
+
+def _holds(source: str) -> str:
+    return (
+        f"COALESCE((SELECT SUM(amount) FROM credit_hold h WHERE h.org_id = o.id"
+        f" AND h.source = '{source}' AND {_OPEN_HOLD}), 0)"
+    )
+
+
+# What `org_month` needs, for an organisation `o` (used by every query that shows
+# how many checks an organisation has left).
+_ORG_MONTH_COLUMNS = f"""
+  COALESCE((SELECT SUM(delta) FROM org_ledger l WHERE l.org_id = o.id
+               AND {_CREDITS}), 0) AS balance,
+  COALESCE((SELECT SUM(amount) FROM credit_hold h
+             WHERE h.org_id = o.id AND {_OPEN_HOLD}), 0) AS held,
+  {_holds("credits")} AS held_credits,
+  {_holds("plan")} AS held_plan,
+  {_holds("extra")} AS held_extra,
+  COALESCE((SELECT -SUM(delta) FROM org_ledger l WHERE l.org_id = o.id
+               AND l.source = 'plan' AND l.created_at >= {PLAN_MONTH}), 0) AS plan_used,
+  COALESCE((SELECT -SUM(delta) FROM org_ledger l WHERE l.org_id = o.id
+               AND l.source = 'extra' AND l.created_at >= {PLAN_MONTH}), 0) AS extra_checks,
+  EXISTS (SELECT 1 FROM usage_bill b WHERE b.org_id = o.id AND b.status = 'created'
+           AND b.created_at < now() - make_interval(days => {int(plans.UNPAID_GRACE_DAYS)}))
+      AS extra_blocked,
+  {PLAN_MONTH_END} AS plan_resets_at
+"""
 
 
 def org_month(row: Row, now: datetime) -> plans.Month:
@@ -116,6 +149,54 @@ def org_month(row: Row, now: datetime) -> plans.Month:
         extra_price_paise=price,
         extra_blocked=bool(row.get("extra_blocked")),
     )
+
+
+def _moment(value: Any) -> datetime | None:
+    if isinstance(value, str):
+        return datetime.fromisoformat(value)
+    return value if isinstance(value, datetime) else None
+
+
+def month_of(row: Row, now: datetime) -> plans.Month:
+    """An organisation's `plans.Month` from a row with `_ORG_MONTH_COLUMNS`: checks
+    still running count as used, so the figures match what `hold` would allow."""
+    return org_month(
+        {
+            **row,
+            "plan_renews_at": _moment(row.get("plan_renews_at")),
+            "plan_used": int(row.get("plan_used") or 0) + int(row.get("held_plan") or 0),
+            "extra_checks": int(row.get("extra_checks") or 0) + int(row.get("held_extra") or 0),
+            "credits": int(row.get("balance") or 0) - int(row.get("held_credits") or 0),
+        },
+        now,
+    )
+
+
+def month_summary(row: Row, now: datetime) -> Row:
+    """What an organisation can still check this month, for the website: the plan's
+    checks left, its credits, and whether extra usage (pay per check) takes over."""
+    month = month_of(row, now)
+    cap = month.extra_cap_paise
+    price = month.extra_price_paise or 1
+    return {
+        "allowance": month.allowance,
+        "plan_used": month.used,
+        "credits": month.balance,
+        "checks_left": plans.checks_left(month),
+        "pay_per_check": str(row.get("plan") or "") == "api",
+        "extra_open": month.extra_open,
+        "extra_enabled": month.extra_enabled,
+        "extra_blocked": month.extra_blocked,
+        "extra_cap_paise": cap,
+        "extra_used_paise": month.extra_used_paise,
+        "extra_price_paise": month.extra_price_paise,
+        # Extra checks the cap still allows; None is no cap (or no extra usage).
+        "extra_checks_left": (
+            max(cap - month.extra_used_paise, 0) // price
+            if cap is not None and month.extra_open
+            else None
+        ),
+    }
 
 
 class OrgStore:
@@ -195,9 +276,9 @@ class OrgStore:
                 conn,
                 f"""
                 SELECT o.id, o.name, o.status, m.role, m.monthly_limit, m.status AS member_status,
-                       COALESCE((SELECT SUM(delta) FROM org_ledger l WHERE l.org_id = o.id
-                                    AND {_CREDITS}), 0) AS balance,
-                       o.plan, o.seats,
+                       {_ORG_MONTH_COLUMNS},
+                       o.plan, o.seats, o.plan_renews_at, o.plan_cancel_at_end, o.extra_usage,
+                       o.extra_cap_paise,
                        COALESCE((SELECT -SUM(delta) FROM org_ledger l
                                   WHERE l.org_id = o.id AND l.user_id = m.user_id
                                     AND l.reason = 'check' AND l.created_at >= {_MONTH}), 0)
@@ -208,7 +289,15 @@ class OrgStore:
                 """,
                 (_uuid(user_id),),
             )
-        return _rows(rows)
+        now = _now()
+        out = []
+        for row in rows:
+            summary = month_summary(row, now)
+            item = _jsonable(row) or {}
+            for k in ("held_credits", "held_plan", "held_extra", "extra_usage", "extra_cap_paise"):
+                item.pop(k, None)
+            out.append({**item, **summary})
+        return out
 
     async def org(self, org_id: str) -> Row:
         async with self._db.connection() as conn:
@@ -216,17 +305,7 @@ class OrgStore:
                 conn,
                 f"""
                 SELECT o.*,
-                  COALESCE((SELECT SUM(delta) FROM org_ledger l WHERE l.org_id = o.id
-                               AND {_CREDITS}), 0) AS balance,
-                  COALESCE((SELECT SUM(amount) FROM credit_hold h
-                             WHERE h.org_id = o.id AND {_OPEN_HOLD}), 0) AS held,
-                  COALESCE((SELECT -SUM(delta) FROM org_ledger l WHERE l.org_id = o.id
-                               AND l.source = 'plan' AND created_at >= {PLAN_MONTH}), 0)
-                      AS plan_used,
-                  COALESCE((SELECT -SUM(delta) FROM org_ledger l WHERE l.org_id = o.id
-                               AND l.source = 'extra' AND created_at >= {PLAN_MONTH}), 0)
-                      AS extra_checks,
-                  {PLAN_MONTH_END} AS plan_resets_at,
+                  {_ORG_MONTH_COLUMNS},
                   COALESCE((SELECT -SUM(delta) FROM org_ledger l WHERE l.org_id = o.id
                                AND reason = 'check' AND created_at >= {_MONTH}), 0)
                       AS month_spend,
@@ -249,7 +328,37 @@ class OrgStore:
             )
         if row is None:
             raise not_found("organisation not found")
-        return _jsonable(row) or {}
+        out = _jsonable(row) or {}
+        out["month"] = month_summary(row, _now())
+        return out
+
+    async def month_breakdown(self, org_id: str, *, user_id: str | None = None) -> Row:
+        """This calendar month's checks (India time): what was spent through the
+        website and app versus API keys, and what paid - the plan, credits or extra
+        usage. Org-wide, or only `user_id`'s."""
+        mine = " AND l.user_id = %(u)s" if user_id else ""
+        async with self._db.connection() as conn:
+            row = await self._one(
+                conn,
+                f"""
+                SELECT COALESCE(-SUM(l.delta), 0) AS total,
+                       COUNT(*) AS checks,
+                       COALESCE(-SUM(l.delta) FILTER (WHERE l.api_key_id IS NOT NULL), 0)
+                           AS via_keys,
+                       COALESCE(-SUM(l.delta) FILTER (WHERE l.api_key_id IS NULL), 0) AS via_web,
+                       COALESCE(-SUM(l.delta) FILTER (WHERE l.source = 'plan'), 0) AS plan,
+                       COALESCE(-SUM(l.delta) FILTER (WHERE COALESCE(l.source, 'credits')
+                                                      = 'credits'), 0) AS credits,
+                       COALESCE(-SUM(l.delta) FILTER (WHERE l.source = 'extra'), 0) AS extra
+                  FROM org_ledger l
+                 WHERE l.org_id = %(o)s AND l.reason = 'check'
+                   AND l.created_at >= {PLAN_MONTH}{mine}
+                """,
+                {"o": _uuid(org_id), "u": _uuid(user_id) if user_id else None},
+            )
+        out: Row = {k: int(v or 0) for k, v in (row or {}).items()}
+        out["scope"] = "mine" if user_id else "organisation"
+        return out
 
     async def member(self, org_id: str, user_id: str) -> Row | None:
         async with self._db.connection() as conn:
@@ -957,10 +1066,17 @@ class OrgStore:
             rows = await self._all(
                 conn,
                 """
-                SELECT c.case_id, c.input_type, c.title, c.verdict, c.created_at,
-                       u.email, k.name AS key_name
+                SELECT c.case_id,
+                       -- Recorded with the check, or else read from the case itself
+                       -- (the website's word for a URL is "link").
+                       COALESCE(c.input_type,
+                                CASE v.input_type WHEN 'url' THEN 'link'
+                                                  ELSE v.input_type END) AS input_type,
+                       c.title, c.verdict, c.created_at,
+                       u.email, u.display_name AS name, k.name AS key_name
                   FROM org_check c LEFT JOIN app_user u ON u.id = c.user_id
                   LEFT JOIN api_key k ON k.id = c.api_key_id
+                  LEFT JOIN verification_case v ON v.id = c.case_id
                  WHERE c.org_id = %s ORDER BY c.created_at DESC LIMIT %s
                 """,
                 (_uuid(org_id), limit),
@@ -1234,10 +1350,13 @@ class OrgStore:
                        h.finished_at,
                        (SELECT credits FROM payment p WHERE p.handoff_id = h.id
                           AND p.status = 'paid' ORDER BY paid_at DESC LIMIT 1) AS credits,
-                       (h.used_at IS NULL AND h.expires_at <= now()) AS expired
+                       (h.status IN ('waiting', 'opened') AND (
+                           (h.used_at IS NULL AND h.expires_at <= now())
+                           OR h.used_at <= now() - make_interval(mins => %s)
+                       )) AS expired
                   FROM payment_handoff h WHERE h.id = %s AND h.user_id = %s
                 """,
-                (_uuid(handoff_id), _uuid(user_id)),
+                (HANDOFF_OPEN_MINUTES, _uuid(handoff_id), _uuid(user_id)),
             )
         if row is None:
             raise not_found("payment not found")
@@ -1479,12 +1598,11 @@ class OrgStore:
         async with self._db.connection() as conn:
             rows = await self._all(
                 conn,
-                """
+                f"""
                 SELECT o.id, o.name, o.status, o.created_at, o.billing_email,
-                  COALESCE((SELECT SUM(delta) FROM org_ledger l WHERE l.org_id = o.id
-                             AND COALESCE(l.source, 'credits') = 'credits'), 0)
-                      AS balance,
-                  o.plan, o.seats,
+                  {_ORG_MONTH_COLUMNS},
+                  o.plan, o.seats, o.plan_renews_at, o.plan_cancel_at_end, o.extra_usage,
+                  o.extra_cap_paise,
                   (SELECT COUNT(*) FROM org_member m WHERE m.org_id = o.id) AS members,
                   (SELECT COUNT(*) FROM api_key k WHERE k.org_id = o.id
                       AND k.revoked_at IS NULL) AS active_keys
@@ -1494,7 +1612,8 @@ class OrgStore:
                 """,
                 (query, f"%{query}%", f"%{query}%"),
             )
-        return _rows(rows)
+        now = _now()
+        return [{**(_jsonable(r) or {}), **month_summary(r, now)} for r in rows]
 
     async def set_org_status(self, org_id: str, status: str, actor: str, reason: str) -> None:
         if status not in ("active", "suspended"):
@@ -1855,7 +1974,8 @@ class OrgStore:
             rows = await self._all(
                 conn,
                 f"""
-                SELECT * FROM subscription WHERE {owner} = %s AND status <> 'created'
+                SELECT *, (current_start IS NOT NULL) AS paid
+                  FROM subscription WHERE {owner} = %s AND status <> 'created'
                  ORDER BY created_at DESC LIMIT 50
                 """,
                 (_uuid(str(value)),),
@@ -1973,3 +2093,99 @@ class OrgStore:
                 (_uuid(str(value)),),
             )
         return _rows(rows)
+
+    # ---- invoices for plans and extra usage -------------------------------------------
+
+    async def _billed_to(self, conn: Any, *, user_id: Any, org_id: Any) -> Row:
+        if org_id is not None:
+            row = await self._one(
+                conn,
+                "SELECT name AS org_name, billing_email, gst_number FROM organisation"
+                " WHERE id = %s",
+                (org_id,),
+            )
+        else:
+            row = await self._one(
+                conn,
+                "SELECT COALESCE(display_name, email) AS org_name, email AS billing_email,"
+                " NULL AS gst_number FROM app_user WHERE id = %s",
+                (user_id,),
+            )
+        return row or {}
+
+    async def plan_payment(
+        self, subscription_id: str, *, user_id: str | None = None, org_id: str | None = None
+    ) -> Row:
+        """A plan's payment (its first, for one that renews) and who it is billed to:
+        the person's or the organisation's own, or not found."""
+        owner, value = ("user_id", user_id) if user_id else ("org_id", org_id)
+        async with self._db.connection() as conn:
+            row = await self._one(
+                conn,
+                f"SELECT * FROM subscription WHERE id = %s AND {owner} = %s",
+                (_uuid(subscription_id), _uuid(str(value))),
+            )
+            if row is None:
+                raise not_found("payment not found")
+            billed = await self._billed_to(conn, user_id=row["user_id"], org_id=row["org_id"])
+        return {**(_jsonable(row) or {}), **(_jsonable(billed) or {})}
+
+    async def usage_bill(
+        self, bill_id: str, *, user_id: str | None = None, org_id: str | None = None
+    ) -> Row:
+        owner, value = ("user_id", user_id) if user_id else ("org_id", org_id)
+        async with self._db.connection() as conn:
+            row = await self._one(
+                conn,
+                f"SELECT * FROM usage_bill WHERE id = %s AND {owner} = %s",
+                (_uuid(bill_id), _uuid(str(value))),
+            )
+            if row is None:
+                raise not_found("bill not found")
+            billed = await self._billed_to(conn, user_id=row["user_id"], org_id=row["org_id"])
+        return {**(_jsonable(row) or {}), **(_jsonable(billed) or {})}
+
+    # ---- the review queue, for staff ----------------------------------------------------
+
+    async def admin_reviews(self, *, reviewed: bool = False, limit: int = 300) -> list[Row]:
+        """Cases held for a person to look at: reported by someone, or ones the system
+        declined to decide; what people reported first, newest first. With
+        `reviewed`, the ones already labelled."""
+        async with self._db.connection() as conn:
+            rows = await self._all(
+                conn,
+                f"""
+                SELECT r.id AS item_id, r.case_id, r.reason, r.machine_status, r.human_label,
+                       r.reviewer, r.notes, r.created_at, r.reviewed_at,
+                       v.input_type, v.overall_action, v.status AS case_status,
+                       v.created_at AS checked_at,
+                       (SELECT c.text FROM claim c WHERE c.case_id = r.case_id
+                         ORDER BY (c.importance = 'HEADLINE') DESC,
+                                  (c.importance = 'MAIN_THESIS') DESC
+                         LIMIT 1) AS title,
+                       (SELECT COUNT(*) FROM review_item o WHERE o.case_id = r.case_id
+                           AND o.reviewed_at IS NULL) AS open_reports
+                  FROM review_item r JOIN verification_case v ON v.id = r.case_id
+                 WHERE r.reviewed_at IS {"NOT " if reviewed else ""}NULL
+                 ORDER BY {
+                    "r.reviewed_at DESC"
+                    if reviewed
+                    else "(r.reason = 'user_reported') DESC, r.created_at DESC"
+                }
+                 LIMIT %s
+                """,
+                (limit,),
+            )
+        return _rows(rows)
+
+    async def admin_counts(self) -> Row:
+        """What waits for the admin: the badges in the admin panel's menu."""
+        async with self._db.connection() as conn:
+            row = await self._one(
+                conn,
+                """
+                SELECT (SELECT COUNT(*) FROM review_item WHERE reviewed_at IS NULL) AS reports,
+                       (SELECT COUNT(*) FROM org_request WHERE status = 'pending') AS requests
+                """,
+            )
+        return {k: int(v or 0) for k, v in (row or {}).items()}

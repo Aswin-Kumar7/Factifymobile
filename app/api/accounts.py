@@ -506,6 +506,26 @@ async def rename(payload: RenameRequest, request: Request) -> AccountResponse:
     return _account_response(request, account)
 
 
+@router.delete(
+    "/me", status_code=status.HTTP_204_NO_CONTENT, summary="Delete your account for good"
+)
+async def delete_account(request: Request) -> Response:
+    """Deletes the person, their sign-in and sessions, credits, payments, plan and
+    survey answers. Refused while they are the last owner of an organisation that is
+    still open: they close it or make someone else an owner first."""
+    user = await _require_person(request)
+    blocking = await _book(request).delete_account(user)
+    if blocking:
+        raise ApiError(
+            status.HTTP_409_CONFLICT,
+            "owns_organisations",
+            "You are the only owner of "
+            + ", ".join(blocking)
+            + ". Make someone else an owner or close it first.",
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.put("/me/survey", response_model=AccountResponse, summary="Answer or skip the survey")
 async def survey(payload: SurveyRequest, request: Request) -> AccountResponse:
     user = await _require_person(request)

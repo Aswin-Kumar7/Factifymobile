@@ -67,6 +67,10 @@ class VerifyRequest(BaseModel):
 
     url: str | None = None
     text: str | None = Field(default=None, max_length=50_000)
+    # Accepted and not used: the app sends its interface language. The words under a
+    # verdict are written in the language of the claim they explain (app/verdict/
+    # explain.py), from the stored evidence, and served again from the cache to
+    # everyone who checks the same thing; the app writes its own words around them.
     language: str | None = None
     # "background": answered at once with a case id (202) and checked while the app
     # follows its progress - every claim, with the time that takes. What the app uses

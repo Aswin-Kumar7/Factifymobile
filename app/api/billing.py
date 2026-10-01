@@ -3,7 +3,8 @@ organisation plans by request.
 
 Paying from the phone (like Spotify): the app asks for a handoff, opens the browser
 at `{web}/pay?h=<token>`, and polls the handoff until the payment it led to is paid,
-failed or cancelled. The token is random, single-use, lives 10 minutes and is new
+failed or cancelled - or it expires: unopened after 10 minutes, or opened and not
+finished within 30. The token is random, single-use, lives 10 minutes and is new
 for every purchase; only its hash is stored. Exchanged once, it gives the browser
 a two-hour session for the same person - nothing more.
 """
@@ -19,7 +20,15 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from app.accounts import AuthUser
-from app.api.orgs import _access, _person, _razorpay, _store, invoice_html
+from app.api.orgs import (
+    _access,
+    _person,
+    _razorpay,
+    _store,
+    bill_invoice_html,
+    invoice_html,
+    plan_invoice_html,
+)
 from app.orgs import payments
 from app.orgs.errors import ApiError, bad_request
 
@@ -131,7 +140,29 @@ async def personal_invoice(payment_id: str, request: Request) -> HTMLResponse:
     p = await _store(request).my_payment(user.id, payment_id)
     if p["status"] != "paid":
         raise bad_request("only a paid order has an invoice")
-    return invoice_html(p)
+    return invoice_html(p, request)
+
+
+@router.get(
+    "/me/billing/plans/{subscription_id}/invoice",
+    response_class=HTMLResponse,
+    summary="A printable invoice for a plan payment",
+)
+async def personal_plan_invoice(subscription_id: str, request: Request) -> HTMLResponse:
+    user = await _person(request)
+    s = await _store(request).plan_payment(subscription_id, user_id=user.id)
+    return plan_invoice_html(s, request)
+
+
+@router.get(
+    "/me/billing/bills/{bill_id}/invoice",
+    response_class=HTMLResponse,
+    summary="A printable invoice for a paid extra usage bill",
+)
+async def personal_bill_invoice(bill_id: str, request: Request) -> HTMLResponse:
+    user = await _person(request)
+    b = await _store(request).usage_bill(bill_id, user_id=user.id)
+    return bill_invoice_html(b, request)
 
 
 # ---- paying from the phone ---------------------------------------------------------
@@ -150,7 +181,9 @@ async def create_handoff(payload: HandoffCreate, request: Request) -> dict[str, 
 async def handoff_status(handoff_id: str, request: Request) -> dict[str, Any]:
     user = await _person(request)
     row = await _store(request).handoff(user.id, handoff_id)
-    if row.get("expired") and row["status"] == "waiting":
+    # Never opened in time, or opened and left (closed, or something else chosen):
+    # the app stops waiting.
+    if row.get("expired"):
         row["status"] = "expired"
     return row
 
