@@ -52,7 +52,12 @@ from app.sources.base import (
     locate_excerpt,
 )
 from app.sources.corpus_text import is_navigation
-from app.sources.reasoning import REASONER_VERSION, PassageReasoner, split_passages
+from app.sources.reasoning import (
+    REASONER_VERSION,
+    PassageReasoner,
+    locate_quote,
+    split_passages,
+)
 
 logger = logging.getLogger("factify.sources.corpus")
 
@@ -564,7 +569,9 @@ class CorpusResolver:
         # it, and a citation rendered as "|news |kerala jail gets ai based…" is site
         # chrome presented as evidence. The model's quote is already verified
         # verbatim and at least a full sentence, so it stands on its own.
-        window, anchor = locate_excerpt(snapshot.text, best.quote)
+        # A table's caption and header read in front of its rows are located apart
+        # from them (`locate_quote`).
+        window, anchor = locate_quote(snapshot.text, best)
         if not window:
             return insufficient(
                 NAME, VERSION, "the quoted passage could not be located in the fetched article"

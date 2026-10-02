@@ -51,10 +51,14 @@ from app.sources.base import (
     current_follow_up,
     current_own_pages,
     insufficient,
-    locate_excerpt,
 )
 from app.sources.credibility import SourceCredibility
-from app.sources.reasoning import REASONER_VERSION, PassageReasoner, split_passages
+from app.sources.reasoning import (
+    REASONER_VERSION,
+    PassageReasoner,
+    locate_quote,
+    split_passages,
+)
 from app.sources.verification import page_key
 
 logger = logging.getLogger("factify.sources.websearch")
@@ -949,7 +953,9 @@ class WebSearchResolver:
                 NAME, VERSION, f"read {outcome.passages_read} passages; none addresses this claim"
             )
 
-        _, anchor = locate_excerpt(snapshot.text, best.quote)
+        # A table's caption and header read in front of its rows are located apart
+        # from them (`locate_quote`).
+        _, anchor = locate_quote(snapshot.text, best)
         if not anchor:
             # Logged, because it should not happen: the gate already found this quote.
             # When it did happen, it was two locating rules disagreeing, and it went

@@ -46,20 +46,21 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.domain.enums import Relation
 from app.domain.evidence import NARROWER_SCOPE
-from app.domain.typography import fold, plain_punctuation, unquoted
+from app.domain.typography import fold, fold_with_positions, plain_punctuation, unquoted
 from app.embeddings.image import cosine
 from app.extraction.model_wire import WireFormat, build_call, response_text, usage_of
 from app.governor.governor import ProviderUnavailable
 from app.observability.logging import event
 from app.security.fetcher import FetchFailure, FetchResult
 from app.security.injection import fence
+from app.sources.base import locate_excerpt
 from app.sources.corpus_text import is_navigation
 from app.sources.local_reading import local_reading, local_same_claim
 
 logger = logging.getLogger("factify.sources.reasoning")
 
 PROVIDER = "llm"
-REASONER_VERSION = "2026.10.03.1"
+REASONER_VERSION = "2026.10.03.2"
 
 # The metric prefix of a support the article attributes to someone else - "the Army
 # said", "police said" - held as context until the source check, reading the passage
@@ -169,6 +170,12 @@ class Passage:
     text: str
     char_start: int
     char_end: int
+    # For a part of a table: how many characters at the start of `text` are the
+    # table's caption and header row, put in front of its rows so each part can be
+    # read on its own (`_blocks`). In the page they stand apart from these rows - a
+    # separator line or the earlier rows lie between - so a quote that takes them in
+    # is located in two parts (`locate_quote`). 0 for every other passage.
+    lead: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,6 +198,9 @@ class PassageJudgement:
     # For a contradiction, how: "DENIES" (says the claim is false) or "INCOMPATIBLE"
     # (states a fact that cannot be true alongside it - another winner).
     basis: str = ""
+    # How many characters at the start of `quote` are a table's caption and header,
+    # read in front of its rows (`Passage.lead`). 0 for every other quote.
+    lead: int = 0
 
     @property
     def marker(self) -> str:
@@ -256,15 +266,20 @@ def split_passages(text: str) -> list[Passage]:
     A table is read as passages of its rows, under its caption and header (`_tables`).
     """
     passages: list[Passage] = []
-    for start, end, block, table in _blocks(text):
+    for start, end, block, lead in _blocks(text):
         cleaned = " ".join(block.split())
-        if len(cleaned) < MIN_PASSAGE_CHARS or (is_navigation(cleaned) and not table):
+        if len(cleaned) < MIN_PASSAGE_CHARS or (is_navigation(cleaned) and not lead):
             continue
 
         if len(cleaned) > MAX_PASSAGE_CHARS:
             cleaned = _truncate_at_sentence(cleaned, MAX_PASSAGE_CHARS)
 
-        passages.append(Passage(index=len(passages), text=cleaned, char_start=start, char_end=end))
+        # The caption and header as they stand in the cleaned text, with the space
+        # that joins them to the rows.
+        head = min(len(" ".join(lead.split())) + 1, len(cleaned)) if lead else 0
+        passages.append(
+            Passage(index=len(passages), text=cleaned, char_start=start, char_end=end, lead=head)
+        )
 
     return passages
 
@@ -273,8 +288,9 @@ def split_passages(text: str) -> list[Passage]:
 _TABLE_MARK = "|"
 
 
-def _blocks(text: str) -> list[tuple[int, int, str, bool]]:
-    """(start, end, text, is a table) of each paragraph, a table's rows gathered.
+def _blocks(text: str) -> list[tuple[int, int, str, str]]:
+    """(start, end, text, lead) of each paragraph, a table's rows gathered. `lead` is
+    the caption and header put in front of a table's rows, empty for anything else.
 
     Every row of a table is a line of pipes, and one line of pipes reads exactly
     like a menu bar (`is_navigation`), so each was dropped on its own. The Election
@@ -295,12 +311,12 @@ def _blocks(text: str) -> list[tuple[int, int, str, bool]]:
         cursor = start + len(line)
         lines.append((start, cursor, line))
 
-    blocks: list[tuple[int, int, str, bool]] = []
+    blocks: list[tuple[int, int, str, str]] = []
     index = 0
     while index < len(lines):
         start, end, line = lines[index]
         if not line.lstrip().startswith(_TABLE_MARK):
-            blocks.append((start, end, line, False))
+            blocks.append((start, end, line, ""))
             index += 1
             continue
         rows = []
@@ -308,7 +324,7 @@ def _blocks(text: str) -> list[tuple[int, int, str, bool]]:
             rows.append(lines[index])
             index += 1
         if len(rows) < 2:
-            blocks.extend((*row, False) for row in rows)
+            blocks.extend((*row, "") for row in rows)
             continue
         caption: list[str] = []
         for _, _, before, was_table in reversed(blocks[-2:]):
@@ -333,9 +349,9 @@ def _blocks(text: str) -> list[tuple[int, int, str, bool]]:
     return blocks
 
 
-def _table_block(lead: str, rows: list[tuple[int, int, str]]) -> tuple[int, int, str, bool]:
+def _table_block(lead: str, rows: list[tuple[int, int, str]]) -> tuple[int, int, str, str]:
     text = " ".join([lead, *(row[2].strip() for row in rows)])
-    return rows[0][0], rows[-1][1], text, True
+    return rows[0][0], rows[-1][1], text, lead
 
 
 def _overlap(claim_tokens: set[str], text: str) -> float:
@@ -1217,12 +1233,14 @@ _YEAR = re.compile(r"(?<![0-9])(19[0-9]{2}|20[0-9]{2})(?![0-9])")
 
 def _cited(
     judgement: _Judgement, passage: Passage, numbered: dict[int, tuple[int, int, int]]
-) -> tuple[int, int, str] | None:
-    """(start, end, words) of what a judgement cites, copied from the passage.
+) -> tuple[int, int, str, int] | None:
+    """(start, end, words, lead) of what a judgement cites, copied from the passage.
 
     By sentence number when given - the page's own characters, whatever symbols they
     hold - and otherwise by locating a typed quote, as the reader answered before. A
     run must stay inside one passage and be at most MAX_CITED_SENTENCES long.
+
+    `lead` is how much of the words is a table's caption and header (`Passage.lead`).
     """
     if judgement.first_sentence > 0:
         first = judgement.first_sentence
@@ -1233,11 +1251,61 @@ def _cited(
         if any(item is None or item[0] != passage.index for item in run):
             return None
         start, end = run[0][1], run[-1][2]  # type: ignore[index]
-        return start, end, passage.text[start:end]
+        return _with_lead(passage, start, end)
     located = verify_quote(judgement.quote, passage.text)
     if located is None:
         return None
-    return located[0], located[1], judgement.quote.strip()
+    if passage.lead:
+        # The page's own characters, so the caption and header can be told from the
+        # rows; a typed quote's spelling need not match the page's character for
+        # character. When the place cannot be carried back, the quote stays as it
+        # was typed and is located whole, as before.
+        span = _raw_span(passage.text, judgement.quote)
+        if span is not None:
+            return _with_lead(passage, *span)
+    return located[0], located[1], judgement.quote.strip(), 0
+
+
+def _with_lead(passage: Passage, start: int, end: int) -> tuple[int, int, str, int]:
+    """The cited words, and how much of them is the table's caption and header."""
+    return start, end, passage.text[start:end], max(0, min(end, passage.lead) - start)
+
+
+def _raw_span(passage_text: str, quote: str) -> tuple[int, int] | None:
+    """Where a typed quote sits in the passage, in the passage's own characters, or
+    None when only a looser match found it (`verify_quote` without quotation marks)."""
+    folded, origin = fold_with_positions(passage_text)
+    needle = fold(quote)
+    position = folded.find(needle) if needle else -1
+    if position == -1:
+        return None
+    return origin[position], origin[position + len(needle) - 1] + 1
+
+
+def locate_quote(text: str, judgement: PassageJudgement) -> tuple[str, dict[str, int]]:
+    """`locate_excerpt` for a judgement's quote: the window and the anchor, or
+    `("", {})` when the quote is not in the page.
+
+    A quote from a table can take in the caption and header that were read in front
+    of its rows. In the page those stand apart from the rows - a separator line, or
+    the earlier rows, lies between - so the whole quote is not one run of the page's
+    text, and the support it carried was thrown away: PIB's GST factsheet, twelve
+    times in one check (2026-10-02). Such a quote is located in its two parts: the
+    caption and header must be in the page, and the rows are what the citation
+    points at. Nothing else is: a quote neither whole nor in those two parts is not
+    in the page.
+    """
+    window, anchor = locate_excerpt(text, judgement.quote)
+    # Read with a default, so any reader's judgement can be located: only the passage
+    # reasoner's carry a lead.
+    lead = getattr(judgement, "lead", 0)
+    if window or not lead:
+        return window, anchor
+    head = judgement.quote[:lead].strip()
+    rows = judgement.quote[lead:].strip()
+    if not head or not rows or not locate_excerpt(text, head)[0]:
+        return "", {}
+    return locate_excerpt(text, rows)
 
 
 def _years(text: str) -> set[int]:
@@ -1987,7 +2055,7 @@ class PassageReasoner:
                     )
                 continue
 
-            offset, end, quote = cited
+            offset, end, quote, lead = cited
             kept.append(
                 PassageJudgement(
                     relation=relation,
@@ -2000,6 +2068,7 @@ class PassageReasoner:
                     narrower=narrower,
                     attributed=attributed and relation is Relation.CONTEXTUALIZES,
                     basis=judgement.contradiction_basis if relation is Relation.CONTRADICTS else "",
+                    lead=lead,
                 )
             )
 
