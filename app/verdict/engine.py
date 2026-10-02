@@ -34,7 +34,7 @@ from app.domain.publishers import publishers_of
 
 # Stamped on every verdict. A cached verdict produced under older rules is therefore
 # identifiable, and the cache can refuse to serve it (M13).
-RULE_VERSION = "2026.10.01.3"
+RULE_VERSION = "2026.10.02.1"
 
 # Default number of genuinely independent origins required before corroboration can
 # support a claim. Tenant-configurable later; never below two, because one origin is
@@ -573,13 +573,32 @@ def _decide_rules(
     )
 
 
+# Checked from part of the input, as the person asked ("Check what was read"): what
+# was read is supported, and what was not read could say otherwise.
+PARTLY_READ_RULE = "rollup.partly_read"
+PARTLY_READ_REASON = "What could be read is supported; part of the input could not be read."
+
+
 def roll_up(
     decisions: list[tuple[Claim, Decision]],
     *,
     source_risk: SourceRisk = SourceRisk.UNKNOWN,
+    partial_input: bool = False,
 ) -> CaseDecision:
-    """The case action, and the verdict and confidence a person is shown."""
+    """The case action, and the verdict and confidence a person is shown.
+
+    `partial_input` says part of the input could not be read and was checked past at
+    the person's request. Nothing unread can be called true, so a case that would be
+    TRUE is unconfirmed instead. A contradiction or a partial truth still stands: a
+    claim shown wrong in what was read is wrong whatever the rest says.
+    """
     case = _roll_up_action(decisions, source_risk=source_risk)
+    if partial_input and case.action is Action.SAFE_TO_SHARE:
+        case = CaseDecision(
+            action=Action.WAIT_AND_RECHECK,
+            rule_id=PARTLY_READ_RULE,
+            reason=PARTLY_READ_REASON,
+        )
     verdict = _VERDICT_OF[case.action]
     return replace(case, verdict=verdict, confidence=_case_confidence(verdict, decisions))
 

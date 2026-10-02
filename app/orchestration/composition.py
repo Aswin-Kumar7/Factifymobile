@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
@@ -145,6 +146,8 @@ class ServedOrchestrator:
         fresh: bool = False,
         own_pages: frozenset[str] = frozenset(),
         synthetic: Any | None = None,
+        noted: Sequence[SkippedCheck] = (),
+        partial_input: bool = False,
     ) -> VerificationResult:
         # An image arrives with no claims, because there is no text to extract them
         # from. Without this the resolvers had nothing to run against and every
@@ -172,6 +175,8 @@ class ServedOrchestrator:
             fresh=fresh,
             own_pages=own_pages,
             synthetic=synthetic,
+            noted=noted,
+            partial_input=partial_input,
         )
 
         # Written after the verdict exists and never allowed to change it. A cached

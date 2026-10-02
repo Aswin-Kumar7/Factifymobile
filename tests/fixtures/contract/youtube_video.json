@@ -1,0 +1,367 @@
+{
+  "case_id": "b1a2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5e",
+  "contract_version": "1.8",
+  "verdict": "PARTLY_TRUE",
+  "confidence": 90,
+  "summary": "सरकार ने उत्पाद शुल्क 2 रुपये प्रति लीटर घटाया है, 20 रुपये नहीं।",
+  "action": "SHARE_WITH_CORRECTION",
+  "action_reason": "Part of this is confirmed and part of it is contradicted by cited evidence. Share only with the correction.",
+  "rule_version": "2026.10.02.1",
+  "claims": [
+    {
+      "id": "cl_1",
+      "text": "सरकार ने पेट्रोल और डीज़ल पर उत्पाद शुल्क घटा दिया है।",
+      "claim_type": "EVENT",
+      "status": "SUPPORTED",
+      "severity": "MEDIUM",
+      "importance": "MAIN_THESIS",
+      "reason": "2 independent origins across 2 documents support this claim.",
+      "rule_id": "rule.independent_corroboration",
+      "rule_version": "2026.10.02.1",
+      "strength": {
+        "score": 0.8,
+        "band": "strong",
+        "components": [
+          {
+            "name": "tier_composition",
+            "value": 0.45,
+            "explanation": "2×D",
+            "citations": [
+              "https://pib.gov.in/PressReleasePage.aspx?PRID=2171234",
+              "https://www.livemint.com/news/india/petrol-diesel-excise-duty-cut-11759012345678.html"
+            ]
+          },
+          {
+            "name": "independent_origins",
+            "value": 0.6667,
+            "explanation": "2 distinct origin(s) across 2 document(s)",
+            "citations": []
+          },
+          {
+            "name": "temporal_confidence",
+            "value": 1.0,
+            "explanation": "2 dated finding(s)",
+            "citations": []
+          },
+          {
+            "name": "conflict_penalty",
+            "value": 0.0,
+            "explanation": "no conflict",
+            "citations": []
+          }
+        ],
+        "advisory_excluded": [],
+        "version": "2026.08.1"
+      },
+      "evidence": [
+        {
+          "id": "ev:web_search:b0619587a94995ea:cl_1",
+          "tier": "D",
+          "kind": "corroboration",
+          "direction": "supports",
+          "method": "passage_entailment",
+          "finding": "The Central Government has reduced the excise duty on petrol and diesel by ₹2 per litre each.",
+          "citation_url": "https://pib.gov.in/PressReleasePage.aspx?PRID=2171234",
+          "snapshot_id": "web:b0619587a94995ea",
+          "source_excerpt": "The Central Government has reduced the excise duty on petrol and diesel by ₹2 per litre each.",
+          "source_anchor": {
+            "char_start": 1200,
+            "char_end": 1293,
+            "paragraph_index": null,
+            "page_number": null
+          },
+          "match_basis": {
+            "metric": "passage_entailment: the government's release on the excise duty cut",
+            "value": 0.89,
+            "threshold": 0.5
+          },
+          "match_quality": "STRONG",
+          "publisher": "Press Information Bureau",
+          "input_anchor": null,
+          "observed_at": "2026-10-02T12:05:40Z",
+          "credibility": "HIGH",
+          "published_on": "2026-09-27",
+          "title": "Excise duty on petrol and diesel reduced",
+          "earlier_media": null
+        },
+        {
+          "id": "ev:web_search:d03aad34a2244ba5:cl_1",
+          "tier": "D",
+          "kind": "corroboration",
+          "direction": "supports",
+          "method": "passage_entailment",
+          "finding": "The Centre cut excise duty on petrol and diesel on Saturday.",
+          "citation_url": "https://www.livemint.com/news/india/petrol-diesel-excise-duty-cut-11759012345678.html",
+          "snapshot_id": "web:d03aad34a2244ba5",
+          "source_excerpt": "The Centre cut excise duty on petrol and diesel on Saturday.",
+          "source_anchor": {
+            "char_start": 1200,
+            "char_end": 1260,
+            "paragraph_index": null,
+            "page_number": null
+          },
+          "match_basis": {
+            "metric": "passage_entailment: reports the excise duty cut",
+            "value": 0.83,
+            "threshold": 0.5
+          },
+          "match_quality": "STRONG",
+          "publisher": "Mint",
+          "input_anchor": null,
+          "observed_at": "2026-10-02T12:05:40Z",
+          "credibility": "HIGH",
+          "published_on": "2026-09-27",
+          "title": "Centre cuts excise duty on petrol, diesel",
+          "earlier_media": null
+        }
+      ],
+      "confidence": 89,
+      "explanation": "सरकार की 27 सितंबर की विज्ञप्ति और मिंट, दोनों उत्पाद शुल्क में कटौती की पुष्टि करते हैं।",
+      "in_full": "The government has cut the excise duty on petrol and diesel.",
+      "language": "hi",
+      "search": "searched",
+      "sources_looked_at": 7,
+      "input_anchor": {
+        "char_start": 266,
+        "char_end": 319,
+        "page_number": null,
+        "frame_start_ms": null
+      },
+      "technique": null
+    },
+    {
+      "id": "cl_2",
+      "text": "आज से पूरे देश में पेट्रोल 20 रुपये प्रति लीटर सस्ता हो गया है।",
+      "claim_type": "STATISTIC",
+      "status": "CONTRADICTED",
+      "severity": "HIGH",
+      "importance": "HEADLINE",
+      "reason": "2 independent sources contradict this claim: BusinessLine, Press Information Bureau.",
+      "rule_id": "rule.independent_contradiction",
+      "rule_version": "2026.10.02.1",
+      "strength": {
+        "score": 0.82,
+        "band": "strong",
+        "components": [
+          {
+            "name": "tier_composition",
+            "value": 0.45,
+            "explanation": "2×D",
+            "citations": [
+              "https://pib.gov.in/PressReleasePage.aspx?PRID=2171234",
+              "https://www.thehindubusinessline.com/economy/excise-duty-cut-petrol-diesel/article70123456.ece"
+            ]
+          },
+          {
+            "name": "independent_origins",
+            "value": 0.6667,
+            "explanation": "2 distinct origin(s) across 2 document(s)",
+            "citations": []
+          },
+          {
+            "name": "temporal_confidence",
+            "value": 1.0,
+            "explanation": "2 dated finding(s)",
+            "citations": []
+          },
+          {
+            "name": "conflict_penalty",
+            "value": 0.0,
+            "explanation": "no conflict",
+            "citations": []
+          }
+        ],
+        "advisory_excluded": [],
+        "version": "2026.08.1"
+      },
+      "evidence": [
+        {
+          "id": "ev:web_search:b0619587a94995ea:cl_2",
+          "tier": "D",
+          "kind": "corroboration",
+          "direction": "contradicts",
+          "method": "passage_entailment",
+          "finding": "The Central Government has reduced the excise duty on petrol and diesel by ₹2 per litre each.",
+          "citation_url": "https://pib.gov.in/PressReleasePage.aspx?PRID=2171234",
+          "snapshot_id": "web:b0619587a94995ea",
+          "source_excerpt": "The Central Government has reduced the excise duty on petrol and diesel by ₹2 per litre each.",
+          "source_anchor": {
+            "char_start": 1200,
+            "char_end": 1293,
+            "paragraph_index": null,
+            "page_number": null
+          },
+          "match_basis": {
+            "metric": "passage_entailment: the cut is ₹2 a litre, not ₹20",
+            "value": 0.9,
+            "threshold": 0.5
+          },
+          "match_quality": "STRONG",
+          "publisher": "Press Information Bureau",
+          "input_anchor": null,
+          "observed_at": "2026-10-02T12:05:40Z",
+          "credibility": "HIGH",
+          "published_on": "2026-09-27",
+          "title": "Excise duty on petrol and diesel reduced",
+          "earlier_media": null
+        },
+        {
+          "id": "ev:web_search:ed09602f927fc012:cl_2",
+          "tier": "D",
+          "kind": "corroboration",
+          "direction": "contradicts",
+          "method": "passage_entailment",
+          "finding": "Pump prices are expected to fall by about ₹2 a litre after the duty cut.",
+          "citation_url": "https://www.thehindubusinessline.com/economy/excise-duty-cut-petrol-diesel/article70123456.ece",
+          "snapshot_id": "web:ed09602f927fc012",
+          "source_excerpt": "Pump prices are expected to fall by about ₹2 a litre after the duty cut.",
+          "source_anchor": {
+            "char_start": 1200,
+            "char_end": 1272,
+            "paragraph_index": null,
+            "page_number": null
+          },
+          "match_basis": {
+            "metric": "passage_entailment: reports a fall of about ₹2 a litre",
+            "value": 0.85,
+            "threshold": 0.5
+          },
+          "match_quality": "STRONG",
+          "publisher": "BusinessLine",
+          "input_anchor": null,
+          "observed_at": "2026-10-02T12:05:40Z",
+          "credibility": "HIGH",
+          "published_on": "2026-09-27",
+          "title": "Excise duty cut: petrol, diesel to get cheaper by ₹2",
+          "earlier_media": null
+        }
+      ],
+      "confidence": 90,
+      "explanation": "सरकार ने उत्पाद शुल्क 2 रुपये प्रति लीटर घटाया है, 20 रुपये नहीं।",
+      "in_full": "From today, petrol is ₹20 a litre cheaper across the country.",
+      "language": "hi",
+      "search": "searched",
+      "sources_looked_at": 7,
+      "input_anchor": {
+        "char_start": 321,
+        "char_end": 383,
+        "page_number": null,
+        "frame_start_ms": null
+      },
+      "technique": "TWISTED_NUMBER"
+    }
+  ],
+  "advisories": [],
+  "source_risk": "UNKNOWN",
+  "source_profile": null,
+  "media_provenance": null,
+  "recurrence": null,
+  "skipped": [],
+  "completeness_note": null,
+  "image_reading": null,
+  "media_report": null,
+  "media_reports": [],
+  "speech": null,
+  "input_read": {
+    "kind": "social_post",
+    "platform": "youtube",
+    "url": "https://www.youtube.com/watch?v=Qw3rTy5uI0p",
+    "author": "Taaza Khabar Live",
+    "handle": null,
+    "published_at": "2026-09-28T04:00:00Z",
+    "parts": [
+      {
+        "kind": "title",
+        "label": "Title",
+        "text": "पेट्रोल 20 रुपये सस्ता! सरकार का बड़ा ऐलान | Petrol price cut news",
+        "checked": true,
+        "route": "youtube.oembed",
+        "complete": true,
+        "note": null,
+        "media_url": null,
+        "char_start": 7,
+        "char_end": 73,
+        "seconds_read": null,
+        "seconds_total": null,
+        "language": "hi"
+      },
+      {
+        "kind": "description",
+        "label": "Description",
+        "text": "Petrol and diesel prices cut across India. Full details in the video. Like, share and subscribe for daily news updates.",
+        "checked": true,
+        "route": "vendor_extract",
+        "complete": true,
+        "note": null,
+        "media_url": null,
+        "char_start": 88,
+        "char_end": 207,
+        "seconds_read": null,
+        "seconds_total": null,
+        "language": "en"
+      },
+      {
+        "kind": "transcript",
+        "label": "Said in the video",
+        "text": "नमस्कार, आप देख रहे हैं न्यूज़ अपडेट। सरकार ने पेट्रोल और डीज़ल पर उत्पाद शुल्क घटा दिया है। आज से पूरे देश में पेट्रोल 20 रुपये प्रति लीटर सस्ता हो गया है। डीज़ल के दाम भी कम हुए हैं।",
+        "checked": true,
+        "route": "gemini.youtube",
+        "complete": true,
+        "note": null,
+        "media_url": null,
+        "char_start": 228,
+        "char_end": 412,
+        "seconds_read": 412,
+        "seconds_total": 412,
+        "language": "hi"
+      },
+      {
+        "kind": "on_screen_text",
+        "label": "Text shown in the video",
+        "text": "BREAKING NEWS\nपेट्रोल ₹20 सस्ता\nडीज़ल ₹2 सस्ता",
+        "checked": true,
+        "route": "gemini.youtube",
+        "complete": true,
+        "note": null,
+        "media_url": null,
+        "char_start": 439,
+        "char_end": 485,
+        "seconds_read": null,
+        "seconds_total": null,
+        "language": "hi"
+      },
+      {
+        "kind": "video_description",
+        "label": "What the video shows",
+        "text": "A news presenter in a studio, with a breaking-news ticker and footage of a petrol pump.",
+        "checked": false,
+        "route": "gemini.youtube",
+        "complete": true,
+        "note": null,
+        "media_url": "/v1/media/thumbnails/7c6b5a4f3e2d41c0b9a8f7e6d5c4b3a2",
+        "char_start": null,
+        "char_end": null,
+        "seconds_read": null,
+        "seconds_total": null,
+        "language": null
+      }
+    ],
+    "gaps": [],
+    "limits": [
+      "YouTube does not let Factify download the video, so its AI, face-swap and voice checks did not run."
+    ],
+    "complete": true,
+    "verdict_withheld": false,
+    "checked_partially": false
+  },
+  "receipt_url": "/v1/receipts/rcpt:56da1525b2d17d7d3bea8e40b132ef39",
+  "receipt": {
+    "receipt_id": "rcpt:56da1525b2d17d7d3bea8e40b132ef39",
+    "verified": true,
+    "issued_at": "2026-10-02T12:05:40Z"
+  },
+  "request_id": "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e",
+  "retrieved_at": "2026-10-02T12:07:02Z",
+  "from_cache": false,
+  "elapsed_ms": 176330
+}

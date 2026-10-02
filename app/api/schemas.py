@@ -49,7 +49,11 @@ from app.domain.enums import (
 # `receipt`, so the seal shows without a second call; and progress events for a check
 # the app follows by `request_id`. Additive: a 1.2 client ignores all of it. See
 # docs/contract-changelog.md.
-CONTRACT_VERSION = "1.7"
+# 1.8 adds `input_read`: what was read from the input, part by part, and what could
+# not be - with the answer held back (`verdict_withheld`) when what was missed could
+# decide it. Also `media_reports` for a post's other pictures, `skipped[].kind`, and
+# the request's `accept_partial`. Additive: every 1.7 field is unchanged.
+CONTRACT_VERSION = "1.8"
 
 
 # ------------------------------------------------------------------------ requests
@@ -80,6 +84,10 @@ class VerifyRequest(BaseModel):
     consent_to_process_media: bool = False
     # "Check again": skip the stored verdict and check from scratch.
     recheck: bool = False
+    # "Check what was read" (1.8): check a post or a page that could be read only in
+    # part, instead of holding the answer back. The answer then says it was checked
+    # from part of the input, and is never TRUE.
+    accept_partial: bool = False
 
     @model_validator(mode="after")
     def _exactly_one_input(self) -> Self:
@@ -327,6 +335,119 @@ class SkippedCheckResponse(BaseModel):
 
     check: str
     reason: str
+    # What kind of gap it is (1.8): "reading" (part of the input could not be read;
+    # `input_read.gaps` says what), "deadline" (the check ran out of time), "provider"
+    # (an outside service did not answer) or "other". Lets a client say the time ran
+    # out only when it did.
+    kind: str = "other"
+
+
+class ReadPartResponse(BaseModel):
+    """One thing read from the input, as it was read (1.8).
+
+    `checked` is false for a description of what a picture or video shows: shown as
+    context, never checked, and never in the text claims were found in.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    # message | post_text | quoted_post | title | description | article |
+    # linked_article | picture_text | picture_description | transcript |
+    # on_screen_text | video_description | document_text
+    kind: str
+    # "Post by … on X, 2 Oct 2026", "Text in picture 1 of 2", "Said in the video".
+    label: str | None = None
+    text: str
+    checked: bool
+    # How it was read: x.syndication, instagram.embed, gemini.youtube, whisper,
+    # frames.ocr, ocr.local, ocr.hosted, fetched, vendor_extract, pdf.text, pasted…
+    route: str
+    # False when this part was itself read only in part; `gaps` says why.
+    complete: bool = True
+    note: str | None = None
+    # The picture this part was read from, on our own address
+    # (/v1/media/thumbnails/<key>). Kept for an hour; a client hides it on a 404.
+    media_url: str | None = None
+    # Where this part's text sits in the text claims were found in: the same offsets
+    # as `claims[].input_anchor`. None for a part that is not in it (a description).
+    char_start: int | None = None
+    char_end: int | None = None
+    # For speech: how many seconds of the video were heard, of how many.
+    seconds_read: int | None = None
+    seconds_total: int | None = None
+    language: str | None = None
+
+
+class ReadGapResponse(BaseModel):
+    """Something that could not be read (1.8).
+
+    `code` is what a client words in its own language: headline_only,
+    text_truncated, post_unavailable, login_required, not_supported, picture_unread,
+    video_unread, speech_unread, cut_off, pages_unread, too_large, needs_background,
+    reader_unavailable, first_picture_only, article_truncated, description_unread or
+    linked_page_unread. `detail` is one English sentence, for a code it does not know.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    part: str
+    code: str
+    detail: str
+    # Whether what was missed could decide the answer. A blocking gap holds the
+    # verdict back unless the person asked to check what was read.
+    blocking: bool
+
+
+class InputReadResponse(BaseModel):
+    """What Factify read from the input, and what it could not (1.8).
+
+    The answer is only ever about what was read. This says what that was, so a
+    person can see the part of a post that was checked - and the part that was not -
+    before trusting a verdict built on it.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    # text | link | social_post | image | pdf | video
+    kind: str
+    # x | instagram | youtube | facebook, for a social post.
+    platform: str | None = None
+    url: str | None = None
+    author: str | None = None
+    handle: str | None = None
+    published_at: datetime | None = None
+    parts: tuple[ReadPartResponse, ...] = ()
+    gaps: tuple[ReadGapResponse, ...] = ()
+    # Limits that are not about reading: "YouTube does not let Factify download the
+    # video, so its AI, face-swap and voice checks did not run."
+    limits: tuple[str, ...] = ()
+    # Everything was read: no gap of any kind.
+    complete: bool = True
+    # Not checked: what could not be read could decide the answer, so no verdict was
+    # given. `verdict` is UNCONFIRMED, with no claims, and `summary` says why.
+    verdict_withheld: bool = False
+    # Checked from what could be read, as the person asked ("Check what was read").
+    # The verdict is never TRUE then.
+    checked_partially: bool = False
+
+    @model_validator(mode="after")
+    def _complete_says_whether_anything_was_missed(self) -> Self:
+        # A reading that calls itself complete while naming a gap, or incomplete
+        # without naming one, would show a person a panel that contradicts itself.
+        if self.complete == bool(self.gaps):
+            raise ValueError(
+                "input_read.complete must be true exactly when no gap was recorded "
+                f"(complete={self.complete}, gaps={len(self.gaps)})"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _withheld_or_partly_checked_not_both(self) -> Self:
+        if self.verdict_withheld and self.checked_partially:
+            raise ValueError("an answer cannot be both withheld and checked from part of it")
+        if self.checked_partially and not any(item.blocking for item in self.gaps):
+            raise ValueError("checked_partially is set only when a blocking gap was checked past")
+        return self
 
 
 class MediaProvenanceResponse(BaseModel):
@@ -613,10 +734,17 @@ class VerifyResponse(BaseModel):
 
     # For an uploaded image: its text and what it shows. None for everything else.
     image_reading: ImageReadingResponse | None = None
-    # For an uploaded picture or video: the checks of the upload itself (1.3).
+    # For an uploaded picture or video: the checks of the upload itself (1.3). For a
+    # post with pictures, the checks of its first picture.
     media_report: MediaReportResponse | None = None
+    # For a post with more than one picture: the checks of pictures 2 to n, in order
+    # (1.8). `media_report` stays picture 1, so an older client still shows it.
+    media_reports: tuple[MediaReportResponse, ...] = ()
     # For an uploaded video: what is said in it, which is checked as a message is (1.5).
     speech: SpeechResponse | None = None
+    # What was read from the input, part by part, and what could not be (1.8). None
+    # on cases stored before it was recorded.
+    input_read: InputReadResponse | None = None
 
     receipt_url: str | None = None
     # The receipt itself, checked as the result was sent. None when none was issued.

@@ -1,0 +1,233 @@
+{
+  "case_id": "d4c3b2a1-0f9e-4d8c-a7b6-5a4f3e2d1c0b",
+  "contract_version": "1.8",
+  "verdict": "MISLEADING",
+  "confidence": 92,
+  "summary": "இந்த வீடியோ 2015 சென்னை வெள்ளத்தின் போது வெளியானது; இன்று எடுத்தது அல்ல.",
+  "action": "SHARE_WITH_CONTEXT",
+  "action_reason": "The media is genuine but its framing is misleading. Share only with context.",
+  "rule_version": "2026.10.02.1",
+  "claims": [
+    {
+      "id": "cl_1",
+      "text": "இது இன்று காலை சென்னை வேளச்சேரியில் எடுத்த வீடியோ.",
+      "claim_type": "MEDIA",
+      "status": "MISLEADING_CONTEXT",
+      "severity": "HIGH",
+      "importance": "HEADLINE",
+      "reason": "The media is genuine but predates or otherwise conflicts with the asserted date or place.",
+      "rule_id": "rule.dated_media_conflict",
+      "rule_version": "2026.10.02.1",
+      "strength": {
+        "score": 0.74,
+        "band": "strong",
+        "components": [
+          {
+            "name": "tier_composition",
+            "value": 0.45,
+            "explanation": "1×B",
+            "citations": [
+              "https://www.thenewsminute.com/tamil-nadu/chennai-floods-velachery-2015-video-12345"
+            ]
+          },
+          {
+            "name": "independent_origins",
+            "value": 0.3333,
+            "explanation": "1 distinct origin(s) across 1 document(s)",
+            "citations": []
+          },
+          {
+            "name": "temporal_confidence",
+            "value": 1.0,
+            "explanation": "1 dated finding(s)",
+            "citations": []
+          },
+          {
+            "name": "conflict_penalty",
+            "value": 0.0,
+            "explanation": "no conflict",
+            "citations": []
+          }
+        ],
+        "advisory_excluded": [],
+        "version": "2026.08.1"
+      },
+      "evidence": [
+        {
+          "id": "ev:media:11812cb191f31408:cl_1",
+          "tier": "B",
+          "kind": "media_match",
+          "direction": "contextualizes",
+          "method": "near_duplicate_verified",
+          "finding": "A frame of this video was published on 3 December 2015, during the Chennai floods of that year.",
+          "citation_url": "https://www.thenewsminute.com/tamil-nadu/chennai-floods-velachery-2015-video-12345",
+          "snapshot_id": "web:11812cb191f31408",
+          "source_excerpt": "Velachery under water: residents wade through flooded streets as rain continues.",
+          "source_anchor": {
+            "char_start": null,
+            "char_end": null,
+            "paragraph_index": null,
+            "page_number": null
+          },
+          "match_basis": {
+            "metric": "phash_hamming_similarity",
+            "value": 0.97,
+            "threshold": 0.9
+          },
+          "match_quality": "STRONG",
+          "publisher": "The News Minute",
+          "input_anchor": null,
+          "observed_at": "2026-10-02T13:41:09Z",
+          "credibility": "HIGH",
+          "published_on": "2015-12-03",
+          "title": "Chennai floods: Velachery under water",
+          "earlier_media": {
+            "thumbnail_url": "/v1/media/thumbnails/aa11bb22cc33dd44ee55ff6677889900",
+            "published_at": "2015-12-03",
+            "publisher": "The News Minute",
+            "similarity": 0.97
+          }
+        }
+      ],
+      "confidence": 92,
+      "explanation": "இந்த வீடியோ 2015 சென்னை வெள்ளத்தின் போது வெளியானது; இன்று எடுத்தது அல்ல.",
+      "in_full": "This video was taken this morning in Velachery, Chennai.",
+      "language": "ta",
+      "search": "searched",
+      "sources_looked_at": 4,
+      "input_anchor": {
+        "char_start": 19,
+        "char_end": 68,
+        "page_number": null,
+        "frame_start_ms": null
+      },
+      "technique": "RECYCLED_MEDIA"
+    }
+  ],
+  "advisories": [],
+  "source_risk": "UNKNOWN",
+  "source_profile": null,
+  "media_provenance": null,
+  "recurrence": null,
+  "skipped": [],
+  "completeness_note": null,
+  "image_reading": null,
+  "media_report": {
+    "kind": "video",
+    "credentials": {
+      "status": "none",
+      "signer": null,
+      "declares_ai": false,
+      "digital_source": null,
+      "generator": null
+    },
+    "history": {
+      "status": "found",
+      "pages": 6,
+      "dated": 4,
+      "earliest": {
+        "url": "https://www.thenewsminute.com/tamil-nadu/chennai-floods-velachery-2015-video-12345",
+        "publisher": "The News Minute",
+        "published_at": "2015-12-03T08:20:00Z",
+        "days_before": 3956,
+        "thumbnail_url": "/v1/media/thumbnails/aa11bb22cc33dd44ee55ff6677889900"
+      },
+      "why": null
+    },
+    "detector": {
+      "status": "checked",
+      "why": null,
+      "generated": 0.02,
+      "face_swap": null,
+      "second_opinion": null,
+      "agreement": "no_sign",
+      "faces": null,
+      "voice": 0.0141,
+      "machine_voice": false,
+      "face_swapped": null,
+      "on_server": true
+    },
+    "editing": {
+      "status": "checked",
+      "uneven_noise": false,
+      "spectral_peaks": false
+    },
+    "frames": 12
+  },
+  "media_reports": [],
+  "speech": {
+    "text": "இது இன்று காலை சென்னை வேளச்சேரியில் எடுத்த வீடியோ. தெருக்கள் முழுவதும் வெள்ளம். யாரும் வெளியே வர வேண்டாம்.",
+    "language": "ta",
+    "cut_off": false
+  },
+  "input_read": {
+    "kind": "video",
+    "platform": null,
+    "url": null,
+    "author": null,
+    "handle": null,
+    "published_at": null,
+    "parts": [
+      {
+        "kind": "transcript",
+        "label": "Said in the video",
+        "text": "இது இன்று காலை சென்னை வேளச்சேரியில் எடுத்த வீடியோ. தெருக்கள் முழுவதும் வெள்ளம். யாரும் வெளியே வர வேண்டாம்.",
+        "checked": true,
+        "route": "whisper",
+        "complete": true,
+        "note": null,
+        "media_url": null,
+        "char_start": 19,
+        "char_end": 125,
+        "seconds_read": 48,
+        "seconds_total": 48,
+        "language": "ta"
+      },
+      {
+        "kind": "on_screen_text",
+        "label": "Text shown in the video",
+        "text": "CHENNAI FLOODS TODAY\nVelachery",
+        "checked": true,
+        "route": "frames.ocr",
+        "complete": true,
+        "note": "read from 12 frames",
+        "media_url": null,
+        "char_start": 152,
+        "char_end": 182,
+        "seconds_read": null,
+        "seconds_total": null,
+        "language": null
+      },
+      {
+        "kind": "video_description",
+        "label": "What the video shows",
+        "text": "A flooded residential street with cars submerged up to their windows.",
+        "checked": false,
+        "route": "ocr.hosted",
+        "complete": true,
+        "note": null,
+        "media_url": "/v1/media/thumbnails/0f1e2d3c4b5a49687766554433221100",
+        "char_start": null,
+        "char_end": null,
+        "seconds_read": null,
+        "seconds_total": null,
+        "language": null
+      }
+    ],
+    "gaps": [],
+    "limits": [],
+    "complete": true,
+    "verdict_withheld": false,
+    "checked_partially": false
+  },
+  "receipt_url": "/v1/receipts/rcpt:6fdedef95e079b72715c0d61a4eac4f9",
+  "receipt": {
+    "receipt_id": "rcpt:6fdedef95e079b72715c0d61a4eac4f9",
+    "verified": true,
+    "issued_at": "2026-10-02T13:41:09Z"
+  },
+  "request_id": "8e7d6c5b-4a39-4281-9f0e-d1c2b3a49586",
+  "retrieved_at": "2026-10-02T13:42:37Z",
+  "from_cache": false,
+  "elapsed_ms": 142877
+}

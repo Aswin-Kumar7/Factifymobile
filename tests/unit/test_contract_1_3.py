@@ -253,7 +253,8 @@ class TestAdditiveOnly:
     def test_the_version_is_1_5(self) -> None:
         # 1.4 (2026-09-28): the PARTLY_TRUE verdict and checks in the background.
         # 1.5 (2026-09-29): why a picture check did not run.
-        assert CONTRACT_VERSION == "1.7"
+        # 1.8 (2026-10-02): what was read; tests/unit/test_contract_1_8.py.
+        assert CONTRACT_VERSION == "1.8"
 
     def test_a_computer_voice_is_said_against_the_model_s_own_line(self) -> None:
         from app.api.schemas import media_report_to_response
@@ -295,7 +296,16 @@ class TestAdditiveOnly:
             (
                 VerifyResponse,
                 _RESULT_1_2,
-                {"receipt", "request_id", "media_report", "speech", "source_profile"},
+                # 1.8 adds input_read and media_reports (test_contract_1_8.py).
+                {
+                    "receipt",
+                    "request_id",
+                    "media_report",
+                    "speech",
+                    "source_profile",
+                    "input_read",
+                    "media_reports",
+                },
             ),
         ):
             fields = model.model_fields

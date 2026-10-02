@@ -1,0 +1,453 @@
+{
+  "case_id": "6f1c2b7e-4d0a-4f6e-9a51-3c2d8e7b1a04",
+  "contract_version": "1.8",
+  "verdict": "TRUE",
+  "confidence": 86,
+  "summary": "ISRO's mission page and the BBC both report the landing near the south pole on 23 August 2023.",
+  "action": "SAFE_TO_SHARE",
+  "action_reason": "Every checkable claim is supported by cited evidence.",
+  "rule_version": "2026.10.02.1",
+  "claims": [
+    {
+      "id": "cl_1",
+      "text": "Chandrayaan-3's lander Vikram touched down near the Moon's south pole on 23 August 2023.",
+      "claim_type": "EVENT",
+      "status": "SUPPORTED",
+      "severity": "MEDIUM",
+      "importance": "MAIN_THESIS",
+      "reason": "2 independent origins across 2 documents support this claim.",
+      "rule_id": "rule.independent_corroboration",
+      "rule_version": "2026.10.02.1",
+      "strength": {
+        "score": 0.78,
+        "band": "strong",
+        "components": [
+          {
+            "name": "tier_composition",
+            "value": 0.45,
+            "explanation": "2×D",
+            "citations": [
+              "https://www.isro.gov.in/Chandrayaan3_Details.html",
+              "https://www.bbc.com/news/world-asia-india-66594520"
+            ]
+          },
+          {
+            "name": "independent_origins",
+            "value": 0.6667,
+            "explanation": "2 distinct origin(s) across 2 document(s)",
+            "citations": []
+          },
+          {
+            "name": "temporal_confidence",
+            "value": 1.0,
+            "explanation": "1 dated finding(s)",
+            "citations": []
+          },
+          {
+            "name": "conflict_penalty",
+            "value": 0.0,
+            "explanation": "no conflict",
+            "citations": []
+          }
+        ],
+        "advisory_excluded": [],
+        "version": "2026.08.1"
+      },
+      "evidence": [
+        {
+          "id": "ev:web_search:81010ce22095a1b3:cl_1",
+          "tier": "D",
+          "kind": "corroboration",
+          "direction": "supports",
+          "method": "passage_entailment",
+          "finding": "Chandrayaan-3 Vikram lander successfully soft-landed near the south polar region of the Moon on August 23, 2023.",
+          "citation_url": "https://www.isro.gov.in/Chandrayaan3_Details.html",
+          "snapshot_id": "web:81010ce22095a1b3",
+          "source_excerpt": "Chandrayaan-3 Vikram lander successfully soft-landed near the south polar region of the Moon on August 23, 2023.",
+          "source_anchor": {
+            "char_start": 1200,
+            "char_end": 1312,
+            "paragraph_index": null,
+            "page_number": null
+          },
+          "match_basis": {
+            "metric": "passage_entailment: the agency's own mission page states the landing date and region",
+            "value": 0.93,
+            "threshold": 0.5
+          },
+          "match_quality": "STRONG",
+          "publisher": "ISRO",
+          "input_anchor": null,
+          "observed_at": "2026-10-02T09:14:03Z",
+          "credibility": "HIGH",
+          "published_on": null,
+          "title": "Chandrayaan-3",
+          "earlier_media": null
+        },
+        {
+          "id": "ev:web_search:6c4ffa0f87979d6c:cl_1",
+          "tier": "D",
+          "kind": "corroboration",
+          "direction": "supports",
+          "method": "passage_entailment",
+          "finding": "India has become the first country to land a spacecraft near the Moon's south pole.",
+          "citation_url": "https://www.bbc.com/news/world-asia-india-66594520",
+          "snapshot_id": "web:6c4ffa0f87979d6c",
+          "source_excerpt": "India has become the first country to land a spacecraft near the Moon's south pole.",
+          "source_anchor": {
+            "char_start": 1200,
+            "char_end": 1283,
+            "paragraph_index": null,
+            "page_number": null
+          },
+          "match_basis": {
+            "metric": "passage_entailment: reports the landing near the south pole on the same day",
+            "value": 0.88,
+            "threshold": 0.5
+          },
+          "match_quality": "STRONG",
+          "publisher": "BBC News",
+          "input_anchor": null,
+          "observed_at": "2026-10-02T09:14:03Z",
+          "credibility": "HIGH",
+          "published_on": "2023-08-23",
+          "title": "Chandrayaan-3: India makes historic landing near Moon's south pole",
+          "earlier_media": null
+        }
+      ],
+      "confidence": 91,
+      "explanation": "ISRO's mission page and the BBC both report the landing near the south pole on 23 August 2023.",
+      "in_full": null,
+      "language": "en",
+      "search": "searched",
+      "sources_looked_at": 6,
+      "input_anchor": {
+        "char_start": 88,
+        "char_end": 175,
+        "page_number": null,
+        "frame_start_ms": null
+      },
+      "technique": null
+    },
+    {
+      "id": "cl_2",
+      "text": "Chandrayaan-3's Pragyan rover confirmed the presence of sulphur in the lunar soil.",
+      "claim_type": "EVENT",
+      "status": "SUPPORTED",
+      "severity": "MEDIUM",
+      "importance": "SUPPORTING_DETAIL",
+      "reason": "2 independent origins across 2 documents support this claim.",
+      "rule_id": "rule.independent_corroboration",
+      "rule_version": "2026.10.02.1",
+      "strength": {
+        "score": 0.78,
+        "band": "strong",
+        "components": [
+          {
+            "name": "tier_composition",
+            "value": 0.45,
+            "explanation": "2×D",
+            "citations": [
+              "https://www.isro.gov.in/Ch3_Pragyan_Sulphur.html",
+              "https://www.indiatoday.in/science/story/chandrayaan-3-pragyan-rover-confirms-sulphur-2427339-2023-08-29"
+            ]
+          },
+          {
+            "name": "independent_origins",
+            "value": 0.6667,
+            "explanation": "2 distinct origin(s) across 2 document(s)",
+            "citations": []
+          },
+          {
+            "name": "temporal_confidence",
+            "value": 1.0,
+            "explanation": "2 dated finding(s)",
+            "citations": []
+          },
+          {
+            "name": "conflict_penalty",
+            "value": 0.0,
+            "explanation": "no conflict",
+            "citations": []
+          }
+        ],
+        "advisory_excluded": [],
+        "version": "2026.08.1"
+      },
+      "evidence": [
+        {
+          "id": "ev:web_search:3b9cc6fc4546c507:cl_2",
+          "tier": "D",
+          "kind": "corroboration",
+          "direction": "supports",
+          "method": "passage_entailment",
+          "finding": "The Laser-Induced Breakdown Spectroscope (LIBS) instrument onboard the Chandrayaan-3 Rover has made the first-ever in-situ measurements on the elemental composition of the lunar surface near the south pole. These in-situ measurements confirm the presence of Sulphur (S) in the region.",
+          "citation_url": "https://www.isro.gov.in/Ch3_Pragyan_Sulphur.html",
+          "snapshot_id": "web:3b9cc6fc4546c507",
+          "source_excerpt": "The Laser-Induced Breakdown Spectroscope (LIBS) instrument onboard the Chandrayaan-3 Rover has made the first-ever in-situ measurements on the elemental composition of the lunar surface near the south pole. These in-situ measurements confirm the presence of Sulphur (S) in the region.",
+          "source_anchor": {
+            "char_start": 1200,
+            "char_end": 1484,
+            "paragraph_index": null,
+            "page_number": null
+          },
+          "match_basis": {
+            "metric": "passage_entailment: the rover instrument's finding as the agency published it",
+            "value": 0.91,
+            "threshold": 0.5
+          },
+          "match_quality": "STRONG",
+          "publisher": "ISRO",
+          "input_anchor": null,
+          "observed_at": "2026-10-02T09:14:03Z",
+          "credibility": "HIGH",
+          "published_on": "2023-08-29",
+          "title": "Chandrayaan-3: In-situ scientific experiments",
+          "earlier_media": null
+        },
+        {
+          "id": "ev:web_search:a02d1873ae377d18:cl_2",
+          "tier": "D",
+          "kind": "corroboration",
+          "direction": "supports",
+          "method": "passage_entailment",
+          "finding": "Pragyan rover confirms presence of sulphur on the Moon's south pole.",
+          "citation_url": "https://www.indiatoday.in/science/story/chandrayaan-3-pragyan-rover-confirms-sulphur-2427339-2023-08-29",
+          "snapshot_id": "web:a02d1873ae377d18",
+          "source_excerpt": "Pragyan rover confirms presence of sulphur on the Moon's south pole.",
+          "source_anchor": {
+            "char_start": 1200,
+            "char_end": 1268,
+            "paragraph_index": null,
+            "page_number": null
+          },
+          "match_basis": {
+            "metric": "passage_entailment: reports the same measurement",
+            "value": 0.84,
+            "threshold": 0.5
+          },
+          "match_quality": "STRONG",
+          "publisher": "India Today",
+          "input_anchor": null,
+          "observed_at": "2026-10-02T09:14:03Z",
+          "credibility": "MEDIUM",
+          "published_on": "2023-08-29",
+          "title": "Chandrayaan-3's Pragyan rover confirms sulphur on lunar south pole",
+          "earlier_media": null
+        }
+      ],
+      "confidence": 88,
+      "explanation": "ISRO published the rover's measurement of sulphur near the south pole, and India Today reported it.",
+      "in_full": null,
+      "language": "en",
+      "search": "searched",
+      "sources_looked_at": 6,
+      "input_anchor": {
+        "char_start": 304,
+        "char_end": 378,
+        "page_number": null,
+        "frame_start_ms": null
+      },
+      "technique": null
+    },
+    {
+      "id": "cl_3",
+      "text": "The Union Cabinet approved the Chandrayaan-4 sample-return mission in September 2024.",
+      "claim_type": "EVENT",
+      "status": "SUPPORTED",
+      "severity": "MEDIUM",
+      "importance": "SUPPORTING_DETAIL",
+      "reason": "2 independent origins across 2 documents support this claim.",
+      "rule_id": "rule.independent_corroboration",
+      "rule_version": "2026.10.02.1",
+      "strength": {
+        "score": 0.78,
+        "band": "strong",
+        "components": [
+          {
+            "name": "tier_composition",
+            "value": 0.45,
+            "explanation": "2×D",
+            "citations": [
+              "https://pib.gov.in/PressReleasePage.aspx?PRID=2056031",
+              "https://indianexpress.com/article/india/cabinet-approves-chandrayaan-4-9576120/"
+            ]
+          },
+          {
+            "name": "independent_origins",
+            "value": 0.6667,
+            "explanation": "2 distinct origin(s) across 2 document(s)",
+            "citations": []
+          },
+          {
+            "name": "temporal_confidence",
+            "value": 1.0,
+            "explanation": "2 dated finding(s)",
+            "citations": []
+          },
+          {
+            "name": "conflict_penalty",
+            "value": 0.0,
+            "explanation": "no conflict",
+            "citations": []
+          }
+        ],
+        "advisory_excluded": [],
+        "version": "2026.08.1"
+      },
+      "evidence": [
+        {
+          "id": "ev:web_search:e022346542812301:cl_3",
+          "tier": "D",
+          "kind": "corroboration",
+          "direction": "supports",
+          "method": "passage_entailment",
+          "finding": "The Union Cabinet, chaired by the Prime Minister, has approved the Chandrayaan-4 mission.",
+          "citation_url": "https://pib.gov.in/PressReleasePage.aspx?PRID=2056031",
+          "snapshot_id": "web:e022346542812301",
+          "source_excerpt": "The Union Cabinet, chaired by the Prime Minister, has approved the Chandrayaan-4 mission.",
+          "source_anchor": {
+            "char_start": 1200,
+            "char_end": 1289,
+            "paragraph_index": null,
+            "page_number": null
+          },
+          "match_basis": {
+            "metric": "passage_entailment: the government's release on the Cabinet decision",
+            "value": 0.9,
+            "threshold": 0.5
+          },
+          "match_quality": "STRONG",
+          "publisher": "Press Information Bureau",
+          "input_anchor": null,
+          "observed_at": "2026-10-02T09:14:03Z",
+          "credibility": "HIGH",
+          "published_on": "2024-09-18",
+          "title": "Cabinet approves Chandrayaan-4 mission",
+          "earlier_media": null
+        },
+        {
+          "id": "ev:web_search:bad748c5f8b4ddf9:cl_3",
+          "tier": "D",
+          "kind": "corroboration",
+          "direction": "supports",
+          "method": "passage_entailment",
+          "finding": "The Union Cabinet on Wednesday approved Chandrayaan-4.",
+          "citation_url": "https://indianexpress.com/article/india/cabinet-approves-chandrayaan-4-9576120/",
+          "snapshot_id": "web:bad748c5f8b4ddf9",
+          "source_excerpt": "The Union Cabinet on Wednesday approved Chandrayaan-4.",
+          "source_anchor": {
+            "char_start": 1200,
+            "char_end": 1254,
+            "paragraph_index": null,
+            "page_number": null
+          },
+          "match_basis": {
+            "metric": "passage_entailment: reports the approval in September 2024",
+            "value": 0.82,
+            "threshold": 0.5
+          },
+          "match_quality": "STRONG",
+          "publisher": "The Indian Express",
+          "input_anchor": null,
+          "observed_at": "2026-10-02T09:14:03Z",
+          "credibility": "HIGH",
+          "published_on": "2024-09-18",
+          "title": "Cabinet nod for Chandrayaan-4, Venus mission",
+          "earlier_media": null
+        }
+      ],
+      "confidence": 86,
+      "explanation": "The government's press release of 18 September 2024 announces the Cabinet's approval.",
+      "in_full": null,
+      "language": "en",
+      "search": "searched",
+      "sources_looked_at": 6,
+      "input_anchor": {
+        "char_start": 462,
+        "char_end": 530,
+        "page_number": null,
+        "frame_start_ms": null
+      },
+      "technique": null
+    }
+  ],
+  "advisories": [],
+  "source_risk": "LOW",
+  "source_profile": {
+    "domain": "thehindu.com",
+    "trusted": true,
+    "trust": "highly credible",
+    "fact_checker": false,
+    "level": "LOW",
+    "findings": [
+      "On Factify's list of trusted sources (highly credible).",
+      "The page names its author and its publication date."
+    ],
+    "warnings": [],
+    "domain_age_days": 10650
+  },
+  "media_provenance": null,
+  "recurrence": null,
+  "skipped": [],
+  "completeness_note": null,
+  "image_reading": null,
+  "media_report": null,
+  "media_reports": [],
+  "speech": null,
+  "input_read": {
+    "kind": "link",
+    "platform": null,
+    "url": "https://www.thehindu.com/sci-tech/science/chandrayaan-3-two-years-on/article69912345.ece",
+    "author": null,
+    "handle": null,
+    "published_at": "2025-08-23T06:30:00Z",
+    "parts": [
+      {
+        "kind": "title",
+        "label": "Title",
+        "text": "Two years on, what Chandrayaan-3 taught ISRO about landing on the Moon",
+        "checked": true,
+        "route": "fetched",
+        "complete": true,
+        "note": null,
+        "media_url": null,
+        "char_start": 7,
+        "char_end": 77,
+        "seconds_read": null,
+        "seconds_total": null,
+        "language": null
+      },
+      {
+        "kind": "article",
+        "label": "Article",
+        "text": "Chandrayaan-3's lander Vikram touched down near the Moon's south pole on 23 August 2023, making India the first country to land in that region. Over the next ten days the Pragyan rover travelled about 100 metres and its laser spectroscope confirmed the presence of sulphur in the lunar soil.\n\nISRO has since said the lessons of the landing feed directly into Chandrayaan-4, a sample-return mission the Union Cabinet approved in September 2024. Engineers have reworked the lander's legs and its hazard-avoidance cameras for the heavier spacecraft.",
+        "checked": true,
+        "route": "fetched",
+        "complete": true,
+        "note": null,
+        "media_url": null,
+        "char_start": 88,
+        "char_end": 634,
+        "seconds_read": null,
+        "seconds_total": null,
+        "language": "en"
+      }
+    ],
+    "gaps": [],
+    "limits": [],
+    "complete": true,
+    "verdict_withheld": false,
+    "checked_partially": false
+  },
+  "receipt_url": "/v1/receipts/rcpt:48f78ed548a7bba86b8799f0d50da92a",
+  "receipt": {
+    "receipt_id": "rcpt:48f78ed548a7bba86b8799f0d50da92a",
+    "verified": true,
+    "issued_at": "2026-10-02T09:14:03Z"
+  },
+  "request_id": "3f9a5d2c-1e7b-4c8a-b0d4-7a6e5f4c3b21",
+  "retrieved_at": "2026-10-02T09:15:41Z",
+  "from_cache": false,
+  "elapsed_ms": 98412
+}

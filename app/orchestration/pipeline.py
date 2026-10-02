@@ -26,7 +26,7 @@ import asyncio
 import logging
 import re
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -134,6 +134,14 @@ DEFAULT_CONCURRENCY = 8
 # minutes. Five is the ceiling for a provider having a slow day, not the plan.
 BACKGROUND_SECONDS = 300.0
 
+# However long reading the input and finding its claims took, a background check
+# keeps at least this long to search and read sources afterwards - a post with a
+# ten-minute video spends minutes being read before checking starts - and never runs
+# past the ceiling, counted from when it started. The ceiling is what the clients
+# wait for before they give up on an answer (contract 1.8), so it bounds both.
+BACKGROUND_MIN_READING_SECONDS = 150.0
+BACKGROUND_CEILING_SECONDS = 420.0
+
 _IMPORTANCE_ORDER = {
     Importance.HEADLINE: 0,
     Importance.MAIN_THESIS: 1,
@@ -191,6 +199,11 @@ class SkippedCheck:
 
     check: str
     reason: str
+    # What kind of gap: "reading" (part of the input could not be read), "deadline"
+    # (the check ran out of time), "provider" (an outside service did not answer) or
+    # "other". Sent to the clients (contract 1.8) so a gap in reading is shown where
+    # what was read is shown, and the time running out is said only when it did.
+    kind: str = "other"
 
     def describe(self) -> str:
         return f"{self.check} was not checked: {self.reason}"
@@ -497,6 +510,8 @@ class Orchestrator:
         fresh: bool = False,
         own_pages: frozenset[str] = frozenset(),
         synthetic: Callable[[], Awaitable[bool]] | None = None,
+        noted: Sequence[SkippedCheck] = (),
+        partial_input: bool = False,
     ) -> VerificationResult:
         """Run one verification end to end.
 
@@ -512,12 +527,28 @@ class Orchestrator:
         `started_at` is when the request arrived, when the caller knows it. The budget
         is the person's wait, and extraction happened before this was called.
 
+        `noted` is what the caller already knows was not checked - part of the input
+        that could not be read. It is reported with everything this run skips, and it
+        keeps the run out of the cache: a post read in part must not be served as the
+        answer to the whole post. `partial_input` says the person asked to check what
+        could be read all the same, and holds the answer back from TRUE (`roll_up`).
+
         Claims arrive already extracted: extraction is upstream because it has its own
         caching and its own provider budget, and threading it through here would put a
         second metered call inside a function whose job is to sequence, not to fetch.
         """
         started = started_at if started_at is not None else time.perf_counter()
-        skipped: list[SkippedCheck] = []
+        # What the caller could not read goes first, so `cacheable` sees it: it was
+        # added after this returned, and a partly read link was cached as if whole.
+        skipped: list[SkippedCheck] = list(noted)
+        if partial_input and not any(item.kind == "reading" for item in skipped):
+            # Checked from part of the input with no gap named: name one, so the
+            # answer still says so and is still kept out of the cache.
+            skipped.append(
+                SkippedCheck(
+                    check="input", reason="only part of the input could be read", kind="reading"
+                )
+            )
 
         # Cache probe, before the governor and before any provider. A repeat costs
         # nothing external; the M13 gate asserts exactly this.
@@ -578,7 +609,9 @@ class Orchestrator:
                     end_check(str(case_id))
 
         case_decision = roll_up(
-            [(outcome.claim, outcome.decision) for outcome in outcomes], source_risk=source_risk
+            [(outcome.claim, outcome.decision) for outcome in outcomes],
+            source_risk=source_risk,
+            partial_input=partial_input,
         )
         fabricated = await self._fabricated(outcomes, case_decision, synthetic)
         if fabricated is not None:

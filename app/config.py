@@ -131,6 +131,10 @@ class ModelSettings(BaseModel):
     extraction: str = ""
     escalation: str = ""
     text_embedding: str = ""
+    # Reads a video - what is said, the words shown, what it shows - for the video
+    # reader (`video_reader` below). A Gemini model: only Gemini reads a YouTube
+    # address it is handed.
+    video_reading: str = ""
 
 
 class AuthSettings(BaseModel):
@@ -250,6 +254,49 @@ class LocalModelSettings(BaseModel):
     stance: bool = True
 
 
+# The platforms the social reader knows. Facebook is known but not a default: it is
+# read only once its public embed has been shown to answer FactifyBot from the server.
+SOCIAL_PLATFORMS = ("x", "instagram", "youtube", "facebook")
+
+
+class SocialSettings(BaseModel):
+    """Reading a post from X, Instagram or YouTube in full: its text, pictures, video.
+
+    Only the platforms' public embed, oEmbed and syndication addresses are read, as
+    FactifyBot. Nothing here is a credential: the reader needs none.
+    """
+
+    model_config = {"frozen": True}
+
+    enabled: bool = True
+    # Which platforms' posts are read; any other post link is read as a web page.
+    # Set as JSON: FACTIFY_SOCIAL__PLATFORMS='["x","instagram"]'.
+    platforms: tuple[str, ...] = ("x", "instagram", "youtube")
+    # Pictures read from one post. An album beyond this is a non-blocking gap.
+    max_pictures: int = Field(default=4, ge=1, le=10)
+    # The longest video read from X or Instagram (downloaded, heard on our server),
+    # and from YouTube (read by the video reader at its address). Longer is a gap.
+    max_video_seconds: int = Field(default=600, gt=0)
+    youtube_max_seconds: int = Field(default=1800, gt=0)
+    # Requests to one platform a minute, paced rather than refused: a burst of checks
+    # of one viral post must not get FactifyBot shut out.
+    per_minute_cap: int = Field(default=30, ge=0)
+    timeout_seconds: float = Field(default=15.0, gt=0)
+    # Instagram reels have no public address for their video; yt-dlp finds it (the
+    # optional `social` extra). Off reads a reel's caption only, with the video a gap.
+    instagram_reels_via_ytdlp: bool = True
+
+    @model_validator(mode="after")
+    def _known_platforms_only(self) -> Self:
+        unknown = sorted(set(self.platforms) - set(SOCIAL_PLATFORMS))
+        if unknown:
+            raise ValueError(
+                f"social.platforms names {', '.join(unknown)}; the social reader knows "
+                f"{', '.join(SOCIAL_PLATFORMS)}"
+            )
+        return self
+
+
 class Settings(BaseSettings):
     """Application settings, loaded once at startup.
 
@@ -295,6 +342,7 @@ class Settings(BaseSettings):
     auth: AuthSettings = AuthSettings()
     billing: BillingSettings = BillingSettings()
     local: LocalModelSettings = LocalModelSettings()
+    social: SocialSettings = SocialSettings()
 
     # Optional providers. Every default is off, and no default enables anything
     # metered — an accidental deploy must cost nothing and reach for nothing.
@@ -307,6 +355,12 @@ class Settings(BaseSettings):
     # The AI-generated and face-swap detector (Sightengine). Its readings are
     # advisories: shown beside a picture, never an input to a verdict.
     synthetic: ProviderSettings = ProviderSettings()
+    # Reads a video with a Gemini model: a YouTube video at its address, which we
+    # cannot download, and what is said and shown in it. Its own block rather than
+    # `llm`'s, because the claim reader may be another provider's model, and because
+    # a half-hour video is a large, separately metered call. Model:
+    # `models.video_reading`.
+    video_reader: ProviderSettings = ProviderSettings()
 
     # Which search provider `websearch` speaks to: "tavily" (search + clean extract in
     # one call) or "exa" (neural search with page text). Determines the request shape
@@ -350,6 +404,24 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def _video_reader_is_a_gemini_model_named_in_config(self) -> Self:
+        # Only the Gemini format can hand a model a video by its address; pointed at
+        # another, every video would fail at its first read rather than at boot.
+        if not self.video_reader.usable:
+            return self
+        if self.video_reader.api_format != "gemini":
+            raise ValueError(
+                "video_reader must speak the gemini format: only a Gemini endpoint reads "
+                "a video at its address. Set FACTIFY_VIDEO_READER__API_FORMAT=gemini"
+            )
+        if not self.models.video_reading:
+            raise ValueError(
+                "video_reader is enabled but models.video_reading is unset; "
+                "model identifiers are configuration and must be named explicitly"
+            )
+        return self
+
+    @model_validator(mode="after")
     def _production_requires_a_database(self) -> Self:
         if self.environment is not Environment.LOCAL and self.database_url is None:
             raise ValueError(f"database_url is required in the {self.environment} environment")
@@ -381,6 +453,7 @@ class Settings(BaseSettings):
             "archive": self.archive,
             "web_search": self.websearch,
             "synthetic": self.synthetic,
+            "video_reader": self.video_reader,
         }
 
 

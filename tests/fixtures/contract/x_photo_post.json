@@ -1,0 +1,379 @@
+{
+  "case_id": "c0ffee00-1234-4abc-9def-0123456789ab",
+  "contract_version": "1.8",
+  "verdict": "FALSE",
+  "confidence": 95,
+  "summary": "Factly and PIB Fact Check both say the RBI issued no such release, and ₹500 notes remain legal tender.",
+  "action": "DO_NOT_SHARE",
+  "action_reason": "A central claim in this content is contradicted by cited evidence.",
+  "rule_version": "2026.10.02.1",
+  "claims": [
+    {
+      "id": "cl_1",
+      "text": "The RBI will withdraw all ₹500 notes from circulation from 1 November 2026.",
+      "claim_type": "EVENT",
+      "status": "CONTRADICTED",
+      "severity": "HIGH",
+      "importance": "HEADLINE",
+      "reason": "A published fact-check contradicts this claim.",
+      "rule_id": "rule.factcheck_contradiction",
+      "rule_version": "2026.10.02.1",
+      "strength": {
+        "score": 0.87,
+        "band": "conclusive",
+        "components": [
+          {
+            "name": "tier_composition",
+            "value": 0.6,
+            "explanation": "2×C",
+            "citations": [
+              "https://www.factly.in/fake-rbi-press-release-500-notes-withdrawal-november/",
+              "https://x.com/PIBFactCheck/status/1973498765432109876"
+            ]
+          },
+          {
+            "name": "independent_origins",
+            "value": 0.6667,
+            "explanation": "2 distinct origin(s) across 2 document(s)",
+            "citations": []
+          },
+          {
+            "name": "temporal_confidence",
+            "value": 1.0,
+            "explanation": "2 dated finding(s)",
+            "citations": []
+          },
+          {
+            "name": "conflict_penalty",
+            "value": 0.0,
+            "explanation": "no conflict",
+            "citations": []
+          }
+        ],
+        "advisory_excluded": [],
+        "version": "2026.08.1"
+      },
+      "evidence": [
+        {
+          "id": "ev:web_search:8499f967451b8846:cl_1",
+          "tier": "C",
+          "kind": "fact_check",
+          "direction": "contradicts",
+          "method": "claim_review",
+          "finding": "The RBI has issued no such press release. The image is fabricated, and ₹500 notes remain legal tender.",
+          "citation_url": "https://www.factly.in/fake-rbi-press-release-500-notes-withdrawal-november/",
+          "snapshot_id": "web:8499f967451b8846",
+          "source_excerpt": "The RBI has issued no such press release. The image is fabricated, and ₹500 notes remain legal tender.",
+          "source_anchor": {
+            "char_start": 1200,
+            "char_end": 1302,
+            "paragraph_index": null,
+            "page_number": null
+          },
+          "match_basis": {
+            "metric": "passage_entailment: a published fact-check rates this press release as fake",
+            "value": 0.94,
+            "threshold": 0.5
+          },
+          "match_quality": "STRONG",
+          "publisher": "Factly",
+          "input_anchor": null,
+          "observed_at": "2026-10-02T10:02:55Z",
+          "credibility": "HIGH",
+          "published_on": "2026-10-01",
+          "title": "Fake RBI press release claims ₹500 notes will be withdrawn from 1 November",
+          "earlier_media": null
+        },
+        {
+          "id": "ev:web_search:d3baa4eb419543ea:cl_1",
+          "tier": "C",
+          "kind": "fact_check",
+          "direction": "contradicts",
+          "method": "claim_review",
+          "finding": "Claim: RBI will withdraw ₹500 notes from 1 November. #PIBFactCheck: This claim is FAKE. RBI has made no such announcement.",
+          "citation_url": "https://x.com/PIBFactCheck/status/1973498765432109876",
+          "snapshot_id": "web:d3baa4eb419543ea",
+          "source_excerpt": "Claim: RBI will withdraw ₹500 notes from 1 November. #PIBFactCheck: This claim is FAKE. RBI has made no such announcement.",
+          "source_anchor": {
+            "char_start": 1200,
+            "char_end": 1322,
+            "paragraph_index": null,
+            "page_number": null
+          },
+          "match_basis": {
+            "metric": "passage_entailment: the government's fact-check unit calls the claim fake",
+            "value": 0.92,
+            "threshold": 0.5
+          },
+          "match_quality": "STRONG",
+          "publisher": "PIB Fact Check",
+          "input_anchor": null,
+          "observed_at": "2026-10-02T10:02:55Z",
+          "credibility": "HIGH",
+          "published_on": "2026-10-01",
+          "title": null,
+          "earlier_media": null
+        }
+      ],
+      "confidence": 95,
+      "explanation": "Factly and PIB Fact Check both say the RBI issued no such release, and ₹500 notes remain legal tender.",
+      "in_full": null,
+      "language": "en",
+      "search": "searched",
+      "sources_looked_at": 9,
+      "input_anchor": {
+        "char_start": 79,
+        "char_end": 125,
+        "page_number": null,
+        "frame_start_ms": null
+      },
+      "technique": null
+    },
+    {
+      "id": "cl_2",
+      "text": "₹500 notes can be exchanged at any bank branch until 31 October 2026.",
+      "claim_type": "EVENT",
+      "status": "UNVERIFIED",
+      "severity": "MEDIUM",
+      "importance": "SUPPORTING_DETAIL",
+      "reason": "No evidence strong enough to decide this claim.",
+      "rule_id": "rule.no_qualifying_evidence",
+      "rule_version": "2026.10.02.1",
+      "strength": {
+        "score": 0.0,
+        "band": "none",
+        "components": [
+          {
+            "name": "tier_composition",
+            "value": 0.45,
+            "explanation": "",
+            "citations": []
+          },
+          {
+            "name": "independent_origins",
+            "value": 0.0,
+            "explanation": "0 distinct origin(s) across 0 document(s)",
+            "citations": []
+          },
+          {
+            "name": "temporal_confidence",
+            "value": 0.0,
+            "explanation": "no dated evidence",
+            "citations": []
+          },
+          {
+            "name": "conflict_penalty",
+            "value": 0.0,
+            "explanation": "no conflict",
+            "citations": []
+          }
+        ],
+        "advisory_excluded": [],
+        "version": "2026.08.1"
+      },
+      "evidence": [],
+      "confidence": null,
+      "explanation": null,
+      "in_full": null,
+      "language": "en",
+      "search": "searched",
+      "sources_looked_at": 5,
+      "input_anchor": {
+        "char_start": 328,
+        "char_end": 385,
+        "page_number": null,
+        "frame_start_ms": null
+      },
+      "technique": null
+    }
+  ],
+  "advisories": [],
+  "source_risk": "UNKNOWN",
+  "source_profile": null,
+  "media_provenance": null,
+  "recurrence": null,
+  "skipped": [],
+  "completeness_note": null,
+  "image_reading": {
+    "text": "RESERVE BANK OF INDIA\nPRESS RELEASE\n₹500 notes to be withdrawn from circulation from 1 November 2026\nNotes may be exchanged at any bank branch till 31 October",
+    "description": "A document styled as an RBI press release, with the bank's emblem at the top and a signature at the bottom.",
+    "kind": "DOCUMENT",
+    "publisher": "Reserve Bank of India",
+    "language": "en"
+  },
+  "media_report": {
+    "kind": "image",
+    "credentials": {
+      "status": "none",
+      "signer": null,
+      "declares_ai": false,
+      "digital_source": null,
+      "generator": null
+    },
+    "history": {
+      "status": "none",
+      "pages": 0,
+      "dated": 0,
+      "earliest": null,
+      "why": null
+    },
+    "detector": {
+      "status": "checked",
+      "why": null,
+      "generated": 0.03,
+      "face_swap": null,
+      "second_opinion": null,
+      "agreement": "no_sign",
+      "faces": null,
+      "voice": null,
+      "machine_voice": null,
+      "face_swapped": null,
+      "on_server": true
+    },
+    "editing": {
+      "status": "checked",
+      "uneven_noise": false,
+      "spectral_peaks": false
+    },
+    "frames": null
+  },
+  "media_reports": [
+    {
+      "kind": "image",
+      "credentials": {
+        "status": "none",
+        "signer": null,
+        "declares_ai": false,
+        "digital_source": null,
+        "generator": null
+      },
+      "history": {
+        "status": "none",
+        "pages": 0,
+        "dated": 0,
+        "earliest": null,
+        "why": null
+      },
+      "detector": {
+        "status": "checked",
+        "why": null,
+        "generated": 0.06,
+        "face_swap": null,
+        "second_opinion": null,
+        "agreement": "no_sign",
+        "faces": null,
+        "voice": null,
+        "machine_voice": null,
+        "face_swapped": null,
+        "on_server": true
+      },
+      "editing": {
+        "status": "checked",
+        "uneven_noise": false,
+        "spectral_peaks": false
+      },
+      "frames": null
+    }
+  ],
+  "speech": null,
+  "input_read": {
+    "kind": "social_post",
+    "platform": "x",
+    "url": "https://x.com/i/status/1973412345678901234",
+    "author": "Daily Bharat Updates",
+    "handle": "dailybharatupd",
+    "published_at": "2026-10-01T14:12:00Z",
+    "parts": [
+      {
+        "kind": "post_text",
+        "label": "Post by Daily Bharat Updates (@dailybharatupd) on X, 1 Oct 2026",
+        "text": "BIG BREAKING: RBI to withdraw all ₹500 notes from 1 November. Exchange your notes at the bank before the deadline! Share with everyone 🙏",
+        "checked": true,
+        "route": "x.syndication",
+        "complete": true,
+        "note": null,
+        "media_url": null,
+        "char_start": 65,
+        "char_end": 201,
+        "seconds_read": null,
+        "seconds_total": null,
+        "language": "en"
+      },
+      {
+        "kind": "picture_text",
+        "label": "Text in picture 1 of 2",
+        "text": "RESERVE BANK OF INDIA\nPRESS RELEASE\n₹500 notes to be withdrawn from circulation from 1 November 2026\nNotes may be exchanged at any bank branch till 31 October",
+        "checked": true,
+        "route": "ocr.local",
+        "complete": true,
+        "note": null,
+        "media_url": "/v1/media/thumbnails/9b2f0c6e1a7d4e3fb8c5a2d1e0f9c8b7",
+        "char_start": 227,
+        "char_end": 385,
+        "seconds_read": null,
+        "seconds_total": null,
+        "language": "en"
+      },
+      {
+        "kind": "picture_description",
+        "label": "What picture 1 shows",
+        "text": "A document styled as an RBI press release, with the bank's emblem at the top and a signature at the bottom.",
+        "checked": false,
+        "route": "ocr.hosted",
+        "complete": true,
+        "note": null,
+        "media_url": "/v1/media/thumbnails/9b2f0c6e1a7d4e3fb8c5a2d1e0f9c8b7",
+        "char_start": null,
+        "char_end": null,
+        "seconds_read": null,
+        "seconds_total": null,
+        "language": null
+      },
+      {
+        "kind": "picture_text",
+        "label": "Text in picture 2 of 2",
+        "text": "Last date to exchange ₹500 notes: 31 October 2026",
+        "checked": true,
+        "route": "ocr.local",
+        "complete": true,
+        "note": null,
+        "media_url": "/v1/media/thumbnails/4e7a1c9d2b3f4a5e8d6c7b0a1f2e3d4c",
+        "char_start": 411,
+        "char_end": 460,
+        "seconds_read": null,
+        "seconds_total": null,
+        "language": "en"
+      },
+      {
+        "kind": "picture_description",
+        "label": "What picture 2 shows",
+        "text": "A red banner with white text over a photograph of ₹500 notes.",
+        "checked": false,
+        "route": "ocr.hosted",
+        "complete": true,
+        "note": null,
+        "media_url": "/v1/media/thumbnails/4e7a1c9d2b3f4a5e8d6c7b0a1f2e3d4c",
+        "char_start": null,
+        "char_end": null,
+        "seconds_read": null,
+        "seconds_total": null,
+        "language": null
+      }
+    ],
+    "gaps": [],
+    "limits": [],
+    "complete": true,
+    "verdict_withheld": false,
+    "checked_partially": false
+  },
+  "receipt_url": "/v1/receipts/rcpt:e2e21927b038d72c57c860254fb11f29",
+  "receipt": {
+    "receipt_id": "rcpt:e2e21927b038d72c57c860254fb11f29",
+    "verified": true,
+    "issued_at": "2026-10-02T10:02:55Z"
+  },
+  "request_id": "7d6c5b4a-3e2f-4a1b-8c9d-0e1f2a3b4c5d",
+  "retrieved_at": "2026-10-02T10:03:30Z",
+  "from_cache": false,
+  "elapsed_ms": 64210
+}

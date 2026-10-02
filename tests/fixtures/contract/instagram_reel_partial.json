@@ -1,0 +1,398 @@
+{
+  "case_id": "5e4d3c2b-1a09-4f8e-b7d6-c5b4a3928170",
+  "contract_version": "1.8",
+  "verdict": "UNCONFIRMED",
+  "confidence": null,
+  "summary": null,
+  "action": "WAIT_AND_RECHECK",
+  "action_reason": "What could be read is supported; part of the input could not be read.",
+  "rule_version": "2026.10.02.1",
+  "claims": [
+    {
+      "id": "cl_1",
+      "text": "Aditya-L1 reached its halo orbit around the L1 point on 6 January 2024.",
+      "claim_type": "EVENT",
+      "status": "SUPPORTED",
+      "severity": "MEDIUM",
+      "importance": "HEADLINE",
+      "reason": "2 independent origins across 2 documents support this claim.",
+      "rule_id": "rule.independent_corroboration",
+      "rule_version": "2026.10.02.1",
+      "strength": {
+        "score": 0.79,
+        "band": "strong",
+        "components": [
+          {
+            "name": "tier_composition",
+            "value": 0.45,
+            "explanation": "2×D",
+            "citations": [
+              "https://www.isro.gov.in/Aditya_L1_Halo_Orbit_Insertion.html",
+              "https://www.thehindu.com/sci-tech/science/aditya-l1-reaches-halo-orbit/article67712345.ece"
+            ]
+          },
+          {
+            "name": "independent_origins",
+            "value": 0.6667,
+            "explanation": "2 distinct origin(s) across 2 document(s)",
+            "citations": []
+          },
+          {
+            "name": "temporal_confidence",
+            "value": 1.0,
+            "explanation": "2 dated finding(s)",
+            "citations": []
+          },
+          {
+            "name": "conflict_penalty",
+            "value": 0.0,
+            "explanation": "no conflict",
+            "citations": []
+          }
+        ],
+        "advisory_excluded": [],
+        "version": "2026.08.1"
+      },
+      "evidence": [
+        {
+          "id": "ev:web_search:d86a3e07abdc4e9f:cl_1",
+          "tier": "D",
+          "kind": "corroboration",
+          "direction": "supports",
+          "method": "passage_entailment",
+          "finding": "Aditya-L1, the first space-based solar observatory of India, was successfully placed in a halo orbit around the Lagrangian point L1 on January 6, 2024.",
+          "citation_url": "https://www.isro.gov.in/Aditya_L1_Halo_Orbit_Insertion.html",
+          "snapshot_id": "web:d86a3e07abdc4e9f",
+          "source_excerpt": "Aditya-L1, the first space-based solar observatory of India, was successfully placed in a halo orbit around the Lagrangian point L1 on January 6, 2024.",
+          "source_anchor": {
+            "char_start": 1200,
+            "char_end": 1351,
+            "paragraph_index": null,
+            "page_number": null
+          },
+          "match_basis": {
+            "metric": "passage_entailment: the agency's own page states the date of the halo-orbit insertion",
+            "value": 0.93,
+            "threshold": 0.5
+          },
+          "match_quality": "STRONG",
+          "publisher": "ISRO",
+          "input_anchor": null,
+          "observed_at": "2026-10-02T11:30:12Z",
+          "credibility": "HIGH",
+          "published_on": "2024-01-06",
+          "title": "Aditya-L1 Halo Orbit Insertion",
+          "earlier_media": null
+        },
+        {
+          "id": "ev:web_search:9f1096345d1895f8:cl_1",
+          "tier": "D",
+          "kind": "corroboration",
+          "direction": "supports",
+          "method": "passage_entailment",
+          "finding": "ISRO's Aditya-L1 spacecraft was placed in its final halo orbit on Saturday.",
+          "citation_url": "https://www.thehindu.com/sci-tech/science/aditya-l1-reaches-halo-orbit/article67712345.ece",
+          "snapshot_id": "web:9f1096345d1895f8",
+          "source_excerpt": "ISRO's Aditya-L1 spacecraft was placed in its final halo orbit on Saturday.",
+          "source_anchor": {
+            "char_start": 1200,
+            "char_end": 1275,
+            "paragraph_index": null,
+            "page_number": null
+          },
+          "match_basis": {
+            "metric": "passage_entailment: reports the insertion on Saturday, 6 January 2024",
+            "value": 0.86,
+            "threshold": 0.5
+          },
+          "match_quality": "STRONG",
+          "publisher": "The Hindu",
+          "input_anchor": null,
+          "observed_at": "2026-10-02T11:30:12Z",
+          "credibility": "HIGH",
+          "published_on": "2024-01-06",
+          "title": "Aditya-L1 reaches its destination",
+          "earlier_media": null
+        }
+      ],
+      "confidence": 91,
+      "explanation": "ISRO and The Hindu both report that Aditya-L1 entered its halo orbit on 6 January 2024.",
+      "in_full": null,
+      "language": "en",
+      "search": "searched",
+      "sources_looked_at": 6,
+      "input_anchor": {
+        "char_start": 96,
+        "char_end": 166,
+        "page_number": null,
+        "frame_start_ms": null
+      },
+      "technique": null
+    },
+    {
+      "id": "cl_2",
+      "text": "इसे 2 सितंबर 2023 को श्रीहरिकोटा से लॉन्च किया गया था।",
+      "claim_type": "EVENT",
+      "status": "SUPPORTED",
+      "severity": "MEDIUM",
+      "importance": "SUPPORTING_DETAIL",
+      "reason": "2 independent origins across 2 documents support this claim.",
+      "rule_id": "rule.independent_corroboration",
+      "rule_version": "2026.10.02.1",
+      "strength": {
+        "score": 0.79,
+        "band": "strong",
+        "components": [
+          {
+            "name": "tier_composition",
+            "value": 0.45,
+            "explanation": "2×D",
+            "citations": [
+              "https://www.isro.gov.in/Aditya_L1.html",
+              "https://www.ndtv.com/india-news/aditya-l1-launch-isro-sun-mission-4352345"
+            ]
+          },
+          {
+            "name": "independent_origins",
+            "value": 0.6667,
+            "explanation": "2 distinct origin(s) across 2 document(s)",
+            "citations": []
+          },
+          {
+            "name": "temporal_confidence",
+            "value": 1.0,
+            "explanation": "1 dated finding(s)",
+            "citations": []
+          },
+          {
+            "name": "conflict_penalty",
+            "value": 0.0,
+            "explanation": "no conflict",
+            "citations": []
+          }
+        ],
+        "advisory_excluded": [],
+        "version": "2026.08.1"
+      },
+      "evidence": [
+        {
+          "id": "ev:web_search:85c8726877b3d4a0:cl_2",
+          "tier": "D",
+          "kind": "corroboration",
+          "direction": "supports",
+          "method": "passage_entailment",
+          "finding": "PSLV-C57 launched Aditya-L1 from Satish Dhawan Space Centre, Sriharikota, on September 2, 2023.",
+          "citation_url": "https://www.isro.gov.in/Aditya_L1.html",
+          "snapshot_id": "web:85c8726877b3d4a0",
+          "source_excerpt": "PSLV-C57 launched Aditya-L1 from Satish Dhawan Space Centre, Sriharikota, on September 2, 2023.",
+          "source_anchor": {
+            "char_start": 1200,
+            "char_end": 1295,
+            "paragraph_index": null,
+            "page_number": null
+          },
+          "match_basis": {
+            "metric": "passage_entailment: the mission page gives the launch date and site",
+            "value": 0.9,
+            "threshold": 0.5
+          },
+          "match_quality": "STRONG",
+          "publisher": "ISRO",
+          "input_anchor": null,
+          "observed_at": "2026-10-02T11:30:12Z",
+          "credibility": "HIGH",
+          "published_on": null,
+          "title": "Aditya-L1",
+          "earlier_media": null
+        },
+        {
+          "id": "ev:web_search:44f08a7c23766487:cl_2",
+          "tier": "D",
+          "kind": "corroboration",
+          "direction": "supports",
+          "method": "passage_entailment",
+          "finding": "Aditya-L1 lifted off from Sriharikota at 11.50 am on Saturday.",
+          "citation_url": "https://www.ndtv.com/india-news/aditya-l1-launch-isro-sun-mission-4352345",
+          "snapshot_id": "web:44f08a7c23766487",
+          "source_excerpt": "Aditya-L1 lifted off from Sriharikota at 11.50 am on Saturday.",
+          "source_anchor": {
+            "char_start": 1200,
+            "char_end": 1262,
+            "paragraph_index": null,
+            "page_number": null
+          },
+          "match_basis": {
+            "metric": "passage_entailment: reports the launch from Sriharikota on 2 September 2023",
+            "value": 0.84,
+            "threshold": 0.5
+          },
+          "match_quality": "STRONG",
+          "publisher": "NDTV",
+          "input_anchor": null,
+          "observed_at": "2026-10-02T11:30:12Z",
+          "credibility": "HIGH",
+          "published_on": "2023-09-02",
+          "title": "Aditya-L1 lifts off on India's first mission to study the Sun",
+          "earlier_media": null
+        }
+      ],
+      "confidence": 88,
+      "explanation": "इसरो और एनडीटीवी, दोनों के अनुसार आदित्य-एल1 को 2 सितंबर 2023 को श्रीहरिकोटा से लॉन्च किया गया।",
+      "in_full": "Aditya-L1 was launched from Sriharikota on 2 September 2023.",
+      "language": "hi",
+      "search": "searched",
+      "sources_looked_at": 6,
+      "input_anchor": {
+        "char_start": 306,
+        "char_end": 359,
+        "page_number": null,
+        "frame_start_ms": null
+      },
+      "technique": null
+    }
+  ],
+  "advisories": [],
+  "source_risk": "UNKNOWN",
+  "source_profile": null,
+  "media_provenance": null,
+  "recurrence": null,
+  "skipped": [
+    {
+      "check": "speech",
+      "reason": "only the first 10 minutes of the 14-minute video were heard",
+      "kind": "reading"
+    }
+  ],
+  "completeness_note": "Not everything could be checked. speech was not checked: only the first 10 minutes of the 14-minute video were heard",
+  "image_reading": null,
+  "media_report": {
+    "kind": "video",
+    "credentials": {
+      "status": "none",
+      "signer": null,
+      "declares_ai": false,
+      "digital_source": null,
+      "generator": null
+    },
+    "history": {
+      "status": "none",
+      "pages": 0,
+      "dated": 0,
+      "earliest": null,
+      "why": null
+    },
+    "detector": {
+      "status": "checked",
+      "why": null,
+      "generated": 0.04,
+      "face_swap": null,
+      "second_opinion": null,
+      "agreement": "no_sign",
+      "faces": null,
+      "voice": 0.0312,
+      "machine_voice": false,
+      "face_swapped": null,
+      "on_server": true
+    },
+    "editing": {
+      "status": "checked",
+      "uneven_noise": false,
+      "spectral_peaks": false
+    },
+    "frames": 24
+  },
+  "media_reports": [],
+  "speech": {
+    "text": "नमस्ते दोस्तों। आज बात करेंगे भारत के पहले सौर मिशन आदित्य-एल1 की। इसे 2 सितंबर 2023 को श्रीहरिकोटा से लॉन्च किया गया था। आदित्य-एल1 6 जनवरी 2024 को अपनी हेलो कक्षा में पहुँचा, जो पृथ्वी से करीब 15 लाख किलोमीटर दूर है।",
+    "language": "hi",
+    "cut_off": true
+  },
+  "input_read": {
+    "kind": "social_post",
+    "platform": "instagram",
+    "url": "https://www.instagram.com/reel/DGx7kLmNp2Q/",
+    "author": null,
+    "handle": "space.facts.india",
+    "published_at": "2026-09-30T18:45:00Z",
+    "parts": [
+      {
+        "kind": "post_text",
+        "label": "Post by @space.facts.india on Instagram, 30 Sep 2026",
+        "text": "Did you know? India's first solar mission Aditya-L1 reached its halo orbit around the L1 point on 6 January 2024 🚀☀️ Watch till the end for what it has found so far",
+        "checked": true,
+        "route": "instagram.embed",
+        "complete": true,
+        "note": null,
+        "media_url": null,
+        "char_start": 54,
+        "char_end": 218,
+        "seconds_read": null,
+        "seconds_total": null,
+        "language": "en"
+      },
+      {
+        "kind": "transcript",
+        "label": "Said in the video",
+        "text": "नमस्ते दोस्तों। आज बात करेंगे भारत के पहले सौर मिशन आदित्य-एल1 की। इसे 2 सितंबर 2023 को श्रीहरिकोटा से लॉन्च किया गया था। आदित्य-एल1 6 जनवरी 2024 को अपनी हेलो कक्षा में पहुँचा, जो पृथ्वी से करीब 15 लाख किलोमीटर दूर है।",
+        "checked": true,
+        "route": "whisper",
+        "complete": false,
+        "note": null,
+        "media_url": null,
+        "char_start": 239,
+        "char_end": 457,
+        "seconds_read": 600,
+        "seconds_total": 842,
+        "language": "hi"
+      },
+      {
+        "kind": "on_screen_text",
+        "label": "Text shown in the video",
+        "text": "ADITYA-L1\nLaunch: 2 Sep 2023\nHalo orbit: 6 Jan 2024\n15 lakh km from Earth",
+        "checked": true,
+        "route": "frames.ocr",
+        "complete": false,
+        "note": "read from 24 frames across the first 10 minutes",
+        "media_url": null,
+        "char_start": 484,
+        "char_end": 557,
+        "seconds_read": null,
+        "seconds_total": null,
+        "language": null
+      },
+      {
+        "kind": "video_description",
+        "label": "What the video shows",
+        "text": "A presenter in front of animated graphics of the Sun and a spacecraft, then footage of a rocket launch.",
+        "checked": false,
+        "route": "ocr.hosted",
+        "complete": true,
+        "note": null,
+        "media_url": "/v1/media/thumbnails/1a2b3c4d5e6f47089a0b1c2d3e4f5a6b",
+        "char_start": null,
+        "char_end": null,
+        "seconds_read": null,
+        "seconds_total": null,
+        "language": null
+      }
+    ],
+    "gaps": [
+      {
+        "part": "transcript",
+        "code": "cut_off",
+        "detail": "Only the first 10 minutes of the 14-minute video were heard and read.",
+        "blocking": true
+      }
+    ],
+    "limits": [],
+    "complete": false,
+    "verdict_withheld": false,
+    "checked_partially": true
+  },
+  "receipt_url": null,
+  "receipt": null,
+  "request_id": "9a8b7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d",
+  "retrieved_at": "2026-10-02T11:33:48Z",
+  "from_cache": false,
+  "elapsed_ms": 231604
+}

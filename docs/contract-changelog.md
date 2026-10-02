@@ -6,6 +6,61 @@ nothing that was there changes name, type or meaning. A client built against an 
 version keeps working and simply does not show the new fields. 1.4 adds a value to
 `verdict`; see below for how an older client reads it.
 
+## 1.8 (2026-10-02): what Factify read, and answers held back when it could not
+
+Additive: every 1.7 field is unchanged. Sample responses for building against are in
+`tests/fixtures/contract/`.
+
+- **`input_read`** on the result: what was read from the input, part by part, and
+  what could not be. `kind` (`text`, `link`, `social_post`, `image`, `pdf`, `video`),
+  and for a link or post `platform` (`x`, `instagram`, `youtube`, `facebook`), `url`,
+  `author`, `handle` and `published_at`.
+  - `parts[]`, in the order a person meets them: `kind` (`message`, `post_text`,
+    `quoted_post`, `title`, `description`, `article`, `linked_article`,
+    `picture_text`, `picture_description`, `transcript`, `on_screen_text`,
+    `video_description`, `document_text`), `label` ("Post by … on X, 2 Oct 2026",
+    "Text in picture 1 of 2", "Said in the video"), `text`, `checked`, `route` (how
+    it was read), `complete`, `note`, `media_url` (the picture it was read from, on
+    `/v1/media/thumbnails/{key}`, kept for an hour: hide it on a 404), `char_start`
+    and `char_end` (where the part's text sits in the text claims were found in, the
+    same offsets as `claims[].input_anchor`), and for speech `seconds_read` of
+    `seconds_total` and the `language` heard.
+  - `checked: false` marks a description of what a picture or video shows: shown as
+    context, never checked, and never part of the text claims are found in. Show it
+    muted, as "description only, not checked".
+  - `gaps[]`: `part`, `code`, `detail` (one English sentence, the fallback for a code
+    a client does not know) and `blocking`. Codes: `headline_only`,
+    `text_truncated`, `post_unavailable`, `login_required`, `not_supported`,
+    `picture_unread`, `video_unread`, `speech_unread`, `cut_off`, `pages_unread`,
+    `too_large`, `needs_background`, `reader_unavailable` (blocking), and
+    `first_picture_only`, `article_truncated`, `description_unread`,
+    `linked_page_unread` (not blocking).
+  - `limits[]`: limits that are not about reading, as sentences ("YouTube does not
+    let Factify download the video, so its AI, face-swap and voice checks did not
+    run.").
+  - `complete`: true exactly when there are no gaps.
+  - `verdict_withheld`: something that could decide the answer was not read (or
+    nothing checkable was), so no verdict was given. `verdict` is `UNCONFIRMED`,
+    `claims` is empty, and `summary` says so in a fixed sentence. Offer "Paste the
+    text", "Upload the picture or video" and "Check what was read".
+  - `checked_partially`: checked from what could be read, as the person asked. The
+    verdict is then never `TRUE`: a case that would be is `UNCONFIRMED`
+    (`WAIT_AND_RECHECK`) under the new rule `rollup.partly_read`, "What could be read
+    is supported; part of the input could not be read." A contradiction or a partial
+    truth still stands.
+  - `null` on cases stored before it was recorded.
+- **`media_reports`**: for a post with more than one picture, the picture checks of
+  pictures 2 to n, in order. `media_report` stays picture 1.
+- **`skipped[].kind`**: `reading` (part of the input could not be read; `input_read`
+  says what), `deadline` (the check ran out of time), `provider` (an outside service
+  did not answer) or `other` (the default). Show the "ran out of time" sentence only
+  for `deadline`.
+- **`POST /v1/verify` `accept_partial`** (default false), and the same form field on
+  `POST /v1/verify/file`: "Check what was read". Resubmit a withheld answer with it
+  to check what could be read.
+- `rule_version` is now `2026.10.02.1`: stored answers from earlier rules are not
+  served again.
+
 ## 2026-10-02: endpoints behind the dashboard and app (contract still 1.7)
 
 The result's shape is unchanged; these are endpoints and response fields the website

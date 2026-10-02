@@ -1,0 +1,104 @@
+{
+  "case_id": "a2d4e6f8-0b1c-4d3e-8f5a-6b7c8d9e0f12",
+  "contract_version": "1.8",
+  "verdict": "UNCONFIRMED",
+  "confidence": null,
+  "summary": "Factify could not read all of this, so it has not given a verdict. Paste the text, upload the picture or video, or ask Factify to check only what it could read.",
+  "action": "SEND_TO_REVIEW",
+  "action_reason": "No checkable claims were extracted from this input.",
+  "rule_version": "2026.10.02.1",
+  "claims": [],
+  "advisories": [],
+  "source_risk": "MEDIUM",
+  "source_profile": {
+    "domain": "example-news.in",
+    "trusted": false,
+    "trust": null,
+    "fact_checker": false,
+    "level": "MEDIUM",
+    "findings": [
+      "Not on Factify's list of trusted sources."
+    ],
+    "warnings": [
+      "The page names no author."
+    ],
+    "domain_age_days": 212
+  },
+  "media_provenance": null,
+  "recurrence": null,
+  "skipped": [
+    {
+      "check": "linked_page",
+      "reason": "only the headline could be read: the article is behind a sign-in wall",
+      "kind": "reading"
+    },
+    {
+      "check": "claim_extraction",
+      "reason": "not checked: Factify could not read all of it",
+      "kind": "reading"
+    }
+  ],
+  "completeness_note": "Not everything could be checked. linked_page was not checked: only the headline could be read: the article is behind a sign-in wall claim_extraction was not checked: not checked: Factify could not read all of it",
+  "image_reading": null,
+  "media_report": null,
+  "media_reports": [],
+  "speech": null,
+  "input_read": {
+    "kind": "link",
+    "platform": null,
+    "url": "https://www.example-news.in/india/new-rule-for-upi-payments-from-november-1",
+    "author": null,
+    "handle": null,
+    "published_at": null,
+    "parts": [
+      {
+        "kind": "title",
+        "label": "Title",
+        "text": "New rule for UPI payments from November 1: what changes for you",
+        "checked": true,
+        "route": "headline_summary",
+        "complete": true,
+        "note": null,
+        "media_url": null,
+        "char_start": null,
+        "char_end": null,
+        "seconds_read": null,
+        "seconds_total": null,
+        "language": null
+      },
+      {
+        "kind": "description",
+        "label": "Description",
+        "text": "Sign in to continue reading.",
+        "checked": true,
+        "route": "headline_summary",
+        "complete": false,
+        "note": null,
+        "media_url": null,
+        "char_start": null,
+        "char_end": null,
+        "seconds_read": null,
+        "seconds_total": null,
+        "language": null
+      }
+    ],
+    "gaps": [
+      {
+        "part": "article",
+        "code": "headline_only",
+        "detail": "Only the page's headline could be read: the article is behind a sign-in wall.",
+        "blocking": true
+      }
+    ],
+    "limits": [],
+    "complete": false,
+    "verdict_withheld": true,
+    "checked_partially": false
+  },
+  "receipt_url": null,
+  "receipt": null,
+  "request_id": "0c1d2e3f-4a5b-4c6d-9e8f-7a6b5c4d3e2f",
+  "retrieved_at": "2026-10-02T09:20:07Z",
+  "from_cache": false,
+  "elapsed_ms": 4870
+}
