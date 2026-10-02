@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -46,11 +47,15 @@ class Extractor(Protocol):
 # cannot pass.
 _ANCHOR_MATCH_THRESHOLD = 0.6
 
-# A message this short that yields a claim is that claim, when no reading of it can be
-# found in it word for word (`ClaimPipeline._verify`).
-_WHOLE_MESSAGE = 400
-# A sentence ending inside a message: the fallback is for one-sentence forwards only.
-_SENTENCE_END = re.compile(r"[.!?।|]\s+\S")
+# A message this short whose claim is not found in it word for word: the sentence of
+# the message the claim reads stands as the claim (`ClaimPipeline._verify`).
+_SHORT_MESSAGE = 600
+# Where one sentence of a message ends and the next begins: a line break, a full stop
+# (a danda, a bar) and a space, or a colon opening a quotation - in 'venukolangara on
+# August 13, 2026: "An old photograph ...' who posted comes first, then the caption.
+_SENTENCE_BREAK = re.compile(r"\n|(?<=[.!?।|])\s+|(?<=:)\s*(?=[\"“])")
+# How much of a discarded claim the log keeps: enough to tell which claim it was.
+_LOGGED_CLAIM = 160
 _RANK = {
     Importance.HEADLINE: 0,
     Importance.MAIN_THESIS: 1,
@@ -89,33 +94,38 @@ def _locate(claim_text: str, source: str) -> tuple[int, int] | None:
     """Find the claim in the source, returning character offsets in `source` itself.
 
     Exact match first, then a longest-run fallback for the common case where the
-    model tidied punctuation. If neither finds it, the claim does not correspond to
-    the document and is not stored.
+    model tidied punctuation, then the claim's facts (`_locate_by_coverage`). If none
+    finds it, the claim does not correspond to the document and is not stored.
 
     The search runs in folded text, whose whitespace is flattened; the offsets are
     carried back to the source's own characters, so a claim's location points at
     what the person sent - the app underlines it there - not at a tidied copy.
     """
     haystack, origin = fold_with_positions(source)
-    found = _locate_folded(_normalise(claim_text), haystack)
+    needle = _normalise(claim_text)
+    if not needle:
+        return None
+    position = haystack.find(needle)
+    if position != -1:
+        found: tuple[int, int] | None = (position, position + len(needle))
+    else:
+        # Anything short of the claim word for word must give no number and no name
+        # the source does not: a claim keeping most of a sentence's words can still
+        # change the one that matters.
+        read = _Source.of(source, haystack)
+        if any(_not_in_source(claim_text, _words(claim_text), read)):
+            return None
+        found = _longest_run(needle, haystack) or _locate_by_coverage(claim_text, read)
     if found is None:
         return None
     start, end = found
     return origin[start], origin[end - 1] + 1
 
 
-def _locate_folded(needle: str, haystack: str) -> tuple[int, int] | None:
-    """The claim's offsets in the folded source, or None."""
-
-    if not needle:
-        return None
-
-    position = haystack.find(needle)
-    if position != -1:
-        return position, position + len(needle)
-
-    # Fall back to the longest contiguous run of the claim that does appear. A
-    # paraphrase keeps most of its subject and object intact; an invention does not.
+def _longest_run(needle: str, haystack: str) -> tuple[int, int] | None:
+    """The longest run of the claim's words in the folded source, when it is most of
+    the claim, or None."""
+    # A paraphrase keeps most of its subject and object intact; an invention does not.
     words = needle.split()
     for length in range(len(words), 2, -1):
         for start in range(len(words) - length + 1):
@@ -124,40 +134,105 @@ def _locate_folded(needle: str, haystack: str) -> tuple[int, int] | None:
             if found != -1 and length / len(words) >= _ANCHOR_MATCH_THRESHOLD:
                 return found, found + len(fragment)
 
-    return _locate_by_coverage(needle, haystack)
+    return None
 
 
 # Words that carry no fact of their own, so a claim is matched on the ones that do.
+# "per cent" and "Rs" go with a number, which is matched on its own.
 _FUNCTION_WORDS = frozenset(
     """a an the is are was were be been being has have had do does did will would shall
     should can could may might must and or but nor so yet of in on at to for from by with
     about as into onto over under after before during than that this these those which
     who whom whose what when where why how it its their there they them he she his her
     him we our you your i me my not no also just only very more most such both each
-    said says say according""".split()
+    said says say according per cent percent rs inr""".split()
+    # The same in Hindi: postpositions, auxiliaries, and the "said that" a quote card's
+    # claim adds ("गौरव भाटिया ने कहा कि ...") to words the card carries bare.
+    + """का की के को में से पर और है हैं था थे थी हो हुआ हुई हुए ने कि कहा यह ये वह वे
+    इस उस एक भी तो ही गया गई गए किया द्वारा लिए""".split()
 )
 _MONTHS = {
     "january": "jan", "february": "feb", "march": "mar", "april": "apr", "june": "jun",
     "july": "jul", "august": "aug", "september": "sep", "sept": "sep", "october": "oct",
     "november": "nov", "december": "dec",
 }  # fmt: skip
-_SUFFIXES = ("ing", "ed", "es", "s")
+# Written straight after a number, part of how it is written rather than a word:
+# "11th", "1980s". And the short forms of a scale: "£900m" is "900 million".
+_NUMBER_ENDINGS = frozenset({"st", "nd", "rd", "th", "s"})
+_SCALES = {"m": "million", "mn": "million", "bn": "billion", "cr": "crore"}
 
 # Share of a claim's fact-bearing words that one short stretch of the source must hold,
 # with every number among them.
 _COVERAGE_THRESHOLD = 0.8
+# The same for a claim that adds a few plain words of its own (`_locate_by_coverage`):
+# a lower share of all its words, and half of those that are neither a name nor a number.
+_ADDED_WORDS_COVERAGE = 0.6
 _YEAR = re.compile(r"(19|20)\d\d")
 
 
 # How much of a word in an Indian script is its stem, in characters (code points).
 _STEM = 5
-# Joiners that shape a script's letters but carry no meaning of their own.
-_JOINERS = str.maketrans("", "", "‌‍")
+# Joiners that shape a script's letters but carry no meaning of their own, and the
+# soft hyphen, which only marks where a word may break.
+_JOINERS = str.maketrans("", "", "‌‍­")
+# Within a word, what joins two words or two numbers: hyphens and dashes of every kind
+# ("Pakistan-ISI-linked", "13–65", "₹50,000–₹90,000") and a slash ("30/09/2026").
+_JOINED = re.compile(r"[-‐‑–—―−/]+")
+# What a word may be wrapped in: punctuation, quotation marks, brackets, and the
+# currency and percent signs around a number, which is matched on its digits.
+_WRAPPING = ".,;:!?()[]{}<>\"'‘’“”«»।|*#@…&+=~_`^₹$£€¥%"
+_NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
+# A Latin word, or a number, inside a word: "than900" is "than" and "900", the way a
+# caption track runs a number into the word before it.
+_PIECE = re.compile(r"\d+(?:[.,]\d+)*|[A-Za-z]+(?:'[A-Za-z]+)*")
 
 
-def _fact_words(text: str) -> list[str]:
-    """The fact-bearing words of folded text: no function words, months abbreviated,
-    and a plain suffix trimmed, so "arrested" matches "arrests" and "January" "Jan".
+@dataclass(frozen=True, slots=True)
+class _Word:
+    """A fact-bearing word, where it sits, and whether it was written with a capital."""
+
+    word: str
+    start: int
+    end: int
+    capital: bool = False
+
+
+def _number(digits: str) -> str:
+    """A number as one form: grouping commas dropped - "2,36,013" and "236,013" are
+    the same number - and digits in any script written as 0-9."""
+    return "".join(str(unicodedata.decimal(ch, ch)) for ch in digits.replace(",", ""))
+
+
+def _stem(word: str) -> str:
+    """A plain English ending trimmed, so "arrested" matches "arrests", "declared"
+    "declare" and "crores" "crore"."""
+    if len(word) <= 4:
+        return word
+    if word.endswith("ing"):
+        word = word[:-3]
+    elif word.endswith("ed"):
+        word = word[:-2]
+    elif word.endswith("ies"):
+        word = word[:-3] + "y"
+    elif word.endswith("es") and word[:-2].endswith(("s", "x", "z", "ch", "sh")):
+        word = word[:-2]
+    elif word.endswith("s") and not word.endswith(("ss", "us", "is")):
+        word = word[:-1]
+    if len(word) > 4 and word.endswith("e"):
+        word = word[:-1]
+    return word
+
+
+def _words(text: str) -> list[_Word]:
+    """The fact-bearing words of a text, each with the span of what it came from.
+
+    No function words, months abbreviated, a plain suffix trimmed. Words joined by a
+    hyphen, a dash or a slash are words apart, a number is its digits wherever it is
+    written, and a number run into a word is a word and a number: the anchor check
+    threw away "a 10-time champion" against a caption's "10 time", "₹50,000 to
+    ₹90,000" against "(₹50,000-₹90,000)", whose digits it read as one number, and
+    the £900m at the heart of a BBC report against its caption's "more than900
+    million pounds" (2026-10-02).
 
     In the Indian scripts a word carries its case ending: Kannada "2024ರ" (of 2024)
     and "2024ರಲ್ಲಿ" (in 2024), "ಆಸ್ಟ್ರೇಲಿಯಾವನ್ನು" and "ಆಸ್ಟ್ರೇಲಿಯಾ". gpt-5.6-luna split
@@ -165,38 +240,157 @@ def _fact_words(text: str) -> list[str]:
     and wrote the second in full, and it was discarded as not in the text (2026-09-28).
     So a number there is its digits and a word its first few letters.
     """
-    words: list[str] = []
-    for raw in text.split():
-        word = raw.strip(".,;:!?()[]\"'।").translate(_JOINERS)
-        if not word or word in _FUNCTION_WORDS:
+    found: list[_Word] = []
+    for token in re.finditer(r"\S+", text):
+        start, end = token.span()
+        for part in _JOINED.split(token.group().translate(_JOINERS)):
+            part = part.strip(_WRAPPING).replace("’", "'")
+            if not part:
+                continue
+            if not part.isascii():
+                if any(ch.isdigit() for ch in part):
+                    found.extend(_Word(_number(n), start, end) for n in _NUMBER.findall(part))
+                elif any(ch.isalpha() for ch in part) and part.lower() not in _FUNCTION_WORDS:
+                    found.append(_Word(part.lower()[:_STEM], start, end))
+                continue
+            after_number = -1
+            for piece in _PIECE.finditer(part):
+                written = piece.group()
+                if written[0].isdigit():
+                    found.append(_Word(_number(written), start, end))
+                    after_number = piece.end()
+                    continue
+                if len(written) > 2 and written[-1] == "s" and written[:-1].isupper():
+                    # An acronym's plural, "SUVs" for the "(SUV)" a report writes.
+                    written = written[:-1]
+                word = written.lower()
+                if piece.start() == after_number:
+                    if word in _NUMBER_ENDINGS:
+                        continue
+                    if word in _SCALES:
+                        found.append(_Word(_SCALES[word], start, end))
+                        continue
+                word = word.removesuffix("'s").replace("'", "")
+                if not word or word in _FUNCTION_WORDS:
+                    continue
+                word = _stem(_MONTHS.get(word, word))
+                found.append(_Word(word, start, end, capital=written[0].isupper()))
+    return found
+
+
+def _fact_words(text: str) -> list[str]:
+    """The fact-bearing words of a text (`_words`), without where they sit."""
+    return [word.word for word in _words(text)]
+
+
+def _is_number(word: str) -> bool:
+    return word[:1].isdigit()
+
+
+# The longest acronym looked for: "ISRO", "NABARD", rarely more.
+_ACRONYM_LETTERS = 6
+
+
+def _expansions(words: list[_Word]) -> dict[str, frozenset[str]]:
+    """The acronyms a text spells out, by their initials: "Pakistan's Inter-Services
+    Intelligence" spells out the ISI, and "Prime Minister" the PM.
+
+    Every stretch of two to six capitalised words in a row, mapped to its words. Six,
+    so a page set in capitals is not read as one name thousands of words long.
+    """
+    spelled: dict[str, frozenset[str]] = {}
+    run: list[str] = []
+    for word in [*words, None]:
+        if word is not None and word.capital and not _is_number(word.word):
+            run.append(word.word)
             continue
-        if not word.isascii():
-            if any(ch.isdigit() for ch in word):
-                word = "".join(ch for ch in word if ch.isdigit())
-            else:
-                word = word[:_STEM]
-            words.append(word)
-            continue
-        word = _MONTHS.get(word, word)
-        if not word.isdigit() and len(word) > 4:
-            for suffix in _SUFFIXES:
-                if word.endswith(suffix):
-                    word = word[: -len(suffix)]
-                    break
-        words.append(word)
-    return words
+        for first in range(len(run)):
+            for last in range(first + 2, min(len(run), first + _ACRONYM_LETTERS) + 1):
+                part = run[first:last]
+                spelled.setdefault("".join(name[0] for name in part), frozenset(part))
+        run = []
+    return spelled
 
 
-def _shares_a_fact(source: str, reading: str) -> bool:
-    """Whether a reading of a message names something the message itself does: a
-    number, or a word of four letters or more. What guards the whole-message fallback
-    against a claim the model invented - which shares nothing with the message."""
-    ours = set(_fact_words(fold(source)))
-    theirs = set(_fact_words(fold(reading)))
-    return any(any(ch.isdigit() for ch in word) or len(word) >= 4 for word in ours & theirs)
+@dataclass(frozen=True, slots=True)
+class _Names:
+    """The words an English claim writes with a capital: its names.
+
+    `inner` leaves out a word opening a sentence, where a capital is no sign of a name.
+    """
+
+    every: frozenset[str]
+    inner: frozenset[str]
 
 
-def _locate_by_coverage(needle: str, haystack: str) -> tuple[int, int] | None:
+def _names(claim_text: str, claim: list[_Word]) -> _Names | None:
+    """The claim's names, or None when its script has no capitals to tell them by."""
+    if not all(ch.isascii() for ch in claim_text if ch.isalpha()):
+        return None
+    openers: set[int] = set()
+    previous = ""
+    for token in re.finditer(r"\S+", claim_text):
+        if not previous or previous.rstrip("\"')]”’").endswith((".", "!", "?")):
+            openers.add(token.start())
+        previous = token.group()
+    capitals = [word for word in claim if word.capital and not _is_number(word.word)]
+    return _Names(
+        every=frozenset(word.word for word in capitals),
+        inner=frozenset(word.word for word in capitals if word.start not in openers),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _Source:
+    """A source as the anchor check reads it: folded, as words, and the acronyms its
+    names spell out."""
+
+    folded: str
+    words: list[_Word]
+    vocabulary: frozenset[str]
+    acronyms: frozenset[str]
+
+    @classmethod
+    def of(cls, source: str, folded: str) -> _Source:
+        words = _words(folded)
+        return cls(
+            folded=folded,
+            words=words,
+            vocabulary=frozenset(word.word for word in words),
+            acronyms=frozenset(_expansions(_words(source))),
+        )
+
+    def credited(self, claim: list[_Word], names: _Names | None) -> frozenset[str]:
+        """The claim's names the source writes another way: spelled out where it
+        writes the acronym, or the acronym where it spells them out."""
+        if names is None:
+            return frozenset()
+        spelled = {
+            word
+            for initials, words in _expansions(claim).items()
+            if initials in self.vocabulary
+            for word in words
+        }
+        return frozenset(spelled | {name for name in names.every if name in self.acronyms})
+
+
+def _not_in_source(claim_text: str, claim: list[_Word], source: _Source) -> tuple[str, str]:
+    """The numbers, then the names, a claim gives that the source does not, anywhere.
+
+    A number is a fact the claim states, and so is a name it writes with a capital in
+    mid-sentence ("arrested by Mumbai Police", "Narendra Modi" for a caption's "Prime
+    Minister Ji"). Either one missing from the whole source means the claim says
+    something the source does not, however many of its other words are there.
+    """
+    numbers = sorted({word.word for word in claim if _is_number(word.word)} - source.vocabulary)
+    names = _names(claim_text, claim)
+    if names is None:
+        return ", ".join(numbers[:4]), ""
+    missing = names.inner - source.vocabulary - source.credited(claim, names)
+    return ", ".join(numbers[:4]), ", ".join(sorted(missing)[:4])
+
+
+def _locate_by_coverage(claim_text: str, source: _Source) -> tuple[int, int] | None:
     """The shortest stretch of the source holding the claim's facts, or None.
 
     A claim extracted from a list is rewritten as a sentence, and no run of its words
@@ -212,43 +406,121 @@ def _locate_by_coverage(needle: str, haystack: str) -> tuple[int, int] | None:
     2025" — but it must still be on the page. An invented claim fails, because the
     facts it invents are not there; a claim assembled from words scattered across the
     page fails, because the stretch is bounded.
+
+    A self-contained claim adds plain words the source leaves to the reader: "seven
+    people", "espionage" for "spy", a role or a place spelled out. "Anas, Mohammad ...
+    - arrested by Delhi police in Pakistan-ISI-linked spy agency bust" lost every claim
+    to that (2026-10-02). So an English claim may also stand on 60% of its words when
+    the stretch holds every name it writes with a capital - an acronym it spells out
+    counts as written - every number, and half of its other words. A claim that names
+    someone the source does not, or gives another number, still fails.
     """
-    wanted = _fact_words(needle)
+    claim = _words(claim_text)
+    wanted = [word.word for word in claim]
     if len(wanted) < 3:
         return None
     distinct = set(wanted)
     years = {word for word in distinct if _YEAR.fullmatch(word)}
-    if any(year not in haystack for year in years):
+    if any(year not in source.folded for year in years):
         return None
-    numbers = {word for word in distinct - years if any(ch.isdigit() for ch in word)}
+    numbers = {word for word in distinct - years if _is_number(word)}
     need = max(len(numbers), int(len(distinct) * _COVERAGE_THRESHOLD + 0.999))
 
-    # The source as fact-bearing words, each with where it sits in the folded text.
-    positions: list[tuple[str, int, int]] = []
-    cursor = 0
-    for raw in haystack.split():
-        start = haystack.find(raw, cursor)
-        cursor = start + len(raw)
-        words = _fact_words(raw)
-        if words:
-            positions.append((words[0], start, cursor))
+    names = _names(claim_text, claim)
+    expansions = _expansions(claim)
+    # Names the source writes another way, wherever it writes them, count as seen.
+    credited = source.credited(claim, names) & distinct
+    # What may add plain words: an English claim pinned to the source by a name or a
+    # number. Without either, nothing ties its words to this stretch rather than any.
+    named = set(names.every) if names is not None else set()
+    added = names is not None and bool(named or numbers)
+    plain = distinct - named - numbers - years
+    need_added = int(len(distinct) * _ADDED_WORDS_COVERAGE + 0.999)
 
+    def holds(seen: set[str]) -> bool:
+        if not numbers <= seen:
+            return False
+        if len(seen | years) >= need:
+            return True
+        return (
+            added
+            and named <= seen
+            and len(seen | years) >= need_added
+            and 2 * len(plain & seen) >= len(plain)
+        )
+
+    # The source as fact-bearing words, each with where it sits in the folded text.
+    positions = source.words
     span = max(12, 3 * len(distinct))
     best: tuple[int, int] | None = None
     for first in range(len(positions)):
-        if positions[first][0] not in distinct:
+        if positions[first].word not in distinct and positions[first].word not in expansions:
             continue
-        seen: set[str] = set()
+        seen = set(credited)
         for last in range(first, min(len(positions), first + span)):
-            word = positions[last][0]
+            word = positions[last].word
             if word in distinct:
                 seen.add(word)
-            if len(seen | years) >= need and numbers <= seen:
-                candidate = (positions[first][1], positions[last][2])
+            if word in expansions:
+                seen |= expansions[word] & distinct
+            if holds(seen):
+                candidate = (positions[first].start, positions[last].end)
                 if best is None or candidate[1] - candidate[0] < best[1] - best[0]:
                     best = candidate
                 break
     return best
+
+
+def _why_not_found(claim_text: str, source: str) -> str:
+    """Why a claim was not found in the source, in a few words, for the log."""
+    claim = _words(claim_text)
+    numbers, names = _not_in_source(claim_text, claim, _Source.of(source, fold(source)))
+    if numbers:
+        return f"a number it gives is not in the source: {numbers}"
+    if names:
+        return f"a name it gives is not in the source: {names}"
+    if len({word.word for word in claim}) < 3:
+        return "not in the source word for word, and too short to find by its facts"
+    return "its words are not together in any one part of the source"
+
+
+def _own_sentence(source: str, proposal: ProposedClaim) -> str | None:
+    """The sentence of a short message that a claim the model read in it is about.
+
+    The message's own words, so nothing the model wrote is shown as the claim; the
+    model's English, which says the same with its references resolved, is what is
+    searched. Chosen by the facts the sentence shares with the claim - a number, or a
+    word of four letters or more - and never a sentence Factify wrote: a label, or a
+    description of a picture. Every number the claim gives must be in the message, so
+    a claim that misread one cannot be checked in the message's name.
+    """
+    reading = _fact_words(f"{proposal.text} {proposal.standalone_english}")
+    page = set(_fact_words(fold(source)))
+    if any(word not in page for word in reading if _is_number(word)):
+        return None
+    wanted = {word for word in reading if _is_number(word) or len(word) >= 4}
+
+    sentences: list[str] = []
+    described = False
+    for line in source.splitlines():
+        if line.strip().endswith(":"):
+            # Factify's label for the part below it (`app.extraction.reading`).
+            described = "described by factify" in line.casefold()
+            continue
+        if not described:
+            sentences.extend(_SENTENCE_BREAK.split(line))
+
+    # One sentence shares one fact to be the claim's; among several, two.
+    candidates = [s.strip().strip("\"'“”‘’").strip() for s in sentences]
+    candidates = [s for s in candidates if s]
+    least = 1 if len(candidates) == 1 else 2
+    best: tuple[tuple[int, int], str] | None = None
+    for sentence in candidates:
+        shared = len(wanted & set(_fact_words(sentence)))
+        key = (shared, -len(sentence))
+        if shared >= least and (best is None or key > best[0]):
+            best = (key, sentence)
+    return best[1] if best else None
 
 
 def _to_claim(
@@ -409,43 +681,58 @@ class ClaimPipeline:
             )
             if claim is None:
                 discarded.append(proposal.text[:120])
+                # The claim and why, so a discard can be traced to the claim it lost:
+                # "anchor did not resolve" alone left a lost headline unexplained.
+                why = _why_not_found(proposal.text, source)
                 event(
                     logger,
                     "claim discarded: not found in source",
                     module="extraction.claims",
                     outcome="discarded",
-                    failure_reason="anchor did not resolve",
-                    level=logging.WARNING,
+                    failure_reason=f"anchor did not resolve: {why}",
+                    claim=proposal.text[:_LOGGED_CLAIM],
+                    importance=proposal.importance.value,
                 )
                 continue
             claims.append(claim)
 
-        # A short message whose one claim was read but not found word for word: the
-        # message itself is the claim. gpt-5.6-luna sometimes writes a Hinglish
-        # forward's claim in Devanagari or English, and "Modi ji ne bola hai ki kal
-        # se desh ke sab petrol pump band rahenge" came back with nothing to check
-        # (2026-09-30). The person's own words are shown, so nothing invented can
-        # reach storage; the model's English still drives the search.
-        first = min(proposals, key=lambda p: _RANK.get(p.importance, 9), default=None)
-        if (
-            not claims
-            and first is not None
-            and len(proposals) == 1
-            and len(source.strip()) <= _WHOLE_MESSAGE
-            and len(_SENTENCE_END.findall(source.strip().rstrip(".!?।|"))) == 0
-            and _shares_a_fact(source, f"{first.text} {first.standalone_english}")
-        ):
-            whole = _to_claim(
-                first.model_copy(update={"text": source.strip()}),
-                claim_id="cl_1",
-                source=source,
-                content_hash=content_hash,
-                input_kind=input_kind,
-                language=language,
-            )
-            if whole is not None:
-                claims.append(whole)
-                discarded = [text for text in discarded if text != first.text[:120]]
+        # A short message whose claim was read but not found word for word: the
+        # sentence of the message the claim is about stands as the claim.
+        # gpt-5.6-luna sometimes writes a Hinglish forward's claim in Devanagari or
+        # English, and "Modi ji ne bola hai ki kal se desh ke sab petrol pump band
+        # rahenge" came back with nothing to check (2026-09-30); an Instagram caption's
+        # "our country's Prime Minister Ji" was read as Narendra Modi, which the
+        # caption never writes, and the post had nothing to check (2026-10-02). The
+        # person's own words are shown, so nothing invented can reach storage; the
+        # model's English still drives the search.
+        if not claims and len(source.strip()) <= _SHORT_MESSAGE:
+            ranked = sorted(enumerate(proposals), key=lambda p: _RANK.get(p[1].importance, 9))
+            for index, proposal in ranked:
+                sentence = _own_sentence(source, proposal)
+                own = (
+                    _to_claim(
+                        proposal.model_copy(update={"text": sentence}),
+                        claim_id=f"cl_{index + 1}",
+                        source=source,
+                        content_hash=content_hash,
+                        input_kind=input_kind,
+                        language=language,
+                    )
+                    if sentence
+                    else None
+                )
+                if own is None:
+                    continue
+                claims.append(own)
+                discarded = [text for text in discarded if text != proposal.text[:120]]
+                event(
+                    logger,
+                    "claim kept as the message's own sentence",
+                    module="extraction.claims",
+                    outcome="ok",
+                    claim=proposal.text[:_LOGGED_CLAIM],
+                )
+                break
 
         return tuple(claims), tuple(discarded)
 
