@@ -426,10 +426,6 @@ class WebSearchResolver:
         # Raised rather than returned empty, because the pipeline distinguishes "no
         # results" from "not asked": the second marks the run incomplete, and an
         # incomplete run is not written to the cache.
-        #
-        # This acquisition pays for the first query; every other query asks for its
-        # own (`_paid_search`). One acquisition used to cover all four or five, so the
-        # caps counted one search where the provider billed four or five.
         if self._governor is not None:
             outcome = await self._governor.try_acquire(PROVIDER)
             if isinstance(outcome, Skip):
@@ -856,8 +852,7 @@ class WebSearchResolver:
         The search itself was always metered; the extract and listing calls, which
         spend the same provider's credits, were not - so the daily cap only appeared
         to bound what a day could cost. Past the cap they are skipped: the page stays
-        unread, which is how any page we cannot read is treated. Each search query
-        asks here too, beyond the first (`_paid_search`).
+        unread, which is how any page we cannot read is treated.
         """
         if self._governor is None:
             return True
@@ -1076,9 +1071,9 @@ class WebSearchResolver:
         ever read them — the field was written into the schema, filled by the model
         with no instruction saying what for, and dropped on the way to `Claim`.
 
-        Capped at two extra queries. Each is a metered call - the first paid for by
-        `candidates`, each of the others asking the budget for itself - and the
-        marginal result falls off quickly.
+        Capped at two extra queries. Each is a metered call, the governor charges
+        one acquisition for the resolver rather than per query, and the marginal
+        result falls off quickly.
         """
 
         def _comparable(value: str) -> str:
@@ -1090,11 +1085,7 @@ class WebSearchResolver:
         follow_up = current_follow_up.get()
         if follow_up:
             gathered = await asyncio.gather(
-                *(
-                    self._paid_search(query, paid=index == 0)
-                    for index, query in enumerate(follow_up)
-                ),
-                return_exceptions=True,
+                *(self._search(query) for query in follow_up), return_exceptions=True
             )
             # Every query failed: not "found nothing", or the run looks complete and
             # is stored. A Tavily limit reached during this round (HTTP 432) left an
@@ -1161,15 +1152,10 @@ class WebSearchResolver:
 
         # A health claim is asked of the health authorities too.
         health = f"{subject} evidence" if _HEALTH_WORDS.search(claim.search_text) else None
-        asked: list[tuple[str, tuple[str, ...]]] = [(query, ()) for query in queries]
-        asked.append((checks, _FACT_CHECK_DOMAINS))
-        if health:
-            asked.append((health, _HEALTH_DOMAINS))
         gathered = await asyncio.gather(
-            *(
-                self._paid_search(query, domains=domains, paid=index == 0)
-                for index, (query, domains) in enumerate(asked)
-            ),
+            *(self._search(query) for query in queries),
+            self._search(checks, domains=_FACT_CHECK_DOMAINS),
+            *([self._search(health, domains=_HEALTH_DOMAINS)] if health else []),
             return_exceptions=True,
         )
         queries.append(checks)
@@ -1225,27 +1211,9 @@ class WebSearchResolver:
             outcome="ok",
             provider=PROVIDER,
             queries=len(queries),
-            # Queries that failed or were not within the budget: the rows are from
-            # the rest.
-            failed=len(gathered) - len(results),
             rows=len(merged),
         )
         return list(merged.values())
-
-    async def _paid_search(
-        self, query: str, *, domains: tuple[str, ...] = (), paid: bool = False
-    ) -> list[dict[str, Any]]:
-        """One search query, metered on its own unless already [paid] for.
-
-        The provider bills every query, so the budget counts every query: one
-        acquisition per claim let the daily count say one search where the provider
-        billed four or five. Past the budget the query is not sent and counts as one
-        that failed - the others still stand, and only all of them failing makes the
-        search a skipped check (`_queries`).
-        """
-        if not paid and not await self._metered("search"):
-            raise _SearchFailed("not within the search budget")
-        return await self._search(query, domains=domains)
 
     async def _search(self, query: str, *, domains: tuple[str, ...] = ()) -> list[dict[str, Any]]:
         """Normalised results from whichever provider is configured, from [domains]

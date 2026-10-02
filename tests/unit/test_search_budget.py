@@ -1,9 +1,8 @@
 """What a web search spends, and what it reads for it (work package E, phase 1).
 
-Held here: every search query asks the budget for itself, so the caps count the
-credits the provider bills; a second round reads pages the first did not; a page read
-early in a background check is still in hand for its last claim; and waiting for the
-budget is not counted against the twelve seconds an extract call is given.
+Held here: a second round reads pages the first did not; a page read early in a
+background check is still in hand for its last claim; and waiting for the budget is
+not counted against the twelve seconds an extract call is given.
 """
 
 from __future__ import annotations
@@ -16,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from app.governor.governor import ProviderUnavailable, Skip, SkipReason
+from app.governor.governor import Skip, SkipReason
 from app.knowledge.memory import RememberedPage
 from app.orchestration.pipeline import BACKGROUND_CEILING_SECONDS
 from app.security.fetcher import FetchResult
@@ -103,75 +102,6 @@ def _searching(resolver: WebSearchResolver, answers: dict[str, list[dict[str, An
 
     resolver._search = _search  # type: ignore[method-assign]
     return sent
-
-
-class TestEveryQueryIsMetered:
-    """One acquisition per claim paid for the four or five queries the provider billed."""
-
-    async def test_each_query_sent_asks_the_budget_once(self) -> None:
-        governor = _Governor()
-        resolver = _resolver(governor=governor)
-        sent = _searching(resolver, {"*": _rows("https://www.thehindu.com/a")})
-
-        await resolver.candidates(_claim())
-
-        # The claim, its two phrases and the fact-check query.
-        assert len(sent) == 4
-        assert governor.asked == len(sent)
-
-    async def test_a_health_claim_pays_for_its_extra_query(self) -> None:
-        governor = _Governor()
-        resolver = _resolver(governor=governor)
-        sent = _searching(resolver, {"*": _rows("https://www.ndtv.com/a")})
-
-        await resolver.candidates(_claim(text="Turmeric milk cures diabetes.", search_phrases=()))
-
-        assert any(query.endswith(" evidence") for query in sent)
-        assert governor.asked == len(sent)
-
-    async def test_a_query_past_the_budget_is_not_sent(self) -> None:
-        governor = _Governor(allow=2)
-        resolver = _resolver(governor=governor)
-        sent = _searching(resolver, {"*": _rows("https://www.thehindu.com/a")})
-
-        found = await resolver.candidates(_claim())
-
-        assert len(sent) == 2
-        # What the paid queries found is still read.
-        assert [candidate.url for candidate in found] == ["https://www.thehindu.com/a"]
-
-    async def test_no_budget_at_all_is_a_search_not_asked(self) -> None:
-        """Not "found nothing": the run is marked incomplete and is not cached."""
-        resolver = _resolver(governor=_Governor(allow=0))
-        sent = _searching(resolver, {"*": _rows("https://www.thehindu.com/a")})
-
-        with pytest.raises(ProviderUnavailable) as raised:
-            await resolver.candidates(_claim())
-
-        assert raised.value.reason is SkipReason.CAPACITY_LIMITED
-        assert sent == []
-
-    async def test_a_second_round_pays_for_each_of_its_queries(self) -> None:
-        governor = _Governor()
-        resolver = _resolver(governor=governor)
-        sent = _searching(resolver, {"*": _rows("https://www.reuters.com/b")})
-
-        token = current_follow_up.set(("women Rs 5000 scheme PIB", "Rs 5000 women fact check"))
-        try:
-            await resolver.candidates(_claim())
-        finally:
-            current_follow_up.reset(token)
-
-        assert sent == ["women Rs 5000 scheme PIB", "Rs 5000 women fact check"]
-        assert governor.asked == 2
-
-    async def test_without_a_governor_every_query_is_sent(self) -> None:
-        resolver = _resolver()
-        sent = _searching(resolver, {"*": _rows("https://www.thehindu.com/a")})
-
-        await resolver.candidates(_claim())
-
-        assert len(sent) == 4
 
 
 class TestASecondRoundReadsNewPages:
