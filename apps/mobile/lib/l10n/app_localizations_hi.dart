@@ -2431,8 +2431,22 @@ class AppLocalizationsHi extends AppLocalizations {
       'वीडियो में जो कहा गया है, वह सुना नहीं जा सका।';
 
   @override
-  String get gapCutOff =>
-      'यह इतना लंबा था कि आख़िर तक नहीं पढ़ा जा सका, इसलिए सिर्फ़ शुरुआत पढ़ी गई।';
+  String gapCutOff(String part) {
+    String _temp0 = intl.Intl.selectLogic(part, {
+      'video':
+          'वीडियो का सिर्फ़ शुरुआती हिस्सा पढ़ा गया, इसलिए उसके बाद जो दिखाया या कहा गया, वह जाँचा नहीं गया।',
+      'transcript':
+          'वीडियो में जो कहा गया है, उसकी सिर्फ़ शुरुआत सुनी गई, इसलिए बाकी हिस्सा जाँचा नहीं गया।',
+      'on_screen_text': 'वीडियो में दिखे शब्दों में से सिर्फ़ कुछ ही पढ़े गए।',
+      'picture_text':
+          'तस्वीर में इतना टेक्स्ट है कि पूरा नहीं पढ़ा जा सका, इसलिए सिर्फ़ शुरुआत पढ़ी गई।',
+      'document_text':
+          'दस्तावेज़ में इतना टेक्स्ट है कि पूरा नहीं पढ़ा जा सका, इसलिए सिर्फ़ शुरुआत पढ़ी गई।',
+      'other':
+          'यह इतना लंबा था कि आख़िर तक नहीं पढ़ा जा सका, इसलिए सिर्फ़ शुरुआत पढ़ी गई।',
+    });
+    return '$_temp0';
+  }
 
   @override
   String get gapPagesUnread => 'दस्तावेज़ के सिर्फ़ कुछ पन्ने पढ़े गए।';
@@ -2505,6 +2519,10 @@ class AppLocalizationsHi extends AppLocalizations {
   @override
   String get partlyReadBody =>
       'Factify जितना पढ़ पाया, उसकी पुष्टि स्रोतों से होती है, लेकिन कुछ हिस्सा पढ़ा नहीं जा सका, इसलिए पूरी बात की पुष्टि नहीं हुई है।';
+
+  @override
+  String get unreadNothingFoundBody =>
+      'इसका कुछ हिस्सा पढ़ा नहीं जा सका, और जितना पढ़ा गया उसमें जाँचने लायक कोई दावा नहीं मिला। नीचे देखें कि क्या पढ़ा गया।';
 
   @override
   String get pasteSheetTitle => 'जाँचने के लिए टेक्स्ट चिपकाएँ';

@@ -227,6 +227,46 @@ Map<String, dynamic> sampleVerdictJson(FactVerdict kind) {
   };
 }
 
+/// [sampleVerdict]'s False, for a screenshot of the forward uploaded as a picture,
+/// as a 1.8 server answers one: what the picture was read as (`image_reading`) and
+/// what was read from it, part by part (`input_read`) - its text, checked, and
+/// Factify's description of it, only shown.
+Map<String, dynamic> sampleImageUploadJson() => sampleVerdictJson(FactVerdict.falseClaim)
+  ..['contract_version'] = '1.8'
+  ..['image_reading'] = {
+    'text': sampleClaim,
+    'description': 'A WhatsApp forward with a government emblem at the top.',
+    'kind': 'CHAT_MESSAGE',
+    'publisher': 'Govt of India',
+    'language': 'en',
+  }
+  ..['input_read'] = {
+    'kind': 'image',
+    'parts': [
+      {
+        'kind': 'picture_text',
+        'label': 'Text in the picture',
+        'text': sampleClaim,
+        'checked': true,
+        'route': 'ocr.local',
+        'char_start': 0,
+        'char_end': sampleClaim.length,
+      },
+      {
+        'kind': 'picture_description',
+        'label': 'What the picture shows (described by Factify)',
+        'text': 'A WhatsApp forward with a government emblem at the top.',
+        'checked': false,
+        'route': 'ocr.hosted',
+      },
+    ],
+    'gaps': <Object>[],
+    'limits': <Object>[],
+    'complete': true,
+    'verdict_withheld': false,
+    'checked_partially': false,
+  };
+
 /// A server that knows a signed-in person, and answers a check with [sampleVerdict]'s
 /// False - or, with [hold], never answers it (a check caught mid-way).
 ///

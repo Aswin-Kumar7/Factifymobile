@@ -3722,11 +3722,11 @@ abstract class AppLocalizations {
   /// **'What is said in the video couldn\'t be heard.'**
   String get gapSpeechUnread;
 
-  /// No description provided for @gapCutOff.
+  /// What could not be read: reading stopped before the end. part is what was cut: video (the video as a whole), transcript (what is said in it), on_screen_text (the words shown in it), picture_text, document_text or other.
   ///
   /// In en, this message translates to:
-  /// **'It was too long to read to the end, so only the start was read.'**
-  String get gapCutOff;
+  /// **'{part, select, video{Only the first part of the video was read, so what is shown or said after it wasn\'t checked.} transcript{Only the start of what is said in the video was heard, so the rest wasn\'t checked.} on_screen_text{Only some of the words shown in the video were read.} picture_text{The picture holds more text than could be read, so only its start was read.} document_text{The document holds more text than could be read, so only its start was read.} other{It was too long to read to the end, so only the start was read.}}'**
+  String gapCutOff(String part);
 
   /// No description provided for @gapPagesUnread.
   ///
@@ -3841,6 +3841,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'What Factify could read is supported by sources, but part of it couldn\'t be read, so the whole of it isn\'t confirmed.'**
   String get partlyReadBody;
+
+  /// Under the verdict when something that could decide the answer could not be read and no claim was found in the rest: no source was searched.
+  ///
+  /// In en, this message translates to:
+  /// **'Part of this couldn\'t be read, and we found no claim that can be checked in what could be read. See what was read below.'**
+  String get unreadNothingFoundBody;
 
   /// No description provided for @pasteSheetTitle.
   ///

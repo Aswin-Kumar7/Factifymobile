@@ -10,6 +10,9 @@
 /// said only when the time ran out; and a result from before 1.8 shows what it did.
 library;
 
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:factify_mobile/l10n/app_localizations.dart';
 import 'package:factify_mobile/models/submission.dart';
 import 'package:factify_mobile/models/verdict.dart';
@@ -32,6 +35,8 @@ Future<void> _card(
   WidgetTester tester,
   Verdict verdict, {
   Locale locale = const Locale('en'),
+  SubmissionKind kind = SubmissionKind.link,
+  Uint8List? thumbnail,
   VoidCallback? onCheckWhatWasRead,
   VoidCallback? onPasteText,
   VoidCallback? onUpload,
@@ -49,7 +54,8 @@ Future<void> _card(
         body: SingleChildScrollView(
           child: VerdictCard(
             verdict: verdict,
-            kind: SubmissionKind.link,
+            kind: kind,
+            thumbnail: thumbnail,
             serverUrl: 'http://factify.test',
             onCheckWhatWasRead: onCheckWhatWasRead,
             onPasteText: onPasteText,
@@ -76,6 +82,64 @@ Map<String, dynamic> _withPart(String name, String kind, void Function(Map part)
   change(parts.cast<Map>().firstWhere((p) => p['kind'] == kind));
   return json;
 }
+
+/// One gap as the server sends it, and the skipped check it also arrives as.
+typedef _Gap = ({String check, String part, String code, bool blocking});
+
+/// An uploaded video with no claim in it, whose picture checks found it
+/// [agreement], with [gaps] as a 1.8 server sends them: in the reading, and again
+/// as skipped checks of kind "reading" - every one of them, blocking or not
+/// (app/api/verify.py, `_with_reading_gaps`) - beside the `video_frames` note
+/// every uploaded video carries. The completeness note is the pipeline's, which
+/// is told only of the blocking gaps.
+Verdict _videoWithNoClaim(List<_Gap> gaps, {String agreement = 'likely_ai'}) {
+  final json = contractJson('video_upload')
+    ..['claims'] = <Object>[]
+    ..['verdict'] = 'UNCONFIRMED'
+    ..['action'] = 'SEND_TO_REVIEW'
+    ..['confidence'] = null
+    ..['summary'] = null
+    ..['skipped'] = [
+      for (final gap in gaps)
+        {'check': gap.check, 'reason': 'DETAIL ${gap.part}', 'kind': 'reading'},
+      {'check': 'video_frames', 'reason': 'read the words on 10 of 12 frames taken from 0:00'},
+    ];
+  if (gaps.any((g) => g.blocking)) {
+    json['completeness_note'] = 'Not everything could be checked. speech: DETAIL transcript';
+  }
+  final read = json['input_read'] as Map;
+  read['gaps'] = [
+    for (final gap in gaps)
+      {
+        'part': gap.part,
+        'code': gap.code,
+        'detail': 'DETAIL ${gap.part}',
+        'blocking': gap.blocking,
+      },
+  ];
+  read['complete'] = gaps.isEmpty;
+  ((json['media_report'] as Map)['detector'] as Map)['agreement'] = agreement;
+  return Verdict.fromJson(json);
+}
+
+/// The frames' words, read in part for time: a gap that could not decide the answer.
+const _Gap _framesCut = (
+  check: 'video_text',
+  part: 'on_screen_text',
+  code: 'cut_off',
+  blocking: false,
+);
+
+/// What is said, heard only up to the reading's limit: a gap that could.
+const _Gap _speechCut = (check: 'speech', part: 'transcript', code: 'cut_off', blocking: true);
+
+/// The AI note at the top of an AI-made video with no claim in it.
+const _aiVideo = 'But our checks say this video was likely made by AI. See the video checks below.';
+
+/// A 1x1 picture, as the person's own upload.
+final Uint8List _pixel = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAMAASsJTYQAAAAASUVORK5CYII=',
+);
 
 void main() {
   group('the reading arrives from the 1.8 response', () {
@@ -466,7 +530,9 @@ void main() {
       expect(find.byKey(const ValueKey('read-gaps')), findsOneWidget);
       expect(find.text('Factify could only read part of this post.'), findsOneWidget);
       expect(
-        find.text('It was too long to read to the end, so only the start was read.'),
+        find.text(
+          "Only the start of what is said in the video was heard, so the rest wasn't checked.",
+        ),
         findsOneWidget,
       );
       // Open from the start: every part, and how much of the speech was heard.
@@ -611,5 +677,200 @@ void main() {
       expect(find.textContaining('What we checked'), findsOneWidget);
       expect(find.textContaining('What Factify read'), findsNothing);
     });
+  });
+
+  group('a gap that could not decide the answer', () {
+    test('leaves an upload with no claim in it nothing to check', () {
+      final verdict = _videoWithNoClaim([_framesCut]);
+      expect(verdict.skipped.where((s) => s.isReading), hasLength(1));
+      expect(verdict.readingFailed, isFalse);
+      expect(verdict.nothingToCheck, isTrue);
+      expect(verdict.unreadNothingFound, isFalse);
+      expect(ActionStyle.label(verdict, _en), 'Nothing to check');
+    });
+
+    test('one that could is not "nothing to check", and is said for what it is', () {
+      final verdict = _videoWithNoClaim([_framesCut, _speechCut]);
+      expect(verdict.readingFailed, isTrue);
+      expect(verdict.nothingToCheck, isFalse);
+      expect(verdict.unreadNothingFound, isTrue);
+      expect(verdict.noClaimFound, isTrue);
+      // The note every video carries is what was read, not a check that did not run.
+      expect((verdict.ranOutOfTime, verdict.missedChecks), (false, false));
+    });
+
+    test('claims that could not be found always count, read in full or not', () {
+      final json = contractJson('video_upload')
+        ..['claims'] = <Object>[]
+        ..['verdict'] = 'UNCONFIRMED'
+        ..['action'] = 'SEND_TO_REVIEW'
+        ..['skipped'] = [
+          {'check': 'claim_extraction', 'reason': 'model provider unavailable'},
+        ];
+      final verdict = Verdict.fromJson(json);
+      expect(verdict.nothingToCheck, isFalse);
+      expect(verdict.unreadNothingFound, isFalse);
+    });
+
+    test('a result with no reading counts every reading gap, as it did', () {
+      final json = contractJson('video_upload')
+        ..remove('input_read')
+        ..['claims'] = <Object>[]
+        ..['verdict'] = 'UNCONFIRMED'
+        ..['action'] = 'SEND_TO_REVIEW'
+        ..['skipped'] = [
+          {'check': 'video_text', 'reason': 'words on 10 of 12 frames', 'kind': 'reading'},
+        ];
+      expect(Verdict.fromJson(json).nothingToCheck, isFalse);
+    });
+
+    testWidgets('an AI video with no claim, read in part for time: nothing to check, AI note', (
+      tester,
+    ) async {
+      await _card(tester, _videoWithNoClaim([_framesCut]), kind: SubmissionKind.image);
+
+      expect(find.text('Nothing to fact-check'), findsOneWidget);
+      expect(find.text(_aiVideo), findsOneWidget);
+      expect(find.textContaining('Treat it with caution'), findsNothing);
+      expect(find.text('No citable source was found'), findsNothing);
+      // Said where what was read is shown, in its own words.
+      expect(find.text('Only some of the words shown in the video were read.'), findsOneWidget);
+    });
+
+    testWidgets('one that could: what was not read is said, never "no sources found"', (
+      tester,
+    ) async {
+      await _card(tester, _videoWithNoClaim([_framesCut, _speechCut]), kind: SubmissionKind.image);
+
+      expect(find.text('Nothing to fact-check'), findsNothing);
+      expect(find.text('Part of it could not be read'), findsOneWidget);
+      expect(
+        find.text(
+          "Part of this couldn't be read, and we found no claim that can be checked in what "
+          'could be read. See what was read below.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Treat it with caution'), findsNothing);
+      expect(find.text('No citable source was found'), findsNothing);
+      expect(
+        find.text("Some checks couldn't run, so this answer may be incomplete."),
+        findsNothing,
+      );
+      // The AI note stays at the top: a clip heard in part is no less likely AI-made.
+      expect(find.text(_aiVideo), findsOneWidget);
+    });
+  });
+
+  group('gaps that share a code', () {
+    ReadGap gap(String part, String code) =>
+        ReadGap(part: part, code: code, detail: 'DETAIL', blocking: true);
+
+    test('are each said for what was cut, and the same sentence only once', () {
+      final lines = gapLines([
+        gap('video', 'cut_off'),
+        gap('transcript', 'cut_off'),
+        gap('on_screen_text', 'cut_off'),
+        gap('transcript', 'cut_off'),
+        gap('picture_text', 'picture_unread'),
+        gap('picture_text', 'picture_unread'),
+      ], _en);
+      expect(lines, [
+        "Only the first part of the video was read, so what is shown or said after it wasn't "
+            'checked.',
+        "Only the start of what is said in the video was heard, so the rest wasn't checked.",
+        'Only some of the words shown in the video were read.',
+        "A picture in it couldn't be read.",
+      ]);
+      // In Hindi too, each its own sentence, and none of them English.
+      final parts = ['video', 'transcript', 'on_screen_text', 'picture_text', 'document_text'];
+      final every = [
+        for (final part in [...parts, 'post']) gap(part, 'cut_off'),
+      ];
+      final hindi = gapLines(every, _hi);
+      final english = gapLines(every, _en);
+      expect(hindi, hasLength(6));
+      expect(english, hasLength(6));
+      expect(hindi.toSet().intersection(english.toSet()), isEmpty);
+    });
+
+    testWidgets('a long video cut three ways reads three lines, not one three times', (
+      tester,
+    ) async {
+      await _card(
+        tester,
+        _videoWithNoClaim([
+          (check: 'video', part: 'video', code: 'cut_off', blocking: true),
+          _speechCut,
+          _framesCut,
+        ]),
+        kind: SubmissionKind.image,
+      );
+
+      final banner = find.byKey(const ValueKey('read-gaps'));
+      Finder line(String text) => find.descendant(of: banner, matching: find.text(text));
+      expect(
+        line(
+          'Only the first part of the video was read, so what is shown or said after it '
+          "wasn't checked.",
+        ),
+        findsOneWidget,
+      );
+      expect(
+        line("Only the start of what is said in the video was heard, so the rest wasn't checked."),
+        findsOneWidget,
+      );
+      expect(line('Only some of the words shown in the video were read.'), findsOneWidget);
+      expect(line('It was too long to read to the end, so only the start was read.'), findsNothing);
+    });
+  });
+
+  group('an upload', () {
+    testWidgets('keeps its own picture and what it was read as at the head of the panel', (
+      tester,
+    ) async {
+      await _card(
+        tester,
+        Verdict.fromJson(sampleImageUploadJson()),
+        kind: SubmissionKind.image,
+        thumbnail: _pixel,
+      );
+
+      expect(find.text('What Factify read · Image'), findsOneWidget);
+      final thumbnail = find.byKey(const ValueKey('read-thumbnail'));
+      expect(_inPanel(thumbnail), findsOneWidget);
+      expect(
+        tester.widget<Image>(find.descendant(of: thumbnail, matching: find.byType(Image))).image,
+        isA<MemoryImage>(),
+      );
+      expect(_inPanel(find.text('Chat forward')), findsOneWidget);
+      expect(_inPanel(find.text('Shows: Govt of India')), findsOneWidget);
+      expect(_inPanel(find.text('Text in the picture')), findsOneWidget);
+    });
+
+    testWidgets("a post's pictures are not the person's: no thumbnail of theirs", (tester) async {
+      await _card(tester, contractVerdict('x_photo_post'), thumbnail: _pixel);
+      expect(find.byKey(const ValueKey('read-thumbnail')), findsNothing);
+    });
+  });
+
+  testWidgets("a part's picture at the platform's own address is never loaded", (tester) async {
+    final json = contractJson('x_photo_post');
+    final parts = ((json['input_read'] as Map)['parts'] as List).cast<Map>();
+    final first = parts.firstWhere((p) => p['media_url'] != null)['media_url'];
+    for (final part in parts) {
+      if (part['media_url'] == first) part['media_url'] = 'https://pbs.twimg.com/media/F1.jpg';
+    }
+    await _card(tester, Verdict.fromJson(json));
+    await tester.tap(find.text('Show all'));
+    await tester.pumpAndSettle();
+
+    final urls = tester
+        .widgetList<Image>(_inPanel(find.byType(Image)))
+        .map((i) => i.image)
+        .whereType<NetworkImage>()
+        .map((i) => i.url)
+        .toList();
+    expect(urls, ['http://factify.test/v1/media/thumbnails/4e7a1c9d2b3f4a5e8d6c7b0a1f2e3d4c']);
   });
 }

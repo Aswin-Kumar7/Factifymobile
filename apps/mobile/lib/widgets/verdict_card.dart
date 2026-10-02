@@ -178,6 +178,10 @@ class _Header extends StatelessWidget {
         // couldn't find enough sources", which is the opposite of what happened.
         : verdict.partlyRead
         ? l10n.partlyReadBody
+        // No claim in what could be read, and the rest could not be: nothing was
+        // searched, so "we couldn't find enough sources" would be untrue too.
+        : verdict.unreadNothingFound
+        ? l10n.unreadNothingFoundBody
         : l10n.unconfirmedBody;
     final read = verdict.inputRead;
 
@@ -565,7 +569,12 @@ class _Body extends StatelessWidget {
         // What was read, part by part (1.8); a result from before then shows what
         // was checked, the way it always did.
         if (read != null)
-          WhatWeRead(verdict: verdict, read: read, serverUrl: card.serverUrl)
+          WhatWeRead(
+            verdict: verdict,
+            read: read,
+            serverUrl: card.serverUrl,
+            thumbnail: card.thumbnail,
+          )
         else
           _WhatWeChecked(card: card),
         // A post's website is X or Instagram: what is known about it says nothing
@@ -635,9 +644,13 @@ class _Body extends StatelessWidget {
               ),
             ),
           ),
-        ] else if (!verdict.factVerdict.isDecided && !nothing && !verdict.withheld) ...[
-          // Not for an answer held back: nothing was searched for it, and "no source
-          // addressed this" would be untrue.
+        ] else if (!verdict.factVerdict.isDecided &&
+            !nothing &&
+            !verdict.withheld &&
+            !verdict.unreadNothingFound) ...[
+          // Not for an answer held back, or one with no claim found in what could be
+          // read: nothing was searched for it, and "no source addressed this" would
+          // be untrue.
           const SizedBox(height: 10),
           FxCard(
             child: Column(
@@ -1737,11 +1750,15 @@ class _DashedBorder extends CustomPainter {
   bool shouldRepaint(_DashedBorder old) => old.colour != colour;
 }
 
-/// For a picture or video with nothing to fact-check: the line saying our checks
+/// For a picture or video with no claim found in it: the line saying our checks
 /// found it likely AI-made, or null when they did not.
+///
+/// Whether or not all of it could be read: a long AI clip whose speech was heard
+/// only in part is no less likely AI-made, and the line belongs at the top either
+/// way ([Verdict.noClaimFound], not [Verdict.nothingToCheck]).
 String? _aiNote(Verdict verdict, AppLocalizations l10n) {
   final report = verdict.mediaReport;
-  if (!verdict.nothingToCheck || report == null) return null;
+  if (!verdict.noClaimFound || report == null) return null;
   final notes = <String>[
     if (report.credentials.declaresAi)
       l10n.nothingToCheckAiDeclared

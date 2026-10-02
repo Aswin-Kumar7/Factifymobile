@@ -92,7 +92,13 @@ class EvidenceScreen extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               if (verdict.claims.isEmpty)
-                _Plain(text: verdict.withheld ? l10n.withheldBody : l10n.unconfirmedBody)
+                _Plain(
+                  text: verdict.withheld
+                      ? l10n.withheldBody
+                      : verdict.unreadNothingFound
+                      ? l10n.unreadNothingFoundBody
+                      : l10n.unconfirmedBody,
+                )
               else
                 for (final (index, claim) in verdict.claims.indexed) ...[
                   if (index > 0) const SizedBox(height: 12),
@@ -371,6 +377,17 @@ class _InputAnchorBlock extends StatelessWidget {
   /// Characters of the message kept either side of the marked span.
   static const int _surrounding = 40;
 
+  /// [offset] in [text], moved off the middle of a surrogate pair: [back] to the
+  /// start of the character it splits, otherwise past its end.
+  static int _edge(String text, int offset, {required bool back}) {
+    if (offset <= 0 || offset >= text.length) return offset.clamp(0, text.length);
+    final unit = text.codeUnitAt(offset);
+    final low = unit >= 0xDC00 && unit <= 0xDFFF;
+    final high = text.codeUnitAt(offset - 1);
+    if (!low || high < 0xD800 || high > 0xDBFF) return offset;
+    return back ? offset - 1 : offset + 1;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -402,22 +419,26 @@ class _InputAnchorBlock extends StatelessWidget {
         0 <= start &&
         start < end &&
         end <= text.length) {
-      final from = math.max(0, start - _surrounding);
-      final to = math.min(text.length, end + _surrounding);
+      // Every cut on a character's edge: a window counted in UTF-16 units can land
+      // inside an emoji, and half of one is text the engine will not lay out.
+      final at = _edge(text, start, back: true);
+      final until = math.max(at, _edge(text, end, back: false));
+      final from = _edge(text, math.max(0, at - _surrounding), back: true);
+      final to = _edge(text, math.min(text.length, until + _surrounding), back: false);
       detail = Text.rich(
         TextSpan(
           children: [
             if (from > 0) const TextSpan(text: '…'),
-            TextSpan(text: text.substring(from, start)),
+            TextSpan(text: text.substring(from, at)),
             TextSpan(
-              text: text.substring(start, end),
+              text: text.substring(at, until),
               style: TextStyle(
                 backgroundColor: FactifyTokens.of(context).accS,
                 color: FactifyTokens.of(context).acc,
                 fontWeight: FontWeight.w600,
               ),
             ),
-            TextSpan(text: text.substring(end, to)),
+            TextSpan(text: text.substring(until, to)),
             if (to < text.length) const TextSpan(text: '…'),
           ],
         ),
@@ -553,10 +574,10 @@ class _HowWeChecked extends StatelessWidget {
               const SizedBox(height: 14),
               Text(l10n.notReadTitle, style: heading),
               const SizedBox(height: 4),
-              for (final gap in gaps)
+              for (final line in gapLines(gaps, l10n))
                 Padding(
                   padding: const EdgeInsets.only(bottom: 4),
-                  child: Text('•  ${gapLine(gap, l10n)}', style: body),
+                  child: Text('•  $line', style: body),
                 ),
             ],
             if (read != null)

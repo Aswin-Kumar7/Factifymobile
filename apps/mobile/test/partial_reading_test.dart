@@ -392,5 +392,57 @@ void main() {
       // The same gaps, sent again as skipped checks in English, are not said twice.
       expect(find.textContaining('linked_page:'), findsNothing);
     });
+
+    testWidgets('quotes a claim with an emoji at the edge of its words, whole', (tester) async {
+      // 40 characters either side of the claim are quoted, counted as Dart counts
+      // them: one rocket before and one after sit exactly where the window ends, and
+      // half a rocket is text the engine will not lay out.
+      const claim = 'Chandrayaan-3 landed near the south pole';
+      final text = '🚀${'x' * 39}$claim${'y' * 39}🚀 and more after it.';
+      final json = contractJson('link_complete');
+      final first = (json['claims'] as List).first as Map<String, dynamic>;
+      first['input_anchor'] = {'char_start': 40, 'char_end': 40 + claim.length};
+      json['claims'] = [first];
+      final read = json['input_read'] as Map;
+      read['parts'] = [
+        {
+          'kind': 'article',
+          'text': text,
+          'checked': true,
+          'route': 'fetched',
+          'char_start': 0,
+          'char_end': text.runes.length,
+        },
+      ];
+      await sources(tester, Verdict.fromJson(json));
+
+      expect(tester.takeException(), isNull);
+      final quoted = tester
+          .widgetList<RichText>(find.byType(RichText))
+          .map((t) => t.text)
+          .where((span) => span.toPlainText().contains(claim))
+          .toList();
+      expect(quoted, isNotEmpty);
+      for (final span in quoted) {
+        span.visitChildren((child) {
+          final words = child is TextSpan ? child.text ?? '' : '';
+          final units = words.codeUnits;
+          for (var i = 0; i < units.length; i++) {
+            final unit = units[i];
+            if (unit >= 0xD800 && unit <= 0xDBFF) {
+              expect(i + 1 < units.length && units[i + 1] >= 0xDC00, isTrue, reason: words);
+              i++;
+            } else {
+              expect(unit >= 0xDC00 && unit <= 0xDFFF, isFalse, reason: words);
+            }
+          }
+          return true;
+        });
+      }
+      expect(
+        quoted.map((s) => s.toPlainText()),
+        contains(contains('🚀${'x' * 39}$claim${'y' * 39}🚀')),
+      );
+    });
   });
 }

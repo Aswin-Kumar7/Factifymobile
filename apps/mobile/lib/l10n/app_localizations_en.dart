@@ -2433,8 +2433,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String get gapSpeechUnread => 'What is said in the video couldn\'t be heard.';
 
   @override
-  String get gapCutOff =>
-      'It was too long to read to the end, so only the start was read.';
+  String gapCutOff(String part) {
+    String _temp0 = intl.Intl.selectLogic(part, {
+      'video':
+          'Only the first part of the video was read, so what is shown or said after it wasn\'t checked.',
+      'transcript':
+          'Only the start of what is said in the video was heard, so the rest wasn\'t checked.',
+      'on_screen_text': 'Only some of the words shown in the video were read.',
+      'picture_text':
+          'The picture holds more text than could be read, so only its start was read.',
+      'document_text':
+          'The document holds more text than could be read, so only its start was read.',
+      'other':
+          'It was too long to read to the end, so only the start was read.',
+    });
+    return '$_temp0';
+  }
 
   @override
   String get gapPagesUnread => 'Only some of the document\'s pages were read.';
@@ -2510,6 +2524,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get partlyReadBody =>
       'What Factify could read is supported by sources, but part of it couldn\'t be read, so the whole of it isn\'t confirmed.';
+
+  @override
+  String get unreadNothingFoundBody =>
+      'Part of this couldn\'t be read, and we found no claim that can be checked in what could be read. See what was read below.';
 
   @override
   String get pasteSheetTitle => 'Paste the text to check';

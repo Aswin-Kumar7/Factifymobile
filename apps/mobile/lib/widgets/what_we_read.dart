@@ -8,9 +8,12 @@
 ///
 ///   * Who posted it, where and when, from what the platform said - not from the
 ///     link that was typed.
-///   * When something could not be read, a warning first, one line per gap, in the
-///     reader's language (the server's English sentence only for a gap this version
-///     of the app does not know).
+///   * When something could not be read, a warning first, a line for each thing not
+///     read (said once, however many gaps share it), in the reader's language (the
+///     server's English sentence only for a gap this version of the app does not
+///     know).
+///   * For an upload, the person's own picture and what kind of picture it was read
+///     as, as "What we checked" showed them.
 ///   * Every part in the order a person meets it - the post, the text in each of its
 ///     pictures, what is said in its video - each labelled, with each claim
 ///     underlined in the part it was found in.
@@ -23,6 +26,7 @@
 library;
 
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' hide TextDirection;
@@ -70,7 +74,9 @@ String gapLine(ReadGap gap, AppLocalizations l10n) => switch (gap.code) {
   'picture_unread' => l10n.gapPictureUnread,
   'video_unread' => l10n.gapVideoUnread,
   'speech_unread' => l10n.gapSpeechUnread,
-  'cut_off' => l10n.gapCutOff,
+  // One video can be cut off three ways at once - its frames, its speech, the words
+  // shown in it - and each is said for what it is (app/api/verify.py).
+  'cut_off' => l10n.gapCutOff(_cutOffPart(gap.part)),
   'pages_unread' => l10n.gapPagesUnread,
   'too_large' => l10n.gapTooLarge,
   'needs_background' => l10n.gapNeedsBackground,
@@ -82,12 +88,25 @@ String gapLine(ReadGap gap, AppLocalizations l10n) => switch (gap.code) {
   _ => gap.detail,
 };
 
+/// What a cut-off gap was cut from, as `gapCutOff` selects on it: a part kind, or
+/// "video" for the video as a whole. Anything else is said in general.
+String _cutOffPart(String part) => switch (part) {
+  'video' || 'transcript' || 'on_screen_text' || 'picture_text' || 'document_text' => part,
+  _ => 'other',
+};
+
+/// What could not be read, a line each, in the order the server found it - and
+/// each line once: two pictures of an album that could not be read are one
+/// sentence, not the same sentence twice.
+List<String> gapLines(Iterable<ReadGap> gaps, AppLocalizations l10n) =>
+    {for (final gap in gaps) gapLine(gap, l10n)}.toList();
+
 /// The line under the verdict word, wherever the verdict is shown. An answer
 /// unconfirmed only because part of the input could not be read says so: the action
 /// it shares with "too recent to confirm" (WAIT_AND_RECHECK) would otherwise word it
 /// as a matter of time, and send the person to wait for nothing.
 String verdictSubhead(Verdict verdict, ActionStyle style, AppLocalizations l10n) =>
-    verdict.partlyRead ? l10n.subheadPartlyRead : style.subhead;
+    verdict.partlyRead || verdict.unreadNothingFound ? l10n.subheadPartlyRead : style.subhead;
 
 /// A limit the server states in English, in the reader's language when it is one
 /// this app knows.
@@ -306,13 +325,23 @@ String _cut(String text, int limit) {
 /// The panel. Shown by the result in place of "What we checked" whenever the server
 /// says what it read ([Verdict.inputRead]).
 class WhatWeRead extends StatefulWidget {
-  const WhatWeRead({required this.verdict, required this.read, this.serverUrl, super.key});
+  const WhatWeRead({
+    required this.verdict,
+    required this.read,
+    this.serverUrl,
+    this.thumbnail,
+    super.key,
+  });
 
   final Verdict verdict;
   final InputRead read;
 
   /// Where a part's picture is served from. Without it no picture is shown.
   final String? serverUrl;
+
+  /// The person's own upload, as picked on this phone: shown at the head of the
+  /// panel, as "What we checked" showed it, for a picture, a video or a PDF.
+  final Uint8List? thumbnail;
 
   @override
   State<WhatWeRead> createState() => _WhatWeReadState();
@@ -357,6 +386,12 @@ class _WhatWeReadState extends State<WhatWeRead> {
     }.toList();
     final long = _open && shown.any((p) => p.text.length > _limit);
     final seenPictures = <String>{};
+    final upload = _uploads.contains(read.kind);
+    final thumbnail = upload ? widget.thumbnail : null;
+    // What kind of picture it is and whose name it carries, as the picture's reading
+    // says - the chips "What we checked" showed for an upload.
+    final reading = upload ? verdict.imageReading : null;
+    final publisher = (reading?.publisher ?? '').trim();
 
     return FxCard(
       key: const ValueKey('what-we-read'),
@@ -366,7 +401,21 @@ class _WhatWeReadState extends State<WhatWeRead> {
         children: [
           Row(
             children: [
-              Icon(_iconFor(read), size: 14, color: k.ink3),
+              if (thumbnail != null)
+                ClipRRect(
+                  key: const ValueKey('read-thumbnail'),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Image.memory(
+                    thumbnail,
+                    width: 22,
+                    height: 22,
+                    fit: BoxFit.cover,
+                    excludeFromSemantics: true,
+                    errorBuilder: (_, _, _) => Icon(_iconFor(read), size: 14, color: k.ink3),
+                  ),
+                )
+              else
+                Icon(_iconFor(read), size: 14, color: k.ink3),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
@@ -381,6 +430,19 @@ class _WhatWeReadState extends State<WhatWeRead> {
           if (_byline(context) case final byline?) ...[
             const SizedBox(height: 4),
             Text(byline, style: FactifyText.sans(12.5, weight: FontWeight.w600, color: k.ink2)),
+          ],
+          if (reading != null && (reading.kind != null || publisher.isNotEmpty)) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                if (reading.kind != null)
+                  FxChip(label: l10n.imageKind(reading.kind!), height: 26, fontSize: 11.5),
+                if (publisher.isNotEmpty)
+                  FxChip(label: l10n.shows(publisher), height: 26, fontSize: 11.5),
+              ],
+            ),
           ],
           if (!read.complete) ...[const SizedBox(height: 10), _GapBanner(read: read)],
           if (shown.isEmpty) ...[
@@ -486,11 +548,19 @@ class _WhatWeReadState extends State<WhatWeRead> {
     return null;
   }
 
+  /// A part's picture, only ever from our own server: a path under /v1/media/,
+  /// joined to it. A platform's own address (pbs.twimg.com, a cdninstagram link)
+  /// would tell the platform who is looking, and is never loaded.
   String? _pictureUrl(String path) {
     final server = widget.serverUrl;
-    if (path.startsWith('http')) return path;
-    return server == null ? null : '$server$path';
+    if (server == null || !path.startsWith(_ownMedia) || path.contains('..')) return null;
+    return '$server$path';
   }
+
+  static const _ownMedia = '/v1/media/';
+
+  /// The kinds of reading that are of the person's own upload.
+  static const _uploads = {'image', 'video', 'pdf'};
 }
 
 /// "Factify could only read part of this post.", and a line for each gap.
@@ -526,12 +596,9 @@ class _GapBanner extends StatelessWidget {
                   l10n.readPartial(readThing(read)),
                   style: FactifyText.sans(13, weight: FontWeight.w600, color: k.ink),
                 ),
-                for (final gap in read.gaps) ...[
+                for (final line in gapLines(read.gaps, l10n)) ...[
                   const SizedBox(height: 4),
-                  Text(
-                    gapLine(gap, l10n),
-                    style: FactifyText.sans(12.5, color: k.ink2).copyWith(height: 1.45),
-                  ),
+                  Text(line, style: FactifyText.sans(12.5, color: k.ink2).copyWith(height: 1.45)),
                 ],
               ],
             ),

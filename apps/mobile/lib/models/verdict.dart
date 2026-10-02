@@ -1281,7 +1281,13 @@ class Verdict {
   /// Never when reading or extraction failed: no claims then means nothing was
   /// read, not that nothing was said. Nor when the answer was held back: "nothing to
   /// fact-check" said of a post whose caption could not be read would be a guess.
-  bool get nothingToCheck =>
+  bool get nothingToCheck => noClaimFound && !readingFailed;
+
+  /// No claim a source could settle was found in what was read - a picture's own
+  /// question with no earlier copy, or opinion - and the answer was not held back.
+  /// Whether that is "nothing to check" depends on whether all of it was read
+  /// ([readingFailed]); either way no claim was searched for.
+  bool get noClaimFound =>
       factVerdict == FactVerdict.unconfirmed &&
       !withheld &&
       // A picture with no claim in it, or only opinion: "I think cricket is the best
@@ -1290,8 +1296,31 @@ class Verdict {
         (c) =>
             (c.claimType == 'MEDIA' && !c.isDecisive && c.evidence.isEmpty) ||
             c.claimType == 'OPINION',
-      ) &&
-      !skipped.any(_isReading);
+      );
+
+  /// Something that could hold a claim was not read, so finding no claim does not
+  /// mean none was made.
+  ///
+  /// Claims that could not be found in the text (`claim_extraction`, sent without a
+  /// kind by every server) always count. Otherwise, from 1.8, only a gap that could
+  /// decide the answer ([InputRead.blocked]): every gap of an upload arrives as a
+  /// skipped check of kind "reading", the frames left unread for time and the tail
+  /// of a long transcript too, and a two-minute forward with no claim in it is
+  /// still nothing to check. A result with no reading counts every reading gap, as
+  /// it always did.
+  bool get readingFailed {
+    if (skipped.any((s) => !s.isReading && _readingChecks.contains(s.check))) return true;
+    final read = inputRead;
+    return read != null ? read.blocked : skipped.any(_isReading);
+  }
+
+  /// Part of the input that could decide the answer could not be read, and no claim
+  /// was found in the rest (1.8). Not "nothing to check", which would be a guess,
+  /// and not "unconfirmed" in its usual words either: no source was looked for.
+  bool get unreadNothingFound =>
+      noClaimFound &&
+      (inputRead?.blocked ?? false) &&
+      !skipped.any((s) => !s.isReading && _readingChecks.contains(s.check));
 
   /// The checks that are a reading of the input rather than a search, by the
   /// server's names for them (1.8 adds a linked page, a post's text, a video, the
@@ -1348,7 +1377,13 @@ class Verdict {
   bool get missedChecks =>
       completenessNote != null &&
       !ranOutOfTime &&
-      skipped.any((s) => !s.isDeadline && !_isReading(s));
+      skipped.any((s) => !s.isDeadline && !_isReading(s) && !_readingNotes.contains(s.check));
+
+  /// Notes a server sends beside its skipped checks that say what was read rather
+  /// than what did not run: every uploaded video carries a `video_frames` line
+  /// ("read the words on 12 frames taken from 0:00 to 1:30"), which is no check
+  /// missed.
+  static const _readingNotes = {'video_frames'};
 
   /// The news search could not be reached for some claim, so the answer rests on
   /// less than a check normally reads.
