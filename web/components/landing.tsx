@@ -233,7 +233,7 @@ export function ProductShot() {
 // ---- the laptop: the one animation ---------------------------------------------------
 
 const STEPS = [
-  ["Share or paste a forward", "From WhatsApp's share menu on Android, or paste it on the website."],
+  ["Copy, share or paste a forward", "Copy it in WhatsApp and tap the floating Factify button, share a picture or video, or paste it on the website."],
   ["Each claim is pulled out", "The message is split into the separate facts it states, in any of 12 languages."],
   ["Trusted sources are read", "Fact-checkers, wire services, national and regional news, government sites. Unknown sites don't count."],
   ["You get the verdict", "With the line from each source, and a polite correction to send back to the group."],

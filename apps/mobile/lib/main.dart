@@ -22,6 +22,7 @@ import 'l10n/app_localizations.dart';
 import 'l10n/language_preference.dart';
 import 'notify/notify_preference.dart';
 import 'notify/ready_notifier.dart';
+import 'quick/bubble.dart';
 import 'quick/quick_preference.dart';
 import 'quick/quick_verdict.dart';
 import 'screens/history_screen.dart';
@@ -41,6 +42,7 @@ Future<void> main() async {
   final notifyByDefault = await NotifyPreference.load();
   final notifier = await LocalReadyNotifier.start();
   final quickVerdict = await QuickVerdictPreference.load();
+  final bubble = await BubbleController.load();
   runApp(
     FactifyApp(
       language: language,
@@ -48,6 +50,7 @@ Future<void> main() async {
       notifier: notifier,
       notifyByDefault: notifyByDefault,
       quickVerdict: quickVerdict,
+      bubble: bubble,
     ),
   );
 }
@@ -69,6 +72,7 @@ class FactifyApp extends StatefulWidget {
     this.notifier,
     this.notifyByDefault,
     this.quickVerdict,
+    this.bubble,
     bool? showIntro,
   }) : showIntro = showIntro ?? client == null;
 
@@ -93,6 +97,9 @@ class FactifyApp extends StatefulWidget {
 
   /// Whether shared text is answered over the chat (Profile).
   final QuickVerdictPreference? quickVerdict;
+
+  /// The floating Factify button (Profile).
+  final BubbleController? bubble;
 
   /// The splash and the welcome. On for the app; a test that supplies a client
   /// starts in the app itself unless it asks for them.
@@ -123,6 +130,7 @@ class _FactifyAppState extends State<FactifyApp> with WidgetsBindingObserver {
     notifier: widget.notifier,
     notifyByDefault: widget.notifyByDefault,
     quickVerdict: widget.quickVerdict,
+    bubble: widget.bubble,
   );
 
   final _navigator = GlobalKey<NavigatorState>();

@@ -1125,6 +1125,8 @@
   "quickSignIn": "Sign in to Factify to check this.",
   "settingQuick": "Answer over the chat",
   "settingQuickBody": "Text you share opens its answer over the chat",
+  "settingBubble": "Floating Factify button",
+  "settingBubbleBody": "Copy a message in WhatsApp or any app, tap the button, and the answer opens over the chat",
   "profileLoadFailed": "Your account couldn't be loaded just now.",
   "mediaVisualMatch": "{publisher} · {percent}% visual match",
   "@mediaVisualMatch": {

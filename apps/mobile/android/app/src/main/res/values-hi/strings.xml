@@ -4,4 +4,12 @@
     <string name="widget_check_copied">कॉपी किया टेक्स्ट जाँचें</string>
     <string name="widget_photo">फ़ोटो</string>
     <string name="widget_history">इतिहास</string>
+
+    <!-- The floating button (FactifyBubbleService). -->
+    <string name="bubble_label">Factify: कॉपी किया टेक्स्ट जाँचें</string>
+    <string name="bubble_channel">तैरता Factify बटन</string>
+    <string name="bubble_on">Factify बटन चालू है</string>
+    <string name="bubble_how">कोई मैसेज कॉपी करें, फिर उसे जाँचने के लिए बटन दबाएँ।</string>
+    <string name="bubble_turn_off">बंद करें</string>
+    <string name="bubble_nothing_copied">पहले कोई मैसेज कॉपी करें, फिर Factify बटन दबाएँ।</string>
 </resources>

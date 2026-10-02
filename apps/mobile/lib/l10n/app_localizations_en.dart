@@ -1870,6 +1870,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'Text you share opens its answer over the chat';
 
   @override
+  String get settingBubble => 'Floating Factify button';
+
+  @override
+  String get settingBubbleBody =>
+      'Copy a message in WhatsApp or any app, tap the button, and the answer opens over the chat';
+
+  @override
   String get profileLoadFailed => 'Your account couldn\'t be loaded just now.';
 
   @override

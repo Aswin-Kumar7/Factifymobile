@@ -14,7 +14,7 @@ export default function Download() {
           <div>
             <span className="eyebrow">Android app</span>
             <h1 className="mt-3 text-[2.2rem] leading-[1.08] font-medium tracking-tight text-ink">Check forwards right from WhatsApp.</h1>
-            <p className="mt-3 text-[16px] leading-relaxed text-ink2">Long-press a forward, tap Share, choose Factify. The answer opens over your chat.</p>
+            <p className="mt-3 text-[16px] leading-relaxed text-ink2">Copy a forward, then tap the floating Factify button: the answer opens over your chat. Pictures, videos and PDFs can be shared straight from WhatsApp.</p>
           </div>
           <DownloadPanel />
         </div>

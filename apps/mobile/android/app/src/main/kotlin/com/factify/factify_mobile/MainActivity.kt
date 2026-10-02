@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -79,6 +80,30 @@ class MainActivity : FlutterActivity() {
                     }
                     else -> result.notImplemented()
                 }
+            }
+        }
+
+        // The floating button (FactifyBubbleService): whether it may be drawn, asking
+        // for that in Settings, and turning it on and off from Profile.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BUBBLE_CHANNEL).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "canDraw" -> result.success(Settings.canDrawOverlays(this))
+                "askToDraw" -> {
+                    startActivity(
+                        Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")),
+                    )
+                    result.success(null)
+                }
+                "start" -> {
+                    if (Settings.canDrawOverlays(this)) FactifyBubbleService.start(this)
+                    result.success(Settings.canDrawOverlays(this))
+                }
+                "stop" -> {
+                    FactifyBubbleService.stop(this)
+                    result.success(null)
+                }
+                "running" -> result.success(FactifyBubbleService.running)
+                else -> result.notImplemented()
             }
         }
     }
@@ -196,6 +221,7 @@ class MainActivity : FlutterActivity() {
     companion object {
         private const val AUTH_CHANNEL = "factify/auth"
         private const val CHANNEL = "factify/share"
+        private const val BUBBLE_CHANNEL = "factify/bubble"
 
         /** Open a result kept in History: [EXTRA_RECORD] names it. */
         const val ACTION_OPEN_RECORD = "com.factify.factify_mobile.OPEN_RECORD"

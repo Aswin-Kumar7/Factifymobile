@@ -24,6 +24,14 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!--
+        The floating Factify button (FactifyBubbleService), only when someone turns it
+        on in Profile: drawing over other apps is granted in Settings by the person,
+        and the quiet notification that keeps the button alive is a "special use"
+        foreground service (Android 14 and later), described below.
+    -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <application
         android:label="Factify"
@@ -138,6 +146,19 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/factify_widget_info" />
         </receiver>
+
+        <!--
+            The floating button: copy a message in any app (WhatsApp gives text no
+            Share button), tap it, and the quick verdict opens over the chat.
+        -->
+        <service
+            android:name=".FactifyBubbleService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="A floating button the user turned on, which opens a fact-check of the text they just copied" />
+        </service>
 
         <!-- Keeps a check running while its answer is waited for (see above). -->
         <service

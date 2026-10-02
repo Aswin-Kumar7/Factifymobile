@@ -178,6 +178,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _services.themeMode,
             _services.notifyByDefault,
             _services.quickVerdict,
+            _services.bubble,
           ]),
           builder: (context, _) {
             final account = auth.account;
@@ -924,6 +925,17 @@ class _Settings extends StatelessWidget {
               value: services.quickVerdict.value,
               label: l10n.settingQuick,
               onChanged: (on) => unawaited(services.quickVerdict.choose(on)),
+            ),
+          ),
+          _Row(
+            icon: FxIcons.paste,
+            title: l10n.settingBubble,
+            subtitle: l10n.settingBubbleBody,
+            onTap: () => unawaited(services.bubble.choose(!services.bubble.on)),
+            trailing: FxSwitch(
+              value: services.bubble.on,
+              label: l10n.settingBubble,
+              onChanged: (on) => unawaited(services.bubble.choose(on)),
             ),
           ),
           _Row(

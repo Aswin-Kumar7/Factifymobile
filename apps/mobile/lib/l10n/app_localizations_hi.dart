@@ -1867,6 +1867,13 @@ class AppLocalizationsHi extends AppLocalizations {
       'शेयर किए गए टेक्स्ट का जवाब चैट के ऊपर ही खुलता है';
 
   @override
+  String get settingBubble => 'तैरता Factify बटन';
+
+  @override
+  String get settingBubbleBody =>
+      'WhatsApp या किसी भी ऐप में मैसेज कॉपी करें, बटन दबाएँ, और जवाब चैट के ऊपर खुलता है';
+
+  @override
   String get profileLoadFailed => 'आपका खाता अभी लोड नहीं हो सका।';
 
   @override

@@ -134,7 +134,7 @@ export default async function Home() {
           <span className="eyebrow">Features</span>
           <div className="mt-3.5 grid items-end gap-6 md:grid-cols-2 md:gap-10">
             <h2 className="text-[2.2rem] leading-[1.08] font-medium tracking-tight text-ink sm:text-[2.75rem]">Whatever lands in your chats.</h2>
-            <p className="max-w-[480px] text-lg leading-relaxed text-ink2">Paste it on the web or share it from WhatsApp. Factify reads English, Hindi and ten more Indian languages.</p>
+            <p className="max-w-[480px] text-lg leading-relaxed text-ink2">Paste it on the web, or copy it in WhatsApp and tap the Factify button. Factify reads English, Hindi and ten more Indian languages.</p>
           </div>
           <Features />
         </section>
@@ -164,7 +164,7 @@ export default async function Home() {
               <span className="eyebrow">Android app</span>
               <h2 className="text-[2rem] leading-[1.08] font-medium tracking-tight text-ink sm:text-[2.5rem]">Check straight from WhatsApp.</h2>
               <p className="max-w-[460px] text-[17px] leading-relaxed text-ink2">
-                Long-press a forward, tap Share, choose Factify. The answer opens over your chat with a polite correction ready to send.
+                Copy a forward, then tap the floating Factify button. The answer opens over your chat with a polite correction ready to send. Pictures, videos and PDFs can be shared to Factify straight from WhatsApp.
               </p>
               <div className="mt-2 flex flex-col gap-4">
                 <DownloadHere />
@@ -179,7 +179,8 @@ export default async function Home() {
               className="relative flex min-h-[460px] items-end justify-center overflow-hidden border-line lg:border-l"
               style={{ background: "radial-gradient(ellipse at 50% 110%, var(--glow), transparent 62%), var(--sf2)" }}
             >
-              {/* A phone showing a chat in its light theme, with Factify's answer over it. */}
+              {/* A phone showing a chat in its light theme, the floating Factify button at its
+                  edge, and Factify's answer over the chat. */}
               <div className="-mb-11 h-[440px] w-[252px] rounded-t-[40px] border border-b-0 border-[#a6a9ad] bg-[#111214] px-2.5 pt-2.5 shadow-[0_0_0_3px_#c9cbce,0_40px_80px_-30px_rgba(0,0,0,.45)]" aria-hidden="true">
                 <div className="relative h-full overflow-hidden rounded-t-[31px] bg-[#efeae2] text-[#111b21]">
                   <div className="flex h-5.5 items-center justify-between bg-white px-4.5 text-[10px] font-semibold">
@@ -208,6 +209,10 @@ export default async function Home() {
                         10:13 <span className="text-[#53bdeb]">✓✓</span>
                       </div>
                     </div>
+                  </div>
+                  {/* The floating button (Profile → Floating Factify button). */}
+                  <div className="absolute top-[132px] right-1.5 flex h-9 w-9 items-center justify-center rounded-full bg-white shadow-[0_4px_14px_rgba(11,20,26,.28)] ring-4 ring-[#0e6b4f]/15">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#0e6b4f] font-serif text-[13px] font-semibold text-white">F</span>
                   </div>
                   <div className="absolute inset-x-0 bottom-11 rounded-t-[20px] bg-white px-3.5 pt-2 pb-3.5 shadow-[0_-10px_30px_-8px_rgba(11,20,26,.22)]">
                     <div className="mx-auto mb-2.5 h-1 w-8.5 rounded-full bg-[#d1d7db]" />

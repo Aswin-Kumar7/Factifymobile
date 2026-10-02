@@ -13,6 +13,7 @@ import 'history/history_store.dart';
 import 'l10n/language_preference.dart';
 import 'notify/notify_preference.dart';
 import 'notify/ready_notifier.dart';
+import 'quick/bubble.dart';
 import 'quick/quick_preference.dart';
 import 'theme/theme_mode_preference.dart';
 
@@ -26,10 +27,12 @@ class AppServices {
     ReadyNotifier? notifier,
     NotifyPreference? notifyByDefault,
     QuickVerdictPreference? quickVerdict,
+    BubbleController? bubble,
   }) : themeMode = themeMode ?? ThemeModePreference.inMemory(),
        notifier = notifier ?? SilentNotifier(),
        notifyByDefault = notifyByDefault ?? NotifyPreference.inMemory(),
-       quickVerdict = quickVerdict ?? QuickVerdictPreference.inMemory();
+       quickVerdict = quickVerdict ?? QuickVerdictPreference.inMemory(),
+       bubble = bubble ?? BubbleController.inMemory();
 
   final FactifyClient client;
   final AuthService auth;
@@ -43,4 +46,7 @@ class AppServices {
 
   /// Whether text shared to Factify is answered over the chat, or opens the app.
   final QuickVerdictPreference quickVerdict;
+
+  /// The floating Factify button: copy anywhere, tap it, answer over the chat.
+  final BubbleController bubble;
 }

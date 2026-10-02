@@ -369,6 +369,9 @@ void main() {
       await tester.tap(find.text('Saved checks'));
       expect(opened, 1);
 
+      // Above "Saved checks", off screen since the floating-button row was added.
+      await tester.ensureVisible(find.text('Language'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Language'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('हिन्दी'));

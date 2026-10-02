@@ -2870,6 +2870,18 @@ abstract class AppLocalizations {
   /// **'Text you share opens its answer over the chat'**
   String get settingQuickBody;
 
+  /// No description provided for @settingBubble.
+  ///
+  /// In en, this message translates to:
+  /// **'Floating Factify button'**
+  String get settingBubble;
+
+  /// No description provided for @settingBubbleBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy a message in WhatsApp or any app, tap the button, and the answer opens over the chat'**
+  String get settingBubbleBody;
+
   /// No description provided for @profileLoadFailed.
   ///
   /// In en, this message translates to:

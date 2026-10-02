@@ -5,4 +5,12 @@
     <string name="widget_check_copied">Check copied text</string>
     <string name="widget_photo">Photo</string>
     <string name="widget_history">History</string>
+
+    <!-- The floating button (FactifyBubbleService). -->
+    <string name="bubble_label">Factify: check copied text</string>
+    <string name="bubble_channel">Floating Factify button</string>
+    <string name="bubble_on">Factify button is on</string>
+    <string name="bubble_how">Copy a message, then tap the button to check it.</string>
+    <string name="bubble_turn_off">Turn off</string>
+    <string name="bubble_nothing_copied">Copy a message first, then tap the Factify button.</string>
 </resources>
