@@ -708,25 +708,54 @@ def case_confidence(verdict: Verdict, claims: list[tuple[ClaimStatus, int | None
 
 
 def blocks_clearance(claim: Claim) -> bool:
-    """Whether this claim, left unconfirmed, keeps the case from being called true:
-    the headline or the main thesis.
+    """Whether this claim, left unconfirmed, keeps the case from being called true
+    whatever was found about it: the headline or the main thesis.
 
-    Severity no longer counts. The extractor rates severity by what a claim is about,
-    not by what the piece rests on: an NDTV report of death sentences for the 2013
-    Jhiram Ghati attack had four of its five claims rated CRITICAL - the ambush route,
-    the toll, the NIA's conspiracy finding - and its headline, carried by three
-    outlets, came back Unconfirmed because those background details were not
-    separately reported (2026-10-02). A detail that is contradicted still sinks the
-    case (`_roll_up_action`); one nobody reported is shown as unchecked.
+    A CRITICAL detail holds the case back only when nothing reported it
+    (`holds_back`). The extractor rates severity by what a claim is about, not by
+    what the piece rests on: an NDTV report of death sentences for the 2013 Jhiram
+    Ghati attack had four of its five claims rated CRITICAL - the ambush route, the
+    toll, the NIA's conspiracy finding - and its headline, carried by three outlets,
+    came back Unconfirmed because those details were not each carried by two
+    (2026-10-02). A detail that is contradicted still sinks the case
+    (`_roll_up_action`).
     """
     return claim.importance in {Importance.HEADLINE, Importance.MAIN_THESIS}
+
+
+# An undecided claim that sources did report: one credible origin carries it, too few
+# to decide on, or sources disagree about it (the toll of an attack, 27 or 29).
+_REPORTED_UNDECIDED = frozenset({"rule.insufficient_origins", "rule.conflicting_evidence"})
+
+
+def holds_back(claim: Claim, decision: Decision) -> bool:
+    """Whether this claim, left unconfirmed as `decision` left it, keeps the case from
+    being called true.
+
+    The headline and the main thesis always do (`blocks_clearance`). So does a
+    CRITICAL detail - a health danger, a safety instruction - that nothing found
+    reports: "papaya leaf juice cures dengue in two days", under a true headline that
+    Delhi's hospitals now treat dengue free, must not clear the piece as true. One
+    that sources did report, too thinly to decide or with a figure in dispute, is a
+    detail of a reported story, shown as not fully confirmed rather than held against
+    it; and background never holds a case back.
+    """
+    if blocks_clearance(claim):
+        return True
+    return (
+        claim.severity is Severity.CRITICAL
+        and claim.importance is not Importance.BACKGROUND
+        and not decision.conflicting
+        and decision.rule_id not in _REPORTED_UNDECIDED
+    )
 
 
 def is_central(claim: Claim) -> bool:
     """Whether a claim can decide the case: the headline, the main thesis, or anything
     rated critical. Contradicted, it sinks the case; confirmed, it keeps a piece with
-    one wrong claim partly true rather than false (`_roll_up_action`). Only left
-    unconfirmed does severity stop counting (`blocks_clearance`).
+    one wrong claim partly true rather than false (`_roll_up_action`). Left
+    unconfirmed, a critical detail holds the case back only when nothing reported it
+    (`holds_back`).
 
     Public because the pipeline ranks claims for searching by it: a claim that can
     decide the verdict must never be the one left unsearched.
@@ -888,26 +917,39 @@ def _roll_up_action(
     # sentence — a dharna "a month earlier" — found no coverage. The article's own
     # claims were true; one aside nobody had written about outvoted all of them.
     #
-    # So a clearance needs the headline and the main thesis supported. CRITICAL used
-    # to be required too, and the extractor rates background details CRITICAL by
-    # their subject - an ambush route, a death toll - so a court verdict reported by
-    # three outlets read Unconfirmed for them (2026-10-02, `blocks_clearance`). A
-    # CRITICAL or HIGH detail that is *contradicted* still sinks the case above; one
-    # that is merely unconfirmed is reported as unchecked, not treated as a strike
-    # against what was confirmed.
+    # So a clearance needs the headline and the main thesis supported, and anything
+    # CRITICAL - a health danger, a safety instruction - that nothing reported. A
+    # CRITICAL detail that sources did report, too thinly to decide or with a figure
+    # in dispute, no longer holds a story back: the extractor rates background
+    # details CRITICAL by their subject - an ambush route, a death toll - and a court
+    # verdict reported by three outlets read Unconfirmed for them (2026-10-02,
+    # `holds_back`). A CRITICAL or HIGH detail that is *contradicted* still sinks the
+    # case above; one that is merely unconfirmed is reported as unchecked, not
+    # treated as a strike against what was confirmed.
     supported = [decision for _, decision in decisions if decision.status is ClaimStatus.SUPPORTED]
-    unchecked = [claim for claim, _ in unverified if not blocks_clearance(claim)]
+    unchecked = [claim for claim, decision in unverified if not holds_back(claim, decision)]
+    critical = sum(1 for claim in unchecked if claim.severity is Severity.CRITICAL)
 
-    if supported and not any(blocks_clearance(claim) for claim, _ in unverified):
+    if supported and not any(holds_back(claim, decision) for claim, decision in unverified):
+        if not unchecked:
+            reason = "Every checkable claim is supported by cited evidence."
+        elif critical:
+            # Not "minor": said as what it is, so nobody reads a critical detail
+            # reported by one outlet as a footnote.
+            reason = (
+                "Every central claim is supported by cited evidence. "
+                f"{len(unchecked)} detail(s), including {critical} critical, could not "
+                "be fully confirmed."
+            )
+        else:
+            reason = (
+                "Every central claim is supported by cited evidence. "
+                f"{len(unchecked)} minor detail(s) could not be checked."
+            )
         return CaseDecision(
             action=Action.SAFE_TO_SHARE,
             rule_id="rollup.material_supported" if unchecked else "rollup.all_supported",
-            reason=(
-                "Every central claim is supported by cited evidence. "
-                f"{len(unchecked)} minor detail(s) could not be checked."
-                if unchecked
-                else "Every checkable claim is supported by cited evidence."
-            ),
+            reason=reason,
         )
 
     # Abstention is the designed destination, not a fallthrough. Source risk alone

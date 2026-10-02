@@ -817,22 +817,53 @@ class TestAMinorDetailDoesNotSinkTheCase:
 
     def test_an_unconfirmed_critical_detail_does_not_outvote_the_headline(self) -> None:
         """NDTV on death sentences for the 2013 Jhiram Ghati attack: the headline was
-        carried by three outlets, four background details were rated CRITICAL by the
-        extractor, and the case came back Unconfirmed because they were not separately
-        reported (2026-10-02). Severity says what a claim is about, not what the piece
-        rests on."""
-        for importance in (Importance.SUPPORTING_DETAIL, Importance.BACKGROUND):
-            severe = claim(claim_id="cl_2", importance=importance, severity=Severity.CRITICAL)
+        carried by three outlets, four details were rated CRITICAL by the extractor,
+        and the case came back Unconfirmed because they were not each carried by two
+        (2026-10-02). Severity says what a claim is about, not what the piece rests
+        on: a critical detail one outlet reports, and critical background, do not
+        hold a reported story back."""
+        detail = claim(
+            claim_id="cl_2",
+            importance=Importance.SUPPORTING_DETAIL,
+            severity=Severity.CRITICAL,
+            independent_origin_count=1,
+            document_count=1,
+        )
+        thin = decide(
+            detail,
+            [evidence(direction=Direction.SUPPORTS, tier=Tier.D, citation_url="https://c.com/3")],
+        )
+        background = claim(
+            claim_id="cl_3", importance=Importance.BACKGROUND, severity=Severity.CRITICAL
+        )
 
-            outcome = roll_up(
-                [
-                    (claim(independent_origin_count=2, document_count=2), self._supported()),
-                    (severe, self._unverified()),
-                ]
-            )
+        outcome = roll_up(
+            [
+                (claim(independent_origin_count=2, document_count=2), self._supported()),
+                (detail, thin),
+                (background, self._unverified()),
+            ]
+        )
 
-            assert outcome.action is Action.SAFE_TO_SHARE, importance
-            assert "could not be checked" in outcome.reason
+        assert thin.rule_id == "rule.insufficient_origins"
+        assert outcome.action is Action.SAFE_TO_SHARE
+        assert "including 2 critical" in outcome.reason
+
+    def test_a_critical_detail_nothing_reports_still_abstains(self) -> None:
+        """A health danger or a safety instruction under a true headline: nothing
+        found reports it, and it keeps the piece from being called true."""
+        severe = claim(
+            claim_id="cl_2", importance=Importance.SUPPORTING_DETAIL, severity=Severity.CRITICAL
+        )
+
+        outcome = roll_up(
+            [
+                (claim(independent_origin_count=2, document_count=2), self._supported()),
+                (severe, self._unverified()),
+            ]
+        )
+
+        assert outcome.action is Action.SEND_TO_REVIEW
 
     def test_a_contradicted_critical_detail_still_sinks_the_case(self) -> None:
         severe = claim(

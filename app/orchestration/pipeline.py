@@ -41,7 +41,6 @@ from app.domain.enums import (
     ClaimStatus,
     ClaimType,
     CoverageExpectation,
-    Credibility,
     Direction,
     EvidenceKind,
     Importance,
@@ -379,29 +378,26 @@ _UNREPORTED_TEXTS = frozenset(_UNREPORTED.values()) | frozenset(
 
 
 def _story_reported(outcomes: list[ClaimOutcome]) -> bool:
-    """Whether reliable sources report what the piece is about: one of its claims, other
-    than background, confirmed, or supported by a highly credible publisher."""
+    """Whether reliable sources confirm what the piece is about: its headline or main
+    thesis is supported.
+
+    Only those. A supported detail does not vouch for the piece around it: a fake
+    scheme is hung on a real programme on purpose, and "apply on the National
+    Scholarship Portal", supported by the portal itself, must leave "likely false" on
+    the invented "National Sports Scholarship 2026-27" it was attached to.
+    """
     return any(
-        outcome.claim.importance is not Importance.BACKGROUND
-        and (
-            outcome.decision.status is ClaimStatus.SUPPORTED
-            or any(
-                item.direction is Direction.SUPPORTS and item.credibility is Credibility.HIGH
-                for item in outcome.evidence
-            )
-        )
+        blocks_clearance(outcome.claim) and outcome.decision.status is ClaimStatus.SUPPORTED
         for outcome in outcomes
     )
 
 
 def _without_unreported_notes(outcomes: list[ClaimOutcome]) -> None:
-    """Drop "nothing reports this" from every claim of a piece whose story is reported.
+    """Drop "nothing reports this" from every claim of a piece whose story is confirmed.
 
-    A PIB release supported the GST figures of a true post, and the post's headline
-    figure - which the same release carries - read "found nothing reporting this ...
-    treat it as likely false" as the whole answer (2026-10-02). Said of one claim, the
-    sentence reads as a verdict on the piece; when reliable sources report the piece,
-    it is not true of it.
+    Said of one claim, the sentence reads as a verdict on the piece: beside a headline
+    that Reuters and the BBC carry, "treat it as likely false" about a detail of the
+    same story is not true of it (2026-10-02).
     """
     if not _story_reported(outcomes):
         return
@@ -887,7 +883,7 @@ class Orchestrator:
             and not o.decision.conflicting
             and o.claim.claim_type in (ClaimType.EVENT, ClaimType.STATISTIC)
             and o.claim.coverage_expectation is CoverageExpectation.HIGH
-            and blocks_clearance(o.claim)
+            and is_central(o.claim)
             and not o.claim.within_developing_window
             and o.search == "searched"
             and o.looked_at >= FABRICATED_MIN_READ
