@@ -651,6 +651,7 @@ class TestTheReaderIsToldWhatItIsReading:
                 claim_type: str | None = None,
                 published: object | None = None,
                 screen: bool = True,
+                fact_check: bool = False,
             ) -> ReasoningOutcome:
                 seen["title"] = title
                 seen["claim_type"] = claim_type
@@ -1466,7 +1467,12 @@ class TestASnippetCannotDecideAClaim:
                     reason=None,
                     passages_read=1,
                     best=lambda: SimpleNamespace(
-                        relation=relation, quote=quote, reason="r", relevance=0.9, narrower=False
+                        relation=relation,
+                        quote=quote,
+                        reason="r",
+                        relevance=0.9,
+                        narrower=False,
+                        marker="passage_entailment",
                     ),
                 )
 
@@ -1669,8 +1675,15 @@ class TestADebunkIsNotTheThingItDebunks:
     close to the worst answer available.
     """
 
+    CLAIM = (
+        "The government has debunked claims that a massive fire broke out at an "
+        "India-Israel defence facility."
+    )
+
     @staticmethod
-    def _judge(basis: str) -> ReasoningOutcome:
+    def _judge(
+        basis: str, claim_text: str = CLAIM, *, fact_check: bool = False
+    ) -> ReasoningOutcome:
         body = (
             "The Fact Check Unit of the Ministry of External Affairs said no such "
             "fire took place at any joint defence facility in Delhi."
@@ -1692,21 +1705,34 @@ class TestADebunkIsNotTheThingItDebunks:
         )
         reasoner = PassageReasoner.__new__(PassageReasoner)
         reasoner._model_id = "test"
-        return reasoner._verify(response, passages, claim_type="ATTRIBUTION")
+        return reasoner._verify(
+            response,
+            passages,
+            claim_type="ATTRIBUTION",
+            claim_text=claim_text,
+            fact_check=fact_check,
+        )
 
     def test_refuting_what_the_claim_reports_is_not_contradicting_the_claim(self) -> None:
         assert self._judge("REFUTES_REPORTED_CONTENT").judgements == ()
 
-    def test_even_a_confident_denial_only_contextualises(self) -> None:
-        """Deliberate, and lopsided on purpose.
-
-        A passage can only honestly contradict "A said B" by establishing that A did
-        not say it, which is rare. Mistaking a refutation of B for a refutation of the
-        claim is what actually happens, and it produced DO_NOT_SHARE on a government
-        fact-check. Missing the rare genuine denial is the cheaper mistake, so a
-        contradiction here is kept and shown but no longer decides.
-        """
+    def test_even_a_confident_denial_of_a_reported_denial_only_contextualises(self) -> None:
+        """The claim reports a debunk, so a passage refuting what was debunked agrees
+        with it, whatever the reader called it: DO_NOT_SHARE on a government fact-check
+        is close to the worst answer available."""
         assert self._judge("DENIES").judgements[0].relation is Relation.CONTEXTUALIZES
+        assert (
+            self._judge("DENIES", fact_check=True).judgements[0].relation is Relation.CONTEXTUALIZES
+        )
+
+    def test_the_rule_reads_the_claims_own_words(self) -> None:
+        for claim_text in (
+            "The ministry denied reports that a bridge collapsed in Bihar.",
+            "PIB Fact Check called the viral letter fake.",
+            "WHO clarified that it issued no such advisory.",
+        ):
+            judged = self._judge("DENIES", claim_text).judgements[0]
+            assert judged.relation is Relation.CONTEXTUALIZES, claim_text
 
 
 class TestAPersonalPageIsNotTheInstitution:

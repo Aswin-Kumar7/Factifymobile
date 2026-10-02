@@ -30,7 +30,7 @@ from app.observability.logging import event
 logger = logging.getLogger("factify.risk")
 
 NAME = "source_risk"
-VERSION = "2026.08.1"
+VERSION = "2026.10.03.1"
 
 # A domain younger than this covering an established beat is worth noting. Not
 # damning — new outlets are founded — but a "news portal since 2005" registered last
@@ -111,14 +111,61 @@ def _registrable(domain: str) -> str:
     return parts[0] if parts else domain
 
 
+# Platforms everyone knows by name, which no imitation of a smaller publisher could
+# be: a link to them is a link to them. Not on the credibility list - what anyone
+# posts there is not citable - so they are named here.
+_WELL_KNOWN = frozenset(
+    {
+        "youtube.com",
+        "youtu.be",
+        "google.com",
+        "facebook.com",
+        "fb.watch",
+        "instagram.com",
+        "x.com",
+        "twitter.com",
+        "t.co",
+        "whatsapp.com",
+        "telegram.org",
+        "t.me",
+        "linkedin.com",
+        "reddit.com",
+        "threads.net",
+        "tiktok.com",
+        "sharechat.com",
+        "dailyhunt.in",
+        "microsoft.com",
+        "msn.com",
+        "yahoo.com",
+        "apple.com",
+        "amazon.com",
+        "amazon.in",
+        "github.com",
+    }
+)
+
+
+def _parents(domain: str) -> list[str]:
+    """The host and every parent domain above a top-level one: m.youtube.com, youtube.com."""
+    labels = domain.lower().split(":", 1)[0].removeprefix("www.").rstrip(".").split(".")
+    return [".".join(labels[i:]) for i in range(len(labels) - 1)]
+
+
 def detect_typosquat(domain: str, credible_domains: frozenset[str]) -> RiskSignal | None:
     """Whether this domain is a near-miss of a credible one.
 
     `thehindu.co.in` against `thehindu.com` is the canonical Indian example: not a
     typo anyone makes, and not a coincidence either.
+
+    A host that is itself on the credible list, or a platform everyone knows, is
+    imitating nothing. Every YouTube link was flagged as "2 characters from
+    youturn.in", a Tamil fact-checker, and raised the source risk of the video it
+    pointed to (2026-10-02).
     """
     candidate = _registrable(domain)
     if not candidate:
+        return None
+    if any(name in credible_domains or name in _WELL_KNOWN for name in _parents(domain)):
         return None
 
     for credible in credible_domains:

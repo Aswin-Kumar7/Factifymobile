@@ -37,7 +37,7 @@ from urllib.parse import urlsplit
 
 from app.domain.claim import Claim
 from app.domain.enums import ClaimType, EvidenceKind, Method, Relation, Tier
-from app.domain.evidence import NARROWER_SCOPE, READING_RELEVANCE_THRESHOLD
+from app.domain.evidence import READING_RELEVANCE_THRESHOLD
 from app.domain.publishers import registrable_domain
 from app.extraction.web import extract, plain_text
 from app.governor.governor import ProviderUnavailable, Skip, SkipReason
@@ -70,7 +70,7 @@ _MAX_QUERIES = 4
 _READ_TTL_SECONDS = 90.0
 
 NAME = "web_search"
-VERSION = "2026.10.02.1"
+VERSION = "2026.10.03.1"
 PROVIDER = "web_search"
 
 # How many credible sources to read. Each is a metered model call, and corroboration
@@ -200,6 +200,40 @@ def _reads_as_a_fact_check(title: str | None, url: str) -> bool:
     return bool(_FACT_CHECK_WORDS.search(f"{title or ''} {url}"))
 
 
+# A newsroom's fact-check desk, by its own label. Narrower than `_FACT_CHECK_WORDS`,
+# which a news headline trips with "viral" or "fake" - a report of a fake call centre
+# is not a fact-check - and narrower than the words "fact check" anywhere: a report
+# that the Bombay High Court struck down the fact-check unit rules is news about one.
+#
+# The desk's section of the address - /fact-check/, /times-fact-check/, /webqoof/ -
+# never the article's own slug; or a host of its own, factcheck.afp.com.
+_DESK_SECTION = re.compile(r"(?:[a-z0-9]+[-_])*(?:fact[-_]?checks?|webqoof)", re.IGNORECASE)
+_DESK_HOST = re.compile(r"fact-?check(?:er|s)?", re.IGNORECASE)
+_DESK_NAME = r"(?:fact[\s-]?check|webqoof|फ़ैक्ट\s?चेक|फैक्ट\s?चेक|ফ্যাক্ট\s?চেক|ఫ్యాక్ట్\s?చెక్|பேக்ட்\s?செக்)"
+# Or a headline labelled as the desk's: "Fact Check: ...", "... | Fact Check".
+_DESK_LABEL = re.compile(
+    rf"^\s*{_DESK_NAME}\s*[:|]|\|\s*{_DESK_NAME}\s*(?:\||$)",
+    re.IGNORECASE,
+)
+
+
+def _a_fact_check_desk(title: str | None, url: str) -> bool:
+    """Whether a news page is from its publisher's fact-check desk: India Today Fact
+    Check, The Quint's WebQoof, AFP Fact Check."""
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return False
+    labels = (parts.hostname or "").split(".")
+    # Every segment but the last, which is the article's own slug.
+    sections = [segment for segment in parts.path.split("/") if segment][:-1]
+    return (
+        any(_DESK_HOST.fullmatch(label) for label in labels)
+        or any(_DESK_SECTION.fullmatch(segment) for segment in sections)
+        or _DESK_LABEL.search(title or "") is not None
+    )
+
+
 class WebSearchResolver:
     """Finds open-web pages for a claim and reads them for support or contradiction."""
 
@@ -288,16 +322,29 @@ class WebSearchResolver:
         Indore inquiry FALSE (2026-10-02). A page is a fact-check when its headline or
         address says so.
 
+        And a newsroom's fact-check desk is one too. The list files IFCN-verified desks
+        - India Today Fact Check, The Quint's WebQoof - under their newsrooms, since
+        most of what those sites publish is news; their fact-checks were read as
+        ordinary reporting, and one WebQoof debunk of a fake PMJDY cash scheme could
+        not decide anything (2026-10-02). On a credible newsroom's site a page is a
+        fact-check when its address puts it in the desk's section or its headline is
+        labelled one (`_a_fact_check_desk`) - the looser words that mark a page on a
+        fact-checker's own site ("viral", "fake") are in news headlines too.
+
         Both are `PASSAGE_ENTAILMENT` rather than `SEARCH_SNIPPET`: the page was
         fetched, read and quoted verbatim. A snippet nobody opened is what that other
         method names, and it is excluded from deciding anything for good reason.
         """
         source = snapshot.final_url or snapshot.url
-        if (
-            self._credibility.is_fact_checker(source)
-            and source not in self._reports
-            and _reads_as_a_fact_check(snapshot.title, source)
-        ):
+        if source in self._reports:
+            return Tier.D, EvidenceKind.CORROBORATION, Method.PASSAGE_ENTAILMENT
+        if self._credibility.is_fact_checker(source):
+            adjudication = _reads_as_a_fact_check(snapshot.title, source)
+        else:
+            adjudication = self._credibility.is_credible(source) and _a_fact_check_desk(
+                snapshot.title, source
+            )
+        if adjudication:
             return Tier.C, EvidenceKind.FACT_CHECK, Method.CLAIM_REVIEW
         return Tier.D, EvidenceKind.CORROBORATION, Method.PASSAGE_ENTAILMENT
 
@@ -845,6 +892,7 @@ class WebSearchResolver:
             published=snapshot.published_on,
             # Search already ranked these pages; see `PassageReasoner.judge`.
             screen=False,
+            fact_check=self.classify(snapshot)[1] is EvidenceKind.FACT_CHECK,
         )
         if not outcome.succeeded:
             return insufficient(NAME, VERSION, f"reasoning unavailable: {outcome.reason}")
@@ -951,11 +999,10 @@ class WebSearchResolver:
             validator_version=f"{VERSION}/{REASONER_VERSION}",
             excerpt=best.quote,
             anchor=anchor,
-            # A narrower version of the claim is recorded as such, so the rules can
-            # tell it from other context (app/domain/evidence.py, NARROWER_SCOPE).
-            metric=(
-                f"{NARROWER_SCOPE if best.narrower else 'passage_entailment'}: {best.reason}{note}"
-            )[:200],
+            # A narrower version of the claim, or a support the article attributes to
+            # someone else, is recorded as such, so the source check and the rules can
+            # tell it from other context (`PassageJudgement.marker`).
+            metric=(f"{best.marker}: {best.reason}{note}")[:200],
             value=best.relevance,
             threshold=READING_RELEVANCE_THRESHOLD,
         )
