@@ -38,6 +38,18 @@ def test_a_decided_answer_speaks_from_its_most_important_deciding_claim() -> Non
     assert case_summary(Verdict.FALSE, claims) == "PIB says no such scheme."
 
 
+def test_a_misleading_answer_speaks_from_what_is_shown_out_of_context() -> None:
+    """x-4: real news, another flight's footage, and a passenger count off by six."""
+    footage = "India Today finds this genuine but shown out of context: easyJet, 2025."
+    claims = [
+        (ClaimStatus.UNVERIFIED, Importance.HEADLINE, None),
+        (ClaimStatus.CONTRADICTED, Importance.SUPPORTING_DETAIL, "TOI reports 174 passengers."),
+        (ClaimStatus.MISLEADING_CONTEXT, Importance.SUPPORTING_DETAIL, footage),
+    ]
+    assert case_summary(Verdict.MISLEADING, claims) == footage
+    assert case_summary(Verdict.PARTLY_TRUE, claims) == "TOI reports 174 passengers."
+
+
 def test_a_decided_answer_without_its_own_sentence_borrows_none() -> None:
     # "Treat it as likely false" must not appear under a True badge.
     claims = [
