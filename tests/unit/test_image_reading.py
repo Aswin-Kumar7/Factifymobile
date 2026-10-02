@@ -310,7 +310,12 @@ class TestAnUploadedImageIsReadAndChecked:
 
         assert response.status_code == 200
         text, kwargs = seen["extracted"][0]
-        assert text == FORWARD
+        # The words on it and what it shows, each under Factify's own label
+        # (`app/media/composed.py`).
+        assert text == (
+            f"Text in the picture:\n{FORWARD}\n\n"
+            "What the picture shows (described by Factify):\nA WhatsApp forward."
+        )
         assert kwargs["input_kind"] == "image"
         assert [c.text for c in seen["claims"][0]] == ["RBI bans Rs 500 notes."]
         shown = response.json()["image_reading"]
@@ -318,6 +323,13 @@ class TestAnUploadedImageIsReadAndChecked:
         assert shown["description"] == "A WhatsApp forward."
         assert shown["kind"] == "CHAT_MESSAGE"
         assert shown["language"] == "en"
+        read = response.json()["input_read"]
+        assert read["kind"] == "image" and read["complete"]
+        words, picture = read["parts"]
+        assert (words["kind"], words["checked"]) == ("picture_text", True)
+        assert text[words["char_start"] : words["char_end"]] == FORWARD
+        assert (picture["kind"], picture["checked"]) == ("picture_description", True)
+        assert text[picture["char_start"] : picture["char_end"]] == "A WhatsApp forward."
 
     @pytest.mark.anyio
     async def test_a_repeat_from_the_cache_still_shows_what_was_read(self) -> None:
@@ -350,20 +362,102 @@ class TestAnUploadedImageIsReadAndChecked:
 
         response = await self._upload(app)
 
-        assert seen["extracted"][0][0] == FORWARD
-        skipped = {item["check"]: item["reason"] for item in response.json()["skipped"]}
-        assert "only its start was checked" in skipped["image_text"]
+        assert seen["extracted"][0][0] == f"Text in the picture:\n{FORWARD}"
+        skipped = {item["check"]: item for item in response.json()["skipped"]}
+        assert "only its start was checked" in skipped["image_text"]["reason"]
+        assert skipped["image_text"]["kind"] == "reading"
+        [missing] = response.json()["input_read"]["gaps"]
+        assert (missing["code"], missing["part"]) == ("cut_off", "picture_text")
 
     @pytest.mark.anyio
-    async def test_a_picture_with_no_text_is_checked_as_a_picture(self) -> None:
-        reading = OcrOutcome(text="", description="A flooded street.", kind="PHOTO")
+    @pytest.mark.parametrize("text", ["", "Exclusive Minds"])
+    async def test_a_picture_with_no_words_of_its_own_is_checked_as_a_picture(
+        self, text: str
+    ) -> None:
+        """An old flood photograph forwarded as new: no claims are made of Factify's
+        own description of it, which no search can settle, so it reaches the checker
+        with none and is asked its own questions - has it been published before, does
+        its file say where it came from (`MediaVerification`). A watermark is no words
+        of its own (2026-10-03 review)."""
+        reading = OcrOutcome(
+            text=text, language=detect(text), description="A flooded street.", kind="PHOTO"
+        )
         app, seen = self._app(reading)
 
         response = await self._upload(app)
 
+        # Only the words on it are looked in for claims, as before it was described.
+        assert [document for document, _ in seen["extracted"]] == (
+            [f"Text in the picture:\n{text}"] if text else []
+        )
+        if not text:
+            assert seen["claims"] == [[]]
+        body = response.json()
+        assert body["image_reading"]["description"] == "A flooded street."
+        [described] = [
+            part for part in body["input_read"]["parts"] if part["kind"] == "picture_description"
+        ]
+        assert not described["checked"] and described["char_start"] is None
+
+    @pytest.mark.anyio
+    async def test_a_picture_with_words_of_its_own_is_checked_with_what_it_shows(self) -> None:
+        reading = OcrOutcome(
+            text="BRICS SUMMIT 2026 STRONGER TOGETHER",
+            description="A selfie of leaders who appear to be Vladimir Putin and Narendra Modi.",
+            kind="SOCIAL_POST",
+        )
+        app, seen = self._app(reading)
+
+        await self._upload(app)
+
+        assert seen["extracted"][0][0] == (
+            "Text in the picture:\nBRICS SUMMIT 2026 STRONGER TOGETHER\n\n"
+            "What the picture shows (described by Factify):\nA selfie of leaders who appear "
+            "to be Vladimir Putin and Narendra Modi."
+        )
+
+    @pytest.mark.anyio
+    async def test_a_picture_with_nothing_read_from_it_is_checked_as_a_picture(self) -> None:
+        reading = OcrOutcome(text="", kind="PHOTO")
+        app, seen = self._app(reading)
+
+        await self._upload(app)
+
         assert seen["extracted"] == []
         assert seen["claims"] == [[]]
-        assert response.json()["image_reading"]["description"] == "A flooded street."
+
+    @pytest.mark.anyio
+    async def test_the_claims_are_found_anew_when_the_reading_changes(self) -> None:
+        """The extraction cache is keyed by the text read, not the picture: a picture
+        read again, with a description it did not have, is not served the claims
+        found in its older reading."""
+        app, seen = self._app(OcrOutcome(text=FORWARD, language=detect(FORWARD)))
+        await self._upload(app)
+
+        class _ReadAgain:
+            async def transcribe(self, image: bytes, *, mime_type: str = "") -> OcrOutcome:
+                return OcrOutcome(text=FORWARD, language=detect(FORWARD), description="A forward.")
+
+        app.state.ocr = _ReadAgain()
+        await self._upload(app)
+
+        first, second = (kwargs["content_hash"] for _, kwargs in seen["extracted"])
+        assert first != second
+
+    @pytest.mark.anyio
+    async def test_a_hindi_card_is_extracted_as_hindi_whatever_the_labels(self) -> None:
+        hindi = "सरकार ने सभी बैंकों में हर शनिवार को छुट्टी घोषित की है"
+        reading = OcrOutcome(
+            text=hindi,
+            language=detect(hindi),
+            description="A notice in Hindi with the national emblem at the top.",
+            kind="DOCUMENT",
+        )
+        app, seen = self._app(reading)
+
+        await self._upload(app)
+
+        assert seen["extracted"][0][1]["language"] == "hi"
 
 
 async def _cached(case_id: UUID) -> Any:

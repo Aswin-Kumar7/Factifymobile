@@ -8,10 +8,12 @@ needs; the English reader of the same family is run beside it, and each line kee
 whichever reading the models were surer of. A second or two on a CPU, and nothing
 leaves the server.
 
-It reads text only. What the picture is and whose name it carries - the hosted
-reader's description - is shown in the app and decides nothing, so when this reader
-has read the picture it is simply not shown. The hosted reader is asked only when
-this one finds little text or is unsure of what it found (`LocalFirstOcr`).
+It reads text only. What the picture is and whose name it carries is the hosted
+reader's to say, and since 2026-10-03 it is always asked (`LocalFirstOcr`): for the
+description alone when this reader has the words, for everything when this one finds
+little text or is unsure of what it found. Before, a picture whose words were read
+here was never described, so the FAKE stamp on a gazette, the PIB Fact Check logo and
+the leaders in an AI selfie went unseen.
 """
 
 from __future__ import annotations
@@ -19,7 +21,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -93,10 +95,28 @@ class LocalReading:
     elapsed_ms: float
     # Which reader it came from: "hi+en", or a script reader's language.
     reader: str = "hi+en"
+    # The picture's size, for how much of it the text covers; 0 when not known.
+    width: int = 0
+    height: int = 0
 
     @property
     def text(self) -> str:
         return "\n".join(line.text for line in self.lines)
+
+    @property
+    def text_area(self) -> float | None:
+        """The share of the picture the text's lines cover, 0-1; None without a size.
+
+        A card or a screenshot of a forward is mostly text; a photograph, even one
+        with a caption or a sign in it, mostly is not (`looks_designed`).
+        """
+        if self.width <= 0 or self.height <= 0:
+            return None
+        covered = sum(
+            max(0.0, line.right - line.left) * max(0.0, line.bottom - line.top)
+            for line in self.lines
+        )
+        return min(1.0, covered / (self.width * self.height))
 
     @property
     def confidence(self) -> float:
@@ -221,6 +241,8 @@ class LocalOcr:
             lines=best.lines,
             elapsed_ms=(time.perf_counter() - started) * 1000,
             reader=best.reader,
+            width=int(image.shape[1]),
+            height=int(image.shape[0]),
         )
 
 
@@ -319,13 +341,35 @@ def _height(row: list[OcrLine]) -> float:
 
 
 class LocalFirstOcr:
-    """Our own reader first; the hosted one only when ours finds too little."""
+    """Our own reader for the words first; the hosted one always says what the picture
+    shows, and reads the words too when ours finds too little."""
 
     def __init__(self, *, local: LocalOcr, hosted: Any | None) -> None:
         self._local = local
         self._hosted = hosted
 
-    async def transcribe(self, image: bytes, *, mime_type: str = "image/jpeg") -> OcrOutcome:
+    @property
+    def local(self) -> LocalOcr:
+        """Our own reader on its own, with no hosted fallback: for the frames of a
+        video (`app/media/frame_text.py`), where two dozen frames sent to a paid model
+        would cost more than the check, and a frame with little text is no loss."""
+        return self._local
+
+    @property
+    def hosted(self) -> Any | None:
+        """The hosted reader, for what a video shows (`OcrExtractor.describe_video`)."""
+        return self._hosted
+
+    async def transcribe(
+        self, image: bytes, *, mime_type: str = "image/jpeg", describe: bool = True
+    ) -> OcrOutcome:
+        """The picture's words, and what it shows.
+
+        Without `describe`, the words alone when ours are good: for a scanned PDF's page
+        images, whose text is all that is used, three descriptions were three paid
+        calls thrown away. The hosted reader, when it is asked for the words, describes
+        in the same call, at no extra cost.
+        """
         import asyncio
 
         reading: LocalReading | None = None
@@ -347,11 +391,12 @@ class LocalFirstOcr:
                 confidence=round(reading.confidence, 3),
                 lines=len(reading.lines),
                 reader=reading.reader,
+                text_area=round(reading.text_area, 3) if reading.text_area is not None else None,
                 latency_ms=round(reading.elapsed_ms),
             )
             if not text.strip():
                 return OcrOutcome(reason="no legible text", model_id=MODEL_ID)
-            return OcrOutcome(
+            read = OcrOutcome(
                 text=text,
                 language=detect(text),
                 regions=tuple(
@@ -359,7 +404,11 @@ class LocalFirstOcr:
                     for index, line in enumerate(reading.lines)
                 ),
                 model_id=MODEL_ID,
+                text_area=reading.text_area,
             )
+            if not describe:
+                return read
+            return await self._with_description(read, image, mime_type=mime_type)
 
         if reading is not None:
             event(
@@ -374,4 +423,41 @@ class LocalFirstOcr:
         if self._hosted is None:
             return OcrOutcome(reason="unavailable: no reader could read this picture")
         hosted: OcrOutcome = await self._hosted.transcribe(image, mime_type=mime_type)
+        if reading is not None and hosted.text_area is None:
+            # How much of the picture is text, from our own reader's boxes, even though
+            # its words were not the ones kept.
+            hosted = replace(hosted, text_area=reading.text_area)
         return hosted
+
+    async def _with_description(
+        self, read: OcrOutcome, image: bytes, *, mime_type: str
+    ) -> OcrOutcome:
+        """Our own reading, with what the hosted reader says the picture is and shows.
+
+        The words stay ours. A hosted reader that cannot describe it - down, refusing,
+        or one with no `describe` - leaves the reading as it was, undescribed.
+        """
+        describe = getattr(self._hosted, "describe", None)
+        if describe is None:
+            return read
+        try:
+            described: OcrOutcome = await describe(image, mime_type=mime_type)
+        except Exception:
+            logger.exception("the picture could not be described; its words are kept")
+            return read
+        if not described.succeeded:
+            event(
+                logger,
+                "picture not described",
+                module="extraction.local_ocr",
+                outcome="degraded",
+                provider="llm",
+                failure_reason=described.reason,
+            )
+            return read
+        return replace(
+            read,
+            description=described.description,
+            kind=described.kind,
+            publisher=described.publisher,
+        )

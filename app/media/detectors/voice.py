@@ -34,9 +34,9 @@ import subprocess
 import tempfile
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
@@ -96,8 +96,18 @@ HOP = WINDOW // 2
 MIN_SAMPLES = RATE
 
 # Decoding a 90-second sound track takes well under a second; a container that makes
-# ffmpeg spin is killed long before a request's own budget runs out.
+# ffmpeg spin is killed long before a request's own budget runs out. A longer read
+# gets longer (`decode_timeout`): a background check hears up to ten minutes of a
+# clip, and a fixed 30 s would have cut a slow, honest decode off with the rest.
 DECODE_TIMEOUT_S = 30.0
+DECODE_TIMEOUT_PER_SECOND = 0.05
+
+# What ffmpeg says when a file has no sound track to map: "Stream map '0:a:0' matches
+# no streams" (ffmpeg 8 prints the map as ''), or, for an optional map, that the
+# output "does not contain any stream". Not translated: ffmpeg's messages are English.
+_NO_SOUND_TRACK = ("matches no streams", "does not contain any stream")
+
+SoundStatus = Literal["ok", "no_audio", "unavailable", "failed"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,11 +216,33 @@ def select_windows(samples: np.ndarray, *, limit: int = MAX_WINDOWS) -> list[int
     return chosen
 
 
-def decode_audio(video: bytes, *, max_seconds: float) -> np.ndarray | None:
-    """The first `max_seconds` of the first sound track as 16 kHz mono float32.
+def decode_timeout(max_seconds: float) -> float:
+    """How long decoding `max_seconds` of sound may take: 30 s, and 0.05 s a second
+    more (34.5 s for the voice check's 90 seconds, 60 s for ten minutes)."""
+    return DECODE_TIMEOUT_S + DECODE_TIMEOUT_PER_SECOND * max(0.0, max_seconds)
 
-    None when ffmpeg is missing, the file has no sound track, or ffmpeg cannot read it:
-    all three mean "no sound to judge", and none is worth failing a check over.
+
+@dataclass(frozen=True, slots=True, eq=False)
+class Sound:
+    """A video's decoded sound, or why there is none.
+
+    The voice check needs only the samples; the speech reader also needs to know why
+    there are none, because "this video has no sound" is a full reading of it and
+    "the sound could not be decoded" is a gap in one (`app/media/speech.py`).
+    """
+
+    status: SoundStatus
+    # 16 kHz mono float32 in [-1, 1]; only when `status` is "ok".
+    samples: np.ndarray | None = field(default=None, repr=False)
+    reason: str | None = None
+
+
+def decode_sound(video: bytes, *, max_seconds: float) -> Sound:
+    """The first `max_seconds` of the first sound track, and what stopped it if not.
+
+    "no_audio" when the file has no sound track (or one with nothing in it),
+    "unavailable" when ffmpeg is not installed, "failed" when ffmpeg could not read the
+    file or ran out of time. Never raises.
 
     The bytes go to a temporary file rather than ffmpeg's stdin because an MP4 whose
     index is written at the end (common from phone editors) cannot be read from a
@@ -219,50 +251,74 @@ def decode_audio(video: bytes, *, max_seconds: float) -> np.ndarray | None:
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
         logger.warning("ffmpeg is not installed; a video's sound cannot be judged")
-        return None
-    with tempfile.TemporaryDirectory(prefix="factify-voice-") as workspace:
-        source = Path(workspace) / "input"
-        source.write_bytes(video)
-        # A fixed argument list, never a shell; the only path is one this process made.
-        command = [
-            ffmpeg,
-            "-nostdin",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-t",
-            f"{max_seconds:.3f}",
-            "-i",
-            str(source),
-            "-map",
-            "0:a:0",
-            "-vn",
-            "-ac",
-            "1",
-            "-ar",
-            str(RATE),
-            "-f",
-            "s16le",
-            "pipe:1",
-        ]
-        try:
-            completed = subprocess.run(  # noqa: S603 - fixed arguments, no shell
-                command, capture_output=True, timeout=DECODE_TIMEOUT_S, check=False
-            )
-        except subprocess.TimeoutExpired:
-            # `run` has killed ffmpeg before raising; nothing is left running.
-            logger.warning("decoding a video's sound exceeded %ss", DECODE_TIMEOUT_S)
-            return None
-    if completed.returncode != 0 or not completed.stdout:
-        # No sound track reads as "matches no streams"; worth a debug line, no more.
-        logger.debug(
-            "no sound decoded (ffmpeg exit %s): %s",
-            completed.returncode,
-            completed.stderr.decode("utf-8", "replace")[:300],
-        )
-        return None
+        return Sound(status="unavailable", reason="ffmpeg is not installed")
+    timeout = decode_timeout(max_seconds)
+    try:
+        # A file left behind on Windows (still held by a killed ffmpeg) is the
+        # system's to clear; it is no reason to lose a decode that finished.
+        with tempfile.TemporaryDirectory(
+            prefix="factify-voice-", ignore_cleanup_errors=True
+        ) as workspace:
+            source = Path(workspace) / "input"
+            source.write_bytes(video)
+            # A fixed argument list, never a shell; the only path is one this process
+            # made.
+            command = [
+                ffmpeg,
+                "-nostdin",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-t",
+                f"{max_seconds:.3f}",
+                "-i",
+                str(source),
+                "-map",
+                "0:a:0",
+                "-vn",
+                "-ac",
+                "1",
+                "-ar",
+                str(RATE),
+                "-f",
+                "s16le",
+                "pipe:1",
+            ]
+            try:
+                completed = subprocess.run(  # noqa: S603 - fixed arguments, no shell
+                    command, capture_output=True, timeout=timeout, check=False
+                )
+            except subprocess.TimeoutExpired:
+                # `run` has killed ffmpeg before raising; nothing is left running.
+                logger.warning("decoding a video's sound exceeded %.0fs", timeout)
+                return Sound(
+                    status="failed", reason=f"decoding the sound took longer than {timeout:.0f}s"
+                )
+    except OSError as error:
+        # The temporary file could not be written or ffmpeg could not be started.
+        logger.warning("a video's sound could not be decoded: %s", type(error).__name__)
+        return Sound(status="failed", reason="the sound could not be decoded")
+    stderr = completed.stderr.decode("utf-8", "replace")
+    if completed.returncode != 0:
+        if any(marker in stderr for marker in _NO_SOUND_TRACK):
+            # The commonest case and no failure: a screen recording, a GIF-like clip.
+            return Sound(status="no_audio", reason="the video has no sound track")
+        logger.debug("no sound decoded (ffmpeg exit %s): %s", completed.returncode, stderr[:300])
+        return Sound(status="failed", reason="ffmpeg could not read the video's sound")
+    if not completed.stdout:
+        return Sound(status="no_audio", reason="the video's sound track is empty")
     pcm = np.frombuffer(completed.stdout[: len(completed.stdout) // 2 * 2], dtype="<i2")
-    return pcm.astype(np.float32) / 32768.0
+    return Sound(status="ok", samples=pcm.astype(np.float32) / 32768.0)
+
+
+def decode_audio(video: bytes, *, max_seconds: float) -> np.ndarray | None:
+    """The first `max_seconds` of the first sound track as 16 kHz mono float32.
+
+    None when ffmpeg is missing, the file has no sound track, or ffmpeg cannot read it:
+    for the voice check all three mean "no sound to judge", and none is worth failing
+    a check over. `decode_sound` says which it was.
+    """
+    return decode_sound(video, max_seconds=max_seconds).samples
 
 
 class VoiceDetector:

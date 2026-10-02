@@ -18,7 +18,7 @@ import json
 import logging
 import re
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
@@ -40,10 +40,14 @@ from app.api.schemas import (
     ComponentResponse,
     CorrectionTextRequest,
     CorrectionTextResponse,
+    DetectorResponse,
     EvidenceResponse,
     ImageReadingResponse,
+    InputReadResponse,
     MediaReportResponse,
     QuoteLocationResponse,
+    ReadGapResponse,
+    ReadPartResponse,
     ReceiptResponse,
     ReceiptSummaryResponse,
     ReviewItemResponse,
@@ -60,15 +64,29 @@ from app.api.schemas import (
     evidence_to_response,
     media_report_to_response,
 )
+from app.cache.keys import text_hash
 from app.domain.claim import Claim, ClaimAnchor
 from app.domain.enums import ClaimType, Importance, Severity, SourceRisk
 from app.extraction.claimreview import ClaimReview, read_claim_reviews
 from app.extraction.claims import ExtractedClaims
 from app.extraction.language import detect
+from app.extraction.local_ocr import LocalFirstOcr
 from app.extraction.model_wire import PDF_MIME
-from app.extraction.ocr import OcrOutcome
+from app.extraction.ocr import READER_VERSION, OcrOutcome, looks_designed
 from app.extraction.pdf import PdfRejected, first_pages
 from app.extraction.pdf import extract as extract_pdf
+from app.extraction.reading import (
+    CONTEXT_ONLY,
+    Composed,
+    Gap,
+    GapCode,
+    PartKind,
+    Reading,
+    ReadPart,
+    gap,
+    linked_article_label,
+    picture_text_label,
+)
 from app.extraction.web import extract as extract_article
 from app.extraction.web import headline_and_summary
 from app.intake.normalizer import (
@@ -80,13 +98,33 @@ from app.intake.normalizer import (
     normalise_url,
 )
 from app.knowledge.registry import authenticate_trigger
-from app.media.speech import Transcript
-from app.media.video import KeyframeExtractor
+from app.media.composed import (
+    PICTURE_DESCRIBED,
+    SAID_IN_VIDEO,
+    TEXT_IN_VIDEO,
+    VIDEO_DESCRIBED,
+    compose,
+    described,
+)
+from app.media.frame_text import FramesText, local_reader, read_frames_text
+from app.media.sheet import contact_sheet, pick_for_sheet
+from app.media.speech import SpeechOutcome, read_speech
+from app.media.video import (
+    DEFAULT_MAX_SECONDS,
+    READ_SECONDS,
+    ExtractedVideo,
+    FramesRead,
+    Keyframe,
+    KeyframeExtractor,
+    clock,
+)
 from app.observability.logging import event
 from app.observability.middleware import REQUEST_ID_HEADER
 from app.orchestration.background import BackgroundChecks
 from app.orchestration.correction import correction_message
 from app.orchestration.pipeline import (
+    BACKGROUND_CEILING_SECONDS,
+    BACKGROUND_MIN_READING_SECONDS,
     BACKGROUND_SECONDS,
     SkippedCheck,
     VerificationResult,
@@ -1512,32 +1550,88 @@ async def _checked_picture(
     # The picture's own checks - credentials, earlier copies, the AI and editing
     # signals - run alongside the reading and the fact-check, and join the answer.
     inspection = _inspect_picture(request, intake)
+    # What the reading makes of the picture. A designed card, a document or a
+    # screenshot is no photograph, and the AI-picture detector's word on it is not
+    # taken (`_as_designed`).
+    seen = _Seen()
     response = await _checked_upload(
         request,
         intake,
         case_id=case_id,
         recheck=recheck,
-        synthetic=(lambda: _made_by_ai(inspection)) if inspection is not None else None,
+        seen=seen,
+        synthetic=(
+            (lambda: _made_by_ai(inspection, designed=seen.designed))
+            if inspection is not None
+            else None
+        ),
     )
-    return await _with_media(response, inspection)
+    return await _with_media(response, inspection, designed=seen.designed)
 
 
-def ai_made(report: MediaReportResponse) -> bool:
+@dataclass(slots=True)
+class _Seen:
+    """What the reading made of an uploaded picture, for the picture checks beside it."""
+
+    kind: str | None = None
+    text_area: float | None = None
+
+    @property
+    def designed(self) -> bool:
+        return looks_designed(self.kind, self.text_area)
+
+
+def ai_made(report: MediaReportResponse, *, designed: bool = False) -> bool:
     """Whether an upload's own checks say it was made or altered by AI: its file says
     so, the picture detectors agree, or a face or the voice in a video is past its
-    model's line. Never a verdict on its own (`Orchestrator._fabricated`)."""
+    model's line. Never a verdict on its own (`Orchestrator._fabricated`).
+
+    Not the picture models' word on a designed graphic, a document or a screenshot
+    (`designed`): they called the Labour Ministry's genuine EPF graphic 100% AI-made
+    and PIB's fact-check card 99% (2026-10-02). And for a video, not one picture model
+    alone: genuine UN footage of Netanyahu read 99.8% "generated" to it. Two models
+    agreeing count; one does not.
+    """
     detector = report.detector
+    pictured = detector.agreement == "likely_ai" and not designed
+    if report.kind == "video":
+        pictured = pictured and detector.second_opinion is not None
     return bool(
         report.credentials.declares_ai
-        or detector.agreement == "likely_ai"
-        or detector.face_swapped
+        or pictured
+        or (detector.face_swapped and not designed)
         or detector.machine_voice
     )
 
 
-async def _made_by_ai(inspection: asyncio.Task[_MediaShown]) -> bool:
+async def _made_by_ai(inspection: asyncio.Task[_MediaShown], *, designed: bool = False) -> bool:
     media, _ = await inspection
-    return ai_made(media)
+    return ai_made(media, designed=designed)
+
+
+@dataclass(frozen=True, slots=True)
+class _Read:
+    """What an upload was read as (contract 1.8): its parts, in the order the text
+    claims are found in, and what could not be read.
+
+    `shown` is the reading shown beside the answer (`image_reading`). `notes` are the
+    gaps as the pipeline reports them, one for each of `reading.gaps`.
+    """
+
+    reading: Reading
+    shown: OcrOutcome | None = None
+    notes: tuple[SkippedCheck, ...] = ()
+
+    def plus(self, part: ReadPart) -> _Read:
+        return replace(self, reading=self.reading.plus(parts=(part,)))
+
+    def missing(self, check: str, found: Gap) -> _Read:
+        """This reading with a gap, and the note that reports it under `check`."""
+        return replace(
+            self,
+            reading=self.reading.plus(gaps=(found,)),
+            notes=(*self.notes, SkippedCheck(check=check, reason=found.detail, kind="reading")),
+        )
 
 
 async def _checked_upload(
@@ -1546,56 +1640,98 @@ async def _checked_upload(
     *,
     case_id: UUID,
     recheck: bool,
-    spoken: str | None = None,
+    read: _Read | None = None,
     synthetic: Callable[[], Awaitable[bool]] | None = None,
+    seen: _Seen | None = None,
+    started_at: float | None = None,
 ) -> VerifyResponse:
-    """A picture or a PDF, read and checked. Also a video's representative frame,
-    with what is `spoken` in the video checked beside the words on it.
+    """A picture or a PDF, read and checked. Also a video, already `read`, checked
+    through one of its frames.
 
     `synthetic` says whether the upload's own checks found it AI-made; the pipeline
-    asks it only when that could decide the case (`Orchestrator._fabricated`)."""
+    asks it only when that could decide the case (`Orchestrator._fabricated`). `seen`
+    is told what the picture was read as. `started_at` is when the check's own time
+    began (`Orchestrator.verify`): for a video, when its reading was done.
+    """
     orchestrator = get_orchestrator(request)
+    # Kept under what read it as well: a verdict stored for what an older reader made
+    # of this picture is not served once the reading has changed.
+    keyed = replace(intake, cache_identity=f"{intake.cache_identity}|reader:{READER_VERSION}")
+    # Read here, rather than handed in: a picture or a PDF, whose reading is
+    # remembered for a repeat served from the cache.
+    own_reading = read is None
 
     # Probed before media preparation (hashing, embedding, OCR), for the same reason
     # the text path probes before extraction: a repeat should cost nothing. "Check
     # again" is the exception, as it is there.
     readings = _remembered_readings(request)
-    hit = (
-        None if recheck else await orchestrator.cached(intake, case_id=case_id)  # type: ignore[attr-defined]
-    )
+    hit = None if recheck else await orchestrator.cached(keyed, case_id=case_id)  # type: ignore[attr-defined]
     if hit is not None:
         served = await cached_full_response(request, hit) or _thin(hit)
-        shown = readings.get(intake.primary.sha256)
-        if shown is None and intake.input_type is InputType.IMAGE:
+        shown = (
+            _reading_response(read.shown)
+            if read is not None
+            else readings.get(intake.primary.sha256)
+        )
+        if shown is None and read is None and intake.input_type is InputType.IMAGE:
             # Remembered only in memory, so a repeat after a restart reads the picture
             # again - one model call, against a check that is otherwise free - rather
             # than showing a verdict with no sign of what it was about.
-            _, reading, _ = await _read_document(request, intake)
-            shown = _reading_response(reading)
+            read = await _read_document(request, intake)
+            shown = _reading_response(read.shown)
             if shown is not None:
                 _remember(readings, intake.primary.sha256, shown)
-        return served.model_copy(update={"image_reading": shown})
+                _remember_area(request, intake.primary.sha256, read.shown)
+        if seen is not None and shown is not None:
+            # As the first check judged it: how much of the picture is text is
+            # remembered beside the reading, or a screenshot judged designed the first
+            # time showed "likely AI" on its repeat.
+            seen.kind = shown.kind
+            seen.text_area = _remembered_areas(request).get(intake.primary.sha256)
+        return served.model_copy(
+            update={
+                "image_reading": shown,
+                "input_read": (
+                    _input_read(read.reading, _to_check(read.reading)) if read is not None else None
+                ),
+            }
+        )
 
     # Read before checking. An image or a PDF used to reach the checker with no claims
     # at all: a screenshot of a forward announcing a ban on ₹500 notes was
     # fingerprinted, never read, and came back "Unconfirmed". Its text is now read and
     # checked exactly as a pasted message is - the same extraction, the same search,
-    # the same rules - and a link in it is opened, as a link in a message is.
-    document, reading, notes = await _read_document(request, intake)
-    if spoken:
-        # What the video says out loud, after what is written on it: both are what
-        # the video claims.
-        document = f"{document}\n\n{spoken}".strip()
+    # the same rules - and a link in it is opened, as a link in a message is. What the
+    # picture shows is checked beside its words, under its own label
+    # (`app/media/composed.py`).
+    if read is None:
+        read = await _read_document(request, intake)
+    if seen is not None and read.shown is not None:
+        seen.kind = read.shown.kind
+        seen.text_area = read.shown.text_area
     claims: list[Claim] = []
     own_pages: set[str] = set()
-    if document.strip():
-        link = _first_link(document)
+    notes: list[SkippedCheck] = []
+    composed = _to_check(read.reading)
+    if composed.text.strip():
+        # A link in the upload's own words, never in Factify's description of it.
+        link = _first_link(_authored(read.reading))
         if link is not None:
             page = await _read_linked_article(request, link)
             if page is not None:
-                document = f"{document}\n\n{page.text}"
+                read = read.plus(
+                    ReadPart(
+                        kind=PartKind.LINKED_ARTICLE,
+                        text=page.text,
+                        route="fetched",
+                        label=linked_article_label(urlsplit(link).hostname),
+                    )
+                )
+                composed = _to_check(read.reading)
                 own_pages.add(page_key(link))
-        extracted = await _extract_from_document(request, intake, document)
+        extracted = await _extract_from_document(
+            request, intake, composed.text, authored=_authored(read.reading)
+        )
         claims = list(extracted.claims)
         if extracted.reason:
             notes.append(SkippedCheck(check="claim_extraction", reason=extracted.reason))
@@ -1603,18 +1739,27 @@ async def _checked_upload(
     # With no text to check, the image's own questions are asked instead: has it been
     # published before, and does it carry provenance (see `MediaVerification`).
     result = await orchestrator.verify(  # type: ignore[attr-defined]
-        intake,
+        keyed,
         case_id=case_id,
         claims=claims,
+        started_at=started_at,
         fresh=recheck,
         own_pages=frozenset(own_pages),
         synthetic=synthetic,
+        # What could not be read, where it could decide the answer, is reported with
+        # everything the run skips, and keeps the run out of the cache: a reader that
+        # failed today may not tomorrow. A gap that could not (the frames left unread
+        # for time, the tail of a long transcript) is said all the same
+        # (`_with_reading_gaps`), and the answer is kept: the same video would be cut
+        # the same way next time, and was never served from the cache.
+        noted=_blocking_notes(read),
     )
 
     response = await _from_cache(request, result) or to_response(result)
-    shown = _reading_response(reading)
-    if shown is not None:
+    shown = _reading_response(read.shown)
+    if shown is not None and own_reading:
         _remember(readings, intake.primary.sha256, shown)
+        _remember_area(request, intake.primary.sha256, read.shown)
     event(
         logger,
         "verify request served",
@@ -1625,15 +1770,117 @@ async def _checked_upload(
         from_cache=result.from_cache,
         elapsed_ms=result.elapsed_ms,
         input_type=intake.input_type.value,
+        read_parts=len(read.reading.parts),
+        read_gaps=len(read.reading.gaps),
+        document_chars=len(composed.text),
     )
     return response.model_copy(
         update={
             "image_reading": shown,
-            "skipped": (
-                *response.skipped,
-                *(SkippedCheckResponse(check=n.check, reason=n.reason) for n in notes),
-            ),
+            "skipped": _with_reading_gaps(response.skipped, read.notes, notes),
+            "input_read": _input_read(read.reading, composed),
         }
+    )
+
+
+# How many words of its own an upload needs - on it, said in it, shown across it -
+# before what it shows is checked beside them: three, as `Reading.substantive`
+# counts.
+_OWN_WORDS = 3
+
+
+def _authored(reading: Reading) -> str:
+    """The upload's own words: everything read from it but Factify's descriptions."""
+    return "\n".join(part.text for part in reading.parts if part.kind not in CONTEXT_ONLY)
+
+
+def _to_check(reading: Reading) -> Composed:
+    """The text an upload's claims are found in.
+
+    Its own words and what it shows, each under its label (`compose`), when it has
+    words of its own (`_OWN_WORDS`). A photograph with none - or a watermark, a sign -
+    is its own words alone (`Reading.document()`), often nothing: with no claims it
+    is checked as a picture, for where it was published before and what its file
+    says (`MediaVerification`). Claims made only of Factify's description of an old
+    flood photograph are nothing a search can settle, and they took the place of the
+    picture's own questions (2026-10-03 review).
+    """
+    if len(_authored(reading).split()) >= _OWN_WORDS:
+        return compose(reading)
+    return reading.document()
+
+
+def _blocking_notes(read: _Read) -> tuple[SkippedCheck, ...]:
+    """The notes of the gaps that could decide the answer (`Gap.blocking`)."""
+    blocking = {item.detail for item in read.reading.gaps if item.blocking}
+    return tuple(note for note in read.notes if note.reason in blocking)
+
+
+def _with_reading_gaps(
+    skipped: tuple[SkippedCheckResponse, ...],
+    gaps: Sequence[SkippedCheck],
+    notes: Sequence[SkippedCheck],
+) -> tuple[SkippedCheckResponse, ...]:
+    """The answer's skipped checks, with what could not be read marked as reading.
+
+    The pipeline reports the reading gaps it was given (`noted`) among its own; each
+    is marked "reading" here, and one it did not report is added. Then `notes`, said
+    after everything else, as they always were.
+    """
+    said = {(gap.check, gap.reason) for gap in gaps}
+    marked = [
+        item.model_copy(update={"kind": "reading"}) if (item.check, item.reason) in said else item
+        for item in skipped
+    ]
+    present = {(item.check, item.reason) for item in marked}
+    marked.extend(
+        SkippedCheckResponse(check=gap.check, reason=gap.reason, kind="reading")
+        for gap in gaps
+        if (gap.check, gap.reason) not in present
+    )
+    marked.extend(SkippedCheckResponse(check=note.check, reason=note.reason) for note in notes)
+    return tuple(marked)
+
+
+def _input_read(reading: Reading, composed: Composed) -> InputReadResponse:
+    """What was read from an upload, part by part, for the answer (contract 1.8).
+
+    A part is `checked` when it is in the text claims were found in, at the offsets
+    given - for an upload that includes what the picture or the video shows.
+    """
+    parts = []
+    for index, part in enumerate(reading.parts):
+        span = composed.span_of(index)
+        parts.append(
+            ReadPartResponse(
+                kind=part.kind.value,
+                label=part.label,
+                text=part.text,
+                checked=span is not None,
+                route=part.route,
+                complete=part.complete,
+                note=part.note,
+                media_url=f"{_THUMBNAILS}{part.media_key}" if part.media_key else None,
+                char_start=span[0] if span is not None else None,
+                char_end=span[1] if span is not None else None,
+                seconds_read=round(part.seconds_read) if part.seconds_read is not None else None,
+                seconds_total=(
+                    round(part.seconds_total) if part.seconds_total is not None else None
+                ),
+                language=part.language,
+            )
+        )
+    return InputReadResponse(
+        kind=reading.kind,
+        parts=tuple(parts),
+        gaps=tuple(
+            ReadGapResponse(
+                part=item.part, code=item.code.value, detail=item.detail, blocking=item.blocking
+            )
+            for item in reading.gaps
+        ),
+        limits=reading.limits,
+        complete=reading.complete,
     )
 
 
@@ -1677,9 +1924,16 @@ def _inspect_picture(
 
 
 async def _with_media(
-    response: VerifyResponse, inspection: asyncio.Task[_MediaShown] | None
+    response: VerifyResponse,
+    inspection: asyncio.Task[_MediaShown] | None,
+    *,
+    designed: bool = False,
 ) -> VerifyResponse:
-    """The answer with the picture checks beside it. A check that failed is left out."""
+    """The answer with the picture checks beside it. A check that failed is left out.
+
+    For a `designed` picture - a graphic, a document, a screenshot - without the
+    AI-picture and face models' word on it (`_as_designed`).
+    """
     if inspection is None:
         return response
     try:
@@ -1687,10 +1941,44 @@ async def _with_media(
     except Exception:
         logger.exception("the picture checks failed; the answer is sent without them")
         return response
+    if designed:
+        media, advisories = _as_designed(media, advisories)
     return with_earlier_copy(
         response.model_copy(
             update={"media_report": media, "advisories": (*response.advisories, *advisories)}
         )
+    )
+
+
+# The advisories that are the AI-picture and face models' word on a picture.
+_PICTURE_MODELS = frozenset({"ai_generation", "face_swap"})
+
+
+def _as_designed(
+    media: MediaReportResponse, advisories: tuple[AdvisoryResponse, ...]
+) -> _MediaShown:
+    """The picture checks for a designed graphic, a document or a screenshot.
+
+    The AI-picture model is trained on photographs, and on made pictures it is
+    confidently wrong: the Labour Ministry's EPF graphic read 100% AI-made, PIB's
+    fact-check card 99%, a gazette screenshot 94% (2026-10-02), each shown as a
+    suspicion on a genuine post. Its word is left out, and the detector is reported
+    as not having judged a text card - which the app already words - while the
+    editing signals and the earlier copies stand.
+    """
+    detector = media.detector
+    if detector.status != "checked":
+        return media, advisories
+    kept = tuple(item for item in advisories if item.provider not in _PICTURE_MODELS)
+    return (
+        media.model_copy(
+            update={
+                "detector": DetectorResponse(
+                    status="not_checked", why="text_card", on_server=detector.on_server
+                )
+            }
+        ),
+        kept,
     )
 
 
@@ -1749,9 +2037,9 @@ def _start_video(
     """Check a video in the background and answer with its case id at once.
 
     It used to be recorded as "not processed" and nothing else: the 202 led to an
-    empty case. It is now checked from its still frames (`app/media/video.py`) - the
-    middle one read and fact-checked like a picture, and every one put through the
-    picture checks - and the app collects the answer from `/v1/cases/{id}`.
+    empty case. It is now read - what is said in it, the words shown across it and
+    what it shows (`_checked_video`) - and checked, with every keyframe put through
+    the picture checks, and the app collects the answer from `/v1/cases/{id}`.
 
     Charged as any background check is, when it has its answer. It was charged when
     it was accepted, so a video whose check failed, or that was stopped, still cost
@@ -1763,15 +2051,46 @@ def _start_video(
         lambda: _checked_video(request, intake, data, case_id=case_id, recheck=recheck),
         user=user,
         cost=cost,
-        estimated_seconds=45,
+        estimated_seconds=90,
     )
+
+
+# How long the words on a video's frames may take to read, in all. A frame takes a
+# second or two on the server's CPU, shared with the speech reader; past this the
+# frames left are not read, and the answer says so. They are read so that any first
+# few cover the whole clip (`read_frames_text`).
+FRAMES_TEXT_SECONDS = 90.0
+
+# How long what is said in a video may take to read. Whisper read the RBI clip's
+# 2:09 in 45-48 s on four threads of a development machine; the server's four cores
+# are shared with the frames' words and the picture checks, and ten minutes of speech
+# would take most of a check's time. Past this the rest is not read, and the answer
+# says how much was (`SpeechReader.read_video_outcome`).
+SPEECH_SECONDS = 150.0
 
 
 async def _checked_video(
     request: Request, intake: NormalisedIntake, data: bytes, *, case_id: UUID, recheck: bool
 ) -> VerifyResponse:
-    extracted = await KeyframeExtractor().extract(data)
+    """A video: read - what is said, the words shown across it, what it shows - and
+    checked from all three, with its keyframes put through the picture checks.
+
+    It used to be checked from one frame of its first 90 seconds and what was said:
+    an RBI clip's "REPO RATE UNCHANGED AT 5.25%" card ran from 1:53 to its end and was
+    never seen, and the one frame read was a wipe (2026-10-02).
+    """
+    began = time.perf_counter()
+    window = _video_window(request)
+    # What is said takes longest to read, so it is read from the start, beside the
+    # frames being taken.
+    hearing = asyncio.create_task(_heard(request, data, max_seconds=window))
+    try:
+        extracted = await KeyframeExtractor.reading(read_seconds=window).extract(data)
+    except BaseException:
+        hearing.cancel()
+        raise
     if not extracted.succeeded:
+        hearing.cancel()
         # Nothing could be taken from the clip: said, and nothing else claimed.
         await _record_unprocessed_video(request, case_id=case_id, intake=intake)
         result = await get_orchestrator(request).verify(  # type: ignore[attr-defined]
@@ -1793,47 +2112,91 @@ async def _checked_video(
 
     frames = [frame.data for frame in extracted.keyframes]
     settings = request.app.state.settings
-    middle = normalise_upload(
-        frames[len(frames) // 2],
-        max_bytes=settings.limits.max_upload_bytes,
-        declared_type="image/jpeg",
-        consent=True,
-    )
     inspector = getattr(request.app.state, "media_inspector", None)
     # The face model reads frames spread evenly across the clip (`even_frames`).
     even = [frame.data for frame in extracted.even_frames]
     inspection = (
         asyncio.create_task(inspector.inspect_video(data, frames, even)) if inspector else None
     )
-    # What is said in it, read while the frames are checked (`app/media/speech.py`).
-    speech = await _spoken(request, data)
+    duration = extracted.probe.duration_seconds if extracted.probe is not None else 0.0
+    taken = extracted.read or FramesRead(duration_seconds=duration, reason="not taken")
+    if not taken.frames:
+        # None could be taken across the clip - a recording whose length its file
+        # does not give, or every grab failed - so the picture checks' own frames are
+        # read instead, and the answer says so.
+        taken = _keyframes_read(extracted, taken)
+
+    # Read while the keyframes are checked, side by side: what is said
+    # (`app/media/speech.py`), the words shown (`app/media/frame_text.py`) and what it
+    # shows, from one contact sheet of its frames (`app/media/sheet.py`).
+    try:
+        heard, shown_words, looked = await asyncio.gather(
+            hearing,
+            read_frames_text(
+                local_reader(getattr(request.app.state, "ocr", None)),
+                [frame.data for frame in taken.frames],
+                budget_seconds=FRAMES_TEXT_SECONDS,
+            ),
+            _described_video(request, taken),
+        )
+    except BaseException:
+        hearing.cancel()
+        raise
+    read = _video_reading(taken, heard, shown_words, looked, duration=duration)
+
+    # The answer is checked through one of the frames read - the picture questions
+    # (has it been published before) are asked of it - and kept under the video's own
+    # identity, never the frame's: the same frame can open another video.
+    picture = (
+        taken.frames[len(taken.frames) // 2].data if taken.frames else frames[len(frames) // 2]
+    )
+    middle = replace(
+        normalise_upload(
+            picture,
+            max_bytes=settings.limits.max_upload_bytes,
+            declared_type="image/jpeg",
+            consent=True,
+        ),
+        cache_identity=intake.cache_identity,
+    )
 
     async def video_made_by_ai() -> bool:
         if inspection is None:
             return False
         return ai_made(media_report_to_response(await inspection, thumbnails=_THUMBNAILS))
 
-    response = await _checked_upload(
-        request,
-        middle,
-        case_id=case_id,
-        # The answer stored for this frame may be for another video's words.
-        recheck=recheck or speech is not None,
-        spoken=speech.text if speech is not None else None,
-        synthetic=video_made_by_ai,
-    )
+    # The check's time is counted from when the video's own began: reading a long
+    # clip takes minutes, and the person's wait (`BACKGROUND_CEILING_SECONDS`) holds
+    # the reading and the searching together. However long the reading took, the
+    # searching keeps `BACKGROUND_MIN_READING_SECONDS`.
+    searching = _searching_seconds(time.perf_counter() - began)
+    budget = check_seconds.set(searching) if searching is not None else None
+    try:
+        response = await _checked_upload(
+            request,
+            middle,
+            case_id=case_id,
+            recheck=recheck,
+            read=read,
+            synthetic=video_made_by_ai,
+            started_at=time.perf_counter(),
+        )
+    finally:
+        if budget is not None:
+            check_seconds.reset(budget)
     notes = (
         SkippedCheckResponse(
             check="video_frames",
-            reason=f"checked {len(frames)} still frames"
-            + (f"; {'; '.join(extracted.limitations)}" if extracted.limitations else ""),
+            reason=_video_note(extracted, taken, heard, shown_words, looked, window=window),
         ),
     )
-    if speech is not None:
+    if heard.transcript is not None:
         response = response.model_copy(
             update={
                 "speech": SpeechResponse(
-                    text=speech.text, language=speech.language, cut_off=speech.cut_off
+                    text=heard.transcript.text,
+                    language=heard.transcript.language,
+                    cut_off=heard.transcript.cut_off,
                 )
             }
         )
@@ -1856,20 +2219,361 @@ async def _checked_video(
     )
 
 
-async def _spoken(request: Request, video: bytes) -> Transcript | None:
-    """What is said in a video, or None: no reader here, no sound, or no speech.
+def _video_window(request: Request) -> int:
+    """How much of a video is read: `social.max_video_seconds`, ten minutes."""
+    social = getattr(request.app.state.settings, "social", None)
+    seconds = getattr(social, "max_video_seconds", None)
+    return int(seconds) if isinstance(seconds, int | float) and seconds > 0 else READ_SECONDS
+
+
+def _searching_seconds(spent: float) -> float | None:
+    """How long a background check may search and read sources once `spent` seconds
+    went on reading its video: its usual time, unless that would take the whole check
+    past `BACKGROUND_CEILING_SECONDS`, and never less than
+    `BACKGROUND_MIN_READING_SECONDS`. None outside a background check.
+    """
+    usual = check_seconds.get()
+    if usual is None:
+        return None
+    return min(usual, max(BACKGROUND_MIN_READING_SECONDS, BACKGROUND_CEILING_SECONDS - spent))
+
+
+async def _heard(request: Request, video: bytes, *, max_seconds: float) -> SpeechOutcome:
+    """What is said in a video, and what happened if nothing is (`SpeechOutcome`).
 
     A reader that fails takes nothing else down - the video is still checked from its
-    frames, as it was before speech was read.
+    frames - and the answer says the speech could not be read. Read for at most
+    `SPEECH_SECONDS`.
     """
     reader = getattr(request.app.state, "speech_reader", None)
-    if reader is None:
-        return None
+    return await read_speech(reader, video, max_seconds=max_seconds, time_limit=SPEECH_SECONDS)
+
+
+def _keyframes_read(extracted: ExtractedVideo, taken: FramesRead) -> FramesRead:
+    """The picture checks' frames, read when none could be taken across the clip.
+
+    Taken from its first `DEFAULT_MAX_SECONDS`, at its cuts and evenly. Before the
+    video was read across its length, its middle keyframe was always read; with no
+    frames to read at all, a silent captioned clip had nothing left to check.
+    """
+    found = {frame.timestamp_ms: frame for frame in (*extracted.keyframes, *extracted.even_frames)}
+    frames = tuple(found[moment] for moment in sorted(found))
+    if not frames:
+        return taken
+    duration = taken.duration_seconds
+    reached = min(duration, float(DEFAULT_MAX_SECONDS)) if duration > 0 else 0.0
+    return FramesRead(
+        frames=frames,
+        # As far as the frames go when the clip's length is not known: nothing beyond
+        # can be said to be cut off, and the gap says the length was not known.
+        window_seconds=round(max(reached, frames[-1].timestamp_ms / 1000), 2),
+        duration_seconds=duration,
+        reason=taken.reason,
+        from_keyframes=True,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _Described:
+    """What a video shows, in the hosted reader's words, and the sheet it saw."""
+
+    outcome: OcrOutcome
+    # The contact sheet, kept on our own address for the answer to show; and how many
+    # frames were on it.
+    sheet_key: str | None = None
+    frames: int = 0
+
+
+def _hosted_reader(ocr: Any) -> Any | None:
+    """The hosted picture reader behind the server's reader, when it describes videos."""
+    hosted = ocr.hosted if isinstance(ocr, LocalFirstOcr) else ocr
+    return hosted if hasattr(hosted, "describe_video") else None
+
+
+async def _described_video(request: Request, taken: FramesRead) -> _Described:
+    """What a video shows, from one contact sheet of its frames: one model call for the
+    whole video, never one a frame. Never raises."""
+    hosted = _hosted_reader(getattr(request.app.state, "ocr", None))
+    if hosted is None:
+        return _Described(OcrOutcome(reason="unavailable: no picture reader is set up"))
+    if not taken.frames:
+        return _Described(OcrOutcome(reason="no frames to describe"))
+    # Off the event loop: choosing decodes and compares up to two dozen frames.
+    sheet, count = await asyncio.to_thread(_sheet_of, taken.frames)
+    if sheet is None:
+        return _Described(OcrOutcome(reason="the frames could not be laid out"))
     try:
-        return await asyncio.to_thread(reader.read_video, video)
-    except Exception:
-        logger.exception("the video's speech could not be read")
-        return None
+        outcome: OcrOutcome = await hosted.describe_video(
+            sheet,
+            frames=count,
+            span=f"0:00-{clock(taken.window_seconds * 1000)}",
+        )
+    except Exception as error:
+        logger.exception("the video could not be described")
+        return _Described(OcrOutcome(reason=f"failed: {type(error).__name__}"))
+    inspector = getattr(request.app.state, "media_inspector", None)
+    key = None
+    if outcome.succeeded and inspector is not None:
+        key = await asyncio.to_thread(inspector.keep_picture, sheet)
+    return _Described(outcome, sheet_key=key, frames=count)
+
+
+def _sheet_of(frames: Sequence[Keyframe]) -> tuple[bytes | None, int]:
+    """One contact sheet of the frames that between them show the clip, and how many
+    are on it (`app/media/sheet.py`)."""
+    picked = pick_for_sheet(frames)
+    return contact_sheet(picked), len(picked)
+
+
+def _video_reading(
+    taken: FramesRead,
+    heard: SpeechOutcome,
+    shown: FramesText,
+    looked: _Described,
+    *,
+    duration: float,
+) -> _Read:
+    """A video's reading: what is said, the words shown, and what it shows, in that
+    order, and every part of it that could not be read."""
+    read = _Read(reading=Reading(kind="video"))
+    transcript = heard.transcript
+    if transcript is not None:
+        read = read.plus(
+            ReadPart(
+                kind=PartKind.TRANSCRIPT,
+                text=transcript.text,
+                route="whisper",
+                label=SAID_IN_VIDEO,
+                complete=not transcript.cut_off,
+                seconds_read=heard.audio_seconds,
+                seconds_total=duration or None,
+                language=transcript.language,
+            )
+        )
+    if shown.text:
+        read = read.plus(
+            ReadPart(
+                kind=PartKind.ON_SCREEN_TEXT,
+                text=shown.text,
+                route="frames.ocr",
+                label=TEXT_IN_VIDEO,
+                complete=shown.complete,
+                note=_frames_span(taken, shown.frames_read),
+            )
+        )
+    description = described(looked.outcome.description) if looked.outcome.succeeded else ""
+    if description:
+        read = read.plus(
+            ReadPart(
+                kind=PartKind.VIDEO_DESCRIPTION,
+                text=description,
+                route="ocr.hosted",
+                label=VIDEO_DESCRIBED,
+                note=f"described from {looked.frames} of the frames",
+                media_key=looked.sheet_key,
+            )
+        )
+
+    if taken.from_keyframes:
+        # Only the opening stretch's frames were read, and the clip may run on past
+        # them: past `DEFAULT_MAX_SECONDS`, or for as long as its file does not say.
+        length = f"of its {clock(duration * 1000)}" if duration > 0 else "(its length is unknown)"
+        read = read.missing(
+            "video",
+            gap(
+                "video",
+                GapCode.CUT_OFF,
+                f"No frames could be taken across the video ({taken.reason}); its words "
+                f"and what it shows were read from {len(taken.frames)} frames of its first "
+                f"{clock(taken.window_seconds * 1000)} {length}.",
+                blocking=duration <= 0 or taken.cut_off,
+            ),
+        )
+    elif taken.cut_off:
+        read = read.missing(
+            "video",
+            gap(
+                "video",
+                GapCode.CUT_OFF,
+                f"Only the first {clock(taken.window_seconds * 1000)} of the video's "
+                f"{clock(duration * 1000)} was read; what is shown or said after that "
+                "was not checked.",
+            ),
+        )
+    elif not taken.frames:
+        read = read.missing(
+            "video",
+            gap(
+                "video",
+                GapCode.VIDEO_UNREAD,
+                f"No frame could be taken to read what the video shows ({taken.reason}).",
+            ),
+        )
+    if heard.unread:
+        read = read.missing(
+            "speech",
+            gap(
+                "transcript",
+                GapCode.SPEECH_UNREAD,
+                f"What is said in the video could not be read ({heard.reason}).",
+            ),
+        )
+    elif transcript is not None and transcript.timed_out:
+        # Reading stopped at `SPEECH_SECONDS`: what is said after that could be the
+        # claim, so this gap counts.
+        of = f" of {clock(duration * 1000)}" if duration > 0 else ""
+        read = read.missing(
+            "speech",
+            gap(
+                "transcript",
+                GapCode.CUT_OFF,
+                f"What is said in the video was read for its first "
+                f"{clock((heard.audio_seconds or 0.0) * 1000)}{of}; there was no time to "
+                "read the rest.",
+            ),
+        )
+    elif transcript is not None and transcript.cut_off and not taken.cut_off:
+        read = read.missing(
+            "speech",
+            gap(
+                "transcript",
+                GapCode.CUT_OFF,
+                "More is said in the video than is kept; only the start of it was checked.",
+                blocking=False,
+            ),
+        )
+    if taken.frames and shown.reason is not None:
+        read = read.missing(
+            "video_text",
+            gap(
+                "on_screen_text",
+                GapCode.READER_UNAVAILABLE
+                if shown.reason.startswith("unavailable")
+                else GapCode.VIDEO_UNREAD,
+                f"The words shown in the video could not be read ({shown.reason}).",
+            ),
+        )
+    elif shown.frames_read < shown.frames_total:
+        read = read.missing(
+            "video_text",
+            gap(
+                "on_screen_text",
+                GapCode.CUT_OFF,
+                f"The words on {shown.frames_read} of {shown.frames_total} frames were read; "
+                "there was no time for the rest.",
+                blocking=False,
+            ),
+        )
+    elif shown.cut_off:
+        read = read.missing(
+            "video_text",
+            gap(
+                "on_screen_text",
+                GapCode.CUT_OFF,
+                "More words are shown in the video than are kept; the first of them were checked.",
+                blocking=False,
+            ),
+        )
+
+    if shown.text or description:
+        read = replace(
+            read,
+            shown=OcrOutcome(
+                text=shown.text,
+                language=detect(shown.text) if shown.text else None,
+                model_id=looked.outcome.model_id,
+                description=description,
+                kind=looked.outcome.kind if looked.outcome.succeeded else "OTHER",
+                publisher=looked.outcome.publisher,
+            ),
+        )
+    return read
+
+
+def _frames_span(taken: FramesRead, frames_read: int) -> str:
+    """ "read from 23 frames between 0:00 and 2:08"."""
+    if taken.first_ms is None or taken.last_ms is None:
+        return f"read from {frames_read} frames"
+    return (
+        f"read from {frames_read} frames between {clock(taken.first_ms)} and {clock(taken.last_ms)}"
+    )
+
+
+def _video_note(
+    extracted: ExtractedVideo,
+    taken: FramesRead,
+    heard: SpeechOutcome,
+    shown: FramesText,
+    looked: _Described,
+    *,
+    window: float,
+) -> str:
+    """What was read of a video and what was checked, exactly, in one line.
+
+    It said "checked 12 still frames; analysed the first 90s" when one frame of the
+    first 90 seconds had been read for its words, which overstated what was read.
+    """
+    duration = taken.duration_seconds or (
+        extracted.probe.duration_seconds if extracted.probe is not None else 0.0
+    )
+    # "of 2:09", or nothing when the file does not say how long it is.
+    of = f" of {clock(duration * 1000)}" if duration > 0 else ""
+    said: list[str] = []
+    if taken.frames and taken.first_ms is not None and taken.last_ms is not None:
+        span = f"{clock(taken.first_ms)} to {clock(taken.last_ms)}{of}"
+        if shown.frames_read:
+            count = (
+                f"{len(taken.frames)}"
+                if shown.frames_read == len(taken.frames)
+                else f"{shown.frames_read} of {len(taken.frames)}"
+            )
+            said.append(f"read the words on {count} frames taken from {span}")
+        else:
+            said.append(
+                f"took {len(taken.frames)} frames from {span} but could not read their "
+                f"words ({shown.reason})"
+            )
+        if looked.outcome.succeeded and looked.outcome.description:
+            said.append(f"described what it shows from {looked.frames} of them")
+        else:
+            said.append(f"could not describe what it shows ({looked.outcome.reason})")
+    else:
+        said.append(f"could not take frames to read ({taken.reason})")
+    if heard.status == "read" and heard.audio_seconds is not None:
+        heard_for = clock(heard.audio_seconds * 1000)
+        timed_out = heard.transcript is not None and heard.transcript.timed_out
+        if timed_out:
+            said.append(
+                f"listened to the first {heard_for}{of} for speech, and had no time for the rest"
+            )
+        elif duration - heard.audio_seconds > 1.0:
+            said.append(f"listened to the first {heard_for}{of} for speech")
+        else:
+            said.append(f"listened to all {heard_for} of it for speech")
+    elif heard.status == "no_speech":
+        said.append("heard no speech in it")
+    elif heard.status == "no_audio":
+        said.append("it has no sound")
+    else:
+        said.append(f"could not read its speech ({heard.reason})")
+    if taken.from_keyframes:
+        said.append(
+            f"its frames were taken from its first {clock(taken.window_seconds * 1000)} only, "
+            f"as none could be taken across it ({taken.reason})"
+        )
+    elif taken.cut_off:
+        said.append(f"nothing after {clock(window * 1000)} was read")
+    checked = min(duration, float(DEFAULT_MAX_SECONDS)) if duration else DEFAULT_MAX_SECONDS
+    faces = (
+        f", and the face-swap check at {len(extracted.even_frames)},"
+        if extracted.even_frames
+        else ""
+    )
+    said.append(
+        f"the AI-picture and earlier-copy checks looked at {len(extracted.keyframes)} "
+        f"frames{faces} from its first {clock(checked * 1000)}"
+    )
+    return "; ".join(said)
 
 
 _THUMBNAIL_KEY = re.compile(r"^[0-9a-f]{32}$")
@@ -1999,90 +2703,135 @@ async def media_thumbnail(key: str, request: Request) -> Response:
 _SCANNED_PAGES_READ = 3
 
 
-async def _read_document(
-    request: Request, intake: NormalisedIntake
-) -> tuple[str, OcrOutcome | None, list[SkippedCheck]]:
-    """The text of an uploaded image or PDF, what the image showed, and any gap.
+async def _read_document(request: Request, intake: NormalisedIntake) -> _Read:
+    """What an uploaded image or PDF says and shows, and anything that could not be read.
 
-    An image is read by the image reader (`app/extraction/ocr.py`). A PDF's own text
-    layer is used when it has one; a scanned PDF has none, so its page images are
-    read the same way a screenshot is.
+    An image is read by the image reader (`app/extraction/ocr.py`): its words, and
+    what it shows, each a part under its own label (`app/media/composed.py`). A PDF's
+    own text layer is used when it has one; a scanned PDF has none, so its page
+    images are read the same way a screenshot is.
     """
     primary = intake.primary
     reader = getattr(request.app.state, "ocr", None)
-    notes: list[SkippedCheck] = []
-    if primary.data is None:
-        return "", None, notes
+    if intake.input_type is InputType.PDF:
+        return await _read_pdf(request, intake)
+    read = _Read(reading=Reading(kind="image"))
+    if primary.data is None or intake.input_type is not InputType.IMAGE:
+        return read
 
-    if intake.input_type is InputType.IMAGE:
-        if reader is None:
-            notes.append(SkippedCheck(check="image_text", reason="reading images is not set up"))
-            return "", None, notes
-        reading: OcrOutcome = await reader.transcribe(
-            primary.data, mime_type=primary.mime_type or "image/jpeg"
+    if reader is None:
+        return read.missing(
+            "image_text",
+            gap("picture_text", GapCode.READER_UNAVAILABLE, "reading images is not set up"),
         )
-        if not reading.succeeded:
-            notes.append(
-                SkippedCheck(
-                    check="image_text", reason=f"the image could not be read ({reading.reason})"
-                )
+    reading: OcrOutcome = await reader.transcribe(
+        primary.data, mime_type=primary.mime_type or "image/jpeg"
+    )
+    if not reading.succeeded:
+        return read.missing(
+            "image_text",
+            gap(
+                "picture_text",
+                GapCode.PICTURE_UNREAD,
+                f"the image could not be read ({reading.reason})",
+            ),
+        )
+    read = replace(read, shown=reading)
+    read = read.plus(
+        ReadPart(
+            kind=PartKind.PICTURE_TEXT,
+            text=reading.text.strip(),
+            route="ocr.local" if (reading.model_id or "").startswith("rapidocr") else "ocr.hosted",
+            label=picture_text_label(1, 1),
+            complete=not reading.cut_off,
+            language=reading.language.language.value if reading.language else None,
+        )
+    )
+    if reading.description:
+        read = read.plus(
+            ReadPart(
+                kind=PartKind.PICTURE_DESCRIPTION,
+                text=described(reading.description),
+                route="ocr.hosted",
+                label=PICTURE_DESCRIBED,
             )
-            return "", None, notes
-        if reading.cut_off:
-            notes.append(
-                SkippedCheck(
-                    check="image_text",
-                    reason=(
-                        "the image holds more text than is read at once; only its start was checked"
+        )
+    if reading.cut_off:
+        read = read.missing(
+            "image_text",
+            gap(
+                "picture_text",
+                GapCode.CUT_OFF,
+                "the image holds more text than is read at once; only its start was checked",
+            ),
+        )
+    return read
+
+
+async def _read_pdf(request: Request, intake: NormalisedIntake) -> _Read:
+    """A PDF's text: its own text layer, or its first pages read as pictures."""
+    primary = intake.primary
+    reader = getattr(request.app.state, "ocr", None)
+    read = _Read(reading=Reading(kind="pdf"))
+    if primary.data is None:
+        return read
+
+    def text(body: str, route: str) -> ReadPart:
+        # Bare, with no label: a PDF's text is checked as it was before (2026-10-03).
+        return ReadPart(kind=PartKind.DOCUMENT_TEXT, text=body[:_MAX_ARTICLE_CHARS], route=route)
+
+    def unread(reason: str) -> _Read:
+        return read.missing("document_text", gap("document_text", GapCode.PAGES_UNREAD, reason))
+
+    try:
+        pdf = await asyncio.to_thread(extract_pdf, primary.data)
+    except PdfRejected as rejected:
+        return unread(rejected.reason)
+    if not pdf.needs_ocr and not pdf.text_is_broken:
+        return read.plus(text(pdf.text, "pdf.text"))
+
+    # Scanned, or typed with its Hindi scrambled in the text layer ("विज्ञान" as
+    # "िव ान"): the pages are read as a person sees them - the document itself, cut
+    # to its first pages, in one call.
+    if reader is not None:
+        whole = await _read_pages(reader, primary.data, page_count=pdf.page_count)
+        if whole is not None:
+            pages, gaps = whole
+            read = replace(read, shown=pages).plus(text(pages.text, "pdf.ocr"))
+            for note in gaps:
+                read = read.missing(
+                    "document_text",
+                    gap(
+                        "document_text",
+                        GapCode.PAGES_UNREAD
+                        if note.reason.startswith("read the first")
+                        else GapCode.CUT_OFF,
+                        note.reason,
                     ),
                 )
+            return read
+    if not pdf.needs_ocr:
+        return unread("the document's text is scrambled and unreadable")
+
+    first: OcrOutcome | None = None
+    pages_read: list[str] = []
+    if reader is not None:
+        for image in pdf.embedded_images[:_SCANNED_PAGES_READ]:
+            mime = _image_mime(image)
+            if mime is None:
+                continue
+            # The pages' words are all that is used: no description is asked for.
+            outcome: OcrOutcome = await (
+                reader.transcribe(image, mime_type=mime, describe=False)
+                if isinstance(reader, LocalFirstOcr)
+                else reader.transcribe(image, mime_type=mime)
             )
-        return reading.text, reading, notes
-
-    if intake.input_type is InputType.PDF:
-        try:
-            pdf = await asyncio.to_thread(extract_pdf, primary.data)
-        except PdfRejected as rejected:
-            notes.append(SkippedCheck(check="document_text", reason=rejected.reason))
-            return "", None, notes
-        if not pdf.needs_ocr and not pdf.text_is_broken:
-            return pdf.text[:_MAX_ARTICLE_CHARS], None, notes
-
-        # Scanned, or typed with its Hindi scrambled in the text layer ("विज्ञान" as
-        # "िव ान"): the pages are read as a person sees them - the document itself, cut
-        # to its first pages, in one call.
-        if reader is not None:
-            whole = await _read_pages(reader, primary.data, page_count=pdf.page_count)
-            if whole is not None:
-                read, gaps = whole
-                notes.extend(gaps)
-                return read.text[:_MAX_ARTICLE_CHARS], read, notes
-        if not pdf.needs_ocr:
-            notes.append(
-                SkippedCheck(
-                    check="document_text", reason="the document's text is scrambled and unreadable"
-                )
-            )
-            return "", None, notes
-
-        first: OcrOutcome | None = None
-        pages: list[str] = []
-        if reader is not None:
-            for image in pdf.embedded_images[:_SCANNED_PAGES_READ]:
-                mime = _image_mime(image)
-                if mime is None:
-                    continue
-                outcome: OcrOutcome = await reader.transcribe(image, mime_type=mime)
-                if outcome.has_text:
-                    pages.append(outcome.text)
-                    first = first or outcome
-        if not pages:
-            notes.append(
-                SkippedCheck(check="document_text", reason="the document has no readable text")
-            )
-        return "\n\n".join(pages)[:_MAX_ARTICLE_CHARS], first, notes
-
-    return "", None, notes
+            if outcome.has_text:
+                pages_read.append(outcome.text)
+                first = first or outcome
+    if not pages_read:
+        return unread("the document has no readable text")
+    return replace(read, shown=first).plus(text("\n\n".join(pages_read), "pdf.ocr"))
 
 
 async def _read_pages(
@@ -2118,17 +2867,25 @@ async def _read_pages(
 
 
 async def _extract_from_document(
-    request: Request, intake: NormalisedIntake, document: str
+    request: Request, intake: NormalisedIntake, document: str, *, authored: str | None = None
 ) -> ExtractedClaims:
-    """Claims from the text read out of an upload, anchored in that text."""
+    """Claims from the text read out of an upload, anchored in that text.
+
+    Its language is that of the `authored` parts - the words on it and said in it -
+    when given: Factify's labels and description are English, and would make a Hindi
+    card read as English.
+    """
     pipeline = getattr(request.app.state, "claim_pipeline", None)
     if pipeline is None:
         return ExtractedClaims(reason="claim extraction is not configured")
     extracted: ExtractedClaims = await pipeline.extract(
         document,
-        content_hash=intake.primary.sha256,
+        # Keyed by the text, not the picture: the same picture read anew - its
+        # description, a video's frames - is found new claims in, not served the
+        # claims found in an older reading of it.
+        content_hash=text_hash(document),
         input_kind=intake.input_type.value,
-        language=detect(document).language.value,
+        language=detect(authored if authored and authored.strip() else document).language.value,
     )
     return extracted
 
@@ -2175,6 +2932,26 @@ def _remember(
     readings[key] = reading
     while len(readings) > _READINGS_KEPT:
         readings.pop(next(iter(readings)))
+
+
+def _remembered_areas(request: Request) -> dict[str, float | None]:
+    """How much of each recent picture is text (`OcrOutcome.text_area`), by image hash,
+    beside its reading: what makes it designed (`looks_designed`) on a repeat."""
+    areas = getattr(request.app.state, "image_text_areas", None)
+    if areas is None:
+        areas = {}
+        request.app.state.image_text_areas = areas
+    return areas
+
+
+def _remember_area(request: Request, key: str, reading: OcrOutcome | None) -> None:
+    if reading is None:
+        return
+    areas = _remembered_areas(request)
+    areas.pop(key, None)
+    areas[key] = reading.text_area
+    while len(areas) > _READINGS_KEPT:
+        areas.pop(next(iter(areas)))
 
 
 async def _record_unprocessed_video(request: Request, *, case_id: UUID, intake: object) -> None:
