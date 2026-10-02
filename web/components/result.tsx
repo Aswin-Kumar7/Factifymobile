@@ -12,9 +12,32 @@
 // "Unconfirmed - the sources we could find do not confirm or rule this out" on the
 // website, while the phone said "Nothing to fact-check" and "its content credentials
 // say it was made with an AI tool" (2026-10-01).
+//
+// Since 1.8 the answer also says what was read (`input_read`), and holds the verdict
+// back when what could not be read could decide it: "Not checked yet", with a way to
+// send the rest or to check only what was read. See what-we-read.tsx.
 
 import { useState } from "react";
+import { Button } from "@/components/ui";
 import { api } from "@/lib/api";
+import {
+  day,
+  host,
+  IMAGE_KIND,
+  InputRead,
+  Mark,
+  MARK,
+  MarkKey,
+  markOf,
+  missedMedia,
+  PARTLY_READ_REASON,
+  readEnough,
+  readNoun,
+  served,
+  spansIn,
+  Underlined,
+  WhatWeRead,
+} from "@/components/what-we-read";
 
 type Evidence = {
   id: string;
@@ -34,7 +57,7 @@ type Evidence = {
   input_anchor?: { char_start?: number | null; char_end?: number | null } | null;
 };
 
-type Claim = {
+export type Claim = {
   id: string;
   text: string;
   claim_type?: string;
@@ -89,15 +112,20 @@ export type Verdict = {
   action_reason: string;
   claims: Claim[];
   advisories: { id: string; provider: string; note: string }[];
-  skipped?: { check: string; reason: string }[];
+  // `kind` (1.8): reading | deadline | provider | other.
+  skipped?: { check: string; reason: string; kind?: string }[];
   completeness_note: string | null;
   from_cache?: boolean;
   elapsed_ms?: number | null;
   retrieved_at?: string | null;
   receipt?: { receipt_id?: string; verified?: boolean } | null;
   image_reading?: { text?: string; description?: string | null; kind?: string | null; publisher?: string | null; language?: string | null } | null;
+  // For a post: its first picture's checks; `media_reports` has pictures 2 to n (1.8).
   media_report?: MediaReport | null;
+  media_reports?: MediaReport[];
   speech?: { text?: string; language?: string | null; cut_off?: boolean } | null;
+  // What was read, part by part, and what could not be (1.8). None on older cases.
+  input_read?: InputRead | null;
   source_risk?: string | null;
   source_profile?: {
     domain: string;
@@ -127,14 +155,6 @@ const NOTHING = { word: "Nothing to fact-check", line: "No claim found in it", t
 const UNCONFIRMED_BODY =
   "We couldn't find enough reliable sources that address this directly. Treat it with caution until it's confirmed.";
 
-type Mark = "wrong" | "partly" | "context" | "right" | "unconfirmed";
-const MARK: Record<Mark, { state: string; group: string; tone: string; soft: string }> = {
-  wrong: { state: "Contradicted", group: "Wrong", tone: "text-false", soft: "bg-false-soft" },
-  partly: { state: "Partly true", group: "Only partly right", tone: "text-mis", soft: "bg-mis-soft" },
-  context: { state: "Missing context", group: "Missing context", tone: "text-mis", soft: "bg-mis-soft" },
-  right: { state: "Supported", group: "Right", tone: "text-true", soft: "bg-true-soft" },
-  unconfirmed: { state: "Unconfirmed", group: "Not confirmed", tone: "text-unc", soft: "bg-unc-soft" },
-};
 const ORDER: Mark[] = ["wrong", "partly", "context", "right", "unconfirmed"];
 
 const TECHNIQUE: Record<string, [string, string]> = {
@@ -145,20 +165,29 @@ const TECHNIQUE: Record<string, [string, string]> = {
   WRONG_IDENTITY: ["Wrong label", "A person or place presented as someone or somewhere else. Check names and places against a dated source."],
 };
 
-const IMAGE_KIND: Record<string, string> = {
-  NEWS_ARTICLE: "News article",
-  SOCIAL_POST: "Social media post",
-  CHAT_MESSAGE: "Chat forward",
-  TV_GRAPHIC: "TV news graphic",
-  POSTER: "Poster",
-  DOCUMENT: "Document",
-  PHOTO: "Photo",
-  MEME: "Meme",
-};
-
 // ---------------------------------------------------------------- rules (as the app)
 
-const READING_CHECKS = new Set(["claim_extraction", "image_text", "document_text"]);
+// Checks that are about reading the input, not checking it: with one of these skipped,
+// an empty answer is never "nothing to fact-check" - something may not have been read.
+// After the first three are what part of a link, a post or an upload that could not
+// be read is reported as (1.8); a 1.8 server also marks such a skip `kind: "reading"`.
+const READING_CHECKS = new Set([
+  "claim_extraction",
+  "image_text",
+  "document_text",
+  "linked_page",
+  "post_text",
+  "video",
+  "speech",
+  "video_text",
+  "input",
+]);
+
+// Said among the skipped checks, but a note of what was read, not something missed:
+// "read the words on 12 frames taken from 0:00 to 0:48" on every video.
+const NOTES = new Set(["video_frames"]);
+
+const isReadingSkip = (s: { check: string; kind?: string }) => s.kind === "reading" || READING_CHECKS.has(s.check);
 
 /** Nothing in it a source could settle: no claim, only opinion, or only a picture's
  * own history with no earlier copy found. Not "unconfirmed" - there is nothing to
@@ -168,7 +197,57 @@ function nothingToCheck(v: Verdict): boolean {
   const quiet = v.claims.every(
     (c) => (c.claim_type === "MEDIA" && c.status === "UNVERIFIED" && c.evidence.length === 0) || c.claim_type === "OPINION",
   );
-  return quiet && !(v.skipped ?? []).some((s) => READING_CHECKS.has(s.check));
+  return quiet && !v.input_read?.verdict_withheld && !unread(v);
+}
+
+/** Part of the input that could decide the answer was not read. With the reading in
+ * hand its blocking gaps say so - a long article's unread tail does not make an empty
+ * answer anything but empty - or claims could not be looked for at all; without it,
+ * any reading check that was skipped. */
+function unread(v: Verdict): boolean {
+  const skipped = v.skipped ?? [];
+  if (v.input_read) {
+    return (v.input_read.gaps ?? []).some((g) => g.blocking) || skipped.some((s) => s.check === "claim_extraction" && s.kind !== "reading");
+  }
+  return skipped.some((s) => READING_CHECKS.has(s.check));
+}
+
+/** Held back: what could not be read could decide the answer, so none was given. */
+function withheldOf(v: Verdict): boolean {
+  return !!v.input_read?.verdict_withheld;
+}
+
+/** Checked from part of the input, as the person asked ("Check what was read"). A
+ * case stored without its reading still says so by the partly-read rule's reason. */
+function partlyReadOf(v: Verdict): boolean {
+  return !!v.input_read?.checked_partially || partlySupported(v);
+}
+
+/** Checked from part of the input with all of that part supported: "wait and
+ * re-check" under rollup.partly_read, never TRUE. Told apart from news too recent to
+ * confirm - the same action - by the rule's fixed reason, not by the action. */
+function partlySupported(v: Verdict): boolean {
+  return v.action_reason === PARTLY_READ_REASON;
+}
+
+const INCOMPLETE = "Not everything could be checked, so this answer may be incomplete.";
+
+/** The sentence under the verdict when not everything could be checked, by why: the
+ * time running out only when it did (`kind: "deadline"`). A reading gap is said in
+ * the reading panel instead; a case stored before 1.8 has none, so it is said here. */
+function incompleteLine(v: Verdict): string | null {
+  const checking = (v.skipped ?? []).filter((s) => !isReadingSkip(s) && !NOTES.has(s.check));
+  // A server before 1.8, and the pipeline's own timeouts until they are marked, send
+  // every skip as "other"; their reasons ("deadline of 55s exceeded", TimeoutError)
+  // still say the time ran out.
+  const outOfTime = checking.some((s) => s.kind === "deadline" || ((s.kind ?? "other") === "other" && /deadline|timed? ?out/i.test(s.reason ?? "")));
+  if (outOfTime) return "Some sources couldn't be checked in time, so this answer may be incomplete.";
+  if (checking.some((s) => s.kind === "provider")) return "A service Factify relies on didn't answer, so this answer may be incomplete.";
+  // Only what the check itself missed is in `completeness_note`; a note added after it
+  // (what was read of a video) is not something missed.
+  if (!v.completeness_note) return null;
+  if (checking.length) return INCOMPLETE;
+  return v.input_read ? null : "Not everything could be read or checked, so this answer may be incomplete.";
 }
 
 /** The claim a check is mainly about; never a picture's MEDIA question. */
@@ -181,27 +260,25 @@ export function headlineOf(v: Verdict): string | null {
 const CORRECTION_LANGUAGES = new Set(["en", "hi", "bn", "mr", "te", "ta", "gu", "ur", "kn", "or", "ml", "pa"]);
 
 /** The language to write the correction in: the language of what was checked - the
- * main claim's, else what was read in the picture or heard in the video - when the
- * message can be written in it; English otherwise (Hinglish too, as the server
- * writes it). */
+ * main claim's, else the first part read that has one (a post's text, a picture's
+ * words, a video's speech) - when the message can be written in it; English otherwise
+ * (Hinglish too, as the server writes it). */
 function correctionLanguage(v: Verdict): string {
   const said = v.claims.filter((c) => c.claim_type !== "MEDIA");
   const main = said.find((c) => c.importance === "HEADLINE") ?? said[0];
-  const language = (main?.language || v.image_reading?.language || v.speech?.language || "en").toLowerCase();
+  const read = v.input_read?.parts?.find((p) => p.checked && p.language)?.language;
+  const language = (main?.language || read || v.image_reading?.language || v.speech?.language || "en").toLowerCase();
   return CORRECTION_LANGUAGES.has(language) ? language : "en";
 }
 
-/** What a kept check is labelled with: its verdict, or NOTHING. */
-export function labelOf(v: Verdict): Verdict["verdict"] | "NOTHING" {
+/** What a kept check is labelled with: its verdict, NOTHING, or WITHHELD when the
+ * verdict was held back because part of the input could not be read. */
+export function labelOf(v: Verdict): Label {
+  if (withheldOf(v)) return "WITHHELD";
   return nothingToCheck(v) ? "NOTHING" : v.verdict;
 }
 
-function markOf(c: Claim): Mark {
-  if (c.status === "SUPPORTED") return "right";
-  if (c.status === "CONTRADICTED") return "wrong";
-  if (c.status === "MISLEADING_CONTEXT") return c.rule_id === "rule.narrower_scope" ? "partly" : "context";
-  return "unconfirmed";
-}
+export type Label = Verdict["verdict"] | "NOTHING" | "WITHHELD";
 
 const decisive = (c: Claim) => c.status !== "UNVERIFIED";
 const isNarrower = (e: Evidence) => (e.match_basis?.metric ?? "").startsWith("passage_narrower");
@@ -290,96 +367,15 @@ function aiNote(v: Verdict): string | null {
   return notes.length ? notes.join(" ") : null;
 }
 
-// The server's own copies of pictures are under /v1; the browser reaches them through
-// the signed-in proxy, as it does every other call.
-function served(url: string) {
-  return url.startsWith("/v1/") ? `/api/f${url}` : url;
-}
-
-function host(url: string) {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return url;
-  }
-}
-
-function day(value: string | null | undefined, withYear = true) {
-  if (!value) return null;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleDateString("en-IN", withYear ? { day: "numeric", month: "short", year: "numeric" } : { day: "numeric", month: "short" });
-}
-
-// Where each claim sits in the quoted text, so it can be underlined in its colour.
-function spansIn(text: string, claims: Claim[], useAnchors: boolean): { start: number; end: number; mark: Mark }[] {
-  if (!text) return [];
-  const lower = text.toLowerCase();
-  const plain = (s: string) => s.toLowerCase().replace(/\s+/g, " ").replace(/[.!?।]+$/, "").trim();
-  const found: { start: number; end: number; mark: Mark }[] = [];
-  for (const c of claims) {
-    if (c.claim_type === "MEDIA") continue;
-    let span: [number, number] | null = null;
-    const a = c.input_anchor ?? c.evidence.find((e) => e.input_anchor?.char_start != null)?.input_anchor;
-    if (useAnchors && a?.char_start != null && a.char_end != null && a.char_start >= 0 && a.char_end <= text.length && a.char_start < a.char_end) {
-      span = [a.char_start, a.char_end];
-    }
-    if (!span) {
-      const needle = plain(c.text);
-      const at = needle.length >= 8 ? lower.indexOf(needle) : -1;
-      if (at >= 0) span = [at, at + needle.length];
-    }
-    if (!span) {
-      const words = plain(c.text).split(" ").filter(Boolean);
-      outer: for (let len = words.length - 1; len >= 4; len--) {
-        for (let s = 0; s + len <= words.length; s++) {
-          const frag = words.slice(s, s + len).join(" ");
-          const at = lower.indexOf(frag);
-          if (at >= 0) {
-            span = [at, at + frag.length];
-            break outer;
-          }
-        }
-      }
-    }
-    if (span && !found.some((f) => span![0] < f.end && f.start < span![1])) found.push({ start: span[0], end: span[1], mark: markOf(c) });
-  }
-  return found.sort((a, b) => a.start - b.start);
-}
-
-const UNDERLINE: Record<Mark, string> = {
-  wrong: "decoration-false bg-false-soft",
-  partly: "decoration-mis bg-mis-soft",
-  context: "decoration-mis bg-mis-soft",
-  right: "decoration-true bg-true-soft",
-  unconfirmed: "decoration-unc bg-unc-soft",
-};
-
-function Underlined({ text, spans, cut }: { text: string; spans: ReturnType<typeof spansIn>; cut: boolean }) {
-  const parts: React.ReactNode[] = [];
-  let at = 0;
-  spans.forEach((s, i) => {
-    if (s.start > at) parts.push(text.slice(at, s.start));
-    parts.push(
-      <span key={i} className={`underline decoration-2 underline-offset-4 ${UNDERLINE[s.mark]}`}>
-        {text.slice(s.start, s.end)}
-      </span>,
-    );
-    at = s.end;
-  });
-  if (at < text.length) parts.push(text.slice(at));
-  return (
-    <p className="font-medium tracking-tight whitespace-pre-line text-[17px] leading-relaxed text-ink">
-      &ldquo;{parts}
-      {cut ? "…" : ""}&rdquo;
-    </p>
-  );
-}
-
 // ---------------------------------------------------------------- pieces
 
-export function VerdictPill({ verdict }: { verdict: Verdict["verdict"] | "NOTHING" }) {
-  const s = verdict === "NOTHING" ? { ...NOTHING, word: "Nothing to check" } : (VERDICT[verdict] ?? VERDICT.UNCONFIRMED);
+export function VerdictPill({ verdict }: { verdict: Label }) {
+  const s =
+    verdict === "NOTHING"
+      ? { ...NOTHING, word: "Nothing to check" }
+      : verdict === "WITHHELD"
+        ? { ...NOTHING, word: "Not checked yet" }
+        : (VERDICT[verdict] ?? VERDICT.UNCONFIRMED);
   return <span className={`inline-flex shrink-0 rounded-md px-2 py-0.5 text-xs font-medium ${s.soft} ${s.tone}`}>{s.word}</span>;
 }
 
@@ -436,7 +432,21 @@ function age(days: number) {
   return plural(days, "1 day", "{n} days");
 }
 
-function PictureChecks({ report, preview }: { report: MediaReport; preview?: string | null }) {
+/** A small picture with its caption. Our own copies are kept for an hour, so one
+ * opened later from History is gone (404): then neither is shown. */
+function Figure({ src, caption }: { src: string; caption: string }) {
+  const [gone, setGone] = useState(false);
+  if (gone) return null;
+  return (
+    <figure>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt={caption} onError={() => setGone(true)} className="h-[72px] w-24 rounded-lg bg-sf2 object-cover" />
+      <figcaption className="mt-1 text-xs text-ink3">{caption}</figcaption>
+    </figure>
+  );
+}
+
+function PictureChecks({ report, preview, footnote = true }: { report: MediaReport; preview?: string | null; footnote?: boolean }) {
   const cred = report.credentials ?? {};
   const hist = report.history ?? {};
   const det = report.detector ?? {};
@@ -488,18 +498,8 @@ function PictureChecks({ report, preview }: { report: MediaReport; preview?: str
               {(earliest.days_before ?? 0) >= 30 && <Line raised>Not a new picture: it was online {age(earliest.days_before!)} before this check.</Line>}
               {earliest.thumbnail_url && (
                 <div className="mt-2 flex gap-3">
-                  {preview && (
-                    <figure>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={preview} alt="Your picture" className="h-[72px] w-24 rounded-lg object-cover" />
-                      <figcaption className="mt-1 text-xs text-ink3">Your picture</figcaption>
-                    </figure>
-                  )}
-                  <figure>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={served(earliest.thumbnail_url)} alt="Earlier copy" className="h-[72px] w-24 rounded-lg bg-sf2 object-cover" />
-                    <figcaption className="mt-1 text-xs text-ink3">Earlier copy</figcaption>
-                  </figure>
+                  {preview && <Figure src={preview} caption="Your picture" />}
+                  <Figure src={served(earliest.thumbnail_url)} caption="Earlier copy" />
                 </div>
               )}
             </>
@@ -555,14 +555,17 @@ function PictureChecks({ report, preview }: { report: MediaReport; preview?: str
           )}
         </CheckRow>
       </Box>
-      <p className="mt-2.5 px-1 text-xs leading-relaxed text-ink3">
-        These are checks of the picture itself. They never change the verdict, which rests only on cited sources, and a clean result doesn&apos;t
-        prove a picture is real.
-      </p>
+      {footnote && (
+        <p className="mt-2.5 px-1 text-xs leading-relaxed text-ink3">
+          These are checks of the picture itself. They never change the verdict, which rests only on cited sources, and a clean result doesn&apos;t
+          prove a picture is real.
+        </p>
+      )}
     </>
   );
 }
 
+/** What was checked, for a case from before 1.8, which does not say what was read. */
 function WhatWeChecked({ v, kind, submitted, preview }: { v: Verdict; kind: Kind; submitted?: string | null; preview?: string | null }) {
   const [whole, setWhole] = useState(false);
   const reading = v.image_reading ?? null;
@@ -575,7 +578,9 @@ function WhatWeChecked({ v, kind, submitted, preview }: { v: Verdict; kind: Kind
         ? `Link${submitted ? ` · ${host(submitted)}` : ""}`
         : kind === "pdf"
           ? "PDF"
-          : video
+          : kind === "post"
+            ? "Post"
+            : video
             ? "Video"
             : "Image";
   const fromPicture = kind === "image" && !!reading?.text?.trim();
@@ -585,11 +590,12 @@ function WhatWeChecked({ v, kind, submitted, preview }: { v: Verdict; kind: Kind
   const limit = 600;
   const long = quote.length > limit;
   if (long && !whole) quote = quote.slice(0, limit);
-  const spans = nothing ? [] : spansIn(quote, v.claims, kind === "text");
+  // Anchors are offsets into a message as it was sent; only a message's quote is that.
+  const spans = nothing ? [] : spansIn(quote, v.claims, kind === "text" ? 0 : null);
   let said = v.speech?.text?.trim() ?? "";
   const saidLong = said.length > limit;
   if (saidLong && !whole) said = said.slice(0, limit);
-  const saidSpans = said && !nothing ? spansIn(said, v.claims, false) : [];
+  const saidSpans = said && !nothing ? spansIn(said, v.claims, null) : [];
   const keys = [...new Set([...spans, ...saidSpans].map((s) => s.mark))];
 
   return (
@@ -634,19 +640,10 @@ function WhatWeChecked({ v, kind, submitted, preview }: { v: Verdict; kind: Kind
               {whole ? "Show less" : "Show all the text"}
             </button>
           )}
-          {v.speech?.cut_off && <p className="mt-1.5 text-xs text-ink3">Only the first three minutes were read.</p>}
+          {v.speech?.cut_off && <p className="mt-1.5 text-xs text-ink3">Only the first part of the video was heard.</p>}
         </div>
       )}
-      {keys.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1">
-          {keys.map((m) => (
-            <span key={m} className="inline-flex items-center gap-1.5 text-xs text-ink3">
-              <span className={`inline-block h-0.5 w-3.5 rounded ${MARK[m].tone.replace("text-", "bg-")}`} />
-              {MARK[m].state}
-            </span>
-          ))}
-        </div>
-      )}
+      <MarkKey marks={keys} />
     </Box>
   );
 }
@@ -656,13 +653,19 @@ function MediaMatch({ e, preview }: { e: Evidence; preview?: string | null }) {
   const published = earlier?.published_at ?? e.published_on ?? null;
   const similarity = earlier?.similarity ?? e.match_basis?.value ?? 0;
   const publisher = earlier?.publisher?.trim() || e.publisher || host(e.citation_url);
+  // A post's picture is our own copy, gone after an hour: then the words stand in.
+  const [mine, setMine] = useState(true);
   return (
     <Box className="mt-3 p-3">
       <div className="grid grid-cols-2 gap-2">
         <div>
           <div className="flex h-24 items-center justify-center overflow-hidden rounded-xl bg-sf2 text-[10px] tracking-widest text-ink3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            {preview ? <img src={preview} alt="Your picture" className="h-full w-full object-cover" /> : "YOUR PICTURE"}
+            {preview && mine ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={preview} alt="Your picture" onError={() => setMine(false)} className="h-full w-full object-cover" />
+            ) : (
+              "YOUR PICTURE"
+            )}
           </div>
           <div className="mt-1.5 text-xs font-semibold text-ink">Your picture</div>
           <div className="text-xs text-ink3">Shared today</div>
@@ -740,9 +743,63 @@ function SourceCard({ e }: { e: Evidence }) {
   );
 }
 
-type Kind = "text" | "link" | "image" | "pdf";
+/** In place of the verdict when it was held back: what could not be read could decide
+ * it, so no verdict was given, and nothing was spent finding claims. The ways on: send
+ * what was missed (the text, the picture, the video), or check only what was read. */
+function Withheld({ read, onCheckRead, onSend }: { read: InputRead; onCheckRead?: () => void; onSend?: (what: "text" | "file") => void }) {
+  // With nothing worth checking read, checking "what was read" would be held back again.
+  const partial = readEnough(read) ? onCheckRead : undefined;
+  // An upload was the picture or video already: sending it again reads it no further,
+  // so its text, or what was read of it, is the way on.
+  const upload = read.kind === "image" || read.kind === "video" || read.kind === "pdf";
+  // What the gaps call for first - the picture or video itself, or the text - is the
+  // main action.
+  const main = upload ? (partial ? "read" : "text") : missedMedia(read) ? "file" : "text";
+  const noun = readNoun(read);
+  const send = upload ? "Paste its text" : `Send the ${main === "file" ? "picture or video" : "text"} itself`;
+  return (
+    <div className="rounded-[14px] border border-line2 bg-linear-to-b from-unc-soft via-sf to-sf p-5 shadow-card sm:p-6">
+      <div className="font-mono text-[11px] tracking-[0.14em] text-unc">NO VERDICT</div>
+      <div className="mt-1 text-[2.1rem] leading-none font-medium tracking-tight text-unc sm:text-[2.4rem]">Not checked yet</div>
+      <p className="mt-3 text-[15px] font-semibold text-ink">Factify could not read all of this, so it has not given a verdict.</p>
+      <p className="mt-1.5 text-[15px] leading-relaxed text-ink2">
+        What it read and what it couldn&apos;t are below. {send} and Factify will check all of it
+        {partial ? `, or check only what it could read of this ${noun}.` : "."}
+      </p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {onSend && (
+          <>
+            <Button type="button" variant={main === "text" ? "primary" : "outline"} onClick={() => onSend("text")}>
+              Paste the text
+            </Button>
+            <Button type="button" variant={main === "file" ? "primary" : "outline"} onClick={() => onSend("file")}>
+              Upload the picture or video
+            </Button>
+          </>
+        )}
+        {partial && (
+          <Button type="button" variant={main === "read" ? "primary" : "outline"} onClick={partial}>
+            Check what was read
+          </Button>
+        )}
+      </div>
+      {partial && (
+        <p className="mt-2.5 text-xs leading-relaxed text-ink3">
+          Checking what was read gives an answer about that part only. It is never &ldquo;True&rdquo;, because what wasn&apos;t read could say otherwise.
+        </p>
+      )}
+    </div>
+  );
+}
+
+type Kind = "text" | "link" | "post" | "image" | "pdf";
 
 function kindOf(v: Verdict, given?: string | null): Kind {
+  // What was read says best what it was: a link sent to be checked may be a post.
+  const read = v.input_read?.kind;
+  if (read === "social_post") return "post";
+  if (read === "text" || read === "link" || read === "pdf" || read === "image") return read;
+  if (read === "video") return "image";
   if (given === "text" || given === "link" || given === "pdf" || given === "image") return given;
   // A video is shown from its frames, as a picture is.
   if (given === "video") return "image";
@@ -757,27 +814,50 @@ export function Result({
   kind: givenKind,
   submitted,
   preview,
+  onCheckRead,
+  onSend,
 }: {
   result: Verdict;
   kind?: string | null;
   submitted?: string | null;
   preview?: string | null;
+  // "Check what was read": the same input sent again, checked past what could not be
+  // read. Left out where it cannot be sent again (a file, opened from History).
+  onCheckRead?: () => void;
+  // Back to the box, to paste the text or upload the picture or video instead.
+  onSend?: (what: "text" | "file") => void;
 }) {
+  const read = v.input_read ?? null;
+  const withheld = withheldOf(v);
+  const partly = partlyReadOf(v);
+  const noun = readNoun(read);
   const nothing = nothingToCheck(v);
   const decided = v.verdict !== "UNCONFIRMED";
   const style = nothing ? NOTHING : (VERDICT[v.verdict] ?? VERDICT.UNCONFIRMED);
   const kind = kindOf(v, givenKind);
   const video = v.media_report?.kind === "video";
-  const line = v.action === "WAIT_AND_RECHECK" ? "Too recent to confirm yet" : style.line;
+  // Checked from part of the input with all of that part supported: unconfirmed
+  // because of what was not read, never because the news is too recent.
+  const supportedPart = partlySupported(v);
+  const line = supportedPart ? "Supported as far as it could be read" : v.action === "WAIT_AND_RECHECK" ? "Too recent to confirm yet" : style.line;
   const summary = decided
     ? v.summary || v.action_reason
-    : nothing
-      ? video
-        ? "We checked this video's frames and found no claim in them that can be checked - no news, figure or announcement. There's nothing here to confirm or rule out."
-        : v.image_reading
-          ? "We read this picture and found no claim in it that can be checked - no news, figure or announcement, just an image. There's nothing here to confirm or rule out."
-          : "We didn't find a factual claim in this - it reads as opinion, a joke or conversation, so there's nothing here to confirm or rule out."
-      : UNCONFIRMED_BODY;
+    : supportedPart
+      ? `Everything Factify could read is supported by sources, but part of this ${noun} couldn't be read, and that part could say otherwise. So it isn't called true.`
+      : nothing
+        ? read?.kind === "social_post" || read?.kind === "link"
+          ? `We read this ${noun} and found no claim in it that can be checked - no news, figure or announcement. There's nothing here to confirm or rule out.`
+          : video
+            ? "We checked this video's frames and found no claim in them that can be checked - no news, figure or announcement. There's nothing here to confirm or rule out."
+            : v.image_reading
+              ? "We read this picture and found no claim in it that can be checked - no news, figure or announcement, just an image. There's nothing here to confirm or rule out."
+              : "We didn't find a factual claim in this - it reads as opinion, a joke or conversation, so there's nothing here to confirm or rule out."
+        : UNCONFIRMED_BODY;
+  const incomplete = incompleteLine(v);
+  // A post's pictures, in order, from our own copies; an upload's is the person's own.
+  const shots = [...new Set((read?.parts ?? []).flatMap((p) => (p.media_url ? [served(p.media_url)] : [])))];
+  const previewOf = (i: number) => (i === 0 && preview) || shots[i] || null;
+  const reports = v.media_report ? [v.media_report, ...(v.media_reports ?? [])] : [];
   const note = aiNote(v);
   const searchUnavailable = v.claims.some((c) => c.search === "unavailable");
   const claims = nothing ? [] : v.claims.filter((c) => c.claim_type !== "MEDIA" || decisive(c));
@@ -817,52 +897,64 @@ export function Result({
 
   return (
     <div>
-      {/* Verdict */}
-      <div className={`rounded-[14px] border border-line2 bg-linear-to-b ${style.grad} via-sf to-sf p-5 shadow-card sm:p-6`}>
-        <div className={`font-mono text-[11px] tracking-[0.14em] ${style.tone}`}>VERDICT</div>
-        <div className="mt-1 flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
-          <span className={`leading-none font-medium tracking-tight ${style.tone} ${nothing || !decided ? "text-[2.1rem] sm:text-[2.4rem]" : "text-[2.4rem] sm:text-[2.75rem]"}`}>{style.word}</span>
-          {decided && v.confidence != null && <span className={`rounded-md px-2 py-0.5 text-xs font-medium ${style.soft} ${style.tone}`}>{v.confidence}% confidence</span>}
-        </div>
-        <p className="mt-3 text-[15px] font-semibold text-ink">{line}</p>
-        <p className="mt-1.5 text-[15px] leading-relaxed text-ink2">{summary}</p>
-        {note && <p className="mt-2.5 text-[15px] font-semibold text-ink">{note}</p>}
-        {v.from_cache && (
-          <span className="mt-3 inline-flex rounded-md bg-hover px-2 py-0.5 text-xs font-medium text-ink2">
-            Checked earlier · reused from {day(v.retrieved_at, false) ?? "an earlier check"}
-          </span>
-        )}
-        {searchUnavailable ? (
-          <p className="mt-3 rounded-[10px] bg-hover px-3 py-2.5 text-sm text-ink2">
-            Our news search couldn&apos;t be reached, so this wasn&apos;t checked against news reports. Check it again in a little while.
-          </p>
-        ) : (
-          v.completeness_note && (
-            <p className="mt-3 rounded-[10px] bg-hover px-3 py-2.5 text-sm text-ink2">Some sources couldn&apos;t be checked in time, so this answer may be incomplete.</p>
-          )
-        )}
-        {!nothing && (
-          <div className="mt-4 flex flex-wrap gap-2">
-            {decided && (
-              <button
-                type="button"
-                onClick={copyCorrection}
-                disabled={correction === "busy"}
-                className="rounded-[9px] bg-acc px-4 py-2 text-sm font-medium text-on-acc transition-colors hover:bg-acc-h disabled:opacity-60"
-              >
-                {correction === "copied" ? "Copied - paste it in the chat" : correction === "busy" ? "Preparing…" : shareWord}
-              </button>
-            )}
-            {correction === "failed" && <span className="self-center text-sm text-false">Couldn&apos;t prepare the message. Try again.</span>}
+      {withheld && read ? (
+        <Withheld read={read} onCheckRead={onCheckRead} onSend={onSend} />
+      ) : (
+        // The verdict.
+        <div className={`rounded-[14px] border border-line2 bg-linear-to-b ${style.grad} via-sf to-sf p-5 shadow-card sm:p-6`}>
+          <div className={`font-mono text-[11px] tracking-[0.14em] ${style.tone}`}>VERDICT</div>
+          <div className="mt-1 flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+            <span className={`leading-none font-medium tracking-tight ${style.tone} ${nothing || !decided ? "text-[2.1rem] sm:text-[2.4rem]" : "text-[2.4rem] sm:text-[2.75rem]"}`}>{style.word}</span>
+            {decided && v.confidence != null && <span className={`rounded-md px-2 py-0.5 text-xs font-medium ${style.soft} ${style.tone}`}>{v.confidence}% confidence</span>}
           </div>
-        )}
-      </div>
+          <p className="mt-3 text-[15px] font-semibold text-ink">{line}</p>
+          <p className="mt-1.5 text-[15px] leading-relaxed text-ink2">{summary}</p>
+          {note && <p className="mt-2.5 text-[15px] font-semibold text-ink">{note}</p>}
+          {(v.from_cache || partly) && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {partly && <span className="inline-flex rounded-md bg-mis-soft px-2 py-0.5 text-xs font-medium text-mis">Checked from part of the {noun}</span>}
+              {v.from_cache && (
+                <span className="inline-flex rounded-md bg-hover px-2 py-0.5 text-xs font-medium text-ink2">
+                  Checked earlier · reused from {day(v.retrieved_at, false) ?? "an earlier check"}
+                </span>
+              )}
+            </div>
+          )}
+          {searchUnavailable ? (
+            <p className="mt-3 rounded-[10px] bg-hover px-3 py-2.5 text-sm text-ink2">
+              Our news search couldn&apos;t be reached, so this wasn&apos;t checked against news reports. Check it again in a little while.
+            </p>
+          ) : (
+            incomplete && <p className="mt-3 rounded-[10px] bg-hover px-3 py-2.5 text-sm text-ink2">{incomplete}</p>
+          )}
+          {!nothing && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {decided && (
+                <button
+                  type="button"
+                  onClick={copyCorrection}
+                  disabled={correction === "busy"}
+                  className="rounded-[9px] bg-acc px-4 py-2 text-sm font-medium text-on-acc transition-colors hover:bg-acc-h disabled:opacity-60"
+                >
+                  {correction === "copied" ? "Copied - paste it in the chat" : correction === "busy" ? "Preparing…" : shareWord}
+                </button>
+              )}
+              {correction === "failed" && <span className="self-center text-sm text-false">Couldn&apos;t prepare the message. Try again.</span>}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="mt-4">
-        <WhatWeChecked v={v} kind={kind} submitted={submitted} preview={preview} />
+        {read ? (
+          <WhatWeRead read={read} claims={v.claims} nothing={nothing} preview={preview} picture={v.image_reading} />
+        ) : (
+          <WhatWeChecked v={v} kind={kind} submitted={submitted} preview={preview} />
+        )}
       </div>
 
-      {v.source_profile && (
+      {/* About the site a link is on; a post's site is the platform, which says nothing. */}
+      {v.source_profile && !read?.platform && (
         <>
           <Section title="About this website" note="Not part of the verdict" />
           <Box className="p-4">
@@ -905,7 +997,7 @@ export function Result({
         </>
       )}
 
-      {media && v.verdict !== "TRUE" && <MediaMatch e={media} preview={preview} />}
+      {media && v.verdict !== "TRUE" && <MediaMatch e={media} preview={previewOf(0)} />}
 
       {v.media_report && (
         <>
@@ -913,7 +1005,25 @@ export function Result({
             title={video ? "Video checks" : "Picture checks"}
             note={v.media_report.frames != null ? `${plural(v.media_report.frames, "1 still frame", "{n} still frames")} · Not part of the verdict` : "Not part of the verdict"}
           />
-          <PictureChecks report={v.media_report} preview={preview} />
+          {reports.length > 1 ? (
+            // A post's pictures, each checked on its own, in the post's order.
+            <div className="space-y-4">
+              {reports.map((r, i) => (
+                <div key={i}>
+                  <div className="mb-2 flex items-center gap-2 px-1 text-sm font-medium text-ink">
+                    {previewOf(i) && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={previewOf(i)!} alt="" className="h-6 w-6 rounded object-cover" onError={(e) => (e.currentTarget.style.display = "none")} />
+                    )}
+                    Picture {i + 1} of {reports.length}
+                  </div>
+                  <PictureChecks report={r} preview={previewOf(i)} footnote={i === reports.length - 1} />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <PictureChecks report={v.media_report} preview={previewOf(0)} />
+          )}
         </>
       )}
 
@@ -960,7 +1070,8 @@ export function Result({
         </>
       ) : (
         !decided &&
-        !nothing && (
+        !nothing &&
+        !withheld && (
           <>
             <Box className="mt-4 p-4">
               <div className="font-semibold text-ink">No citable source was found</div>
@@ -1001,9 +1112,12 @@ export function Result({
             ? new Date(v.retrieved_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })
             : "just now"}
         </span>
-        <button type="button" onClick={sendReport} disabled={report === "busy" || report === "done"} className="font-semibold text-ink2 hover:text-ink disabled:opacity-70">
-          {report === "done" ? "Reported. We'll take another look at this result." : report === "busy" ? "Reporting…" : report === "failed" ? "Couldn't send. Try again" : "Report wrong result"}
-        </button>
+        {/* Nothing was decided, so there is no result to call wrong. */}
+        {!withheld && (
+          <button type="button" onClick={sendReport} disabled={report === "busy" || report === "done"} className="font-semibold text-ink2 hover:text-ink disabled:opacity-70">
+            {report === "done" ? "Reported. We'll take another look at this result." : report === "busy" ? "Reporting…" : report === "failed" ? "Couldn't send. Try again" : "Report wrong result"}
+          </button>
+        )}
       </div>
     </div>
   );
