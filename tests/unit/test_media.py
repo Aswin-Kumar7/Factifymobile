@@ -13,9 +13,13 @@ a matcher that ignored its own verification step.
 
 from __future__ import annotations
 
+import io
+import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 
 import pytest
+from PIL import Image
 
 from app.domain.enums import SyntheticSignal
 from app.domain.evidence import Advisory
@@ -410,3 +414,62 @@ class TestForensicsCannotReachTheEngine:
 
         with pytest.raises(AdvisoryLeakError):
             evidence_strength(list(panel.advisories))  # type: ignore[arg-type]
+
+
+# ------------------------------------------------- 1.8 · a post's pictures, kept
+
+
+class TestKeptPictures:
+    """A post's pictures are shown beside what was read from them (`media_url`), from
+    our own address: the app never loads the platform's copy."""
+
+    def test_a_picture_read_is_kept_small_under_a_key_of_our_own(self) -> None:
+        from app.media.report import MediaInspector
+
+        inspector = MediaInspector()
+
+        key = inspector.keep_picture(images.original())
+
+        assert key is not None
+        assert re.fullmatch(r"[0-9a-f]{32}", key)
+        kept = inspector.thumbnails.get(key)
+        assert kept is not None
+        with Image.open(io.BytesIO(kept)) as picture:
+            assert picture.format == "JPEG"
+            # 640 x 480 in, the same shape at most 320 on its long side out.
+            assert picture.size == (320, 240)
+
+    def test_a_large_photograph_is_kept_as_small_as_any_other(self) -> None:
+        from app.media.report import MediaInspector
+
+        inspector = MediaInspector()
+        large = images.encode(images.scene(3, size=(4000, 3000), subjects=3))
+
+        key = inspector.keep_picture(large)
+
+        assert key is not None
+        kept = inspector.thumbnails.get(key)
+        assert kept is not None
+        with Image.open(io.BytesIO(kept)) as picture:
+            assert picture.size == (320, 240)
+
+    def test_bytes_that_are_not_a_picture_keep_nothing(self) -> None:
+        from app.media.report import MediaInspector
+
+        inspector = MediaInspector()
+
+        assert inspector.keep_picture(b"not a picture at all") is None
+        assert inspector.keep_picture(b"") is None
+
+    def test_pictures_can_be_kept_from_many_threads_at_once(self) -> None:
+        """A post's pictures are kept off the event loop, side by side; the store is
+        bounded while they arrive."""
+        from app.media.report import ThumbnailStore
+
+        store = ThumbnailStore(most=25)
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            keys = list(pool.map(lambda index: store.put(bytes([index % 256])), range(400)))
+
+        assert len(set(keys)) == 400
+        assert sum(store.get(key) is not None for key in keys) == 25

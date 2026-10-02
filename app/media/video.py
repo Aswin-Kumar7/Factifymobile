@@ -12,18 +12,34 @@ Caps are enforced before any decode, because a decode is the expensive, attackab
 step. First 90 seconds, ≤480p, at most twelve scene-change keyframes: forensic and
 contextual signals do not need more, and the free-tier compute allowance cannot
 afford more.
+
+What a clip shows is read separately (`FramesRead`, 2026-10-03). The keyframes above
+are for the picture checks; to read a clip's words and pictures, one keyframe from
+its first 90 seconds was not enough. A news clip about the RBI put "REPO RATE
+UNCHANGED AT 5.25%" on screen from 1:53 to its end, and the frame read was a wipe at
+0:36 with the Governor hidden behind blue bars. So frames are now taken across the
+whole clip, up to ten minutes in a background check: its opening, its last second,
+evenly between, and just after each cut, each the clearest of a few taken a moment
+apart, so a transition or a blur is not the frame read.
 """
 
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import logging
+import math
+import re
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import numpy as np
+from PIL import Image, UnidentifiedImageError
 
 from app.observability.logging import event
 
@@ -43,6 +59,46 @@ DEFAULT_MAX_HEIGHT = 480
 # Scene-change sensitivity. Lower catches more cuts; too low returns twelve frames of
 # the same shot, which is twelve reverse-image lookups that answer one question.
 SCENE_THRESHOLD = 0.3
+
+# How long one decoding pass over the clip may run: 90 s for the default 90-second
+# window, as it always was, and 0.3 s more for each second beyond it (243 s for ten
+# minutes). A kill switch for a decoder that spins, not a budget.
+PASS_TIMEOUT_S = 90.0
+PASS_TIMEOUT_PER_SECOND = 0.3
+
+# ----------------------------------------------------------------- reading frames
+#
+# What a background check reads of a clip's pictures: its first ten minutes, the same
+# window as its speech (`app/media/speech.py`) and as `social.max_video_seconds`, in at
+# most 24 frames. A quick read takes 90 seconds and eight.
+READ_SECONDS = 600
+READ_FRAMES = 24
+QUICK_READ_SECONDS = 90
+QUICK_READ_FRAMES = 8
+# A frame about every six seconds while the cap allows: a news card or a caption
+# stays on screen longer than that. Past 2:20 the 24 frames are simply spread wider.
+READ_EVERY_SECONDS = 6.0
+# The first frame is taken a moment in, past a fade from black; the last this long
+# before the end - the last second, where a news clip puts its summary card.
+OPENING_SECONDS = 0.3
+CLOSING_SECONDS = 0.5
+# A frame for a cut is taken this long after it: the new shot has settled, past the
+# wipe or the dissolve that brought it in.
+SETTLED_SECONDS = 0.8
+# At most this share of the frames go to cuts; the rest are spread evenly.
+CUT_SHARE = 1 / 3
+# Around each moment a few frames are taken, this far apart, and the clearest is
+# read (`clearest`).
+CANDIDATES = 4
+CANDIDATE_STEP_SECONDS = 0.35
+# Frames are read for their words, which need more lines than the picture checks'.
+READ_MAX_HEIGHT = 720
+# Frames taken at once: each is its own short ffmpeg run.
+READ_CONCURRENCY = 2
+# The cuts a scene pass reports, at most; more are thinned evenly.
+MAX_CUTS = 60
+
+_PTS_TIME = re.compile(r"pts_time:\s*([0-9]+(?:\.[0-9]+)?)")
 
 
 class VideoRejected(Exception):
@@ -92,10 +148,172 @@ class ExtractedVideo:
     truncated: bool = False
     limitations: tuple[str, ...] = field(default_factory=tuple)
     reason: str | None = None
+    # The frames taken to read what the clip shows, when they were asked for
+    # (`KeyframeExtractor(read_seconds=...)`).
+    read: FramesRead | None = None
 
     @property
     def succeeded(self) -> bool:
         return self.reason is None and bool(self.keyframes)
+
+
+@dataclass(frozen=True, slots=True)
+class FramesRead:
+    """Frames taken across a clip to read its words and its pictures, in time order.
+
+    Each frame's `timestamp_ms` is the moment it was taken. `window_seconds` is how
+    far into the clip they reach: the whole clip, or the read window when the clip is
+    longer (`cut_off`), and what the answer says was read.
+    """
+
+    frames: tuple[Keyframe, ...] = ()
+    window_seconds: float = 0.0
+    duration_seconds: float = 0.0
+    # How many of the frames were taken just after a cut.
+    after_cuts: int = 0
+    reason: str | None = None
+
+    @property
+    def cut_off(self) -> bool:
+        """The clip runs past what was read."""
+        return self.duration_seconds - self.window_seconds > 1.0
+
+    @property
+    def first_ms(self) -> int | None:
+        return self.frames[0].timestamp_ms if self.frames else None
+
+    @property
+    def last_ms(self) -> int | None:
+        return self.frames[-1].timestamp_ms if self.frames else None
+
+
+def pass_timeout(seconds: float) -> float:
+    """How long one decoding pass over `seconds` of a clip may run."""
+    return PASS_TIMEOUT_S + PASS_TIMEOUT_PER_SECOND * max(0.0, seconds - DEFAULT_MAX_SECONDS)
+
+
+def clock(milliseconds: int | float) -> str:
+    """A moment in a clip as people write it: 0:07, 2:09, 1:02:03."""
+    seconds = max(0, int(milliseconds // 1000))
+    hours, rest = divmod(seconds, 3600)
+    minutes, seconds = divmod(rest, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes}:{seconds:02d}"
+
+
+def reading_moments(
+    window: float, *, most: int, cuts: Sequence[float] = ()
+) -> tuple[list[float], int]:
+    """The moments a clip's frames are read at, in order, and how many follow a cut.
+
+    The opening and the last second always; a moment just after each cut, up to a
+    third of `most`; and the rest spread evenly between, about every six seconds
+    while `most` allows. No two closer than a clip of this length can afford, so a
+    cut a second after the opening does not spend a frame on the same picture.
+    """
+    if window <= 0 or most <= 0:
+        return [], 0
+    last = max(0.0, window - CLOSING_SECONDS)
+    first = min(OPENING_SECONDS, last)
+    if most == 1 or last - first < 0.2:
+        return [first], 0
+    apart = max(0.5, min(2.0, (last - first) / most))
+
+    chosen: list[float] = [first, last]
+
+    def room(moment: float) -> bool:
+        return first <= moment <= last and all(abs(moment - other) >= apart for other in chosen)
+
+    settled = [cut + SETTLED_SECONDS for cut in cuts]
+    settled = [moment for moment in settled if room(moment)]
+    allowed = max(0, min(most - 2, int(most * CUT_SHARE)))
+    if len(settled) > allowed:
+        settled = _thinned(settled, allowed)
+    after_cuts = 0
+    for moment in settled:
+        if room(moment):
+            chosen.append(moment)
+            after_cuts += 1
+
+    # What is left of `most` is spread over the whole clip, never spent at its start.
+    slots = most - len(chosen)
+    spaced = max(2, min(slots + 2, math.ceil((last - first) / READ_EVERY_SECONDS) + 1))
+    for step in range(1, spaced - 1):
+        moment = first + (last - first) * step / (spaced - 1)
+        if room(moment):
+            chosen.append(moment)
+    return sorted(chosen), after_cuts
+
+
+def _thinned(values: Sequence[float], most: int) -> list[float]:
+    """Up to `most` of the values, spread across them rather than the first few."""
+    if most <= 0:
+        return []
+    if len(values) <= most:
+        return list(values)
+    if most == 1:
+        return [values[len(values) // 2]]
+    step = (len(values) - 1) / (most - 1)
+    return [values[int(index * step + 0.5)] for index in range(most)]
+
+
+def clearest(pictures: Sequence[bytes]) -> int:
+    """Which of a few frames taken a moment apart is the one to read.
+
+    A frame in a wipe or a dissolve is unlike the frames either side of it, and a
+    frame caught mid-pan or mid-fade is soft. So of the frames that are at least half
+    as sharp as the sharpest, the steadiest - the one most like a neighbour - is
+    read, and of two equally steady the sharper. A picture that cannot be opened is
+    never chosen while another can be.
+    """
+    if len(pictures) <= 1:
+        return 0
+    greys = [_grey(picture) for picture in pictures]
+    usable = [index for index, grey in enumerate(greys) if grey is not None]
+    if not usable:
+        return 0
+    sharp = {index: _sharpness(greys[index]) for index in usable}  # type: ignore[arg-type]
+    best = max(sharp.values())
+    steady: dict[int, float] = {}
+    for index in usable:
+        here = greys[index]
+        assert here is not None
+        near = [
+            float(np.mean(np.abs(here - other)))
+            for other in (
+                greys[index - 1] if index > 0 else None,
+                greys[index + 1] if index + 1 < len(greys) else None,
+            )
+            if other is not None and other.shape == here.shape
+        ]
+        steady[index] = min(near) if near else 255.0
+    eligible = [index for index in usable if sharp[index] >= 0.5 * best] or usable
+    return min(eligible, key=lambda index: (round(steady[index], 1), -sharp[index]))
+
+
+# The size frames are compared and judged at: small enough to be quick, large enough
+# that a caption's edges still count towards how sharp a frame is.
+_COMPARE_WIDTH = 320
+
+
+def _grey(picture: bytes) -> np.ndarray | None:
+    try:
+        with Image.open(io.BytesIO(picture)) as image:
+            grey = image.convert("L")
+            height = max(1, round(grey.height * _COMPARE_WIDTH / max(1, grey.width)))
+            return np.asarray(grey.resize((_COMPARE_WIDTH, height)), dtype=np.float32)
+    except (UnidentifiedImageError, OSError, ValueError):
+        return None
+
+
+def _sharpness(grey: np.ndarray) -> float:
+    """The variance of the Laplacian: how much fine edge the picture holds."""
+    if grey.shape[0] < 3 or grey.shape[1] < 3:
+        return 0.0
+    middle = grey[1:-1, 1:-1]
+    edges = 4.0 * middle - grey[:-2, 1:-1] - grey[2:, 1:-1] - grey[1:-1, :-2] - grey[1:-1, 2:]
+    return float(edges.var())
 
 
 async def _run(
@@ -179,7 +397,12 @@ async def probe(path: Path) -> VideoProbe:
 
 
 class KeyframeExtractor:
-    """Extracts a bounded set of scene-change frames."""
+    """Extracts a bounded set of scene-change frames.
+
+    With `read_seconds`, also the frames to read what the clip shows (`FramesRead`):
+    up to `read_frames` of them across its first `read_seconds`. The keyframes for the
+    picture checks are taken exactly as before either way.
+    """
 
     def __init__(
         self,
@@ -187,10 +410,25 @@ class KeyframeExtractor:
         max_seconds: int = DEFAULT_MAX_SECONDS,
         max_keyframes: int = DEFAULT_MAX_KEYFRAMES,
         max_height: int = DEFAULT_MAX_HEIGHT,
+        read_seconds: int | None = None,
+        read_frames: int = READ_FRAMES,
     ) -> None:
         self._max_seconds = max_seconds
         self._max_keyframes = max_keyframes
         self._max_height = max_height
+        self._read_seconds = read_seconds
+        self._read_frames = read_frames
+
+    @classmethod
+    def reading(cls, *, quick: bool = False, read_seconds: int | None = None) -> KeyframeExtractor:
+        """The extractor for a check that reads the clip: ten minutes and 24 frames in
+        the background, 90 seconds and eight in a quick check."""
+        if quick:
+            return cls(
+                read_seconds=min(read_seconds or QUICK_READ_SECONDS, QUICK_READ_SECONDS),
+                read_frames=QUICK_READ_FRAMES,
+            )
+        return cls(read_seconds=read_seconds or READ_SECONDS, read_frames=READ_FRAMES)
 
     async def extract(self, data: bytes) -> ExtractedVideo:
         """Decode a bounded prefix and return its scene-change frames."""
@@ -242,6 +480,11 @@ class KeyframeExtractor:
 
             seconds = min(description.duration_seconds, self._max_seconds)
             even = await self._even_frames(source, root, seconds)
+            read = (
+                await self._frames_to_read(source, root, description.duration_seconds)
+                if self._read_seconds
+                else None
+            )
 
             event(
                 logger,
@@ -250,6 +493,9 @@ class KeyframeExtractor:
                 outcome="ok",
                 frames=len(frames),
                 even_frames=len(even),
+                read_frames=len(read.frames) if read is not None else None,
+                read_after_cuts=read.after_cuts if read is not None else None,
+                read_window_s=round(read.window_seconds, 1) if read is not None else None,
                 duration_s=round(description.duration_seconds, 1),
                 truncated=truncated,
             )
@@ -260,7 +506,138 @@ class KeyframeExtractor:
                 even_frames=even,
                 truncated=truncated,
                 limitations=tuple(limitations),
+                read=read,
             )
+
+    async def _frames_to_read(self, source: Path, workspace: Path, duration: float) -> FramesRead:
+        """The frames that show what the clip is, across its read window (`FramesRead`).
+
+        Never raises: a clip whose frames cannot be taken says why in `reason`.
+        """
+        assert self._read_seconds is not None
+        window = min(duration, float(self._read_seconds))
+        if window <= 0:
+            return FramesRead(duration_seconds=duration, reason="the video has no length")
+        try:
+            cuts = await self._cut_times(source, window)
+        except VideoRejected:
+            # Out of time: the frames are spread evenly instead.
+            cuts = []
+        moments, after_cuts = reading_moments(window, most=self._read_frames, cuts=cuts)
+        folder = workspace / "read"
+        folder.mkdir()
+        gate = asyncio.Semaphore(READ_CONCURRENCY)
+
+        async def taken(index: int, moment: float) -> Keyframe | None:
+            async with gate:
+                return await self._clearest_near(source, folder, index, moment, duration)
+
+        found = await asyncio.gather(
+            *(taken(index, moment) for index, moment in enumerate(moments))
+        )
+        frames = tuple(frame for frame in found if frame is not None)
+        return FramesRead(
+            frames=frames,
+            window_seconds=round(window, 2),
+            duration_seconds=round(duration, 2),
+            after_cuts=after_cuts,
+            reason=None if frames else "no frame could be taken from the video",
+        )
+
+    async def _cut_times(self, source: Path, window: float) -> list[float]:
+        """When the picture changes in the read window, in seconds: one decoding pass.
+
+        Only the reference frames are decoded (`-skip_frame noref`), which is enough
+        to see a cut and saves most of the work on a long clip.
+        """
+        code, _, stderr = await _run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-nostdin",
+                "-v",
+                "info",
+                "-skip_frame",
+                "noref",
+                "-t",
+                f"{window:.3f}",
+                "-i",
+                str(source),
+                "-an",
+                "-sn",
+                "-vf",
+                f"select='gt(scene,{SCENE_THRESHOLD})',showinfo",
+                "-f",
+                "null",
+                "-",
+            ],
+            timeout=pass_timeout(window),
+        )
+        if code != 0:
+            return []
+        times = sorted(
+            {
+                round(float(found), 2)
+                for line in stderr.decode("utf-8", "replace").splitlines()
+                if "showinfo" in line
+                for found in _PTS_TIME.findall(line)
+            }
+        )
+        return _thinned(times, MAX_CUTS)
+
+    async def _clearest_near(
+        self, source: Path, folder: Path, index: int, moment: float, duration: float
+    ) -> Keyframe | None:
+        """The clearest of a few frames taken a moment apart around `moment`."""
+        span = CANDIDATE_STEP_SECONDS * (CANDIDATES - 1)
+        start = max(0.0, moment - span / 2)
+        if duration > 0 and start + span > duration - 0.05:
+            start = max(0.0, duration - 0.05 - span)
+        pattern = folder / f"at-{index:03d}-%d.jpg"
+        try:
+            code, _, _ = await _run(
+                [
+                    "ffmpeg",
+                    "-v",
+                    "error",
+                    "-ss",
+                    f"{start:.3f}",
+                    "-i",
+                    str(source),
+                    "-t",
+                    f"{span + 0.1:.3f}",
+                    "-an",
+                    "-vf",
+                    f"fps={1 / CANDIDATE_STEP_SECONDS:.4f},scale=-2:'min({READ_MAX_HEIGHT},ih)'",
+                    "-frames:v",
+                    str(CANDIDATES),
+                    "-q:v",
+                    "2",
+                    *_JPEG_COMPAT,
+                    str(pattern),
+                ],
+                timeout=30.0,
+            )
+        except VideoRejected:
+            return None
+        if code != 0:
+            return None
+
+        def collect() -> list[bytes]:
+            return [
+                path.read_bytes()
+                for path in sorted(
+                    folder.glob(f"at-{index:03d}-*.jpg"),
+                    key=lambda path: int(path.stem.rsplit("-", 1)[1]),
+                )
+            ]
+
+        candidates = await asyncio.to_thread(collect)
+        if not candidates:
+            return None
+        chosen = await asyncio.to_thread(clearest, candidates)
+        taken_at = start + chosen * CANDIDATE_STEP_SECONDS
+        return Keyframe(index=index, timestamp_ms=int(taken_at * 1000), data=candidates[chosen])
 
     async def _scene_frames(
         self, source: Path, workspace: Path, limitations: list[str]

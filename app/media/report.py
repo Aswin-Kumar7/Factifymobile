@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import threading
 import time
 import uuid
 from collections import OrderedDict
@@ -92,18 +93,23 @@ class ThumbnailStore:
         self._keep = keep_seconds
         self._most = most
         self._items: OrderedDict[str, tuple[float, bytes]] = OrderedDict()
+        # A post's pictures are kept from worker threads (`keep_picture` off the event
+        # loop), and an OrderedDict changed while `_forget_old` walks it raises.
+        self._lock = threading.Lock()
 
     def put(self, data: bytes) -> str:
-        self._forget_old()
         key = uuid.uuid4().hex
-        self._items[key] = (time.monotonic(), data)
-        while len(self._items) > self._most:
-            self._items.popitem(last=False)
+        with self._lock:
+            self._forget_old()
+            self._items[key] = (time.monotonic(), data)
+            while len(self._items) > self._most:
+                self._items.popitem(last=False)
         return key
 
     def get(self, key: str) -> bytes | None:
-        self._forget_old()
-        item = self._items.get(key)
+        with self._lock:
+            self._forget_old()
+            item = self._items.get(key)
         return item[1] if item else None
 
     def _forget_old(self) -> None:
@@ -115,12 +121,15 @@ class ThumbnailStore:
 def _shrunk(data: bytes, *, side: int = 320) -> bytes | None:
     try:
         with Image.open(io.BytesIO(data)) as image:
+            # A JPEG is decoded straight at the nearest scale above the size wanted
+            # (1/2 to 1/8): a 12-megapixel photo then decodes in a tenth of the time.
+            image.draft("RGB", (side, side))
             picture = image.convert("RGB")
             picture.thumbnail((side, side))
             out = io.BytesIO()
             picture.save(out, "JPEG", quality=80)
             return out.getvalue()
-    except (UnidentifiedImageError, OSError, ValueError):
+    except (UnidentifiedImageError, Image.DecompressionBombError, OSError, ValueError):
         return None
 
 
@@ -139,6 +148,20 @@ class MediaInspector:
         self._detector: Detects = detector or UnavailableDetector()
         self._fetcher = fetcher
         self.thumbnails = thumbnails or ThumbnailStore()
+
+    def keep_picture(self, data: bytes) -> str | None:
+        """Our own small copy of a picture that was read, and the key it is kept under.
+
+        For a post's pictures (`ReadPart.media_key`, sent as `media_url`): the app
+        shows the picture from our own address and never loads the platform's, which
+        would tell the platform who looked at the post. Kept for an hour, as every
+        thumbnail is. None when the bytes are not a picture.
+
+        Decoding and shrinking is a few tens of milliseconds of CPU; a caller keeping
+        several pictures does it off the event loop (`asyncio.to_thread`).
+        """
+        shrunk = _shrunk(data)
+        return self.thumbnails.put(shrunk) if shrunk else None
 
     async def inspect_image(self, data: bytes, *, mime: str = "image/jpeg") -> MediaReport:
         credentials, editing, synthetic, history = await asyncio.gather(
