@@ -19,8 +19,10 @@ from typing import Any
 import pytest
 
 from app.domain.enums import Relation
+from app.security.fetcher import FetchFailure
 from app.sources.base import SourceSnapshot, locate_excerpt
 from app.sources.corpus import CorpusResolver
+from app.sources.reader import read_source
 from app.sources.reasoning import (
     PassageJudgement,
     PassageReasoner,
@@ -256,3 +258,43 @@ class TestTheSupportReachesTheCitation:
         assert relation is not None
         assert relation.relation is Relation.SUPPORTS
         assert relation.anchor
+
+
+class _Refused:
+    """A page that refuses the server's own fetch, as PIB's does."""
+
+    async def fetch(self, url: str, *, provider: str = "web") -> FetchFailure:
+        return FetchFailure(url=url, reason="request timed out", kind="timeout")
+
+
+def _opened(page: str, quote: str) -> Any:
+    async def vendor(url: str) -> str:
+        return page
+
+    return asyncio.run(
+        read_source(_Refused(), url="https://www.pib.gov.in/f", quote=quote, vendor=vendor)
+    )
+
+
+class TestTheSourceViewFindsIt:
+    """Opening the citation looked for the whole quote in one paragraph, and said the
+    passage was "no longer on the page as quoted"."""
+
+    def test_the_rows_are_found_on_the_page(self) -> None:
+        (judged,) = _judged(FACTSHEET).judgements
+
+        view = _opened(FACTSHEET, judged.quote)
+
+        assert view.complete
+        shown = view.paragraphs[view.quote_paragraph or 0]
+        assert shown.startswith("| Key Takeaways")
+        assert shown[view.quote_start : view.quote_end].startswith("| Key Takeaways")
+
+    def test_rows_that_are_not_on_the_page_are_still_not_found(self) -> None:
+        (judged,) = _judged(FACTSHEET).judgements
+        changed = FACTSHEET.replace("1,95,936", "2,10,000")
+
+        view = _opened(changed, judged.quote)
+
+        assert not view.complete
+        assert "no longer on the page" in view.limitations[0]
