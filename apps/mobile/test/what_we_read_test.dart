@@ -162,7 +162,7 @@ void main() {
       expect(picture.isPictureText, isTrue);
       expect(picture.mediaUrl, '/v1/media/thumbnails/9b2f0c6e1a7d4e3fb8c5a2d1e0f9c8b7');
       expect((picture.charStart, picture.charEnd), (227, 385));
-      expect(post.parts[2].checked, isFalse, reason: 'shown beside it, not checked');
+      expect(post.parts[2].checked, isTrue, reason: "fed to the claims, as Factify's words");
       expect(post.parts[2].isDescription, isTrue);
 
       final reel = contractVerdict('instagram_reel_partial').inputRead!;
@@ -285,7 +285,7 @@ void main() {
       expect(partLabel(post.parts[3], post, _en), 'Text in picture 2 of 2');
       expect(
         partLabel(post.parts[2], post, _en),
-        'What the picture shows · Description only, not checked',
+        'What the picture shows · Described by Factify',
       );
       expect(partLabel(post.parts[1], post, _hi), 'तस्वीर 1/2 में लिखा पाठ');
 
@@ -491,7 +491,7 @@ void main() {
       expect(find.text('Text in picture 2 of 2'), findsOneWidget);
       expect(find.textContaining('Notes may be exchanged at any bank branch'), findsOneWidget);
       expect(
-        find.text('What the picture shows · Description only, not checked'),
+        find.text('What the picture shows · Described by Factify'),
         findsNWidgets(2),
       );
       // Factify's description is not quoted as if the post had said it.
@@ -540,7 +540,7 @@ void main() {
       expect(find.text('10:00 of 14:02 heard'), findsOneWidget);
       expect(find.text('Read only in part'), findsNWidgets(2));
       expect(find.text('Show all'), findsNothing);
-      expect(find.text('What the video shows · Description only, not checked'), findsOneWidget);
+      expect(find.text('What the video shows · Described by Factify'), findsOneWidget);
       expect(find.text('Only the first three minutes were read.'), findsNothing);
     });
 
