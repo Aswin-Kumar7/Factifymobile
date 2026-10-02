@@ -22,7 +22,14 @@ three small additions. The samples in `tests/fixtures/contract/` are updated to 
   its thumbnail (labelled "Text in the video's thumbnail" and "What the video's
   thumbnail shows (described by Factify)"). The video itself is not watched on this
   server: a `video_unread` gap with `blocking: false` says so, and `limits[]` says its
-  voice and face checks did not run. The verdict is not held back for that.
+  voice and face checks did not run. The verdict is not held back for that, not even
+  when no claim is found in it. The thumbnail's picture checks are in `media_report`,
+  but never make the verdict "AI-made" FALSE: the thumbnail is not the video.
+- **A post its platform would not show** (a login page or a refusal for the server, a
+  reader that failed), and that the platform never said is gone, is read as a web
+  page, as every post link was before 1.8: `input_read.kind` is `"link"`, with a
+  `post_unavailable` gap, `blocking: false`, saying any picture or video in it was not
+  read. A post the platform says does not exist, or a story, is withheld.
 - **Descriptions are checked.** `picture_description` and `video_description` parts
   are now part of the text claims are found in, under a label ending "(described by
   Factify)", so they come with `checked: true` and `char_start`/`char_end`. A
@@ -32,17 +39,28 @@ three small additions. The samples in `tests/fixtures/contract/` are updated to 
 - **No more 422 for a link or post with nothing to check.** It used to answer 422
   "no checkable claims were found on the page … Try pasting the text". Now it is a
   200 with no claims, never charged:
-  - when something of it could not be read, the verdict is withheld
+  - when something that could decide it was not read (a blocking gap), or nothing
+    checkable was read at all, the verdict is withheld
     (`input_read.verdict_withheld: true`, `summary` the fixed withheld sentence, and a
     `claim_extraction` skipped check with `kind: "reading"`, so an older app does not
     say "Nothing to fact-check");
   - when all of it was read, `input_read.complete` is true and `summary` says there
-    is nothing in it to fact-check.
-- **`checked_partially` without asking.** A blocking gap no longer holds the verdict
-  back when something that could be checked was read: the answer is checked on what
-  was read, `checked_partially` is true, and the verdict is never `TRUE`. Only an
-  input of which nothing checkable was read is withheld. `accept_partial` is still
-  accepted.
+    is nothing in it to fact-check;
+  - when only something that could not decide it was missed (gaps, none blocking:
+    a YouTube video not watched, a long article's tail), `complete` is false, the gaps
+    are listed, and `summary` says nothing in what was read could be fact-checked.
+  - The withheld sentence no longer offers "check only what it could read": with
+    blocking gaps checked past (below), `accept_partial` gives a withheld answer
+    exactly the same answer again. Do not offer "Check what was read" on
+    `verdict_withheld` for now; offer "Paste the text" and "Upload the picture or
+    video".
+- **`checked_partially` without asking.** For a link or a post, a blocking gap no
+  longer holds the verdict back when claims were found in what was read: the answer
+  is checked on what was read, `checked_partially` is true, and the verdict is never
+  `TRUE`. `accept_partial` is still accepted. An upload (picture, PDF, video) with a
+  blocking gap is checked as before 1.8: the gap is said and the answer is not
+  cached, `checked_partially` stays false, and the verdict may still be `TRUE` -
+  whether it should be is the owner's open decision.
 - **Every gap is in `skipped[]`** with `kind: "reading"`, blocking or not.
 - **New gap code `page_unread`** (blocking): a submitted link whose page could not be
   read at all, not even its headline.

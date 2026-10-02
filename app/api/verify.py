@@ -76,6 +76,7 @@ from app.extraction.ocr import READER_VERSION, OcrOutcome, looks_designed
 from app.extraction.pdf import PdfRejected, first_pages
 from app.extraction.pdf import extract as extract_pdf
 from app.extraction.reading import (
+    NOTHING_TO_CHECK_IN_PART_SUMMARY,
     NOTHING_TO_CHECK_SUMMARY,
     WITHHELD_SUMMARY,
     Composed,
@@ -89,6 +90,7 @@ from app.extraction.reading import (
     linked_article_label,
     picture_text_label,
     served_policy,
+    withheld_without_claims,
 )
 from app.extraction.web import extract as extract_article
 from app.extraction.web import headline_and_summary
@@ -1391,8 +1393,14 @@ async def checked_input(
     *,
     case_id: UUID,
     arrived: float,
+    unread: tuple[Gap, ...] = (),
 ) -> VerifyResponse:
-    """A pasted message or a link to a page: read, its claims found, and checked."""
+    """A pasted message or a link to a page: read, its claims found, and checked.
+
+    `unread` is what an earlier attempt to read the input missed, said beside what
+    this reading misses: a social post whose platform would not show it, read here as
+    a web page instead (`post_checks.checked_post`).
+    """
     orchestrator = get_orchestrator(request)
     _LINK_PROFILE.set(None)
 
@@ -1428,6 +1436,8 @@ async def checked_input(
         return recalled(request, intake.cache_identity, served)
 
     extracted, reading = await read_and_extract(request, intake)
+    if unread:
+        reading = reading.plus(gaps=unread)
     profile = _LINK_PROFILE.get()
     shown: dict[str, Any] = (
         {"source_profile": _profile_response(profile), "source_risk": profile.level}
@@ -1444,9 +1454,10 @@ async def checked_input(
     # on a page whose every claim failed its anchor. Unconfirmed means sources were
     # looked for; here none were. Then it was refused (422) with "try pasting the
     # text of the page", which is no advice for a video and told the person nothing
-    # of what had been read. Now the answer says: a page that could not be read in
-    # full is held back, saying what was missed; a page read in full with nothing in
-    # it to check says exactly that (`answer_without_claims`). Neither is charged.
+    # of what had been read. Now the answer says: a page whose missing part could hold
+    # the claim is held back, saying what was missed; a page read in full, or missing
+    # only what could not decide it, with nothing in it to check says exactly that
+    # (`answer_without_claims`). Neither is charged.
     if not extracted.claims and intake.input_type is InputType.URL:
         response = await answer_without_claims(
             request, intake, reading, case_id=case_id, reason=extracted.reason
@@ -1519,12 +1530,15 @@ async def checked_input(
 # there every time (a long article's tail, an album's fifth picture, a YouTube video
 # nobody may download) does not; nor does a page a message or a post merely links to,
 # whose own words are the answer and whose dead links would otherwise be re-checked on
-# every forward.
+# every forward. A post its platform would not show today, read as a web page instead,
+# is read whole the next time the platform shows it.
 _MAY_READ_NEXT_TIME = frozenset(
     {
         GapCode.HEADLINE_ONLY,
         GapCode.DESCRIPTION_UNREAD,
         GapCode.PAGE_UNREAD,
+        GapCode.POST_UNAVAILABLE,
+        GapCode.READER_UNAVAILABLE,
     }
 )
 
@@ -1593,21 +1607,29 @@ async def answer_without_claims(
     *,
     case_id: UUID,
     reason: str | None = None,
+    composed: Composed | None = None,
 ) -> VerifyResponse:
     """The answer for a link or a post in which no claim was found to check.
 
-    When something of it could not be read - its article, its picture, its video -
-    the claim may be in what was missed, and the verdict is withheld: no verdict, the
-    gaps said, and "paste the text or upload the picture or video" (`WITHHELD_SUMMARY`).
-    When all of it was read, there is nothing to fact-check, and the answer says so
-    (`NOTHING_TO_CHECK_SUMMARY`). When finding claims failed, the answer says that.
+    When something that could decide it was not read - its article, its picture, its
+    video - or nothing checkable was read at all, the claim may be in what was missed,
+    and the verdict is withheld: no verdict, the gaps said, and "paste the text or
+    upload the picture or video" (`WITHHELD_SUMMARY`). Otherwise there is nothing to
+    fact-check, and the answer says so (`NOTHING_TO_CHECK_SUMMARY`), listing what was
+    not read when something was (`NOTHING_TO_CHECK_IN_PART_SUMMARY`): a YouTube video
+    nobody may download is never withheld for that alone. It used to be withheld for
+    any gap, and every YouTube video has one. When finding claims failed, the answer
+    says that.
+
+    `composed` is the text claims were looked for in, for `input_read` to say which
+    parts were; the reading's whole document when not given.
 
     Recorded as a case (the person can report it, and find it in their history), with
     nothing searched and nothing cached, and never charged (`billable`). An older app
     is told the input was not checked (`claim_extraction`), so it does not show
     "Nothing to fact-check" for a post it could not read.
     """
-    withheld = bool(reading.gaps)
+    withheld = withheld_without_claims(reading)
     noted = gaps_as_skips(reading.gaps)
     if withheld:
         noted.append(
@@ -1628,6 +1650,10 @@ async def answer_without_claims(
         summary = WITHHELD_SUMMARY.get(language, WITHHELD_SUMMARY["en"])
     elif reason:
         summary = None
+    elif reading.gaps:
+        summary = NOTHING_TO_CHECK_IN_PART_SUMMARY.get(
+            language, NOTHING_TO_CHECK_IN_PART_SUMMARY["en"]
+        )
     else:
         summary = NOTHING_TO_CHECK_SUMMARY.get(language, NOTHING_TO_CHECK_SUMMARY["en"])
     response = to_response(result)
@@ -1648,7 +1674,9 @@ async def answer_without_claims(
         response.model_copy(update={"summary": summary, "case_id": str(case_id)}),
         reading,
         # Nothing was checked in a withheld answer: no part is said to be.
-        Composed(text="") if withheld else reading.document(),
+        Composed(text="")
+        if withheld
+        else (composed if composed is not None else reading.document()),
         withheld=withheld,
     )
     # Said even when the pipeline did not report what it was told.
@@ -2191,9 +2219,9 @@ async def _checked_upload(
         # (`_with_reading_gaps`), and the answer is kept: the same video would be cut
         # the same way next time, and was never served from the cache.
         noted=_blocking_notes(read),
-        # Checked past a gap that could decide it, the answer is never TRUE: an upload
-        # is always checked on what could be read (`served_policy`), and says so.
-        partial_input=read.reading.blocked,
+        # Whether an upload checked past a gap that could decide it may still be TRUE:
+        # as it always could, until the owner decides (`UPLOADS_CHECKED_PARTIALLY`).
+        partial_input=UPLOADS_CHECKED_PARTIALLY and read.reading.blocked,
     )
 
     response = await _from_cache(request, result) or to_response(result)
@@ -2288,9 +2316,20 @@ def _with_reading_gaps(
     return tuple(marked)
 
 
+# Whether an upload with a gap that could decide its answer - speech that could not be
+# heard, a long clip's speech cut at the time limit, a scanned PDF's later pages - is
+# checked as partial: never TRUE, `checked_partially` set (`roll_up`). Off, as before
+# 1.8: such an upload may still be TRUE, its gaps said and the answer kept out of the
+# cache. Links and posts read in part are checked as partial; whether uploads should
+# be too is the owner's decision (2026-10-02 review), not made here.
+UPLOADS_CHECKED_PARTIALLY = False
+
+
 def _input_read(reading: Reading, composed: Composed) -> InputReadResponse:
     """What was read from an upload, part by part, for the answer (contract 1.8)."""
-    return input_read_response(reading, composed, partially=reading.blocked)
+    return input_read_response(
+        reading, composed, partially=UPLOADS_CHECKED_PARTIALLY and reading.blocked
+    )
 
 
 def input_read_response(

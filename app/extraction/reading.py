@@ -386,7 +386,8 @@ def policy(reading: Reading, *, accept_partial: bool) -> ReadingPolicy:
 # at all (a picture-only post whose picture failed), and otherwise check what was read
 # and say so (`CHECK_PARTIALLY`: never TRUE, the gaps shown). A post whose video could
 # not be downloaded is still checked on its words. True withholds as package 0
-# designed, with "Check what was read" to go on.
+# designed, with "Check what was read" to go on (and `WITHHELD_SUMMARY` should then
+# offer it again).
 WITHHOLD_WHEN_BLOCKED = False
 
 
@@ -397,17 +398,32 @@ def served_policy(reading: Reading, *, accept_partial: bool) -> ReadingPolicy:
 
 # What a withheld answer says, for a client that shows only `summary`. Fixed
 # sentences, like the pipeline's `_UNREPORTED`, never a model's words.
+#
+# It does not offer "check only what it could read" (`accept_partial`): while
+# `WITHHOLD_WHEN_BLOCKED` is False an answer is withheld only when no claim was found
+# in what was read, and asking again to check what was read gives the same answer.
 WITHHELD_SUMMARY: dict[str, str] = {
     "en": (
         "Factify could not read all of this, so it has not given a verdict. Paste the "
-        "text, upload the picture or video, or ask Factify to check only what it could read."
+        "text, or upload the picture or video."
     ),
     "hi": (
         "Factify इसे पूरा नहीं पढ़ पाया, इसलिए इस पर कोई फ़ैसला नहीं दिया गया है। इसका "
-        "टेक्स्ट चिपकाएँ, तस्वीर या वीडियो अपलोड करें, या Factify से सिर्फ़ उतना जाँचने को "
-        "कहें जितना वह पढ़ पाया।"
+        "टेक्स्ट चिपकाएँ, या तस्वीर या वीडियो अपलोड करें।"
     ),
 }
+
+
+def withheld_without_claims(reading: Reading) -> bool:
+    """Whether an input in which no claim was found is held back, not "nothing to check".
+
+    Held back when the claim may be in what was missed - a gap that could decide the
+    answer (`Reading.blocked`), or nothing checkable read at all. A gap that could
+    not (a YouTube video nobody may download, an album's later pictures, a long
+    article's tail) is said, and the answer is that there is nothing to check in what
+    was read: such a YouTube video is never held back for the video alone.
+    """
+    return reading.blocked or not reading.substantive
 
 
 # ------------------------------------------------------------------------------ labels
@@ -482,6 +498,19 @@ NOTHING_TO_CHECK_SUMMARY: dict[str, str] = {
     "hi": (
         "Factify ने इसे पूरा पढ़ा, पर इसमें ऐसा कोई दावा नहीं मिला जिसे स्रोतों से जाँचा जा "
         "सके, इसलिए इसमें जाँचने लायक कुछ नहीं है।"
+    ),
+}
+
+# The same, when part of it could not be read but nothing missed could decide the
+# answer (`withheld_without_claims`): what was not read is listed beside it.
+NOTHING_TO_CHECK_IN_PART_SUMMARY: dict[str, str] = {
+    "en": (
+        "Factify found nothing in what it could read of this that sources could confirm "
+        "or refute, so there is nothing to fact-check. What it could not read is listed."
+    ),
+    "hi": (
+        "Factify इसका जितना हिस्सा पढ़ पाया, उसमें ऐसा कोई दावा नहीं मिला जिसे स्रोतों से "
+        "जाँचा जा सके, इसलिए इसमें जाँचने लायक कुछ नहीं है। जो नहीं पढ़ा जा सका, वह नीचे लिखा है।"
     ),
 }
 

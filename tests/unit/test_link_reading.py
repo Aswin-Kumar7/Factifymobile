@@ -23,7 +23,11 @@ from app.cache.keys import text_hash
 from app.domain.enums import Action
 from app.extraction.claimreview import ClaimReview
 from app.extraction.claims import ExtractedClaims
-from app.extraction.reading import NOTHING_TO_CHECK_SUMMARY, WITHHELD_SUMMARY
+from app.extraction.reading import (
+    NOTHING_TO_CHECK_IN_PART_SUMMARY,
+    NOTHING_TO_CHECK_SUMMARY,
+    WITHHELD_SUMMARY,
+)
 from app.orchestration.background import BackgroundChecks, set_phase
 from app.verdict.engine import CaseDecision
 from tests.unit.factories import claim
@@ -219,6 +223,23 @@ class TestALinkReadInPart:
         assert body["summary"] == NOTHING_TO_CHECK_SUMMARY["en"]
         assert body["input_read"]["complete"] is True
         assert body["input_read"]["verdict_withheld"] is False
+        assert verify_module.billable(VerifyResponse.model_validate(body)) is False
+
+    async def test_a_gap_that_could_not_decide_it_is_said_not_held_back(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A long article's tail was not read, and nothing in its opening is
+        checkable: nothing to check in what was read, the tail said."""
+        checker = _Checker(claims=())
+        app = _app(checker, _page(total_chars=30_000), monkeypatch)
+
+        body = (await _post(app, {"url": "https://example.org/wage"})).json()
+
+        read = body["input_read"]
+        assert read["verdict_withheld"] is False and read["complete"] is False
+        assert [g["code"] for g in read["gaps"]] == ["article_truncated"]
+        assert body["summary"] == NOTHING_TO_CHECK_IN_PART_SUMMARY["en"]
+        assert all(part["checked"] for part in read["parts"])
         assert verify_module.billable(VerifyResponse.model_validate(body)) is False
 
 
@@ -437,9 +458,11 @@ class TestAnUploadedVideo:
         [probed] = checker.probed
         assert probed.cache_identity == f"{intake.cache_identity}|reader:{READER_VERSION}"
 
-    async def test_speech_that_could_not_be_read_keeps_the_answer_from_true(
+    async def test_speech_that_could_not_be_read_is_said_and_kept_out_of_the_cache(
         self, tmp_path: Any
     ) -> None:
+        """Whether such an upload may still be TRUE is the owner's decision; until it
+        is made it may, as before 1.8 (`UPLOADS_CHECKED_PARTIALLY`)."""
         from app.media.speech import SpeechOutcome
         from tests.unit.test_upload_reading import _Describer, _FrameWords, _request, _video
 
@@ -451,6 +474,10 @@ class TestAnUploadedVideo:
             request, intake, data, case_id=uuid4(), recheck=False
         )
 
-        assert checker.verified[0]["partial_input"] is True
+        assert verify_module.UPLOADS_CHECKED_PARTIALLY is False
+        verified = checker.verified[0]
+        assert verified["partial_input"] is False
+        assert [(n.check, n.kind) for n in verified["noted"]] == [("speech", "reading")]
         read = response.input_read
-        assert read is not None and read.checked_partially and not read.verdict_withheld
+        assert read is not None and not read.checked_partially and not read.verdict_withheld
+        assert [(g.code, g.blocking) for g in read.gaps] == [("speech_unread", True)]

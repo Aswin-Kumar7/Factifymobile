@@ -9,6 +9,7 @@ all stood in for.
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
@@ -18,14 +19,20 @@ import httpx
 import pytest
 
 import app.api.verify as verify_module
-from app.api.post_checks import YOUTUBE_LIMIT, checked_post
+from app.api.post_checks import NEXT_VIDEO_BY, YOUTUBE_LIMIT, checked_post
 from app.api.schemas import VerifyRequest, VerifyResponse
 from app.cache.keys import text_hash
 from app.domain.enums import Action
 from app.extraction.claims import ExtractedClaims
 from app.extraction.language import detect
 from app.extraction.ocr import OcrOutcome
-from app.extraction.reading import WITHHELD_SUMMARY, Gap, GapCode, gap
+from app.extraction.reading import (
+    NOTHING_TO_CHECK_IN_PART_SUMMARY,
+    WITHHELD_SUMMARY,
+    Gap,
+    GapCode,
+    gap,
+)
 from app.extraction.social import Downloaded, PostMedia, SocialPost
 from app.intake.normalizer import InputType, normalise_url
 from app.intake.social_urls import READER_VERSION, recognise
@@ -420,18 +427,8 @@ class TestAPostWithAVideo:
         platform.media = {f"{self.VIDEO}?{i}": b"\x00" * 64 for i in range(3)}
         checker = _Checker()
         app = _app(platform, checker)
-        budget = check_seconds.set(300.0)
-        try:
-            response = await checked_post(
-                SimpleNamespace(app=app),  # type: ignore[arg-type]
-                VerifyRequest(url=X_URL),
-                normalise_url(X_URL),
-                recognise(X_POST),  # type: ignore[arg-type]
-                case_id=uuid4(),
-                arrived=0.0,
-            )
-        finally:
-            check_seconds.reset(budget)
+
+        response = await self._checked(app, arrived=time.perf_counter())
 
         # Two downloaded, each for the read window; the third never.
         assert [url for url, _ in platform.downloads] == [f"{self.VIDEO}?0", f"{self.VIDEO}?1"]
@@ -448,6 +445,42 @@ class TestAPostWithAVideo:
             "Video 1 of 2 could not be read (no frames could be taken).",
         ) in gaps
         assert checker.verified[0]["partial_input"] is True
+
+    async def test_a_second_video_is_not_started_past_the_time_for_it(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Two long clips, heard one after the other, took the check past the app's
+        wait (2026-10-02 review): the second is said unread, and does not block."""
+
+        async def unreadable(request: Any, data: bytes, *, window: int) -> Any:
+            return SimpleNamespace(reason="no frames could be taken"), None
+
+        monkeypatch.setattr(verify_module, "read_video", unreadable)
+        platform = _Platform(self._post(videos=2), media={})
+        platform.media = {f"{self.VIDEO}?{i}": b"\x00" * 64 for i in range(2)}
+        checker = _Checker()
+        app = _app(platform, checker)
+
+        response = await self._checked(app, arrived=time.perf_counter() - NEXT_VIDEO_BY - 1)
+
+        assert NEXT_VIDEO_BY == 90.0
+        assert [url for url, _ in platform.downloads] == [f"{self.VIDEO}?0"]
+        gaps = [(g.code, g.blocking, g.detail) for g in response.input_read.gaps]  # type: ignore[union-attr]
+        assert ("video_unread", False, "The post has 2 videos; Factify read the first 1.") in gaps
+
+    async def _checked(self, app: Any, *, arrived: float) -> VerifyResponse:
+        budget = check_seconds.set(300.0)
+        try:
+            return await checked_post(
+                SimpleNamespace(app=app),  # type: ignore[arg-type]
+                VerifyRequest(url=X_URL),
+                normalise_url(X_URL),
+                recognise(X_POST),  # type: ignore[arg-type]
+                case_id=uuid4(),
+                arrived=arrived,
+            )
+        finally:
+            check_seconds.reset(budget)
 
 
 @pytest.mark.skipif(
@@ -541,15 +574,64 @@ class TestAYouTubeVideo:
         assert read["limits"] == [YOUTUBE_LIMIT]
         assert read["checked_partially"] is False
 
-    async def test_with_nothing_in_it_to_check_it_is_held_back_not_refused(self) -> None:
+    @pytest.mark.parametrize("accept_partial", [False, True])
+    async def test_with_nothing_in_it_to_check_it_is_said_never_held_back(
+        self, accept_partial: bool
+    ) -> None:
+        """Every YouTube video carries a gap - it was not watched - and that alone
+        used to withhold the answer, which read like the old 422 (2026-10-02 review)."""
         platform, checker = self._platform(), _Checker(claims=())
         app = _app(platform, checker, vendor=self.PAGE)
 
-        body = await _check(app, {"url": self.SHORT})
+        body = await _check(app, {"url": self.SHORT, "accept_partial": accept_partial})
 
         assert body["claims"] == []
-        assert body["input_read"]["verdict_withheld"] is True
-        assert body["summary"] == WITHHELD_SUMMARY["en"]
+        read = body["input_read"]
+        assert read["verdict_withheld"] is False and read["complete"] is False
+        assert [(g["code"], g["blocking"]) for g in read["gaps"]] == [("video_unread", False)]
+        assert body["summary"] == NOTHING_TO_CHECK_IN_PART_SUMMARY["en"]
+        assert not verify_module.billable(VerifyResponse.model_validate(body))
+        assert not any(s["check"] == "claim_extraction" for s in body["skipped"])
+
+    async def test_a_hashtag_short_is_checked_on_what_its_thumbnail_shows(self) -> None:
+        """A Short titled "#shorts #leopard", its page unread: what the thumbnail shows
+        is the only account of the video there is, and it is checked."""
+        ref = recognise(self.SHORT)
+        assert ref is not None
+        post = SocialPost(
+            ref=ref,
+            title="#shorts #leopard",
+            text_route="youtube.oembed",
+            thumbnail_url=self.THUMBNAIL,
+        )
+        shows = "A leopard is attacking a man on a village street."
+        platform = _Platform(post, media={self.THUMBNAIL: images.original(seed=3)})
+        checker = _Checker()
+        app = _app(
+            platform,
+            checker,
+            pictures=_Pictures(OcrOutcome(text="", description=shows, kind="PHOTO")),
+            inspector=_KeepingInspector(),
+        )
+
+        body = await _check(app, {"url": self.SHORT})
+
+        [(document, _)] = checker.documents
+        assert document == (
+            "Title:\n#shorts #leopard\n\n"
+            f"What the video's thumbnail shows (described by Factify):\n{shows}"
+        )
+        read = body["input_read"]
+        assert read["verdict_withheld"] is False
+        described = next(p for p in read["parts"] if p["kind"] == "picture_description")
+        assert described["checked"] is True
+        assert {g["code"] for g in read["gaps"]} == {"description_unread", "video_unread"}
+        # The thumbnail's own checks are shown, and never decide the answer: it is
+        # YouTube's picture of the video, never compared with the video itself.
+        assert body["media_report"]["detector"]["agreement"] == "likely_ai"
+        verified = checker.verified[0]
+        assert verified["synthetic"] is None and "ai" not in verified
+        assert verified["partial_input"] is False
 
     async def test_with_a_video_reader_the_video_is_watched(self) -> None:
         from app.extraction.video_reader import VideoReading
@@ -582,6 +664,85 @@ class TestAYouTubeVideo:
 
 
 class TestAPostThatCannotBeRead:
+    @pytest.mark.parametrize(
+        "refused",
+        [
+            gap("post", GapCode.POST_UNAVAILABLE, "X did not show this post to Factify."),
+            gap(
+                "post",
+                GapCode.POST_UNAVAILABLE,
+                "Instagram did not show this post to Factify: it may be private, "
+                "deleted, or shown only to people signed in.",
+            ),
+            gap("post", GapCode.READER_UNAVAILABLE, "Factify could not read this post (X)."),
+            None,
+        ],
+    )
+    async def test_one_the_platform_would_not_show_is_read_as_a_web_page(
+        self, refused: Gap | None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A login page or a refusal for the server's address used to leave the post
+        withheld with nothing read, where its web page read its words before 1.8."""
+        caption = "RBI to withdraw all ₹500 notes from 1 November, says the governor."
+        pages: list[str] = []
+
+        async def page_of(request: Any, url: str) -> Any:
+            pages.append(url)
+            return verify_module.LinkedPage(caption, route="vendor_extract")
+
+        monkeypatch.setattr(verify_module, "_read_linked_article", page_of)
+        ref = recognise(X_POST)
+        assert ref is not None
+        post = SocialPost(ref=ref, gaps=(refused,) if refused is not None else ())
+        platform, checker = _Platform(post), _Checker()
+        app = _app(platform, checker)
+
+        body = await _check(app, {"url": X_URL})
+
+        assert pages == [normalise_url(X_URL).primary.source_url]
+        [(document, _)] = checker.documents
+        assert document == caption
+        read = body["input_read"]
+        assert read["kind"] == "link" and read["verdict_withheld"] is False
+        [missed] = read["gaps"]
+        assert (missed["code"], missed["blocking"]) == ("post_unavailable", False)
+        assert "any picture or video in it was not read" in missed["detail"]
+        verified = checker.verified[0]
+        # Checked on its words as before, and not kept as the answer to the post.
+        assert verified["partial_input"] is False
+        assert [(n.check, n.kind) for n in verified["noted"]] == [("post_text", "reading")]
+
+    @pytest.mark.parametrize(
+        "said",
+        [
+            gap(
+                "post",
+                GapCode.POST_UNAVAILABLE,
+                "X says this post does not exist: it was deleted, made private, or the "
+                "link is wrong.",
+            ),
+            gap(
+                "post", GapCode.LOGIN_REQUIRED, "Instagram shows stories only to people signed in."
+            ),
+        ],
+    )
+    async def test_one_that_is_gone_or_needs_a_login_is_not_read_as_a_page(
+        self, said: Gap, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        async def read(request: Any, url: str) -> Any:
+            raise AssertionError("a post that is gone is not read as a page")
+
+        monkeypatch.setattr(verify_module, "_read_linked_article", read)
+        ref = recognise(X_POST)
+        assert ref is not None
+        platform, checker = _Platform(SocialPost(ref=ref, gaps=(said,))), _Checker()
+        app = _app(platform, checker)
+
+        body = await _check(app, {"url": X_URL})
+
+        assert body["input_read"]["verdict_withheld"] is True
+        assert body["summary"] == WITHHELD_SUMMARY["en"]
+
     async def test_a_deleted_post_is_held_back_with_what_the_platform_said(self) -> None:
         ref = recognise(X_POST)
         assert ref is not None

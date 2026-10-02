@@ -21,9 +21,10 @@ Here a post is read through the platform's own embed addresses
     independent confirmation of the post that shares it.
 
 What could not be read is said, part by part (`input_read`, `skipped[].kind`). An
-answer is held back only when nothing that could be checked was read
+answer is held back only when no claim was found and what was missed could hold one
 (`answer_without_claims`); a post read in part is checked on what was read and is
-never TRUE (`served_policy`).
+never TRUE (`served_policy`). A post its platform would not show at all, and never
+said is gone, is read as a web page, as every post link was before (`_falls_back`).
 
 A repeated post is answered from the verdict cache by the post's own identity before
 anything of it is downloaded.
@@ -78,8 +79,10 @@ from app.intake.normalizer import (
     normalise_url,
 )
 from app.intake.social_urls import Platform, PostRef, is_platform_host, recognise
+from app.media.composed import compose
 from app.observability.logging import event
 from app.orchestration.background import set_phase
+from app.orchestration.pipeline import BACKGROUND_CEILING_SECONDS, BACKGROUND_MIN_READING_SECONDS
 from app.sources.base import check_seconds, current_reference_date
 from app.sources.verification import page_key
 
@@ -88,6 +91,16 @@ logger = logging.getLogger("factify.api.post_checks")
 # How many of a post's videos are read: an album of five reels would take most of a
 # check's time to hear and read. The rest are said to be unread.
 MAX_VIDEOS = 2
+
+# How far into a check a post's next video may still be started. Each video can take
+# `SPEECH_SECONDS` to hear after its download, and the search keeps
+# `BACKGROUND_MIN_READING_SECONDS` after all of it; a second video started later than
+# this took a two-clip post past `BACKGROUND_CEILING_SECONDS` and the app's wait
+# (2026-10-02 review). Ninety seconds, with half a minute for downloading and finding
+# claims.
+NEXT_VIDEO_BY = (
+    BACKGROUND_CEILING_SECONDS - BACKGROUND_MIN_READING_SECONDS - checks.SPEECH_SECONDS - 30.0
+)
 
 # Said beside the answer for a YouTube video: what could not be checked of it.
 YOUTUBE_LIMIT = (
@@ -98,12 +111,18 @@ YOUTUBE_LIMIT = (
 
 @dataclass(slots=True)
 class _Picture:
-    """One picture of the post, read, with its picture checks started beside it."""
+    """One picture of the post, read, with its picture checks started beside it.
+
+    `thumbnail`: a YouTube video's thumbnail, YouTube's picture of the video and not
+    the video itself. Its checks are shown, and never decide the answer: an AI-looking
+    thumbnail on a real video is not an AI-made post (`_made_by_ai`).
+    """
 
     intake: NormalisedIntake
     read: Any  # verify._Read
     inspection: asyncio.Task[Any] | None
     seen: Any  # verify._Seen
+    thumbnail: bool = False
 
 
 @dataclass(slots=True)
@@ -173,6 +192,31 @@ async def checked_post(
         return checks.recalled(request, keyed.cache_identity, served)
 
     post: SocialPost = await reader.read(ref)
+    if _falls_back(post):
+        # The platform would not show the post - a login page for this server, a
+        # refusal, a moment's failure - and never said it is gone. Read as a web page,
+        # the way every post link was before 1.8 (its words from the page, its
+        # publisher's summary, or the search vendor's copy), and said: what is in its
+        # pictures and video was not read, and the answer is not kept for the post.
+        name = platform_name(ref.platform.value) or "The platform"
+        missed = gap(
+            "post",
+            GapCode.POST_UNAVAILABLE,
+            f"{name} did not show Factify the post itself, so any picture or video in it "
+            "was not read; its web page was read instead.",
+            blocking=False,
+        )
+        event(
+            logger,
+            "post read as a web page",
+            module="api.post_checks",
+            outcome="degraded",
+            platform=ref.platform.value,
+            gaps=[item.code.value for item in post.gaps],
+        )
+        return await checks.checked_input(
+            request, payload, intake, case_id=case_id, arrived=arrived, unread=(missed,)
+        )
     if post.not_a_post_url:
         # A short link that led to an article, not a post: read as any link is, with
         # nothing of a post missed.
@@ -194,13 +238,19 @@ async def checked_post(
             ),
         )
 
-    read = await read_post(request, post, background=check_seconds.get() is not None)
+    read = await read_post(
+        request, post, background=check_seconds.get() is not None, arrived=arrived
+    )
     reading = read.reading
     if post.published_at is not None:
         # What "today" and "on Monday" in the post mean (`current_reference_date`).
         current_reference_date.set(post.published_at.date())
     chosen = served_policy(reading, accept_partial=payload.accept_partial)
-    composed = checks._to_check(reading)
+    # A YouTube video's thumbnail is checked for what it shows even when its title and
+    # description hold few words of their own (a "#shorts #leopard" Short): it is the
+    # only picture of the video there is, and is never asked a picture's own questions
+    # instead (`media_intake`). A post's wordless photograph is, as an upload's is.
+    composed = compose(reading) if ref.platform is Platform.YOUTUBE else checks._to_check(reading)
 
     # The picture the answer's own picture questions are asked of - has it been
     # published before - when the post has no claim in its words: its first picture,
@@ -222,14 +272,20 @@ async def checked_post(
         claims = list(extracted.claims)
         reason = extracted.reason
     if not claims and media_intake is None:
-        # Nothing to check: held back when something of the post was not read, said
-        # to have nothing to check when all of it was. Neither is charged, and the
-        # thumbnail's picture checks, with no answer to stand beside, are stopped.
+        # Nothing to check: held back when what was missed could hold the claim, said
+        # to have nothing to check otherwise (`withheld_without_claims`). Neither is
+        # charged, and the thumbnail's picture checks, with no answer to stand
+        # beside, are stopped.
         for picture in read.pictures:
             if picture.inspection is not None:
                 picture.inspection.cancel()
         return await checks.answer_without_claims(
-            request, keyed, reading, case_id=case_id, reason=reason
+            request,
+            keyed,
+            reading,
+            case_id=case_id,
+            reason=reason,
+            composed=composed,
         )
 
     # Checked through the post's own address when its words hold claims, and through
@@ -299,14 +355,46 @@ async def checked_post(
     return response
 
 
+# What the social reader says of a post its platform says is gone (`social._unavailable`):
+# deleted, made private, or a wrong link. Such a post is not read as a web page.
+_GONE = "does not exist"
+
+
+def _falls_back(post: SocialPost) -> bool:
+    """Whether a post the platform would not show is read as a web page instead.
+
+    Yes when nothing of it came back and the platform never said it is gone: a login
+    page or a refusal for this server, a reader that failed, the per-minute pacing.
+    The embed addresses were tried from a desk, never from the server's own address,
+    and the web page read most posts' words before 1.8 (2026-10-02 review). Not a
+    post its platform says does not exist, a story (seen only signed in), a platform
+    Factify does not read, or a short link that led to an ordinary page, which is read
+    as that page. A YouTube video its oEmbed did not describe is still read from its
+    page and thumbnail (`_read_youtube`).
+    """
+    if post.found or post.not_a_post_url:
+        return False
+    if not post.gaps:
+        return post.ref.platform is not Platform.YOUTUBE
+    return not any(
+        item.code in (GapCode.LOGIN_REQUIRED, GapCode.NOT_SUPPORTED)
+        or (item.code is GapCode.POST_UNAVAILABLE and _GONE in item.detail)
+        for item in post.gaps
+    )
+
+
 # ------------------------------------------------------------------------- reading
 
 
-async def read_post(request: Request, post: SocialPost, *, background: bool) -> PostRead:
+async def read_post(
+    request: Request, post: SocialPost, *, background: bool, arrived: float | None = None
+) -> PostRead:
     """Everything a post holds, read: its words, pictures, video and linked article.
 
     Never raises for a picture or a video that could not be read: each is a gap.
     Videos are read only in a background check (`background`); a quick check says so.
+    `arrived`, when the check began: a second video is not started past
+    `NEXT_VIDEO_BY` seconds of it.
     """
     ref = post.ref
     read = PostRead(
@@ -350,7 +438,7 @@ async def read_post(request: Request, post: SocialPost, *, background: bool) -> 
             await _read_pictures(request, read, post.pictures)
         if post.videos:
             set_phase("reading_video")
-            await _read_videos(request, read, post.videos, background=background)
+            await _read_videos(request, read, post.videos, background=background, arrived=arrived)
     try:
         await _read_linked(request, read)
     except Exception:  # the article a post links to is a help, never a dependency
@@ -502,7 +590,10 @@ async def _picture(
         )
         for item_gap in picture_read.reading.gaps
     )
-    return _Picture(intake=intake, read=picture_read, inspection=inspection, seen=seen), parts, gaps
+    found = _Picture(
+        intake=intake, read=picture_read, inspection=inspection, seen=seen, thumbnail=thumbnail
+    )
+    return found, parts, gaps
 
 
 async def _kept(request: Request, data: bytes | None) -> str | None:
@@ -533,10 +624,19 @@ def _picture_labels(index: int, total: int, *, quoted: bool, thumbnail: bool) ->
 
 
 async def _read_videos(
-    request: Request, read: PostRead, videos: tuple[PostMedia, ...], *, background: bool
+    request: Request,
+    read: PostRead,
+    videos: tuple[PostMedia, ...],
+    *,
+    background: bool,
+    arrived: float | None = None,
 ) -> None:
     """The post's videos, downloaded and read like an uploaded video, one at a time:
-    each is heard and read on the server's own processors."""
+    each is heard and read on the server's own processors.
+
+    The first `MAX_VIDEOS` of them, and a later one only while there is time for it
+    (`NEXT_VIDEO_BY`); those not read are said to be, without holding the answer back.
+    """
     if not background:
         read.reading = read.reading.plus(
             gaps=(
@@ -550,74 +650,87 @@ async def _read_videos(
         )
         return
     total = min(len(videos), MAX_VIDEOS)
-    if len(videos) > MAX_VIDEOS:
+    window = checks._video_window(request)
+    looked_at = 0
+    for index, item in enumerate(videos[:MAX_VIDEOS], start=1):
+        if index > 1 and arrived is not None and time.perf_counter() - arrived > NEXT_VIDEO_BY:
+            # Another video would take the check past the person's wait.
+            break
+        looked_at = index
+        await _read_video(request, read, item, index=index, total=total, window=window)
+    if looked_at < len(videos):
         read.reading = read.reading.plus(
             gaps=(
                 gap(
                     "video",
                     GapCode.VIDEO_UNREAD,
-                    f"The post has {len(videos)} videos; Factify read the first {MAX_VIDEOS}.",
+                    f"The post has {len(videos)} videos; Factify read the first {looked_at}.",
                     blocking=False,
                 ),
             )
         )
+
+
+async def _read_video(
+    request: Request, read: PostRead, item: PostMedia, *, index: int, total: int, window: int
+) -> None:
+    """One of the post's videos, downloaded and read like an uploaded video; a gap
+    when it could not be. Never raises for a video that breaks the reader."""
     settings = request.app.state.settings
-    window = checks._video_window(request)
-    for index, item in enumerate(videos[:MAX_VIDEOS], start=1):
-        subject = "The post's video" if total <= 1 else f"Video {index} of {total}"
-        if item.in_quoted_post:
-            subject += " in the quoted post"
-        got = await request.app.state.social_reader.download(
-            item, max_bytes=settings.limits.max_upload_bytes, max_seconds=window
-        )
-        if isinstance(got, Gap):
-            read.reading = read.reading.plus(gaps=(_not_downloaded(got, subject),))
-            continue
-        why: str | None = None
-        video: checks.VideoRead | None = None
+    subject = "The post's video" if total <= 1 else f"Video {index} of {total}"
+    if item.in_quoted_post:
+        subject += " in the quoted post"
+    got = await request.app.state.social_reader.download(
+        item, max_bytes=settings.limits.max_upload_bytes, max_seconds=window
+    )
+    if isinstance(got, Gap):
+        read.reading = read.reading.plus(gaps=(_not_downloaded(got, subject),))
+        return
+    why: str | None = None
+    video: checks.VideoRead | None = None
+    try:
+        extracted, video = await checks.read_video(request, got.data, window=window)
+        why = extracted.reason
+    except Exception as error:  # a video that breaks the reader is one video unread
+        logger.exception("a post's video could not be read")
+        why = type(error).__name__
+    middle: NormalisedIntake | None = None
+    if video is not None:
         try:
-            extracted, video = await checks.read_video(request, got.data, window=window)
-            why = extracted.reason
-        except Exception as error:  # a video that breaks the reader is one video unread
-            logger.exception("a post's video could not be read")
-            why = type(error).__name__
-        middle: NormalisedIntake | None = None
-        if video is not None:
-            try:
-                middle = normalise_upload(
-                    video.middle,
-                    max_bytes=settings.limits.max_upload_bytes,
-                    declared_type="image/jpeg",
-                    consent=True,
-                )
-            except IntakeRejected as rejected:
-                why = str(rejected)
-                if video.inspection is not None:
-                    video.inspection.cancel()
-        if video is None or middle is None:
-            read.reading = read.reading.plus(
-                gaps=(
-                    gap(
-                        "video",
-                        GapCode.VIDEO_UNREAD,
-                        f"{subject} could not be read" + (f" ({why})." if why else "."),
-                    ),
-                )
+            middle = normalise_upload(
+                video.middle,
+                max_bytes=settings.limits.max_upload_bytes,
+                declared_type="image/jpeg",
+                consent=True,
             )
-            continue
-        labels = _video_labels(index, total, quoted=item.in_quoted_post)
-        numbered = total > 1 or item.in_quoted_post
+        except IntakeRejected as rejected:
+            why = str(rejected)
+            if video.inspection is not None:
+                video.inspection.cancel()
+    if video is None or middle is None:
         read.reading = read.reading.plus(
-            parts=tuple(
-                replace(part, label=labels.get(part.kind, part.label))
-                for part in video.read.reading.parts
-            ),
-            gaps=tuple(
-                replace(found, detail=f"{subject}: {found.detail}") if numbered else found
-                for found in video.read.reading.gaps
-            ),
+            gaps=(
+                gap(
+                    "video",
+                    GapCode.VIDEO_UNREAD,
+                    f"{subject} could not be read" + (f" ({why})." if why else "."),
+                ),
+            )
         )
-        read.videos.append(_Video(intake=middle, video=video))
+        return
+    labels = _video_labels(index, total, quoted=item.in_quoted_post)
+    numbered = total > 1 or item.in_quoted_post
+    read.reading = read.reading.plus(
+        parts=tuple(
+            replace(part, label=labels.get(part.kind, part.label))
+            for part in video.read.reading.parts
+        ),
+        gaps=tuple(
+            replace(found, detail=f"{subject}: {found.detail}") if numbered else found
+            for found in video.read.reading.gaps
+        ),
+    )
+    read.videos.append(_Video(intake=middle, video=video))
 
 
 def _video_labels(index: int, total: int, *, quoted: bool) -> dict[PartKind, str]:
@@ -821,18 +934,22 @@ async def _read_linked(request: Request, read: PostRead) -> None:
 
 
 def _inspected(read: PostRead) -> bool:
-    return any(item.inspection is not None for item in read.pictures) or any(
+    """Whether any of the post's own pictures or videos is being checked: a YouTube
+    thumbnail is not the post's own (`_Picture.thumbnail`)."""
+    return any(item.inspection is not None and not item.thumbnail for item in read.pictures) or any(
         item.video.inspection is not None for item in read.videos
     )
 
 
 def _made_by_ai(read: PostRead) -> Any:
     """Whether the post's own picture or video checks found any of it AI-made: asked
-    by the pipeline only when it could decide the case (`Orchestrator._fabricated`)."""
+    by the pipeline only when it could decide the case (`Orchestrator._fabricated`).
+    Never a YouTube thumbnail's: it could turn an unreported video FALSE on a picture
+    Factify never compared with the video."""
 
     async def asked() -> bool:
         for picture in read.pictures:
-            if picture.inspection is None:
+            if picture.inspection is None or picture.thumbnail:
                 continue
             try:
                 media, _ = await picture.inspection

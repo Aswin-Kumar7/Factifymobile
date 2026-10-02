@@ -18,6 +18,7 @@ from app.extraction.reading import (
     BLOCKING,
     CONTEXT_ONLY,
     DESCRIPTIONS,
+    NOTHING_TO_CHECK_IN_PART_SUMMARY,
     NOTHING_TO_CHECK_SUMMARY,
     WITHHELD_SUMMARY,
     Composed,
@@ -31,6 +32,7 @@ from app.extraction.reading import (
     picture_description_label,
     policy,
     served_policy,
+    withheld_without_claims,
 )
 
 pytestmark = pytest.mark.unit
@@ -242,6 +244,15 @@ class TestThePolicy:
         assert all(sentence.strip() for sentence in WITHHELD_SUMMARY.values())
         assert set(NOTHING_TO_CHECK_SUMMARY) == {"en", "hi"}
         assert "nothing to fact-check" in NOTHING_TO_CHECK_SUMMARY["en"]
+        assert set(NOTHING_TO_CHECK_IN_PART_SUMMARY) == {"en", "hi"}
+        assert "nothing to fact-check" in NOTHING_TO_CHECK_IN_PART_SUMMARY["en"]
+
+    def test_the_withheld_summary_offers_nothing_that_gives_the_same_answer(self) -> None:
+        """Asking to check what was read (`accept_partial`) cannot change an answer
+        withheld for having no claim in it while blocking gaps are checked past."""
+        assert rd.WITHHOLD_WHEN_BLOCKED is False
+        assert "only what it could read" not in WITHHELD_SUMMARY["en"]
+        assert "जितना वह पढ़ पाया" not in WITHHELD_SUMMARY["hi"]
 
 
 class TestThePolicyAsServed:
@@ -276,6 +287,30 @@ class TestThePolicyAsServed:
         )
 
         assert served_policy(reading, accept_partial=True) is ReadingPolicy.WITHHOLD
+
+    def test_with_no_claims_only_a_gap_that_could_decide_it_holds_the_answer_back(
+        self,
+    ) -> None:
+        """A YouTube video nobody may download is said not to have been watched, and
+        is never held back for that alone (2026-10-02 review)."""
+        unwatched = gap("video", GapCode.VIDEO_UNREAD, "Not watched.", blocking=False)
+        youtube = Reading(
+            kind="social_post",
+            parts=(
+                _part(PartKind.TITLE, "#shorts #leopard", label="Title"),
+                _part(
+                    PartKind.PICTURE_DESCRIPTION,
+                    "A leopard is attacking a man on a village street.",
+                    label=rd.THUMBNAIL_DESCRIBED,
+                ),
+            ),
+            gaps=(unwatched,),
+        )
+        assert withheld_without_claims(youtube) is False
+        assert withheld_without_claims(_post()) is False
+        assert withheld_without_claims(_post(self.BLOCKING_GAP)) is True
+        # Nothing checkable read at all: held back, whatever the gaps.
+        assert withheld_without_claims(Reading(kind="social_post", gaps=(unwatched,))) is True
 
     def test_package_0_s_withholding_is_one_switch_away(
         self, monkeypatch: pytest.MonkeyPatch
