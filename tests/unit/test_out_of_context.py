@@ -329,6 +329,21 @@ class TestTheSourceCheck:
 
         assert kept.direction is Direction.CONTRADICTS
 
+    @pytest.mark.parametrize("read", ["supports", "contradicts"])
+    def test_a_fake_ruled_out_is_not_a_fake_named(self, read: str) -> None:
+        """Snopes, verbatim: the check answered FALSE and out of context, and the
+        words "digitally altered" - ruled out - kept it from being either."""
+        snopes = (
+            "While the clip was authentic, meaning not generated with artificial "
+            "intelligence or digitally altered, it omits critical context from "
+            "Netanyahu's full remarks. He was not expressing his personal belief."
+        )
+        item = _report(read, "snopes.com", source_excerpt=snopes)
+
+        [kept] = _verified(_Checker("FALSE", out_of_context=True), [item]).evidence
+
+        assert is_out_of_context(kept.match_basis.metric)
+
     def test_a_support_the_check_calls_a_fabrication_is_not_kept(self) -> None:
         item = _report("supports", "altnews.in", source_excerpt="The quote is fabricated.")
 

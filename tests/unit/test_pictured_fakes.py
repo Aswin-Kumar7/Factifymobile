@@ -112,6 +112,18 @@ def test_not_when_the_check_does_not_say_false() -> None:
     assert kept.direction is Direction.SUPPORTS
 
 
+def test_not_when_the_debunk_rules_a_fake_out() -> None:
+    """ "Authentic - not AI-generated or digitally altered - but from 2019" says the
+    picture is real: never turned into a contradiction of who it shows."""
+    real = _read(
+        "supports",
+        title="Old photo of the leaders shared as BRICS 2026",
+        excerpt="The photo is authentic, not AI-generated or digitally altered, but is from 2019.",
+    )
+
+    assert _kept(_Checker("FALSE"), real) == []
+
+
 def test_a_contradiction_stays_one() -> None:
     [kept] = _kept(_Checker("FALSE"), _read("contradicts"))
 

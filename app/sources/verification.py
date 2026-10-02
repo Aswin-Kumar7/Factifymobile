@@ -121,7 +121,28 @@ _MADE_UP = re.compile(
 
 def _made_up(item: Evidence) -> bool:
     """Whether a source's headline or passage calls the claim's material made up."""
-    return _MADE_UP.search(f"{item.title or ''} {item.source_excerpt}") is not None
+    return _affirmed(_MADE_UP, f"{item.title or ''}. {item.source_excerpt}")
+
+
+# A word that turns what follows it in the same clause into its opposite, and where a
+# clause ends.
+_NEGATION = re.compile(r"\b(?:not|no|nor|neither|without|never)\b|n't\b", re.IGNORECASE)
+_CLAUSE_END = re.compile(r"[.;:!?]|\bbut\b", re.IGNORECASE)
+
+
+def _affirmed(pattern: re.Pattern[str], text: str) -> bool:
+    """Whether the text says what `pattern` matches, and not only that it is not so.
+
+    Snopes on the clipped Netanyahu video: "While the clip was authentic, meaning not
+    generated with artificial intelligence or digitally altered, it omits critical
+    context" - a finding of misframing that names the words of a fake only to rule
+    them out (2026-10-02).
+    """
+    for match in pattern.finditer(text):
+        clause = _CLAUSE_END.split(text[max(0, match.start() - 80) : match.start()])[-1]
+        if not _NEGATION.search(clause):
+            return True
+    return False
 
 
 # A claim about what a picture or video shows: who is pictured, what it is a photo of.
@@ -194,7 +215,7 @@ def _settled(
         and supports
         and about
         and verdict == "FALSE"
-        and _MEDIA_FAKED.search(f"{item.title or ''} {item.source_excerpt}")
+        and _affirmed(_MEDIA_FAKED, f"{item.title or ''}. {item.source_excerpt}")
     ):
         return _as_contradiction(item, reading.reason), (
             "kept (contradicts: the picture itself is called AI-made or altered)"
