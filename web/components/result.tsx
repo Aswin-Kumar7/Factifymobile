@@ -21,6 +21,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui";
 import { api } from "@/lib/api";
 import {
+  blocked,
   day,
   host,
   IMAGE_KIND,
@@ -31,6 +32,7 @@ import {
   markOf,
   missedMedia,
   PARTLY_READ_REASON,
+  readAny,
   readEnough,
   readNoun,
   served,
@@ -230,11 +232,23 @@ function partlySupported(v: Verdict): boolean {
   return v.action_reason === PARTLY_READ_REASON;
 }
 
+/** Finding the claims failed (the model did not answer, or answered nothing usable),
+ * so nothing the input says was searched for. Not the reading skip a withheld answer
+ * carries (`kind: "reading"`), not an input with no words to look in, and not when
+ * claims were found all the same. */
+function extractionFailed(v: Verdict): boolean {
+  return (
+    (v.skipped ?? []).some((s) => s.check === "claim_extraction" && s.kind !== "reading" && !/^no text to extract/i.test(s.reason ?? "")) &&
+    !v.claims.some((c) => c.claim_type !== "MEDIA")
+  );
+}
+
 const INCOMPLETE = "Not everything could be checked, so this answer may be incomplete.";
 
 /** The sentence under the verdict when not everything could be checked, by why: the
  * time running out only when it did (`kind: "deadline"`). A reading gap is said in
- * the reading panel instead; a case stored before 1.8 has none, so it is said here. */
+ * the reading panel instead; a case stored before 1.8 has none, so it is said here.
+ * Finding the claims failing is said in the summary (`extractionFailed`). */
 function incompleteLine(v: Verdict): string | null {
   const checking = (v.skipped ?? []).filter((s) => !isReadingSkip(s) && !NOTES.has(s.check));
   // A server before 1.8, and the pipeline's own timeouts until they are marked, send
@@ -743,27 +757,32 @@ function SourceCard({ e }: { e: Evidence }) {
   );
 }
 
-/** In place of the verdict when it was held back: what could not be read could decide
- * it, so no verdict was given, and nothing was spent finding claims. The ways on: send
- * what was missed (the text, the picture, the video), or check only what was read. */
+/** In place of the verdict when it was held back for what could not be read: nothing
+ * checkable was read, what was read held no claim, or (where the server holds back on
+ * any blocking gap) what was missed could decide it. The ways on: send what was missed
+ * (the text, the picture, the video), or check only what was read. */
 function Withheld({ read, onCheckRead, onSend }: { read: InputRead; onCheckRead?: () => void; onSend?: (what: "text" | "file") => void }) {
-  // With nothing worth checking read, checking "what was read" would be held back again.
-  const partial = readEnough(read) ? onCheckRead : undefined;
+  // Checking "what was read" changes the answer only when what was missed could decide
+  // it and something checkable was read; otherwise it would be held back again.
+  const partial = readEnough(read) && blocked(read) ? onCheckRead : undefined;
   // An upload was the picture or video already: sending it again reads it no further,
   // so its text, or what was read of it, is the way on.
   const upload = read.kind === "image" || read.kind === "video" || read.kind === "pdf";
   // What the gaps call for first - the picture or video itself, or the text - is the
-  // main action.
-  const main = upload ? (partial ? "read" : "text") : missedMedia(read) ? "file" : "text";
+  // main action. Nobody can upload a video from YouTube: its words are the way on.
+  const youtube = (read.platform ?? "").toLowerCase() === "youtube";
+  const main = upload ? (partial ? "read" : "text") : !youtube && missedMedia(read) ? "file" : "text";
   const noun = readNoun(read);
   const send = upload ? "Paste its text" : `Send the ${main === "file" ? "picture or video" : "text"} itself`;
   return (
     <div className="rounded-[14px] border border-line2 bg-linear-to-b from-unc-soft via-sf to-sf p-5 shadow-card sm:p-6">
       <div className="font-mono text-[11px] tracking-[0.14em] text-unc">NO VERDICT</div>
       <div className="mt-1 text-[2.1rem] leading-none font-medium tracking-tight text-unc sm:text-[2.4rem]">Not checked yet</div>
-      <p className="mt-3 text-[15px] font-semibold text-ink">Factify could not read all of this, so it has not given a verdict.</p>
+      <p className="mt-3 text-[15px] font-semibold text-ink">
+        {readAny(read) ? "Factify could not read all of this, so it has not given a verdict." : `Factify couldn't read this ${noun}, so it has not given a verdict.`}
+      </p>
       <p className="mt-1.5 text-[15px] leading-relaxed text-ink2">
-        What it read and what it couldn&apos;t are below. {send} and Factify will check all of it
+        {readAny(read) ? "What it read and what it couldn't are below." : "The reason is below."} {send} and Factify will check all of it
         {partial ? `, or check only what it could read of this ${noun}.` : "."}
       </p>
       <div className="mt-4 flex flex-wrap gap-2">
@@ -830,12 +849,15 @@ export function Result({
   const read = v.input_read ?? null;
   const withheld = withheldOf(v);
   const partly = partlyReadOf(v);
-  const noun = readNoun(read);
   const nothing = nothingToCheck(v);
   const decided = v.verdict !== "UNCONFIRMED";
   const style = nothing ? NOTHING : (VERDICT[v.verdict] ?? VERDICT.UNCONFIRMED);
   const kind = kindOf(v, givenKind);
   const video = v.media_report?.kind === "video";
+  // What the input is called; a case stored before 1.8 says it by what was sent.
+  const noun = read ? readNoun(read) : { text: "message", link: "page", post: "post", image: video ? "video" : "picture", pdf: "PDF" }[kind];
+  // Nothing it says was searched for: no "no source was found" about it.
+  const unsearched = !decided && !nothing && extractionFailed(v);
   // Checked from part of the input with all of that part supported: unconfirmed
   // because of what was not read, never because the news is too recent.
   const supportedPart = partlySupported(v);
@@ -844,7 +866,9 @@ export function Result({
     ? v.summary || v.action_reason
     : supportedPart
       ? `Everything Factify could read is supported by sources, but part of this ${noun} couldn't be read, and that part could say otherwise. So it isn't called true.`
-      : nothing
+      : unsearched
+        ? `Factify couldn't pick out the claims in this ${noun} this time, so what it says wasn't checked against any source. That says nothing about whether it's true. Check it again in a little while.`
+        : nothing
         ? read?.kind === "social_post" || read?.kind === "link"
           ? `We read this ${noun} and found no claim in it that can be checked - no news, figure or announcement. There's nothing here to confirm or rule out.`
           : video
@@ -1071,7 +1095,8 @@ export function Result({
       ) : (
         !decided &&
         !nothing &&
-        !withheld && (
+        !withheld &&
+        !unsearched && (
           <>
             <Box className="mt-4 p-4">
               <div className="font-semibold text-ink">No citable source was found</div>

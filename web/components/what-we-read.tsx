@@ -8,9 +8,11 @@
 // answer about half a post used to read exactly like one about all of it. This panel
 // shows what the answer rests on - the post's text, the words in each picture, what
 // was said in the video - with each claim underlined where it was found, and says
-// plainly what was missed. A description of what a picture or a video shows that no
-// claim was looked for in (`checked: false`) is shown muted and marked as not checked:
-// context, never evidence.
+// plainly what was missed. What a picture or a video shows is Factify's description,
+// labelled so ("… (described by Factify)"); since 1.8 as served it is checked like the
+// rest. One no claim was looked for in (`checked: false`: a wordless photograph's, or
+// any from a server before that) is shown muted and marked as not checked. A withheld
+// answer marks no part checked - nothing was - and is shown without those marks.
 //
 // Built to the same contract as the phone app's panel (design_plan.md section 7), in
 // the app's English. A case stored before 1.8 has no reading; result.tsx then shows
@@ -28,7 +30,8 @@ export type ReadPart = {
   kind: string;
   label?: string | null;
   text: string;
-  // False for a description of what a picture or a video shows: shown, never checked.
+  // In the text claims were found in. False for every part of a withheld answer, for a
+  // picture with no words, and for a description no claim was looked for in.
   checked: boolean;
   route: string;
   complete?: boolean;
@@ -96,17 +99,32 @@ export function readNoun(read: InputRead | null | undefined): string {
 
 const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
 
-// What Factify says a picture or a video shows. The server never counts it as read
-// enough to check (CONTEXT_ONLY in app/extraction/reading.py), even where an upload's
-// description is `checked` because claims were also looked for in it.
+// What Factify says a picture or a video shows: its words, not the input's.
 const DESCRIBED = new Set(["picture_description", "video_description"]);
 
-/** Enough was read to check anything (Reading.substantive on the server): a checked
- * part of three words or more, or a picture read in full, which can still be checked
- * for where it appeared before. "Check what was read" is offered only then: with
- * nothing read, checking it again would only be held back again. */
+/** Enough of the input's own words is ready to be checked (Reading.substantive on the
+ * server, without Factify's descriptions): a part marked `checked` with three words or
+ * more, or with words read from a picture. "Check what was read" is offered only then.
+ *
+ * A withheld answer from the server as served marks no part checked: it is held back
+ * only when nothing checkable was read, or when claims were looked for in what was
+ * read and none found - and sending it again with `accept_partial` would be held back
+ * again. Only an answer held back before its claims were looked for (package 0's
+ * design, and the contract samples) marks the parts it would check. */
 export function readEnough(read: InputRead): boolean {
-  return (read.parts ?? []).some((p) => p.kind === "picture_text" || (p.checked !== false && !DESCRIBED.has(p.kind) && words(p.text ?? "") >= 3));
+  return (read.parts ?? []).some(
+    (p) => p.checked !== false && (p.kind === "picture_text" ? !!p.text?.trim() : !DESCRIBED.has(p.kind) && words(p.text ?? "") >= 3),
+  );
+}
+
+/** Something not read could decide the answer: the only case `accept_partial` changes. */
+export function blocked(read: InputRead): boolean {
+  return (read.gaps ?? []).some((g) => g.blocking);
+}
+
+/** Anything of the input was read at all. */
+export function readAny(read: InputRead): boolean {
+  return (read.parts ?? []).some((p) => typeof p.text === "string" && !!p.text.trim());
 }
 
 /** 75 → "1:15"; 3725 → "1:02:05". */
@@ -138,6 +156,7 @@ const GAP: Record<string, string> = {
   article_truncated: "The article is long; its opening was read.",
   description_unread: "The video's description couldn't be read.",
   linked_page_unread: "The article it links to gave only its headline, so it was left out.",
+  page_unread: "The page couldn't be read at all, not even its headline.",
 };
 
 // Where one code covers different things, by the part it is about (`gap.part`).
@@ -150,6 +169,11 @@ const BY_PART: Record<string, Record<string, string>> = {
     on_screen_text: "Not every word shown in the video could be read in time.",
     picture_text: "The picture holds more text than is read at once. Only its start was checked.",
     document_text: "The PDF holds more text than is read at once. Only its start was checked.",
+    description: "The video's page holds more text than is read at once. Only its start was read.",
+  },
+  // The words on a video's frames failing to be read is not the video failing to be.
+  video_unread: {
+    on_screen_text: "The words shown in the video couldn't be read.",
   },
   reader_unavailable: {
     post: "Factify couldn't read this post this time.",
@@ -160,7 +184,8 @@ const BY_PART: Record<string, Record<string, string>> = {
   },
 };
 
-function gapLine(gap: ReadGap, parts: ReadPart[]): string {
+function gapLine(gap: ReadGap, parts: ReadPart[], platform?: string | null): string {
+  const detail = (gap.detail ?? "").trim();
   if (gap.code === "cut_off") {
     // Speech heard only in part says how much: the "{read} of {total}" the app shows.
     const heard = parts.find((p) => p.kind === gap.part && p.seconds_read != null);
@@ -168,7 +193,15 @@ function gapLine(gap: ReadGap, parts: ReadPart[]): string {
       return `Only the first ${clock(heard.seconds_read)} of the ${clock(heard.seconds_total)} video was heard and read.`;
     }
   }
-  return BY_PART[gap.code]?.[gap.part] ?? GAP[gap.code] ?? ((gap.detail ?? "").trim() || "Part of it couldn't be read.");
+  if (gap.code === "video_unread" && gap.part === "video" && gap.blocking === false) {
+    // Not a failure: a YouTube video nobody may download, or a post's videos past
+    // the ones read ("The post has 3 videos; Factify read the first 2.").
+    if ((platform ?? "").toLowerCase() === "youtube") {
+      return "YouTube doesn't let Factify download the video, so it wasn't watched. What its YouTube page gives was read instead.";
+    }
+    if (detail) return detail;
+  }
+  return BY_PART[gap.code]?.[gap.part] ?? GAP[gap.code] ?? (detail || "Part of it couldn't be read.");
 }
 
 // Gaps the full picture or video would fill: then uploading it is the first thing to try.
@@ -176,9 +209,13 @@ const MEDIA_GAPS = new Set(["picture_unread", "video_unread", "speech_unread", "
 // The parts of a picture or a video: a gap in one of these, whatever its code, is too.
 const MEDIA_PARTS = new Set(["video", "transcript", "on_screen_text", "picture_text"]);
 
-/** Whether sending the picture or video itself is the way to fill what was missed. */
+/** Whether sending the picture or video itself is the way to fill what was missed:
+ * only a gap that could decide the answer counts. A YouTube video that was not
+ * watched does not - it is said, and nobody can upload it from YouTube anyway. */
 export function missedMedia(read: InputRead): boolean {
-  return (read.gaps ?? []).some((g) => MEDIA_GAPS.has(g.code) || ((g.code === "cut_off" || g.code === "reader_unavailable") && MEDIA_PARTS.has(g.part)));
+  return (read.gaps ?? []).some(
+    (g) => g.blocking && (MEDIA_GAPS.has(g.code) || ((g.code === "cut_off" || g.code === "reader_unavailable") && MEDIA_PARTS.has(g.part))),
+  );
 }
 
 // ---------------------------------------------------------------- where claims are
@@ -420,26 +457,31 @@ function heard(part: ReadPart): string | null {
 const LIMIT = 600;
 
 /** One part: its label, its text with the claims in it underlined, and how it was read.
- * `clamp` keeps it to three lines, for the panel folded away. */
-function Part({ part, spans, thumb, clamp }: { part: ReadPart; spans: Span[]; thumb: string | null; clamp: boolean }) {
+ * `clamp` keeps it to three lines, for the panel folded away. `withheld`: nothing was
+ * checked, so no part is marked as left out of the check. */
+function Part({ part, spans, thumb, clamp, withheld }: { part: ReadPart; spans: Span[]; thumb: string | null; clamp: boolean; withheld: boolean }) {
   const [all, setAll] = useState(false);
   const text = part.text.trim() ? part.text : "";
   const long = !clamp && text.length > LIMIT;
   const upTo = long && !all ? LIMIT : text.length;
   const time = part.kind === "transcript" ? heard(part) : null;
+  // Factify's own description of a picture or a video that no claim was looked for in:
+  // context, never evidence. Any other part left out of the check is either empty (a
+  // picture with no words) or in a withheld answer, where nothing was checked.
+  const aside = !withheld && !part.checked && DESCRIBED.has(part.kind);
   return (
     <div className="flex gap-3">
       {thumb && <Thumb src={thumb} alt={labelOf(part)} />}
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold text-ink3">
           <span>{labelOf(part)}</span>
-          {!part.checked && <span className="rounded-md bg-sf2 px-1.5 py-px font-medium">Description only, not checked</span>}
+          {aside && <span className="rounded-md bg-sf2 px-1.5 py-px font-medium">Description only, not checked</span>}
           {part.complete === false && <span className="rounded-md bg-mis-soft px-1.5 py-px font-medium text-mis">Read in part</span>}
           {time && <span className="font-medium">· {time}</span>}
         </div>
         {text ? (
           <p
-            className={`mt-1 whitespace-pre-line ${clamp ? "line-clamp-3" : ""} ${part.checked ? "text-[15px] leading-relaxed text-ink" : "text-sm leading-relaxed text-ink3"}`}
+            className={`mt-1 whitespace-pre-line ${clamp ? "line-clamp-3" : ""} ${aside ? "text-sm leading-relaxed text-ink3" : "text-[15px] leading-relaxed text-ink"}`}
           >
             {marked(text, spans, upTo)}
             {upTo < text.length ? "…" : ""}
@@ -542,6 +584,7 @@ export function WhatWeRead({
   const collapsible = shown.length > 1 || longFirst;
   const folded = collapsible && !open;
   const blocking = gaps.some((g) => g.blocking);
+  const anything = readAny(read);
   const noun = readNoun(read);
 
   // A picture shows once, beside the first part read from it.
@@ -572,19 +615,20 @@ export function WhatWeRead({
 
       {missed && (
         <div className={`mt-3 rounded-[10px] px-3.5 py-3 ${blocking ? "bg-mis-soft" : "bg-sf2"}`} role="status">
-          <p className="text-sm font-semibold text-ink">Factify could only read part of this {noun}.</p>
+          <p className="text-sm font-semibold text-ink">{anything ? `Factify could only read part of this ${noun}.` : `Factify couldn't read this ${noun}.`}</p>
           {gaps.length > 0 && (
             <ul className="mt-1.5 space-y-1 text-sm leading-snug text-ink2">
               {gaps.map((g, i) => (
                 <li key={`${g.code}-${i}`} className="flex gap-2">
                   <span aria-hidden="true" className="mt-[0.55em] h-1 w-1 shrink-0 rounded-full bg-ink3" />
-                  <span>{gapLine(g, parts)}</span>
+                  <span>{gapLine(g, parts, read.platform)}</span>
                 </li>
               ))}
             </ul>
           )}
-          {read.checked_partially && (
-            <p className="mt-2 text-sm text-ink2">You asked Factify to check what it could read, so this answer is about that part only.</p>
+          {/* The server checks past a gap on its own (1.8 as served), not only when asked. */}
+          {read.checked_partially && !withheld && (
+            <p className="mt-2 text-sm text-ink2">Factify checked what it could read, so this answer is about that part only.</p>
           )}
         </div>
       )}
@@ -592,7 +636,7 @@ export function WhatWeRead({
       {visible.length > 0 ? (
         <div className="mt-3.5 space-y-4">
           {visible.map(({ p, i }, n) => (
-            <Part key={i} part={p} spans={spans[i]} thumb={thumbs[n]} clamp={folded} />
+            <Part key={i} part={p} spans={spans[i]} thumb={thumbs[n]} clamp={folded} withheld={withheld} />
           ))}
         </div>
       ) : (
