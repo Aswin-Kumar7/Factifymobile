@@ -200,11 +200,19 @@ def _reads_as_a_fact_check(title: str | None, url: str) -> bool:
     return bool(_FACT_CHECK_WORDS.search(f"{title or ''} {url}"))
 
 
-# A newsroom's fact-check desk, by its own label: the section in the address or the
-# label on the headline. Narrower than `_FACT_CHECK_WORDS`, which a news headline
-# trips with "viral" or "fake" - a report of a fake call centre is not a fact-check.
-_FACT_CHECK_DESK = re.compile(
-    r"fact[\s_-]?check|webqoof|फ़ैक्ट\s?चेक|फैक्ट\s?चेक|ফ্যাক্ট\s?চেক|ఫ్యాక్ట్\s?చెక్|பேக்ட்\s?செக்",
+# A newsroom's fact-check desk, by its own label. Narrower than `_FACT_CHECK_WORDS`,
+# which a news headline trips with "viral" or "fake" - a report of a fake call centre
+# is not a fact-check - and narrower than the words "fact check" anywhere: a report
+# that the Bombay High Court struck down the fact-check unit rules is news about one.
+#
+# The desk's section of the address - /fact-check/, /times-fact-check/, /webqoof/ -
+# never the article's own slug; or a host of its own, factcheck.afp.com.
+_DESK_SECTION = re.compile(r"(?:[a-z0-9]+[-_])*(?:fact[-_]?checks?|webqoof)", re.IGNORECASE)
+_DESK_HOST = re.compile(r"fact-?check(?:er|s)?", re.IGNORECASE)
+_DESK_NAME = r"(?:fact[\s-]?check|webqoof|फ़ैक्ट\s?चेक|फैक्ट\s?चेक|ফ্যাক্ট\s?চেক|ఫ్యాక్ట్\s?చెక్|பேக்ட்\s?செக்)"
+# Or a headline labelled as the desk's: "Fact Check: ...", "... | Fact Check".
+_DESK_LABEL = re.compile(
+    rf"^\s*{_DESK_NAME}\s*[:|]|\|\s*{_DESK_NAME}\s*(?:\||$)",
     re.IGNORECASE,
 )
 
@@ -216,9 +224,13 @@ def _a_fact_check_desk(title: str | None, url: str) -> bool:
         parts = urlsplit(url)
     except ValueError:
         return False
-    return bool(
-        _FACT_CHECK_DESK.search(f"{parts.hostname or ''}{parts.path}")
-        or _FACT_CHECK_DESK.match((title or "").strip())
+    labels = (parts.hostname or "").split(".")
+    # Every segment but the last, which is the article's own slug.
+    sections = [segment for segment in parts.path.split("/") if segment][:-1]
+    return (
+        any(_DESK_HOST.fullmatch(label) for label in labels)
+        or any(_DESK_SECTION.fullmatch(segment) for segment in sections)
+        or _DESK_LABEL.search(title or "") is not None
     )
 
 

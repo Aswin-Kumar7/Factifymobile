@@ -51,7 +51,7 @@ from app.embeddings.image import cosine
 from app.extraction.model_wire import WireFormat, build_call, response_text, usage_of
 from app.governor.governor import ProviderUnavailable
 from app.observability.logging import event
-from app.security.fetcher import FetchResult
+from app.security.fetcher import FetchFailure, FetchResult
 from app.security.injection import fence
 from app.sources.corpus_text import is_navigation
 from app.sources.local_reading import local_reading, local_same_claim
@@ -86,6 +86,37 @@ _REPORTS_A_DENIAL = re.compile(
 # What a model provider's refusal on its content policy reads like in a failed call
 # (app/security/fetcher.py `_provider_error`): Azure's "content_filter".
 _CONTENT_FILTERED = re.compile(r"content[\s_-]?(?:filter|management|policy)", re.IGNORECASE)
+
+
+# How a provider says it withheld an answer on its content policy, in a 200: Azure
+# OpenAI's "content_filter" stop, Gemini's "SAFETY" finish or a blocked prompt.
+_WITHHELD_STOPS = frozenset({"content_filter", "SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST"})
+
+
+def _withheld(fmt: WireFormat, response: Any) -> Any:
+    """The response, or a refusal in its place when the provider withheld the answer
+    on its content policy - so `_send` treats it as the refusal it is."""
+    if not isinstance(response, FetchResult):
+        return response
+    try:
+        envelope = json.loads(response.text)
+        if fmt is WireFormat.GEMINI:
+            blocked = bool((envelope.get("promptFeedback") or {}).get("blockReason"))
+            candidates = envelope.get("candidates") or [{}]
+            stop = str(candidates[0].get("finishReason") or "")
+        else:
+            blocked = False
+            stop = str((envelope.get("choices") or [{}])[0].get("finish_reason") or "")
+    except (json.JSONDecodeError, AttributeError, IndexError, TypeError, UnicodeDecodeError):
+        return response
+    if not blocked and stop not in _WITHHELD_STOPS:
+        return response
+    return FetchFailure(
+        url=response.url,
+        reason=f"provider withheld its answer (content_filter: {stop or 'prompt blocked'})",
+        kind="provider",
+    )
+
 
 # How many passages go to the model in one call. One call per source, not one per
 # passage: the model needs to see the alternatives to judge which actually bears on
@@ -205,10 +236,12 @@ class ReasoningOutcome:
             Relation.INSUFFICIENT: 2,
         }
         # Among context, a narrower version of the claim says the most: it is what
-        # the claim overstates.
+        # the claim overstates. Then a support on someone's word ("police said one
+        # terrorist was killed"), which the source check may confirm - cited behind a
+        # more relevant paragraph about the area, it was never sent to the check.
         return min(
             self.judgements,
-            key=lambda j: (rank.get(j.relation, 2), not j.narrower, -j.relevance),
+            key=lambda j: (rank.get(j.relation, 2), not j.narrower, not j.attributed, -j.relevance),
         )
 
 
@@ -867,7 +900,12 @@ For each source:
   * FALSE if the passage establishes that the claim is wrong, including a fact-check
     rating it false and an official denial. FALSE is a finding about this claim, so it
     always goes with addresses_claim true; a passage about something else is UNCLEAR.
-    A passage that repeats the claim in order to debunk it is FALSE, never TRUE. Wrong
+    A passage that repeats the claim in order to debunk it is FALSE, never TRUE. For
+    a claim that someone said, announced, warned or found something, wrong means
+    they did not: the quote is fabricated or misattributed, no such statement or
+    warning was issued, they have denied making it. A passage or fact-check that
+    calls what they said false, and does not dispute that they said it, leaves such
+    a claim standing: UNCLEAR, never FALSE. Wrong
     means it states something that cannot be true at the same time as the claim,
     about the same thing: a different total for
     the same count over the same period, a different outcome of the same event, an
@@ -1044,7 +1082,9 @@ For each judgement:
     a claim that someone said, warned or did something, DENIES is a passage saying
     they did not: the quote is fabricated or misattributed, no such warning or
     advisory was issued, the story never happened, the person or organisation has
-    denied saying it.
+    denied saying it. A passage or a fact-check that calls what they said false,
+    and does not dispute that they said it, is REFUTES_REPORTED_CONTENT, never
+    DENIES.
   * INCOMPATIBLE - the passage states a fact that cannot be true at the same time
     as the claim: the same event, place, period or person, with a different
     outcome - another winner, a different total for the same count over the same
@@ -1101,7 +1141,9 @@ For each judgement:
     reports that a bridge collapsed in Bihar", a passage establishing that no bridge
     collapsed is not a contradiction — it is what the ministry said, and it agrees
     with the claim. Disproving the inner statement of a debunk, a denial or a
-    quotation almost never disproves the claim reporting it.
+    quotation almost never disproves the claim reporting it. A fact-check rating a
+    politician's statement false, while agreeing that the politician made it, is
+    this too, for a claim that they made it.
 
 - scope: required whenever the relation is SUPPORTS; NOT_APPLICABLE otherwise.
   Check every part of the claim against the passage: who acts, who it applies to,
@@ -1469,6 +1511,10 @@ class PassageReasoner:
         a model under another content policy reads what the first would not. Any
         other failure is returned as it came: a timeout or an outage is not a question
         another model answers better.
+
+        The refusal comes two ways: a 400 on the request, or a 200 whose answer the
+        filter withheld (`_withheld`). The second used to fail later as "schema
+        validation failed", which said nothing of why and was never asked again.
         """
         route = ModelRoute(
             endpoint=self._endpoint,
@@ -1476,7 +1522,10 @@ class PassageReasoner:
             model_id=self._model_id,
             api_format=self._api_format,
         )
-        response = await self._post(route, system=system, user_block=user_block, **options)
+        response = _withheld(
+            route.api_format,
+            await self._post(route, system=system, user_block=user_block, **options),
+        )
         fallback = self._fallback
         if (
             isinstance(response, FetchResult)
@@ -1500,7 +1549,7 @@ class PassageReasoner:
             call=call,
         )
         retried = await self._post(fallback, system=system, user_block=user_block, **options)
-        return retried, fallback
+        return _withheld(fallback.api_format, retried), fallback
 
     async def _post(
         self, route: ModelRoute, *, system: str, user_block: str, **options: Any

@@ -135,21 +135,27 @@ def _settled(item: Evidence, read: str, reading: Any) -> tuple[Evidence | None, 
     # the Guardian and ESPN on City's misstated accounts for not repeating
     # "2009-2018" (2026-10-02). What a source does not mention is unconfirmed by it,
     # not a reason to discard what it does confirm.
+    #
+    # Never when the check calls it a smaller version: a proposal reported for a
+    # claim of a decision leaves nothing out and states nothing differently, and two
+    # such reports read as narrower would otherwise have cleared "Govt has approved
+    # Rs 5,000 a month for every woman" as true.
     says_less = (
         supports
         and about
         and not reading.states_differently
         and not reading.other_group
+        and not reading.smaller_version
         and getattr(reading, "core_established", False)
     )
 
     if verdict == "PARTLY":
         # Read as support, and the check found nothing it states differently - only
         # details it does not mention. What it says matches the claim: India Today on
-        # the Aditya-L1 launch, without naming the launch site.
-        if read in ("supports", "attributed") and about and not reading.states_differently:
-            return _as_support(item), "kept (supports, says less)"
-        if says_less:
+        # the Aditya-L1 launch, without naming the launch site. Only for a passage
+        # the reader found supports the claim itself: a narrower version or someone
+        # else's word is support only on the check's own finding (`says_less`).
+        if read == "supports" and about and not reading.states_differently:
             return _as_support(item), "kept (supports, says less)"
         # A smaller version of the claim: that version is what it is evidence of, not
         # the claim - "partly true". Asked as its own question, because asked through
@@ -177,6 +183,10 @@ def _settled(item: Evidence, read: str, reading: Any) -> tuple[Evidence | None, 
         )
         if smaller:
             return _as_narrower(item, reading.reason), "kept (narrower than the claim)"
+        # Checked after the smaller version, so a source both readers found smaller
+        # stays the smaller version it is.
+        if says_less:
+            return _as_support(item), "kept (supports, says less)"
         return None, rejected
 
     if says_less:
@@ -508,6 +518,10 @@ def _host(url: str) -> str:
     return (urlsplit(url).hostname or url).removeprefix("www.")
 
 
+# A year a claim names: 1900-2099.
+_YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
+
+
 # A full date in a claim's English: "2 September 2023" or "September 2, 2023".
 _MONTHS = {
     name: number
@@ -660,7 +674,11 @@ def _other_occurrence(item: Evidence, claim: Claim) -> str | None:
     said = claim.search_text
     passage = f"{item.title or ''} {item.source_excerpt}"
     # When the claim says it happened - not a forecast's target year (`event_years`).
+    # The target still dates the claim: "500 GW by 2030" is not an undated claim
+    # about the shared page's moment ("an earlier occurrence" below), and the 2021
+    # reports that set the target are about it.
     years = event_years(said)
+    dated = bool(years) or _YEAR.search(said) is not None
     named = any(str(year) in passage for year in years)
 
     # Published before the year the claim is about, and not naming it: it cannot be
@@ -691,7 +709,7 @@ def _other_occurrence(item: Evidence, claim: Claim) -> str | None:
     reference = current_reference_date.get()
     if (
         reference is not None
-        and not years
+        and not dated
         and published is not None
         and (reference - published).days > _EARLIER_DAYS
         and claim.claim_type is ClaimType.EVENT
