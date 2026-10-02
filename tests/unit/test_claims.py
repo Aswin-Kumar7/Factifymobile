@@ -374,6 +374,25 @@ class TestDebunksQuoteCardsAndLabels:
 
         assert "a claim's text keeps the names the document writes" in _SYSTEM_INSTRUCTION
 
+    def test_what_a_quote_asserts_is_still_checked(self) -> None:
+        """A "Ratan Tata" card saying hot lemon water kills cancer cells was checked only
+        on whether he said it: the health claim, a CRITICAL headline before, went
+        unchecked, and a real person's false figure could read true (2026-10-02 review).
+        """
+        from app.extraction.llm import _SYSTEM_INSTRUCTION
+
+        assert "A real person can be quoted saying something false" in _SYSTEM_INSTRUCTION
+        assert "SUPPORTING_DETAIL with its own severity" in _SYSTEM_INSTRUCTION
+        assert "CRITICAL for a health or safety claim" in _SYSTEM_INSTRUCTION
+        assert "Never extract the words as a bare assertion" not in _SYSTEM_INSTRUCTION
+
+    def test_a_screenshot_of_a_post_is_read_like_the_post(self) -> None:
+        from app.extraction.llm import _SYSTEM_INSTRUCTION
+
+        assert "A screenshot of a post" in _SYSTEM_INSTRUCTION
+        assert "is read like the post itself" in _SYSTEM_INSTRUCTION
+        assert "said to have said or posted" not in _SYSTEM_INSTRUCTION
+
 
 class TestStoredReadingsArePerModel:
     """Switching the model must not go on serving the old model's claims."""
@@ -694,3 +713,178 @@ class TestAShortPostKeepsItsOwnSentence:
         result = await pipeline.extract(document, content_hash="sha256:described")
 
         assert result.claims == ()
+
+    async def test_a_reading_that_names_someone_else_is_not_kept(self) -> None:
+        """The message's sentence is shown, but the model's English is searched: a
+        name the message never writes, with no title it could stand for, would be
+        checked in the person's name (2026-10-02 review)."""
+        message = (
+            "Breaking news. Seven men were held in a spy bust by the police in Delhi on "
+            "Sunday. Share widely."
+        )
+        renamed = _proposal(
+            "Mumbai Police arrested seven men for spying on Sunday.",
+            importance="HEADLINE",
+            standalone_english="Mumbai Police arrested seven men for spying on Sunday.",
+        )
+        pipeline = ClaimPipeline(FakeExtractor(ExtractionOutcome(claims=(renamed,))))
+
+        result = await pipeline.extract(message, content_hash="sha256:renamed", language="en")
+
+        assert result.claims == ()
+
+
+class TestTheAnchorCheckAfterReview:
+    """The 2026-10-02 review of the anchor check: faithful claims it threw away, and
+    substitutions it let through."""
+
+    # Over the short-message length, so no fallback can rescue a claim.
+    PADDING = " The statement was issued late on Tuesday evening after a meeting." * 10
+    FORWARD = (
+        "URGENT!! Central Govt has declared every Saturday a public holiday for all public "
+        "sector banks with immediate effect. Banks will remain closed on all Saturdays "
+        "from next week. Please share with everyone." + PADDING
+    )
+    SPY_BUST = TestAFaithfulRewriteStillAnchors.SPY_BUST
+
+    @pytest.mark.parametrize(
+        ("claim_text", "source"),
+        [
+            # A run of most of the claim's words, with a name spelled out or added: kept
+            # before the name check ran ahead of it, and kept again.
+            (
+                "The Central Government has declared every Saturday a public holiday for "
+                "all public sector banks with immediate effect.",
+                FORWARD,
+            ),
+            (
+                "The Indian Army killed the terrorist Hashim Moosa in an encounter in Budgam",
+                "The army killed the terrorist Hashim Moosa in an encounter in Budgam on "
+                "Monday." + PADDING,
+            ),
+            # A number in digits where the source spells it out.
+            (
+                "Police arrested 7 men in Delhi on Sunday for spying",
+                "Police arrested seven men in Delhi on Sunday for spying, officials said.",
+            ),
+            # A date written in numbers, a leading zero, and a month given by number.
+            (
+                "The RBI notice dated 30.09.2026 says banks will be closed on all Saturdays "
+                "from October 2026",
+                "RBI notice No. 12 dated 30.09.2026: banks will be closed on all Saturdays "
+                "from October",
+            ),
+            (
+                "Schools will remain closed on 9 October in Delhi",
+                "Schools will remain closed on 09 October in Delhi due to pollution, the "
+                "order said.",
+            ),
+            (
+                "CBSE has postponed the Class 10 and 12 board exams to 15 March 2027.",
+                "CBSE circular No. Acad-45/2026 dated 28.09.2026: Board exams for Class 10 "
+                "and 12 are postponed to 15.03.2027 due to the new syllabus.",
+            ),
+            # A place's people for the place, and an acronym written in capitals.
+            (
+                "Pakistani drones were shot down by the army over Jammu on Monday night",
+                "Drones from Pakistan were shot down by the army over Jammu on Monday "
+                "night, officials said.",
+            ),
+            (
+                "The Ministry of Home Affairs ordered all schools in Manipur to close for a week",
+                "MHA ordered all schools in Manipur to close for a week after the violence",
+            ),
+        ],
+    )
+    def test_it_is_kept(self, claim_text: str, source: str) -> None:
+        from app.extraction.claims import _locate
+
+        assert _locate(claim_text, source) is not None
+
+    @pytest.mark.parametrize(
+        ("claim_text", "source"),
+        [
+            # A name substituted at the start of the claim, where a capital alone is no
+            # sign of a name - but "Mumbai Police" is two.
+            (
+                "Mumbai Police arrested Anas, Mohammad, Danish, Arif, Sabir, Khalid and "
+                "Junaid in a Pakistan ISI-linked spy agency bust.",
+                SPY_BUST,
+            ),
+            # Initials that are a word or another acronym: a "Local MP" is not Mumbai
+            # Police, "told us" is not the United States, and the MP who spoke is not
+            # Madhya Pradesh.
+            (
+                "Anas, Mohammad, Danish, Arif, Sabir, Khalid and Junaid were arrested by "
+                "Mumbai Police in a Pakistan ISI-linked spy bust.",
+                SPY_BUST + " Local MP demands answers.",
+            ),
+            (
+                "The United States banned the import of 40 kg of ganja seized by police",
+                "Andhra police seized 40 kg of ganja, officials told us. They banned the import.",
+            ),
+            (
+                "Madhya Pradesh police seized 40 kg of ganja from the gang",
+                "Andhra police seized 40 kg of ganja, the MP said. Officials said the gang "
+                "was busted.",
+            ),
+            # Another date, another figure where the source spells one out.
+            (
+                "The RBI notice dated 30.08.2026 says banks will be closed on all Saturdays",
+                "RBI notice No. 12 dated 30.09.2026: banks will be closed on all Saturdays "
+                "from October",
+            ),
+            (
+                "Police arrested 8 men in Delhi on Sunday for spying",
+                "Police arrested seven men in Delhi on Sunday for spying, officials said.",
+            ),
+        ],
+    )
+    def test_it_is_not(self, claim_text: str, source: str) -> None:
+        from app.extraction.claims import _locate
+
+        assert _locate(claim_text, source) is None
+
+    @pytest.mark.parametrize(
+        ("one", "other"),
+        [
+            ("Rs 5cr", "Rs 5 crores"),
+            ("£900m", "900 million"),
+            ("dated 09.10.2026", "dated 9 Oct 2026"),
+            ("a 6.50% rise", "a 6.5 per cent rise"),
+            ("Central Govt", "Central Government"),
+        ],
+    )
+    def test_the_same_fact_written_two_ways_reads_the_same(self, one: str, other: str) -> None:
+        from app.extraction.claims import _fact_words
+
+        assert set(_fact_words(other)) <= set(_fact_words(one))
+
+    async def test_the_source_is_read_once_for_every_claim(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Two full passes over the source for every claim not found word for word, and
+        two more for each discard's reason, held the event loop for seconds on a long
+        PDF (2026-10-02 review)."""
+        from app.extraction import claims
+
+        reads = 0
+        of = claims._Source.of
+
+        def counted(source: str, folded: str) -> claims._Source:
+            nonlocal reads
+            reads += 1
+            return of(source, folded)
+
+        monkeypatch.setattr(claims._Source, "of", staticmethod(counted))
+        proposals = (
+            _proposal("The government announced a relief scheme for farmers on Friday"),
+            _proposal("Aliens landed in Delhi yesterday"),
+            _proposal("Reuters said the outlay is five hundred crore rupees for farmers"),
+        )
+        pipeline = ClaimPipeline(FakeExtractor(ExtractionOutcome(claims=proposals)))
+
+        result = await pipeline.extract(DOCUMENT, content_hash="sha256:doc")
+
+        assert len(result.discarded) >= 1
+        assert reads == 1
