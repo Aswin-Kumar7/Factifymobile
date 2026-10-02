@@ -79,6 +79,7 @@ class _Platform:
         self.media = {PICTURE: images.original()} if media is None else media
         self.reads: list[Any] = []
         self.downloads: list[tuple[str, int | None]] = []
+        self.caps: dict[str, int] = {}
 
     def handles(self, ref: Any) -> bool:
         return True
@@ -91,6 +92,7 @@ class _Platform:
         self, media: PostMedia, *, max_bytes: int, max_seconds: int | None = None
     ) -> Downloaded | Gap:
         self.downloads.append((media.url, max_seconds))
+        self.caps[media.url] = max_bytes
         got = self.media.get(media.url)
         if isinstance(got, Gap):
             return got
@@ -728,6 +730,32 @@ class TestTheStillsYouTubePublishes:
         body = await _check(app, {"url": self.SHORT})
 
         assert describer.sheets == []
+        assert all(p["route"] != "youtube.stills" for p in body["input_read"]["parts"])
+        [(document, _)] = checker.documents
+        assert "What the video's thumbnail shows (described by Factify)" in document
+
+    async def test_each_still_is_fetched_under_a_small_cap(self) -> None:
+        from app.api.post_checks import STILL_MAX_BYTES
+
+        platform, checker = self._platform(), _Checker()
+        app = _app(platform, checker, pictures=self._Describer(self.SHOWS))
+
+        await _check(app, {"url": self.SHORT})
+
+        assert all(platform.caps[url] <= STILL_MAX_BYTES for url in self.STILLS)
+
+    async def test_a_failed_description_leaves_the_thumbnail(self) -> None:
+        """Never fails the check: the stills' description going wrong adds nothing."""
+
+        class _Broken(self._Describer):  # type: ignore[name-defined,misc]
+            async def describe_video(self, sheet: bytes, *, frames: int, span: str) -> OcrOutcome:
+                raise RuntimeError("the hosted reader fell over")
+
+        platform, checker = self._platform(), _Checker()
+        app = _app(platform, checker, pictures=_Broken(self.SHOWS))
+
+        body = await _check(app, {"url": self.SHORT})
+
         assert all(p["route"] != "youtube.stills" for p in body["input_read"]["parts"])
         [(document, _)] = checker.documents
         assert "What the video's thumbnail shows (described by Factify)" in document

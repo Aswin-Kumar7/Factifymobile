@@ -51,7 +51,7 @@ from app.sources.reasoning import PassageReasoner
 logger = logging.getLogger("factify.factcheck")
 
 NAME = "factcheck"
-VERSION = "2026.10.03.1"
+VERSION = "2026.10.03.2"
 PROVIDER = "factcheck"
 
 # A fact-check must be about *this* claim before its rating means anything. Below
@@ -285,14 +285,19 @@ def parse_rating_from_title(title: str) -> str | None:
 
     # A headline that names no rating of true or false, and says the material was
     # clipped: "No, Clipped Video Goes Viral". Never one that says it was tampered
-    # with as well - a morphed and cropped picture is no genuine one.
-    if _TAMPERED.search(lowered) is None:
+    # with as well - a morphed and cropped picture is no genuine one - nor one that
+    # says the claim is false in other words: BOOM's "Cropped video falsely claims
+    # Iran President Pezeshkian touched Hindu seer's feet" debunks an event that never
+    # happened, and is left unrated, as it was before.
+    if _TAMPERED.search(lowered) is None and _CALLED_FALSE.search(lowered) is None:
         for rating in sorted(_CONTEXT_RATINGS, key=len, reverse=True):
             if _mentions(lowered, rating):
                 return rating
 
     return None
 
+
+_CALLED_FALSE = re.compile(r"\b(?:falsely|wrongly|untrue|did not|didn't|never)\b")
 
 _TAMPERED = re.compile(
     r"\b(?:morphed|doctored|photoshopped|deep ?fake|ai[- ]generated|digitally|edited|"

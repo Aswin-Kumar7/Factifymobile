@@ -61,7 +61,7 @@ from app.sources.local_reading import local_reading, local_same_claim
 logger = logging.getLogger("factify.sources.reasoning")
 
 PROVIDER = "llm"
-REASONER_VERSION = "2026.10.03.6"
+REASONER_VERSION = "2026.10.03.7"
 
 # The metric prefix of a support the article attributes to someone else - "the Army
 # said", "police said" - held as context until the source check, reading the passage

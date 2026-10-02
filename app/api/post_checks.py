@@ -865,6 +865,9 @@ async def _read_youtube(request: Request, read: PostRead) -> None:
 # of these - only letterboxed 480x360 copies - and is left to its thumbnail.
 _SHORT_STILLS = ("oar1", "oar2", "oar3")
 _STILL_MOMENTS = ("about 1/4", "about 1/2", "about 3/4")
+# The most one still may weigh. YouTube's are 20-100 KB; anything near this is not
+# one of them, and is not downloaded.
+STILL_MAX_BYTES = 2 * 1024 * 1024
 YOUTUBE_STILLS_DESCRIBED = (
     "What the video shows, from stills YouTube publishes of it (described by Factify)"
 )
@@ -888,7 +891,7 @@ async def _youtube_stills(request: Request, post: SocialPost) -> tuple[ReadPart,
     if hosted is None or reader is None or not video_id:
         return ()
     try:
-        max_bytes = request.app.state.settings.limits.max_upload_bytes
+        max_bytes = min(STILL_MAX_BYTES, request.app.state.settings.limits.max_upload_bytes)
         got = await asyncio.gather(
             *(
                 reader.download(

@@ -166,8 +166,33 @@ def depicts(claim: Claim) -> bool:
     return any(_DEPICTS.search(text) for text in (claim.search_text, claim.text) if text)
 
 
+# Claims about material - who said what, what a picture or video shows - which alone
+# can be genuine and shown out of context.
+_MATERIAL_TYPES = frozenset({ClaimType.QUOTE, ClaimType.ATTRIBUTION, ClaimType.MEDIA})
+
+
+def about_material(claim: Claim) -> bool:
+    """Whether a claim is about words, a picture or footage, which alone can be
+    genuine and presented out of context: a quote or an attribution, a claim about
+    what a picture or video shows, or the claim that a post's footage was taken at
+    its event (`app/extraction/llm.py` `_footage_claim`).
+
+    Not a claim that an event happened. BOOM's "Cropped video falsely claims Iran
+    President touched Hindu seer's feet" says the event did not happen, and the video
+    is genuine: read as out of context, that FALSE would have read MISLEADING.
+    """
+    return (
+        claim.claim_type in _MATERIAL_TYPES or claim.anchor.section == "footage" or depicts(claim)
+    )
+
+
 def _settled(
-    item: Evidence, read: str, reading: Any, *, depiction: bool = False
+    item: Evidence,
+    read: str,
+    reading: Any,
+    *,
+    depiction: bool = False,
+    material: bool = False,
 ) -> tuple[Evidence | None, str]:
     """What the check's answer makes of one source: the copy to keep, or None, and
     the outcome for the log.
@@ -191,7 +216,9 @@ def _settled(
     verdict = reading.verdict
     about = reading.addresses_claim
     supports = read in _SUPPORT_READS
-    framed = bool(getattr(reading, "out_of_context", False))
+    # Only a claim about words, a picture or footage can be genuine and misframed
+    # (`about_material`): an event claim the passage denies stays denied.
+    framed = material and bool(getattr(reading, "out_of_context", False))
     rejected = f"rejected: read {read}, check said {verdict}, about the claim={about}"
 
     # A fact-check rated the claim "missing context" or "clipped": kept when the
@@ -597,6 +624,7 @@ class SourceVerification:
 
         kept: list[Evidence] = []
         depiction = depicts(claim)
+        material = about_material(claim)
         for index, item in enumerate(sided):
             reading = answer.readings.get(index)
             host = _host(item.citation_url)
@@ -607,7 +635,7 @@ class SourceVerification:
                 continue
             read = _read_as(item)
             assert read is not None
-            settled, outcome = _settled(item, read, reading, depiction=depiction)
+            settled, outcome = _settled(item, read, reading, depiction=depiction, material=material)
             if settled is not None:
                 kept.append(settled)
             outcomes.append(

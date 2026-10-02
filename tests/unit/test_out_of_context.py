@@ -34,6 +34,7 @@ from app.domain import (
     Tier,
     Verdict,
 )
+from app.domain.claim import ClaimAnchor
 from app.domain.enums import Relation
 from app.domain.evidence import (
     NARROWER_SCOPE,
@@ -54,7 +55,7 @@ from app.sources.reasoning import (
     SourceReading,
     is_attributed_support,
 )
-from app.sources.verification import SourceVerification, dedupe
+from app.sources.verification import SourceVerification, about_material, dedupe
 from app.verdict.engine import (
     NARROWER_RULE,
     OUT_OF_CONTEXT_RULE,
@@ -286,10 +287,10 @@ class _Ranker:
         return Credibility.HIGH
 
 
-def _verified(checker: _Checker, items: list[Any]) -> Any:
-    return asyncio.run(
-        SourceVerification(checker=checker, ranker=_Ranker()).check(claim(text=QUOTE), items)
-    )
+def _verified(checker: _Checker, items: list[Any], subject: Any = None) -> Any:
+    if subject is None:
+        subject = claim(claim_type=ClaimType.QUOTE, text=QUOTE)
+    return asyncio.run(SourceVerification(checker=checker, ranker=_Ranker()).check(subject, items))
 
 
 class TestTheSourceCheck:
@@ -355,6 +356,77 @@ class TestTheSourceCheck:
         [kept] = _verified(_Checker("FALSE", out_of_context=True), [rated]).evidence
 
         assert kept.direction is Direction.CONTRADICTS
+
+    def test_an_event_the_passage_denies_stays_denied(self) -> None:
+        """ig-4: BOOM found the video of Pezeshkian genuine and cropped, and the event
+        - touching a Hindu seer's feet - never happened. A claim that an event
+        happened is not material that can be misframed: the denial stays a denial
+        whatever the check says of context."""
+        event = claim(text="Iran's President Pezeshkian took blessings from a Hindu saint.")
+        item = _report(
+            "contradicts",
+            "boomlive.in",
+            source_excerpt="Pezeshkian bent down to pick something up; the clip was cropped.",
+        )
+
+        [kept] = _verified(_Checker("FALSE", out_of_context=True), [item], event).evidence
+
+        assert kept.direction is Direction.CONTRADICTS
+
+    def test_an_event_report_stays_support(self) -> None:
+        """Ordinary true news: a report the check calls true stays support, even when
+        the check also says something was shown out of context."""
+        event = claim(text="Koder House at Fort Kochi was gutted in a fire on Tuesday.")
+
+        [kept] = _verified(
+            _Checker("TRUE", out_of_context=True), [_report("supports", "thehindu.com")], event
+        ).evidence
+
+        assert kept.direction is Direction.SUPPORTS
+
+    def test_a_posts_footage_claim_can_be_out_of_context(self) -> None:
+        """x-4: the claim that the video was filmed on the flydubai flight is an
+        event claim drawn from the footage (`_footage_claim`), and is material."""
+        footage = claim(
+            text="The video of passengers holding a man down was filmed on the flydubai flight.",
+            anchor=ClaimAnchor(
+                input_kind="url", content_hash="sha256:x", section="footage", paragraph_index=0
+            ),
+        )
+        item = _report(
+            "contradicts",
+            "indiatoday.in",
+            source_excerpt="The viral video is of an easyJet flight from Luton to Glasgow.",
+        )
+
+        [kept] = _verified(_Checker("FALSE", out_of_context=True), [item], footage).evidence
+
+        assert is_out_of_context(kept.match_basis.metric)
+
+    @pytest.mark.parametrize(
+        ("claim_type", "text", "section", "material"),
+        [
+            (ClaimType.QUOTE, "He said X.", None, True),
+            (ClaimType.ATTRIBUTION, "Police said X.", None, True),
+            (ClaimType.MEDIA, "The photo is from Delhi.", None, True),
+            (ClaimType.IDENTITY, "Modi and Xi are pictured at the summit.", None, True),
+            (ClaimType.EVENT, "The video was filmed in Gaza.", "footage", True),
+            (ClaimType.EVENT, "A bus hit a car in Coimbatore.", None, False),
+            (ClaimType.STATISTIC, "GST revenue was Rs 1.96 lakh crore.", None, False),
+        ],
+    )
+    def test_what_counts_as_material(
+        self, claim_type: ClaimType, text: str, section: str | None, material: bool
+    ) -> None:
+        subject = claim(
+            claim_type=claim_type,
+            text=text,
+            anchor=ClaimAnchor(
+                input_kind="url", content_hash="sha256:x", section=section, paragraph_index=0
+            ),
+        )
+
+        assert about_material(subject) is material
 
     def test_a_support_the_check_calls_a_fabrication_is_not_kept(self) -> None:
         item = _report("supports", "altnews.in", source_excerpt="The quote is fabricated.")
@@ -432,6 +504,12 @@ class TestARatingOfMissingContext:
             ("Fake: clipped video of the minister goes viral", "fake"),
             ("Morphed and cropped image of the PM shared", None),
             ("Old video of a flood shared as Assam 2026", None),
+            # ig-4: a genuine video, an event that never happened.
+            (
+                "Cropped Video Falsely Claims Iran President Pezeshkian Touched Hindu Seer's Feet",
+                None,
+            ),
+            ("No, the minister did not say this; clipped video goes viral", None),
         ],
     )
     def test_a_fake_or_tampered_picture_is_not_one(self, title: str, rating: str | None) -> None:
