@@ -21,6 +21,7 @@ leopard attacking a train, whose title says nothing of either), recorded the sam
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any
@@ -30,7 +31,7 @@ import pytest
 
 from app.config import Settings
 from app.extraction import video_reader
-from app.extraction.reading import GapCode, PartKind, Reading, ReadingPolicy, policy
+from app.extraction.reading import GapCode, PartKind, Reading, ReadingPolicy, ReadPart, policy
 from app.extraction.video_reader import (
     MAX_INLINE_BYTES,
     PROVIDER,
@@ -41,6 +42,7 @@ from app.extraction.video_reader import (
     VideoReading,
 )
 from app.governor.governor import ProviderUnavailable, SkipReason
+from app.intake.social_urls import VIDEO_READER_VERSION
 from app.security.fetcher import SecureFetcher
 
 pytestmark = pytest.mark.unit
@@ -67,6 +69,15 @@ def _public_dns(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _recorded(name: str) -> bytes:
     return (FIXTURES / name).read_bytes()
+
+
+def _composed(parts: tuple[ReadPart, ...]) -> str:
+    """The text claims are found in, as an uploaded video's is (`app/media/composed.py`).
+
+    Every part with text, under its label, a blank line apart: unlike
+    `Reading.document()`, Factify's description of what is seen is part of it.
+    """
+    return "\n\n".join(f"{part.label}:\n{part.text}" for part in parts if part.text.strip())
 
 
 def _envelope(answer: dict[str, Any] | str, *, finish: str = "STOP") -> bytes:
@@ -257,18 +268,18 @@ class TestAFullReading:
         assert (said.seconds_read, said.seconds_total) == (182.0, 182.0)
         assert said.language == "en"
         assert parts[1].label == "Text shown in the video"
+        # The label says the words are Factify's, as for an uploaded video's.
         assert parts[2].label == "What the video shows (described by Factify)"
-        assert not parts[2].checked
 
-    async def test_claims_are_found_in_the_words_never_in_the_description(self) -> None:
+    async def test_claims_are_found_in_what_is_said_shown_and_seen(self) -> None:
         reading, _ = await _watch(_recorded("youtube_archery_gold.json"))
         read = Reading(kind="video", parts=reading.parts(), gaps=reading.gaps())
 
-        document = read.document().text
+        document = _composed(reading.parts())
 
         assert document.startswith("Spoken in the video:\n")
         assert "Text shown in the video:\n" in document
-        assert reading.shows not in document
+        assert f"What the video shows (described by Factify):\n{reading.shows}" in document
         assert policy(read, accept_partial=False) is ReadingPolicy.CHECK
 
     async def test_a_video_with_no_speech_has_no_transcript_part_and_no_gap(self) -> None:
@@ -615,11 +626,80 @@ class TestAShortWhoseClaimIsInWhatItShows:
         assert "leopard" in reading.shows.casefold()
         assert "train" in reading.shows.casefold()
 
-    async def test_the_description_is_shown_and_never_checked(self) -> None:
+    async def test_the_leopard_reaches_claim_extraction_through_the_description(self) -> None:
+        # The audit's failure: the shouts alone hold no claim, so a reading that left
+        # the description out found nothing to check ("no checkable claims").
         reading, _ = await _watch(_recorded("youtube_leopard_short.json"))
-        read = Reading(kind="video", parts=reading.parts(), gaps=reading.gaps())
 
         kinds = [part.kind for part in reading.parts()]
         assert kinds == [PartKind.TRANSCRIPT, PartKind.VIDEO_DESCRIPTION]
-        assert "leopard" not in read.document().text.casefold()
+        document = _composed(reading.parts())
+        described = document.split("What the video shows (described by Factify):\n", 1)[1]
+        assert "leopard" in described.casefold() and "train" in described.casefold()
         assert reading.gaps() == ()
+
+
+class TestBoundedInTime:
+    """A provider that keeps timing out must not hold a check for a quarter of an hour."""
+
+    @staticmethod
+    def _reader(handler: object, *, deadline_seconds: float = 5.0) -> GeminiVideoReader:
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))  # type: ignore[arg-type]
+        return GeminiVideoReader(
+            fetcher=SecureFetcher(client=client),
+            governor=_Governor(),
+            endpoint=ENDPOINT,
+            api_key="k",
+            model_id=MODEL,
+            deadline_seconds=deadline_seconds,
+        )
+
+    async def test_no_answer_within_the_deadline_is_a_video_unread(self) -> None:
+        async def slow(request: httpx.Request) -> httpx.Response:
+            await asyncio.sleep(5)
+            return httpx.Response(200, content=_recorded("youtube_archery_gold.json"))
+
+        reading = await self._reader(slow, deadline_seconds=0.05).read_youtube(
+            VIDEO_ID, max_seconds=600
+        )
+
+        assert reading.reason is not None and reading.reason.startswith("timed out")
+        assert not reading.unavailable
+        (gap,) = reading.gaps()
+        assert gap.code is GapCode.VIDEO_UNREAD and gap.blocking
+
+    async def test_a_deadline_that_ran_out_is_not_retried(self) -> None:
+        # A 504 comes after the provider spent its time watching the video.
+        asked: list[httpx.Request] = []
+
+        def gateway(request: httpx.Request) -> httpx.Response:
+            asked.append(request)
+            return httpx.Response(504, json={"error": {"status": "DEADLINE_EXCEEDED"}})
+
+        reading = await self._reader(gateway).read_youtube(VIDEO_ID, max_seconds=600)
+
+        assert len(asked) == 1
+        assert reading.reason is not None and "504" in reading.reason
+
+    @pytest.mark.parametrize("status", [429, 503])
+    async def test_a_refusal_before_watching_is_tried_again(self, status: int) -> None:
+        answers = [
+            httpx.Response(status, headers={"retry-after": "0"}),
+            httpx.Response(200, content=_recorded("youtube_archery_gold.json")),
+        ]
+        asked: list[httpx.Request] = []
+
+        def busy_then_fine(request: httpx.Request) -> httpx.Response:
+            asked.append(request)
+            return answers[len(asked) - 1]
+
+        reading = await self._reader(busy_then_fine).read_youtube(VIDEO_ID, max_seconds=1800)
+
+        assert len(asked) == 2
+        assert reading.succeeded
+
+
+class TestItsVersion:
+    def test_the_version_is_the_one_in_every_social_posts_identity(self) -> None:
+        # One place to bump: app/intake/social_urls.py, folded into each post's key.
+        assert video_reader.VERSION == VIDEO_READER_VERSION

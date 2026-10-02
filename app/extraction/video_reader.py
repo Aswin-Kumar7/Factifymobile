@@ -11,15 +11,23 @@ video the way a person watches one:
   * **on-screen text** - the captions, headlines, tickers and name straps shown;
   * **shows** - a few sentences on what is seen.
 
-The transcript and the on-screen text are what claims are found in. What the video
-shows is the model's own account, so it is context only, shown beside the answer and
-never checked (`reading.CONTEXT_ONLY`) - the same rule as a picture's description.
+All three are what claims are found in. What the video shows is often the claim
+itself - a Short of a leopard attacking a train says nothing of either in its words -
+so it goes to claim extraction too, under a label that says Factify wrote it ("What
+the video shows (described by Factify)"), the same label and the same rule as a video
+or picture uploaded (`app/media/composed.py`). Its kind stays `VIDEO_DESCRIPTION`, so
+a client can still tell Factify's description from the video's own words.
 
 **Bounded before a token is spent.** Only the first `max_seconds` of the video are
 watched (`videoMetadata`), at Gemini's coarsest frame reading, about 100 tokens a
 second: a half-hour video is about 180,000 tokens. A video longer than that, or an
 answer that ran out of room part-way through the transcript, is said to be cut off,
 never passed off as the whole.
+
+**Bounded in time.** One reading has `DEADLINE_SECONDS` from the request going out to
+the answer coming back, retries included, and only a refusal that comes back before
+the video is watched (429, 503) is tried again: a provider that timed out watching it
+would time out again, and each try sends the whole video again.
 
 **The video is untrusted content.** It travels in the user position, like a fetched
 page, and anything said or shown in it that addresses the model is something to
@@ -35,6 +43,7 @@ only a Gemini endpoint is accepted for it (`Settings` refuses any other at boot)
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -58,14 +67,16 @@ from app.extraction.reading import (
     gap,
 )
 from app.governor.governor import ProviderUnavailable
+from app.intake.social_urls import VIDEO_READER_VERSION
 from app.observability.logging import event
 from app.security.fetcher import FetchFailure, SecureFetcher
 
 logger = logging.getLogger("factify.video_reader")
 
-# Bump on any change to the prompt, the schema or how an answer is read, so a stored
-# reading made the old way is not served as if made the new way.
-VERSION = "2026.10.02.1"
+# Bumped on any change to the prompt, the schema or how an answer is read, so a stored
+# reading made the old way is not served as if made the new way. Bump it where it is
+# kept, in app/intake/social_urls.py: it is part of every social post's cache identity.
+VERSION = VIDEO_READER_VERSION
 
 PROVIDER = "video_reader"
 
@@ -78,10 +89,20 @@ ROUTE_UPLOAD = "gemini.video"
 # answer past this is cut off and said to be, rather than left to run for minutes.
 MAX_OUTPUT_TOKENS = 16384
 
-# The longest call. A half-hour video is watched and transcribed in about a minute
-# and a half; three minutes leaves room for a busy provider without holding a
-# background check's time for ever.
+# The longest wait for any one step of the call (connecting, sending, the answer).
 TIMEOUT_SECONDS = 180.0
+
+# The longest a whole reading may take, retries included. A half-hour video is watched
+# and transcribed in about a minute and a half. The reading runs while claims are
+# found, which is outside the check's own deadline, so without this a provider that
+# keeps timing out held a background check for a quarter of an hour, re-sending the
+# video each time; past it the video is said to be unread instead.
+DEADLINE_SECONDS = 150.0
+
+# The answers tried again: refusals that come back before the video is watched. A 502
+# or 504 comes after the provider spent its time on the video, and trying again sends
+# all of it again for the same end.
+_RETRY_STATUSES = frozenset({429, 503})
 
 # Gemini takes a video inline only in a request under 20 MB, and base64 makes the
 # bytes a third larger. Larger clips are read on our own server instead.
@@ -183,7 +204,7 @@ class VideoReading:
     transcript: str = ""
     transcript_language: str | None = None
     on_screen_text: str = ""
-    # The model's account of what is seen: shown, never checked.
+    # The model's account of what is seen: checked under Factify's own label.
     shows: str = ""
     speech_present: bool = False
     # How long the video is, when known: the length the caller knew, or what the
@@ -228,7 +249,10 @@ class VideoReading:
         """What was read, as parts of a `Reading`: said, shown as text, and seen.
 
         Empty for a failed reading, and a part with nothing in it is left out: a
-        video with no speech has no transcript part, which is not a gap.
+        video with no speech has no transcript part, which is not a gap. Every part,
+        the description included, is meant for claim extraction: compose them with
+        `app.media.composed.compose`, as an uploaded video is, not with
+        `Reading.document()`, which leaves descriptions out.
         """
         if not self.succeeded:
             return ()
@@ -271,8 +295,8 @@ class VideoReading:
     def gaps(self) -> tuple[Gap, ...]:
         """What could not be read, as gaps of a `Reading`. Every one holds the verdict.
 
-        A description cut short is not a gap: it is context, and nothing checked is
-        missing from it.
+        A description cut short is not a gap: it is Factify's own summary, written
+        last, and the words said and shown before it are whole.
         """
         if not self.succeeded:
             if self.unavailable:
@@ -325,6 +349,7 @@ class GeminiVideoReader:
         model_id: str,
         max_output_tokens: int = MAX_OUTPUT_TOKENS,
         thinking: str | None = None,
+        deadline_seconds: float = DEADLINE_SECONDS,
     ) -> None:
         self._fetcher = fetcher
         self._governor = governor
@@ -335,6 +360,7 @@ class GeminiVideoReader:
         # How hard the model deliberates is the model's own knob ("low" for Gemini
         # 3, a token budget for 2.5), so it comes from configuration with the model.
         self._thinking = thinking
+        self._deadline_seconds = deadline_seconds
 
     async def read_youtube(
         self, video_id: str, *, max_seconds: int, known_seconds: int | None = None
@@ -410,7 +436,17 @@ class GeminiVideoReader:
             video_seconds=(0, max_seconds),
             media_resolution=MEDIA_RESOLUTION_LOW,
         )
-        response = await self._fetcher.post_json(url, body, provider=PROVIDER, headers=headers)
+        try:
+            async with asyncio.timeout(self._deadline_seconds):
+                response = await self._fetcher.post_json(
+                    url,
+                    body,
+                    provider=PROVIDER,
+                    headers=headers,
+                    retry_statuses=_RETRY_STATUSES,
+                )
+        except TimeoutError:
+            return self._failed(f"timed out: no answer within {self._deadline_seconds:.0f}s", route)
         if isinstance(response, FetchFailure):
             return self._failed(_failure_reason(response.reason), route)
         if response.status_code >= 400:
