@@ -20,12 +20,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Mapping
 from dataclasses import asdict
 from datetime import UTC, date, datetime, time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+from pydantic import ValidationError
+
 from app.db.repositories import (
+    CaseReadingRepository,
     CaseRepository,
     ClaimRepository,
     EvidenceRepository,
@@ -33,8 +37,17 @@ from app.db.repositories import (
     SourceRepository,
     VerdictRepository,
 )
-from app.domain.enums import Action, ClaimStatus, ClaimType, Direction, EvidenceKind, Importance
+from app.domain.enums import (
+    Action,
+    ClaimStatus,
+    ClaimType,
+    Direction,
+    EvidenceKind,
+    Importance,
+    SourceRisk,
+)
 from app.domain.evidence import Evidence
+from app.extraction.reading import WITHHELD_SUMMARY
 from app.observability.logging import event
 from app.orchestration.pipeline import ClaimOutcome, VerificationResult
 from app.orchestration.receipt import ReceiptSigner, evidence_from_rows
@@ -42,7 +55,27 @@ from app.orchestration.summary import case_summary
 from app.verdict.engine import case_confidence, verdict_for
 from app.verdict.technique import technique_for
 
+if TYPE_CHECKING:
+    from app.api.schemas import VerifyResponse
+
 logger = logging.getLogger("factify.ledger")
+
+# The parts of an answer no ledger row holds, kept beside the case (0011) so it reads
+# back as it was shown: what was read from the input and what could not be, the
+# picture and video checks, the website card, what was skipped, and the forensic
+# signals shown beside the verdict. The claims, their evidence and the verdict are
+# the ledger's own rows and are never copied here.
+KEPT_FIELDS: tuple[str, ...] = (
+    "input_read",
+    "image_reading",
+    "speech",
+    "media_report",
+    "media_reports",
+    "source_profile",
+    "skipped",
+    "completeness_note",
+    "advisories",
+)
 
 
 async def claim_vector(embedder: Any | None, claim: Any) -> str | None:
@@ -290,6 +323,167 @@ def _published_on(row: Any) -> date | None:
     return published.date()  # type: ignore[no-any-return]
 
 
+def reading_payload(response: VerifyResponse) -> dict[str, Any]:
+    """What is kept of an answer beside its case: `KEPT_FIELDS`, as the API's JSON.
+
+    The wire form rather than a shape of its own, so what reads back is exactly what
+    was sent, and a field added to the contract later is kept by adding its name.
+    """
+    return response.model_dump(mode="json", include=set(KEPT_FIELDS))
+
+
+def with_reading(
+    response: VerifyResponse, kept: Mapping[str, Any] | None, *, language: str | None = None
+) -> VerifyResponse:
+    """A case read from the ledger, with what was kept beside it filled in.
+
+    Unchanged when nothing was kept: a case stored before 0011, or one whose copy was
+    never written. Unchanged too when the copy no longer reads as the current
+    contract; it is then served as a case stored before 0011 is, which every client
+    already shows. A half-restored answer - its reading kept and its skipped list
+    dropped - would be a state no answer was ever sent in.
+
+    Two things are said again from what was kept rather than stored twice: the link's
+    risk level, which is its website card's (`source_profile.level`), and the fixed
+    sentence a withheld answer gives in place of a verdict, which no claim row holds.
+    """
+    if not kept:
+        return response
+
+    from app.api.schemas import VerifyResponse
+
+    fields = {name: kept[name] for name in KEPT_FIELDS if name in kept}
+    try:
+        # Read through the contract's own model, so each field comes back as the type
+        # it was sent as and is held to the same rules: an `input_read` that calls
+        # itself complete while naming a gap is refused here as it was when sent.
+        parsed = VerifyResponse.model_validate(
+            {
+                "case_id": response.case_id,
+                "action": response.action,
+                "action_reason": response.action_reason,
+                "rule_version": response.rule_version,
+                "retrieved_at": response.retrieved_at,
+                **fields,
+            }
+        )
+    except ValidationError as error:
+        event(
+            logger,
+            "kept reading could not be read; case served without it",
+            module="orchestration.ledger",
+            outcome="degraded",
+            failure_reason=f"{type(error).__name__}: {error.error_count()} errors",
+            case_id=response.case_id,
+        )
+        return response
+
+    update: dict[str, Any] = {name: getattr(parsed, name) for name in fields}
+    profile = parsed.source_profile
+    if profile is not None and response.source_risk is SourceRisk.UNKNOWN:
+        update["source_risk"] = profile.level
+    read = parsed.input_read
+    if read is not None and read.verdict_withheld and not response.claims and not response.summary:
+        update["summary"] = WITHHELD_SUMMARY.get(language or "en", WITHHELD_SUMMARY["en"])
+    return response.model_copy(update=update)
+
+
+async def _kept_reading(conn: Any, case_id: UUID) -> dict[str, Any] | None:
+    """The reading kept with a case, or None.
+
+    Under a savepoint, so a failure here - the table not there yet on a database 0011
+    has not reached - leaves the connection's transaction as it was. What was kept is
+    an addition to a case, never a condition of reading one.
+    """
+    try:
+        async with conn.transaction():
+            return await CaseReadingRepository(conn).get(case_id)
+    except Exception as error:
+        event(
+            logger,
+            "kept reading could not be read; case served without it",
+            module="orchestration.ledger",
+            outcome="degraded",
+            failure_reason=f"{type(error).__name__}: {error}",
+            case_id=str(case_id),
+        )
+        return None
+
+
+class CaseReadingStore:
+    """Keeps what an answer showed beside its case, so the case reads back whole (0011).
+
+    A check's answer is held in memory for 15 minutes; after that `/v1/cases/{id}`
+    reads the case from the ledger, whose rows hold the claims, their evidence and
+    their verdicts and nothing else. History opened later lost the panel saying what
+    was read and what could not be, the picture and video checks, the website card,
+    and what was skipped.
+
+    Written once the answer is final, after the ledger has written the case (the row
+    refers to it). Like the ledger it never changes an answer: a failed write is
+    logged and swallowed, and the case reads back as a case stored before 0011 does.
+    """
+
+    def __init__(self, database: Any) -> None:
+        self._database = database
+
+    async def put(self, case_id: UUID, response: VerifyResponse) -> None:
+        """Keep `response`'s reading under `case_id`. Never raises.
+
+        A cached answer is not kept again: it belongs to the case it was first
+        computed for, whose reading was kept then, and a repeat may carry less of it
+        (a thin hit) than was read the first time. Nor is an answer with nothing to
+        keep: no row reads back exactly as a row of empty fields would.
+        """
+        if response.from_cache:
+            return
+        payload = reading_payload(response)
+        if not any(payload.values()):
+            return
+        try:
+            async with self._database.connection() as conn:
+                await CaseReadingRepository(conn).put(case_id, payload)
+        except Exception as error:
+            # Deliberately swallowed, as the ledger's own write is: the answer stands.
+            event(
+                logger,
+                "case reading not kept; the case will read back without it",
+                module="orchestration.ledger",
+                outcome="degraded",
+                failure_reason=f"{type(error).__name__}: {error}",
+                case_id=str(case_id),
+            )
+            return
+        event(
+            logger,
+            "case reading kept",
+            module="orchestration.ledger",
+            outcome="ok",
+            case_id=str(case_id),
+            fields=sorted(name for name, value in payload.items() if value),
+        )
+
+    async def get(self, case_id: UUID) -> dict[str, Any] | None:
+        """The kept payload (`reading_payload`'s shape), or None. Never raises.
+
+        For an answer that is not read through `CaseReader`; `with_reading` puts it
+        into a `VerifyResponse` as `CaseReader.get` does.
+        """
+        try:
+            async with self._database.connection() as conn:
+                return await CaseReadingRepository(conn).get(case_id)
+        except Exception as error:
+            event(
+                logger,
+                "kept reading could not be read",
+                module="orchestration.ledger",
+                outcome="degraded",
+                failure_reason=f"{type(error).__name__}: {error}",
+                case_id=str(case_id),
+            )
+            return None
+
+
 class CaseReader:
     """Reads a persisted case back out as the API contract shape.
 
@@ -300,7 +494,9 @@ class CaseReader:
     Everything returned came out of the ledger. Nothing is recomputed — re-deciding a
     stored case at read time would let today's rules silently restate yesterday's
     verdict, and the `rule_version` recorded on the row is what makes an old answer
-    interpretable.
+    interpretable. What the rows cannot hold - what was read from the input, the
+    picture and video checks - comes from the copy kept beside the case when it was
+    answered (`CaseReadingStore`), as it was sent.
     """
 
     def __init__(self, database: Any, *, ranker: Any | None = None) -> None:
@@ -450,8 +646,12 @@ class CaseReader:
                     )
                 )
 
+            # Read last, under its own savepoint: whatever happens here, the ledger's
+            # rows above have been read and the case is served.
+            kept = await _kept_reading(conn, case_id)
+
         verdict = verdict_for(Action(action))
-        return VerifyResponse(
+        response = VerifyResponse(
             case_id=str(case_id),
             verdict=verdict,
             confidence=case_confidence(
@@ -467,3 +667,7 @@ class CaseReader:
             claims=tuple(claims),
             retrieved_at=case["created_at"],
         )
+        # What the answer showed that no ledger row holds - what was read from the
+        # input, the picture and video checks, the website card, what was skipped -
+        # from the copy kept beside the case when it was answered.
+        return with_reading(response, kept, language=case.get("language"))
