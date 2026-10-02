@@ -21,9 +21,13 @@ things happen, in this order:
    disagree about a page mean the page is ambiguous, and an ambiguous page is not
    evidence.
 
-The step can only remove sources. It never adds one, and never turns a source from
-one side to the other — the reader saw the whole passage and this call sees a quote,
-so the reader's direction stands and this call can only veto it.
+The step never adds a source, and never turns a source from one side to the other —
+the reader saw the whole passage and this call sees a quote, so the reader's
+direction stands and this call can veto it. What it can do besides is confirm a
+support the reader held back: a passage read as only a narrower version, or as
+someone else's word ("the Army said"), is support when this call reads it as
+establishing the claim. Two readings that both find support are agreement, and
+throwing such a page away cost true news reports their only evidence (2026-10-02).
 
 Credibility is attached last, from the curated publisher list rather than from a
 model, so the same outlet weighs the same on every request.
@@ -51,6 +55,7 @@ from app.domain.evidence import (
 from app.domain.typography import fold
 from app.observability.logging import event
 from app.sources.base import current_reference_date
+from app.sources.reasoning import event_years, is_attributed_support
 
 logger = logging.getLogger("factify.sources.verification")
 
@@ -66,18 +71,134 @@ _NOT_TEXT = frozenset(
     }
 )
 
-_AGREES = {Direction.SUPPORTS: "TRUE", Direction.CONTRADICTS: "FALSE"}
 
-
-def _expected(item: Evidence) -> str | None:
-    """What the check must say for this source to be kept: TRUE for support, FALSE
-    for a contradiction, PARTLY for a narrower version of the claim; None for other
-    context, which is not sent."""
-    if item.direction in _AGREES:
-        return _AGREES[item.direction]
-    if item.direction is Direction.CONTEXTUALIZES and is_narrower_scope(item.match_basis.metric):
-        return "PARTLY"
+def _read_as(item: Evidence) -> str | None:
+    """How the first reader left a source, for the check's answer to be read against:
+    "supports", "contradicts", "narrower" (a smaller version of the claim),
+    "attributed" (a support the article put in someone else's mouth), or None for
+    other context, which is not sent."""
+    if item.direction is Direction.SUPPORTS:
+        return "supports"
+    if item.direction is Direction.CONTRADICTS:
+        return "contradicts"
+    if item.direction is Direction.CONTEXTUALIZES:
+        if is_narrower_scope(item.match_basis.metric):
+            return "narrower"
+        if is_attributed_support(item.match_basis.metric):
+            return "attributed"
     return None
+
+
+# Read as support of some kind: the claim, a smaller version of it, or the claim on
+# someone's word.
+_SUPPORT_READS = frozenset({"supports", "narrower", "attributed"})
+
+
+def _settled(item: Evidence, read: str, reading: Any) -> tuple[Evidence | None, str]:
+    """What the check's answer makes of one source: the copy to keep, or None, and
+    the outcome for the log.
+
+    A source is kept when the two readings agree on its side; the check can confirm a
+    support the first reader held back as context, never turn a source to the other
+    side. A fact-check or an official denial is still a contradiction: the check
+    answers FALSE for those, and they are kept as that.
+
+    A narrower version is, by definition, not "the same assertion", so the check has
+    answered PARTLY and "not about the claim" in one breath: its own yes-or-no on
+    "smaller version" decides, not `addresses_claim` (2026-09-27).
+    """
+    verdict = reading.verdict
+    about = reading.addresses_claim
+    supports = read in _SUPPORT_READS
+    rejected = f"rejected: read {read}, check said {verdict}, about the claim={about}"
+
+    if verdict == "TRUE":
+        # The check found the passage establishes the claim. A support the first
+        # reader called narrower, or held back as someone else's word, is support:
+        # "read contextualizes, check said TRUE" threw away 23 reports in nine
+        # checks - Rising Kashmir on the Budgam encounter, India Today on the EOS-05
+        # launch from Sriharikota, The Hindu on the Koder House fire (2026-10-02).
+        if supports and about:
+            return _as_support(item), (
+                "kept (supports)" if read == "supports" else f"kept (supports; read {read})"
+            )
+        return None, rejected
+
+    if verdict == "FALSE":
+        if read == "contradicts" and about:
+            return item, "kept (contradicts)"
+        return None, rejected
+
+    # The passage confirms what the claim is about and leaves out only details - the
+    # police station, the period, the time of day. Six reports of the 2013 Jhiram
+    # Ghati ambush were each rejected for not naming the Darbha police station, and
+    # the Guardian and ESPN on City's misstated accounts for not repeating
+    # "2009-2018" (2026-10-02). What a source does not mention is unconfirmed by it,
+    # not a reason to discard what it does confirm.
+    says_less = (
+        supports
+        and about
+        and not reading.states_differently
+        and not reading.other_group
+        and getattr(reading, "core_established", False)
+    )
+
+    if verdict == "PARTLY":
+        # Read as support, and the check found nothing it states differently - only
+        # details it does not mention. What it says matches the claim: India Today on
+        # the Aditya-L1 launch, without naming the launch site.
+        if read in ("supports", "attributed") and about and not reading.states_differently:
+            return _as_support(item), "kept (supports, says less)"
+        if says_less:
+            return _as_support(item), "kept (supports, says less)"
+        # A smaller version of the claim: that version is what it is evidence of, not
+        # the claim - "partly true". Asked as its own question, because asked through
+        # the verdict the check called a one-time Rs 5,000 payment "FALSE, not about
+        # the claim" and it was thrown away (2026-09-28). PARTLY alone is not enough:
+        # for "Atal Free Pension Scheme" against the real Atal Pension Yojana the check
+        # said PARTLY and, rightly, "not a smaller version" - a scam's borrowed name.
+        # And never for another group of people: the PM Internship Scheme's Rs 5,000
+        # for interns is no smaller version of "every woman gets Rs 5,000"
+        # (`other_group`).
+        #
+        # Read as support or as a denial, "smaller version" also needs a detail stated
+        # differently: it was said of pages that merely said less ("the photographs
+        # were also shared", for a claim naming Facebook and X). Read as a narrower
+        # version already, the reader said that much, and the check's agreement that
+        # it is smaller keeps it (2026-10-02: four narrower reports were thrown away
+        # for lacking the second answer). Tamil Nadu's Rs 1,000 a month for women
+        # heads of families, read as denying "every woman gets Rs 5,000 a month", is
+        # a smaller version too: the user decided a real smaller version for the same
+        # people makes such a claim partly true (2026-09-28).
+        smaller = (
+            reading.smaller_version
+            and not reading.other_group
+            and (reading.states_differently or read == "narrower")
+        )
+        if smaller:
+            return _as_narrower(item, reading.reason), "kept (narrower than the claim)"
+        return None, rejected
+
+    if says_less:
+        return _as_support(item), "kept (supports, says less)"
+    return None, rejected
+
+
+def _as_support(item: Evidence) -> Evidence:
+    """A source the check read as establishing the claim, kept as support."""
+    if item.direction is Direction.SUPPORTS:
+        return item
+    _, _, reason = item.match_basis.metric.partition(": ")
+    return item.model_copy(
+        update={
+            "direction": Direction.SUPPORTS,
+            "match_basis": MatchBasis(
+                metric=f"passage_entailment: {reason}"[:200],
+                value=item.match_basis.value,
+                threshold=item.match_basis.threshold,
+            ),
+        }
+    )
 
 
 def _as_narrower(item: Evidence, reason: str) -> Evidence:
@@ -236,14 +357,14 @@ class SourceVerification:
         }
         early = [item for item in text if id(item) in elsewhere]
         text = [item for item in text if id(item) not in elsewhere]
-        sided = [item for item in text if _expected(item) is not None]
+        sided = [item for item in text if _read_as(item) is not None]
         context_only = len(text) - len(sided)
         # What happened to each source, by host, for the log. Counts alone could not
         # answer "why was The Hindu not cited?" without re-running the check.
         outcomes = [
             {"host": _host(item.citation_url), "outcome": "context", "reason": item.finding[:200]}
             for item in text
-            if _expected(item) is None
+            if _read_as(item) is None
         ] + [
             {"host": _host(item.citation_url), "outcome": f"set aside: {elsewhere[id(item)]}"}
             for item in early
@@ -278,9 +399,11 @@ class SourceVerification:
         except TimeoutError:
             answer = None
         if answer is None:
+            # A support held back as someone else's word stays context unless the
+            # check confirms it, and context is not cited.
             return self._finish(
                 claim,
-                passthrough + sided,
+                passthrough + [item for item in sided if _read_as(item) != "attributed"],
                 explanation=None,
                 duplicates=duplicates,
                 context_only=context_only,
@@ -297,77 +420,12 @@ class SourceVerification:
                 # vote of confidence; the page has not been confirmed relevant.
                 outcomes.append({"host": host, "outcome": "unmentioned"})
                 continue
-            # A narrower version of the claim is, by definition, not "the same
-            # assertion", so the check answered PARTLY and "not about the claim" in
-            # one breath, and requiring both threw away every narrower source: the
-            # Tamil Nadu reports behind "Govt pays every woman Rs 5,000 a month" were
-            # read as PARTLY twice and kept by neither (2026-09-27). When the reader
-            # found a narrower version and the check agrees it is PARTLY, it is kept.
-            partly = reading.verdict == "PARTLY"
-            # A smaller version states a detail of the claim differently; a page that
-            # only leaves details out is not one (`states_differently`).
-            smaller = (
-                partly
-                and reading.smaller_version
-                and reading.states_differently
-                and not reading.other_group
-            )
-            if not partly and reading.verdict == _expected(item) and reading.addresses_claim:
-                kept.append(item)
-                outcomes.append({"host": host, "outcome": f"kept ({item.direction.value})"})
-            elif (
-                partly
-                and not reading.states_differently
-                and item.direction is Direction.SUPPORTS
-                and reading.addresses_claim
-            ):
-                # Read as support, and the check found nothing it states differently -
-                # only details it does not mention. What it says matches the claim:
-                # India Today on the Aditya-L1 launch, without naming the launch site.
-                kept.append(item)
-                outcomes.append({"host": host, "outcome": "kept (supports, says less)"})
-            elif smaller:
-                # Read as support (or as a narrower version), and the check says it
-                # shows only a smaller version of the claim: that version is what it
-                # is evidence of, not the claim - "partly true". Asked as its own
-                # question, because asked through the verdict the check called a
-                # one-time Rs 5,000 payment "FALSE, not about the claim" and it was
-                # thrown away (2026-09-28). Both answers are required. PARTLY alone:
-                # for "Atal Free Pension Scheme" against the real Atal Pension Yojana
-                # the check said PARTLY and, rightly, "not a smaller version" - a
-                # scam's borrowed name. "Smaller version" alone: it was said of pages
-                # that merely said less ("the photographs were also shared", for a
-                # claim naming Facebook and X). And for the claim's own people or
-                # some of them: the PM Internship Scheme's Rs 5,000 for interns is no
-                # smaller version of "every woman gets Rs 5,000" (`other_group`).
-                #
-                # Read as a contradiction too, when the check calls it a smaller
-                # version. Tamil Nadu's Rs 1,000 a month for women heads of families
-                # was read as denying "every woman gets Rs 5,000 a month" and dropped,
-                # four outlets on one card, while the check called each a smaller
-                # version; the user decided a real smaller version for the same
-                # people is what makes such a claim partly true (2026-09-28). A
-                # fact-check or official denial is still a contradiction: the check
-                # answers FALSE for those, and they are kept as that.
-                kept.append(_as_narrower(item, reading.reason))
-                outcomes.append(
-                    {
-                        "host": host,
-                        "outcome": "kept (narrower than the claim)",
-                        "reason": reading.reason[:200],
-                    }
-                )
-            else:
-                outcomes.append(
-                    {
-                        "host": host,
-                        "outcome": (
-                            f"rejected: read {item.direction.value}, check said "
-                            f"{reading.verdict}, about the claim={reading.addresses_claim}"
-                        ),
-                        "reason": reading.reason[:200],
-                    }
-                )
+            read = _read_as(item)
+            assert read is not None
+            settled, outcome = _settled(item, read, reading)
+            if settled is not None:
+                kept.append(settled)
+            outcomes.append({"host": host, "outcome": outcome, "reason": reading.reason[:200]})
 
         return self._finish(
             claim,
@@ -448,10 +506,6 @@ def _under_headline(item: Evidence) -> str:
 
 def _host(url: str) -> str:
     return (urlsplit(url).hostname or url).removeprefix("www.")
-
-
-# A year a claim names: 1900-2099.
-_YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
 
 
 # A full date in a claim's English: "2 September 2023" or "September 2, 2023".
@@ -605,7 +659,8 @@ def _other_occurrence(item: Evidence, claim: Claim) -> str | None:
         return None
     said = claim.search_text
     passage = f"{item.title or ''} {item.source_excerpt}"
-    years = {int(year) for year in _YEAR.findall(said)}
+    # When the claim says it happened - not a forecast's target year (`event_years`).
+    years = event_years(said)
     named = any(str(year) in passage for year in years)
 
     # Published before the year the claim is about, and not naming it: it cannot be
