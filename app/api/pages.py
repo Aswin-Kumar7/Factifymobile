@@ -100,6 +100,10 @@ The claims found in it, the sources consulted and the verdict are stored so that
 same claim can be answered faster next time, but they are <strong>not linked to your
 account</strong>: we do not keep a record of what you checked. Your own list of past
 checks is kept on your phone, or in your browser on the website, not on our server.
+With them we also store what Factify read from it - the words of a message, post, page or
+PDF, the text in its pictures, what is said and shown in a video - so the answer can be
+opened again in full later. This is not linked to your account either, and the picture,
+video or PDF file itself is still not stored.
 An organisation's owner can switch on a shared history of the checks made for that
 organisation; it is off unless they do, and never includes personal checks.</p>
 <p><strong>Pictures, videos and PDFs you upload are not stored.</strong> They are read in

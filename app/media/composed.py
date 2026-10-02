@@ -59,7 +59,7 @@ def compose(reading: Reading) -> Composed:
     """Every part with text as "<label>:\\n<text>", a blank line apart, and where each
     part's text sits in the result.
 
-    Unlike `Reading.document()`, a description is part of it: for an upload, what the
+    A description is part of it, as in `Reading.document()`: for an upload, what the
     picture shows is something claims are found in. A part with no label is written
     bare, so a PDF's text composes to exactly that text.
     """

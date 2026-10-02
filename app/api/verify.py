@@ -1789,8 +1789,8 @@ async def cancel_case(case_id: UUID, request: Request) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-# How long one stream stays open: past a background check's five minutes.
-_STREAM_SECONDS = BACKGROUND_SECONDS + 60.0
+# How long one stream stays open: past the longest a background check may run.
+_STREAM_SECONDS = BACKGROUND_CEILING_SECONDS + 30.0
 # A comment line this often keeps proxies from closing a quiet stream.
 _HEARTBEAT_SECONDS = 15.0
 
@@ -2312,7 +2312,9 @@ def _with_reading_gaps(
         for gap in gaps
         if (gap.check, gap.reason) not in present
     )
-    marked.extend(SkippedCheckResponse(check=note.check, reason=note.reason) for note in notes)
+    marked.extend(
+        SkippedCheckResponse(check=note.check, reason=note.reason, kind=note.kind) for note in notes
+    )
     return tuple(marked)
 
 

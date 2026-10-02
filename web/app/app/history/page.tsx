@@ -34,7 +34,7 @@ function matches(f: Filter, verdict: string) {
   if (f === "false") return verdict === "FALSE";
   if (f === "true") return verdict === "TRUE";
   if (f === "partly") return verdict === "PARTLY_TRUE" || verdict === "MISLEADING";
-  return verdict === "UNCONFIRMED" || verdict === "NOTHING";
+  return verdict === "UNCONFIRMED" || verdict === "NOTHING" || verdict === "WITHHELD";
 }
 
 const kindTag = { text: "TXT", link: "URL", image: "IMG", pdf: "PDF", video: "VID", file: "FILE" } as const;
