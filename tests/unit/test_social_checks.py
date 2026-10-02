@@ -740,6 +740,30 @@ class TestTheStillsYouTubePublishes:
         assert not {url for url, _ in platform.downloads} & set(self.STILLS)
 
 
+def test_a_post_speaks_the_language_its_poster_typed() -> None:
+    """x-4: Whisper's garble of shouts in Arabic letters, under an English X post,
+    made every claim and the answer Urdu."""
+    from app.api.post_checks import _post_words
+    from app.extraction.reading import PartKind, Reading, ReadPart
+
+    post = "Terror on Dubai flight flydubai with 180 passengers including 27 children."
+    garble = "الله أكبر الله أكبر الله أكبر لا الله أكبر السيد عي وضع يعتبر"
+    reading = Reading(
+        kind="social_post",
+        parts=(
+            ReadPart(kind=PartKind.POST_TEXT, text=post, route="x.syndication"),
+            ReadPart(kind=PartKind.TRANSCRIPT, text=garble, route="whisper"),
+        ),
+    )
+    spoken_only = Reading(
+        kind="social_post",
+        parts=(ReadPart(kind=PartKind.TRANSCRIPT, text="यह खबर सच है", route="whisper"),),
+    )
+
+    assert detect(_post_words(reading)).language.value == "en"
+    assert _post_words(spoken_only) == "यह खबर सच है"
+
+
 def test_a_contact_sheet_says_when_each_still_was_taken() -> None:
     from app.media.sheet import contact_sheet
     from app.media.video import Keyframe

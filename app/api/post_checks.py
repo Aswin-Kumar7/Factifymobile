@@ -269,7 +269,7 @@ async def checked_post(
     if chosen is not ReadingPolicy.WITHHOLD and composed.text.strip():
         set_phase("finding_claims")
         extracted = await checks._extract_from_document(
-            request, keyed, composed.text, authored=checks._authored(reading)
+            request, keyed, composed.text, authored=_post_words(reading)
         )
         claims = list(extracted.claims)
         reason = extracted.reason
@@ -934,6 +934,22 @@ async def _youtube_stills(request: Request, post: SocialPost) -> tuple[ReadPart,
             media_key=key,
         ),
     )
+
+
+# What the poster typed, as against what was heard or seen in the post's media.
+_TYPED = frozenset({PartKind.POST_TEXT, PartKind.QUOTED_POST, PartKind.TITLE, PartKind.DESCRIPTION})
+
+
+def _post_words(reading: Reading) -> str:
+    """The words a post's claims and answer take their language from: what the poster
+    typed when there is any, else everything read in the post's own words.
+
+    Not a transcript beside typed words: Whisper's garble of a few shouted words in
+    Arabic letters, under an English X post on the flydubai attack, made every claim
+    and the whole answer Urdu (x-4, 2026-10-02).
+    """
+    typed = "\n".join(part.text for part in reading.parts if part.kind in _TYPED)
+    return typed if typed.strip() else checks._authored(reading)
 
 
 def _not_blocking(gaps: tuple[Gap, ...]) -> tuple[Gap, ...]:
