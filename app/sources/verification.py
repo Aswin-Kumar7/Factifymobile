@@ -252,6 +252,10 @@ class Verified:
     # False when the relevance check could not run. The evidence is kept rather than
     # thrown away, and the caller marks the run incomplete so it is not cached.
     checked: bool = True
+    # Why it could not run, when the reason was time: no time was left before the
+    # deadline, which is not the model provider being down. Both were reported as
+    # "model provider unavailable", so a check that ran out of time read as an outage.
+    timed_out: bool = False
 
 
 # Query parameters that say how someone arrived at a page, not which page it is.
@@ -395,6 +399,7 @@ class SourceVerification:
         # Bounded by what is left of the request. Past it, the sources are kept
         # unverified and the run is marked incomplete — never cached — rather than
         # holding the reply past the point the app stops waiting for it.
+        timed_out = False
         try:
             answer = await asyncio.wait_for(
                 self._checker.check_sources(
@@ -408,6 +413,7 @@ class SourceVerification:
             )
         except TimeoutError:
             answer = None
+            timed_out = True
         if answer is None:
             # A support held back as someone else's word stays context unless the
             # check confirms it, and context is not cited.
@@ -419,6 +425,7 @@ class SourceVerification:
                 context_only=context_only,
                 rejected=0,
                 checked=False,
+                timed_out=timed_out,
             )
 
         kept: list[Evidence] = []
@@ -459,6 +466,7 @@ class SourceVerification:
         rejected: int,
         checked: bool,
         outcomes: list[dict[str, str]] | None = None,
+        timed_out: bool = False,
     ) -> Verified:
         # Weighed only when the check actually ran. Credibility is what lets a single
         # highly credible refutation decide a claim (rule 3c), and that rule is only
@@ -483,6 +491,7 @@ class SourceVerification:
             context_only=context_only,
             rejected=rejected,
             checked=checked,
+            timed_out=timed_out,
             sources=outcomes or [],
         )
         return Verified(
@@ -492,6 +501,7 @@ class SourceVerification:
             context_only=context_only,
             rejected=rejected,
             checked=checked,
+            timed_out=timed_out,
         )
 
 

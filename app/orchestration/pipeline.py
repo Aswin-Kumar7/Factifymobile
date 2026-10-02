@@ -119,6 +119,14 @@ MIN_READING_SECONDS = 40.0
 # call over short excerpts; measured at three to four seconds.
 _VERIFY_RESERVE_SECONDS = 6.0
 
+# The same reserve for a check in the background. There the call is made patiently -
+# it waits its turn under the model's per-minute ceiling and retries a busy provider
+# (app/security/patience.py) - and the claims still reading at the deadline all stop
+# at once, so their source checks queue for the model together. Six seconds left
+# most of them timed out in that queue, and their sources reached the verdict
+# unchecked.
+_BACKGROUND_VERIFY_RESERVE_SECONDS = 20.0
+
 # How much longer than its reading deadline a resolver is given before it is cut off
 # whole. Pages are cut off individually at the deadline (see `_run_resolver`); this is
 # the backstop for a search provider that never answers at all.
@@ -128,6 +136,25 @@ _RESOLVER_GRACE_SECONDS = 3.0
 # they do not depend on each other; the ceiling exists so a burst of claims cannot
 # open forty sockets against six publishers.
 DEFAULT_CONCURRENCY = 8
+
+# How many web searches may be in flight at once, across every check. A search is
+# paced under the provider's per-minute ceiling and can wait a long time for its
+# turn. It used to wait holding one of the slots above, which are for fetching
+# pages: a burst of claims' searches took them all, and pages already found sat
+# unread behind searches that were only waiting.
+_SEARCHES_AT_ONCE = 4
+
+# How many claims of one background check are searched and read at a time. Started
+# all at once, a seven-claim article's details took as many search and read slots as
+# its headline, and the claims the verdict rests on were the ones still unread at
+# the deadline. Three at a time, in order of importance, finishes the main claims
+# first; the rest follow as each one is done.
+_CLAIMS_AT_ONCE = 3
+
+# The least reading time worth starting a web search for in the background. Started
+# with less, its queries are paid for and its pages cut off unread at the deadline:
+# a claim that waited its turn behind the main ones spent its credits for nothing.
+_MIN_SEARCH_SECONDS = 10.0
 
 # A check someone runs in the background (see `check_seconds`) has this long,
 # at most, to search and read every claim. A seven-claim article reads about forty
@@ -214,6 +241,21 @@ class SkippedCheck:
 claim_progress: ContextVar[Callable[[int, int], None] | None] = ContextVar(
     "claim_progress", default=None
 )
+
+# The time a background check actually had, set for the length of one. Its deadline
+# moves with how long reading the input took (`Orchestrator.verify`), so the time a
+# claim ran out of is said as it was, not as the budget it started from.
+_check_budget: ContextVar[float | None] = ContextVar("check_budget", default=None)
+
+
+def _in_background() -> bool:
+    """Whether the check running now is one the app follows in the background."""
+    return check_seconds.get() is not None
+
+
+def _verify_reserve() -> float:
+    """How long before the deadline reading stops, so the source check can run."""
+    return _BACKGROUND_VERIFY_RESERVE_SECONDS if _in_background() else _VERIFY_RESERVE_SECONDS
 
 
 @dataclass(slots=True)
@@ -466,6 +508,9 @@ class Orchestrator:
         self._extractor_version = extractor_version
         self._model_id = model_id
         self._semaphore = asyncio.Semaphore(concurrency)
+        # Web searches have their own ceiling, so one waiting for its turn under the
+        # provider's pacing never holds a slot a page could be read in.
+        self._search_gate = asyncio.Semaphore(_SEARCHES_AT_ONCE)
         # Optional so existing callers — the audit runner, every unit test — keep
         # working unchanged and simply count no origins.
         self._corroboration = corroboration
@@ -483,8 +528,8 @@ class Orchestrator:
 
         Exists for media: its resolvers carry per-request findings and cannot be
         process-lifetime. Everything else — cache, governor, corroboration, **and the
-        semaphore** — is shared, because the fetch ceiling only means anything if
-        every in-flight request counts against the same one.
+        semaphores** — is shared, because the fetch and search ceilings only mean
+        anything if every in-flight request counts against the same ones.
         """
         clone = Orchestrator(
             cache=self._cache,
@@ -497,6 +542,7 @@ class Orchestrator:
             presence=self._presence,
         )
         clone._semaphore = self._semaphore
+        clone._search_gate = self._search_gate
         return clone
 
     def _cache_key(self, intake: NormalisedIntake) -> CacheKeyParts:
@@ -627,19 +673,34 @@ class Orchestrator:
         # A check run in the background has the time to read everything; one a
         # person waits on in a single request has what that request can hold.
         background = check_seconds.get()
-        reading = background if background is not None else REASONING_TARGET_SECONDS
-        deadline = started + (reading if self._reads_sources else TARGET_SECONDS)
-        # Reading always gets its own time after the claims are found. Finding them
-        # in a linked page takes about twenty seconds, and counting that against the
-        # same budget left too little to read anything: a fresh ISRO link came back
-        # with every web page unread (2026-09-28).
-        if self._reads_sources:
-            deadline = max(deadline, time.perf_counter() + MIN_READING_SECONDS)
+        budget: float | None = None
+        if background is not None and self._reads_sources:
+            # Its budget, but never less than a fixed time to search and read after
+            # the input was read and its claims found, and never past the ceiling the
+            # apps wait for (contract 1.8). A post with a ten-minute video spends
+            # minutes being read before checking starts; counted against the same
+            # five minutes, it would have left the claims almost nothing.
+            deadline = min(
+                max(started + background, time.perf_counter() + BACKGROUND_MIN_READING_SECONDS),
+                started + BACKGROUND_CEILING_SECONDS,
+            )
+            budget = deadline - started
+        else:
+            reading = background if background is not None else REASONING_TARGET_SECONDS
+            deadline = started + (reading if self._reads_sources else TARGET_SECONDS)
+            # Reading always gets its own time after the claims are found. Finding
+            # them in a linked page takes about twenty seconds, and counting that
+            # against the same budget left too little to read anything: a fresh ISRO
+            # link came back with every web page unread (2026-09-28).
+            if self._reads_sources:
+                deadline = max(deadline, time.perf_counter() + MIN_READING_SECONDS)
+                budget = deadline - started
 
         claims = await self._in_english(claims)
 
         check = current_check.set(str(case_id))
         shared = current_own_pages.set(frozenset(own))
+        had = _check_budget.set(budget)
         try:
             outcomes = await self._resolve_all(
                 claims,
@@ -649,6 +710,7 @@ class Orchestrator:
                 reported=reported,
             )
         finally:
+            _check_budget.reset(had)
             current_own_pages.reset(shared)
             current_check.reset(check)
             for resolver in self._resolvers:
@@ -819,6 +881,13 @@ class Orchestrator:
         main thesis, anything of critical severity), then the rest - so when
         slots are scarce the claims that decide the answer are not the ones waiting.
         The ranking is stable, so equally ranked claims keep the extractor's order.
+
+        In the background they are also taken a few at a time (`_CLAIMS_AT_ONCE`), so
+        the main claims are finished first rather than merely started first. The
+        tasks are created in ranked order and the gate hands out its places in the
+        order they were asked for, so no other ordering is needed. A check someone
+        waits on in one request still starts every claim at once: it has no time for
+        claims to wait their turn.
         """
         if not claims:
             return []
@@ -842,15 +911,25 @@ class Orchestrator:
         if report is not None:
             report(0, len(claims))
 
-        async def _counted(claim: Claim) -> ClaimOutcome:
-            nonlocal finished
-            outcome = await self._resolve_claim(
+        # Per check: one check's claims never wait behind another's.
+        gate = asyncio.Semaphore(_CLAIMS_AT_ONCE) if _in_background() else None
+
+        async def _resolved(claim: Claim) -> ClaimOutcome:
+            return await self._resolve_claim(
                 claim,
                 skipped=skipped,
                 deadline=deadline,
                 own_pages=own_pages,
                 reported=reported,
             )
+
+        async def _counted(claim: Claim) -> ClaimOutcome:
+            nonlocal finished
+            if gate is None:
+                outcome = await _resolved(claim)
+            else:
+                async with gate:
+                    outcome = await _resolved(claim)
             finished += 1
             if report is not None:
                 report(finished, len(claims))
@@ -1193,10 +1272,24 @@ class Orchestrator:
         tally: list[int],
     ) -> list[Evidence]:
         """The second round's evidence, or nothing when no better search was found."""
-        if deadline is not None and deadline - time.perf_counter() < _FOLLOW_UP_MIN_SECONDS:
-            return []
         writer = next((r for r in fallback if hasattr(r, "follow_up_queries")), None)
         if writer is None:
+            return []
+        if deadline is not None and deadline - time.perf_counter() < _FOLLOW_UP_MIN_SECONDS:
+            # Said in the background, where a claim like this one is owed a second
+            # round: dropped in silence, the answer read as though it had had one,
+            # and was cached as complete. A check someone waits on in one request has
+            # never had the time for it, and saying so there would say it of nearly
+            # every answer. Not worded as a deadline: the claim was searched, and its
+            # first round stands (`_resolve_claim` reads "deadline" as timed out).
+            if _in_background():
+                skipped.append(
+                    SkippedCheck(
+                        check="follow_up_search",
+                        reason="too little time left for a second search round",
+                        kind="deadline",
+                    )
+                )
             return []
         notes = [item.finding for item in evidence if item.finding][:6]
         try:
@@ -1246,8 +1339,20 @@ class Orchestrator:
         budget = None if deadline is None else max(0.0, deadline - time.perf_counter())
         verified = await self._verification.check(claim, evidence, budget=budget)
         if not verified.checked:
+            # Out of time is not an outage. Both read "model provider unavailable",
+            # so a check that only ran out of time told the reader a service was down.
             skipped.append(
-                SkippedCheck(check="source_verification", reason="model provider unavailable")
+                SkippedCheck(
+                    check="source_verification",
+                    reason="no time left to check the sources",
+                    kind="deadline",
+                )
+                if verified.timed_out
+                else SkippedCheck(
+                    check="source_verification",
+                    reason="model provider unavailable",
+                    kind="provider",
+                )
             )
         if watching is not None:
             await watching.verified(
@@ -1283,10 +1388,33 @@ class Orchestrator:
         # Reading stops early enough for the source check to run after it.
         read_by = deadline
         if deadline is not None and self._verification is not None:
-            read_by = deadline - _VERIFY_RESERVE_SECONDS
+            read_by = deadline - _verify_reserve()
 
         remaining = max(2.0, read_by - time.perf_counter()) if read_by is not None else None
         backstop = None if remaining is None else remaining + _RESOLVER_GRACE_SECONDS
+
+        # A claim that waited its turn in the background (`_CLAIMS_AT_ONCE`) can reach
+        # the web search with no reading time left. Its search is not started then:
+        # the queries would be paid for and every page found cut off unread.
+        if (
+            _in_background()
+            and self._reads_sources
+            and read_by is not None
+            and read_by - time.perf_counter() < _MIN_SEARCH_SECONDS
+        ):
+            late = [r for r in resolvers if getattr(r, "fallback", False)]
+            for resolver in late:
+                skipped.append(
+                    SkippedCheck(
+                        check=getattr(resolver, "name", type(resolver).__name__),
+                        # "deadline" is what marks the claim's search as timed out.
+                        reason=f"deadline of {self._budget():.0f}s reached before it was searched",
+                        kind="deadline",
+                    )
+                )
+            resolvers = [r for r in resolvers if r not in late]
+            if not resolvers:
+                return evidence
 
         gathered = await asyncio.gather(
             *(
@@ -1302,9 +1430,16 @@ class Orchestrator:
             name = getattr(resolver, "name", type(resolver).__name__)
 
             if isinstance(outcome, TimeoutError):
-                budget = REASONING_TARGET_SECONDS if self._reads_sources else TARGET_SECONDS
+                # The time this check had, not the budget of a check someone waits
+                # on: every background check was said to have run out of 55 seconds.
+                # "deadline" is what marks the claim's search as timed out
+                # (`_resolve_claim`), so it stays in the wording.
                 skipped.append(
-                    SkippedCheck(check=name, reason=f"deadline of {budget:.0f}s exceeded")
+                    SkippedCheck(
+                        check=name,
+                        reason=f"deadline of {self._budget():.0f}s exceeded",
+                        kind="deadline",
+                    )
                 )
                 continue
 
@@ -1317,12 +1452,31 @@ class Orchestrator:
 
             found, skip, read = outcome
             if skip is not None:
-                skipped.append(SkippedCheck(check=name, reason=skip))
+                # A resolver skips for one of two reasons (`_run_resolver`): pages
+                # still unread at the deadline, or the provider not called at all.
+                skipped.append(
+                    SkippedCheck(
+                        check=name,
+                        reason=skip,
+                        kind="deadline" if "deadline" in skip else "provider",
+                    )
+                )
             if tally is not None:
                 tally[0] += read
             evidence.extend(found)
 
         return evidence
+
+    def _budget(self) -> float:
+        """The time this check had, in seconds, for saying what it ran out of.
+
+        What `verify` gave it, which moves with how long reading the input took;
+        else the budget it was asked to keep. It said 55 seconds of every
+        background check, which had five minutes and more.
+        """
+        if not self._reads_sources:
+            return TARGET_SECONDS
+        return _check_budget.get() or check_seconds.get() or REASONING_TARGET_SECONDS
 
     async def _count_origins(
         self, claim: Claim, *, evidence: list[Evidence], skipped: list[SkippedCheck]
@@ -1383,8 +1537,13 @@ class Orchestrator:
         World Cup in 2024" was read from The Canadian Press, Wikipedia and Sportstar —
         three model calls, all answered — and came back Unconfirmed with no sources,
         because a sixth page's fetch timed out and the cancellation discarded all six.
+
+        A web search (`fallback`) asks under its own ceiling, not the fetch slots: it
+        is paced query by query and can wait its turn for a long time, and waiting in
+        a fetch slot kept pages that were already found from being read.
         """
-        async with self._semaphore:
+        gate = self._search_gate if getattr(resolver, "fallback", False) else self._semaphore
+        async with gate:
             try:
                 candidates = await resolver.candidates(claim)
             except ProviderUnavailable as unavailable:
