@@ -116,6 +116,30 @@ def _www_variant(url: str) -> str | None:
     return urlunsplit((parts.scheme, f"www.{host}{port}", parts.path, parts.query, parts.fragment))
 
 
+def _host_of(url: str) -> str:
+    from urllib.parse import urlsplit
+
+    try:
+        return (urlsplit(url).hostname or "").lower().rstrip(".")
+    except ValueError:
+        return ""
+
+
+def _host_allowed(host: str, allowed_hosts: tuple[str, ...]) -> bool:
+    """Whether a host is one of these, or a subdomain of one.
+
+    Matched on whole labels: `.fbcdn.net` admits `scontent.xx.fbcdn.net` and never
+    `evilfbcdn.net`.
+    """
+    if not host:
+        return False
+    for allowed in allowed_hosts:
+        suffix = allowed.lower().strip(".")
+        if suffix and (host == suffix or host.endswith(f".{suffix}")):
+            return True
+    return False
+
+
 # Provider answers that mean "try again in a moment". 432, Tavily's plan limit, is
 # not one of them: waiting does not refill a plan.
 _RETRYABLE = frozenset({429, 502, 503, 504})
@@ -257,6 +281,177 @@ class SecureFetcher:
             f"more than {self._max_redirects} redirects",
             kind="redirect_limit",
             provider=provider,
+        )
+
+    async def download(
+        self,
+        url: str,
+        *,
+        provider: str,
+        max_bytes: int,
+        accepted_types: tuple[str, ...],
+        allowed_hosts: tuple[str, ...],
+        total_seconds: float = 120.0,
+    ) -> FetchResult | FetchFailure:
+        """Download a post's picture or video from the platform's own media hosts.
+
+        Not `fetch`, for three reasons. `fetch` reads the whole body before its cap
+        applies, which for a video means holding hundreds of megabytes to keep 25;
+        this reads as it streams and stops one byte past `max_bytes`. `fetch` keeps a
+        truncated body as a result, which suits an article (its opening is useful)
+        and not a video (half an mp4 does not decode, and a picture cut short is not
+        the picture): this returns `too_large` instead, never a truncated success.
+        And the address came out of a platform's answer, so it is held to that
+        platform's media hosts (`allowed_hosts`, each matching itself and its
+        subdomains) on every hop, as well as to the SSRF guard: a post cannot send
+        the downloader to an arbitrary host by naming it as its picture.
+
+        `total_seconds` bounds the whole download. The client's timeout is per read,
+        so a host dribbling a byte every few seconds would otherwise hold the check
+        for as long as it liked.
+        """
+        started = time.perf_counter()
+        chain: list[str] = []
+        current = url
+        try:
+            async with asyncio.timeout(total_seconds):
+                for hop in range(self._max_redirects + 1):
+                    host = _host_of(current)
+                    if not _host_allowed(host, allowed_hosts):
+                        return self._failure(
+                            url,
+                            f"{host or 'the address'} is not one of this platform's media hosts",
+                            kind="blocked",
+                            provider=provider,
+                            hop=hop,
+                        )
+                    try:
+                        resolve_and_validate(current)
+                    except BlockedDestination as blocked:
+                        return self._failure(
+                            url, blocked.reason, kind="blocked", provider=provider, hop=hop
+                        )
+                    # Media is compressed already; asking for it as it is saves the
+                    # CDN recompressing it and keeps the byte count the file's own.
+                    async with self._client.stream(
+                        "GET", current, headers={"Accept-Encoding": "identity"}
+                    ) as response:
+                        if response.is_redirect:
+                            location = response.headers.get("location")
+                            if not location:
+                                return self._failure(
+                                    url,
+                                    "redirect without a location",
+                                    kind="transport",
+                                    provider=provider,
+                                )
+                            chain.append(current)
+                            current = str(httpx.URL(current).join(location))
+                            continue
+                        return await self._streamed(
+                            url,
+                            current,
+                            response,
+                            chain,
+                            started,
+                            provider=provider,
+                            max_bytes=max_bytes,
+                            accepted_types=accepted_types,
+                        )
+        except TimeoutError:
+            return self._failure(
+                url,
+                f"download took longer than {total_seconds:.0f}s",
+                kind="timeout",
+                provider=provider,
+            )
+        except httpx.TimeoutException:
+            return self._failure(url, "request timed out", kind="timeout", provider=provider)
+        except httpx.HTTPError as exc:
+            return self._failure(
+                url, f"transport error: {type(exc).__name__}", kind="transport", provider=provider
+            )
+        return self._failure(
+            url,
+            f"more than {self._max_redirects} redirects",
+            kind="redirect_limit",
+            provider=provider,
+        )
+
+    async def _streamed(
+        self,
+        original_url: str,
+        final_url: str,
+        response: httpx.Response,
+        chain: list[str],
+        started: float,
+        *,
+        provider: str,
+        max_bytes: int,
+        accepted_types: tuple[str, ...],
+    ) -> FetchResult | FetchFailure:
+        """Read a download's body as it arrives, refusing it whole past the cap."""
+        if response.status_code >= 400:
+            return self._failure(
+                original_url,
+                f"the media host returned {response.status_code}",
+                kind="status",
+                provider=provider,
+            )
+        content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
+        # Unlike a page, a download must say what it is: the bytes are about to be
+        # handed to a picture or video decoder, and a CDN always names its type.
+        if not content_type or not any(content_type.startswith(t) for t in accepted_types):
+            return self._failure(
+                original_url,
+                f"content type {content_type or 'none'!r} is not a picture or video",
+                kind="content_type",
+                provider=provider,
+            )
+        declared = response.headers.get("content-length")
+        if declared and declared.isdigit() and int(declared) > max_bytes:
+            return self._failure(
+                original_url,
+                f"declared size {declared} exceeds the {max_bytes} byte cap",
+                kind="too_large",
+                provider=provider,
+            )
+        received = bytearray()
+        # Decoded bytes are what is counted, so a compressed body cannot expand past
+        # the cap in memory either.
+        async for chunk in response.aiter_bytes():
+            received.extend(chunk)
+            if len(received) > max_bytes:
+                return self._failure(
+                    original_url,
+                    f"more than the {max_bytes} byte cap",
+                    kind="too_large",
+                    provider=provider,
+                )
+        body = bytes(received)
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        metrics.record_success(provider, elapsed_ms)
+        event(
+            logger,
+            "download completed",
+            module="security.fetcher",
+            outcome="ok",
+            provider=provider,
+            latency_ms=elapsed_ms,
+            status_code=response.status_code,
+            redirects=len(chain),
+            byte_count=len(body),
+        )
+        return FetchResult(
+            url=original_url,
+            final_url=final_url,
+            status_code=response.status_code,
+            content_type=content_type,
+            body=body,
+            byte_count=len(body),
+            fetched_at=datetime.now(UTC),
+            redirect_chain=tuple(chain),
+            elapsed_ms=elapsed_ms,
         )
 
     async def get_json(
