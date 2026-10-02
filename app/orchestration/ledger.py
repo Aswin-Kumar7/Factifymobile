@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from collections.abc import Mapping
 from dataclasses import asdict
 from datetime import UTC, date, datetime, time
@@ -76,6 +77,25 @@ KEPT_FIELDS: tuple[str, ...] = (
     "completeness_note",
     "advisories",
 )
+
+# An answer with no claims has a fixed sentence in place of a verdict's - why it was
+# withheld, or that there was nothing to fact-check - in the language of what was
+# read. No claim row holds it, and the case's own language cannot say it again (a
+# link's is "und"), so it is kept too; with claims, the ledger's sentence is the one.
+KEPT_WITHOUT_CLAIMS = "summary"
+
+# A small copy of a picture on our own address, held in memory for about an hour and
+# gone on every restart (`/v1/media/thumbnails/<key>`). Not kept: a case read back
+# later carries the date, publisher and match but no image (`EarlierMediaResponse`),
+# never a link that has stopped working.
+_SERVED_FOR_AN_HOUR = "/v1/media/thumbnails/"
+_LINK_FIELDS = frozenset({"thumbnail_url", "media_url", "image_url"})
+
+# What Postgres's jsonb cannot hold: a NUL character, which a PDF's text layer gives
+# for a glyph it cannot map, and half of a surrogate pair. Each is replaced by the
+# one replacement character, so every offset into the text (`char_start`) still holds.
+_UNSTORABLE = re.compile(r"[\x00\ud800-\udfff]")
+_REPLACEMENT = "�"
 
 
 async def claim_vector(embedder: Any | None, claim: Any) -> str | None:
@@ -323,16 +343,36 @@ def _published_on(row: Any) -> date | None:
     return published.date()  # type: ignore[no-any-return]
 
 
+def _storable(value: Any, key: str | None = None) -> Any:
+    """`value` as jsonb can hold it, with no link to a picture that is gone in an hour."""
+    if isinstance(value, str):
+        if key in _LINK_FIELDS and value.startswith(_SERVED_FOR_AN_HOUR):
+            return None
+        return _UNSTORABLE.sub(_REPLACEMENT, value)
+    if isinstance(value, dict):
+        return {name: _storable(item, name) for name, item in value.items()}
+    if isinstance(value, list):
+        return [_storable(item) for item in value]
+    return value
+
+
 def reading_payload(response: VerifyResponse) -> dict[str, Any]:
     """What is kept of an answer beside its case: `KEPT_FIELDS`, as the API's JSON.
 
     The wire form rather than a shape of its own, so what reads back is exactly what
-    was sent, and a field added to the contract later is kept by adding its name.
+    was sent, and a field added to the contract later is kept by adding its name. An
+    answer with no claims keeps its sentence too (`KEPT_WITHOUT_CLAIMS`). Two things
+    are not kept as sent: a link to a small copy of a picture, which stops working
+    within the hour, and a character jsonb cannot hold (`_UNSTORABLE`).
     """
-    return response.model_dump(mode="json", include=set(KEPT_FIELDS))
+    payload = response.model_dump(mode="json", include=set(KEPT_FIELDS))
+    if not response.claims:
+        payload[KEPT_WITHOUT_CLAIMS] = response.summary
+    kept: dict[str, Any] = _storable(payload)
+    return kept
 
 
-def with_reading(
+def with_kept_reading(
     response: VerifyResponse, kept: Mapping[str, Any] | None, *, language: str | None = None
 ) -> VerifyResponse:
     """A case read from the ledger, with what was kept beside it filled in.
@@ -343,9 +383,11 @@ def with_reading(
     already shows. A half-restored answer - its reading kept and its skipped list
     dropped - would be a state no answer was ever sent in.
 
-    Two things are said again from what was kept rather than stored twice: the link's
-    risk level, which is its website card's (`source_profile.level`), and the fixed
-    sentence a withheld answer gives in place of a verdict, which no claim row holds.
+    The ledger's claims, verdict and sentence always win. Only a case the ledger holds
+    no claim for takes its sentence from the copy: the fixed one it was answered with,
+    in the language of what was read. A copy kept without one - written before the
+    sentence was kept - has a withheld answer's said again in the case's language.
+    The link's risk level is said again from its website card (`source_profile.level`).
     """
     if not kept:
         return response
@@ -353,6 +395,9 @@ def with_reading(
     from app.api.schemas import VerifyResponse
 
     fields = {name: kept[name] for name in KEPT_FIELDS if name in kept}
+    sentence = not response.claims and not response.summary
+    if sentence and KEPT_WITHOUT_CLAIMS in kept:
+        fields[KEPT_WITHOUT_CLAIMS] = kept[KEPT_WITHOUT_CLAIMS]
     try:
         # Read through the contract's own model, so each field comes back as the type
         # it was sent as and is held to the same rules: an `input_read` that calls
@@ -383,7 +428,7 @@ def with_reading(
     if profile is not None and response.source_risk is SourceRisk.UNKNOWN:
         update["source_risk"] = profile.level
     read = parsed.input_read
-    if read is not None and read.verdict_withheld and not response.claims and not response.summary:
+    if sentence and KEPT_WITHOUT_CLAIMS not in kept and read is not None and read.verdict_withheld:
         update["summary"] = WITHHELD_SUMMARY.get(language or "en", WITHHELD_SUMMARY["en"])
     return response.model_copy(update=update)
 
@@ -466,7 +511,7 @@ class CaseReadingStore:
     async def get(self, case_id: UUID) -> dict[str, Any] | None:
         """The kept payload (`reading_payload`'s shape), or None. Never raises.
 
-        For an answer that is not read through `CaseReader`; `with_reading` puts it
+        For an answer that is not read through `CaseReader`; `with_kept_reading` puts it
         into a `VerifyResponse` as `CaseReader.get` does.
         """
         try:
@@ -670,4 +715,4 @@ class CaseReader:
         # What the answer showed that no ledger row holds - what was read from the
         # input, the picture and video checks, the website card, what was skipped -
         # from the copy kept beside the case when it was answered.
-        return with_reading(response, kept, language=case.get("language"))
+        return with_kept_reading(response, kept, language=case.get("language"))

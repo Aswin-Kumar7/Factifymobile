@@ -54,6 +54,8 @@ ANCHOR: dict[str, Any] = {
 }
 LEDGER_RULES = "2026.10.01.3"
 LEDGER_SUMMARY = "No source could be found that settles when the rule starts."
+# Our own address for a small copy of a picture, held about an hour in memory.
+THUMBNAILS = "/v1/media/thumbnails/"
 
 
 class _Database:
@@ -78,8 +80,10 @@ def _sent(sample: str, case_id: UUID, **update: Any) -> VerifyResponse:
     return VerifyResponse.model_validate({**data, "case_id": str(case_id), **update})
 
 
-async def _case(conn: Any) -> UUID:
-    return await CaseRepository(conn).create(request_id=f"req-{uuid4()}", input_type="url")
+async def _case(conn: Any, *, language: str | None = None) -> UUID:
+    return await CaseRepository(conn).create(
+        request_id=f"req-{uuid4()}", input_type="url", language=language
+    )
 
 
 async def _with_unconfirmed_claim(conn: Any, case_id: UUID) -> None:
@@ -147,6 +151,14 @@ class TestRepository:
                     (case_id,),
                 )
 
+    async def test_jsonb_holds_no_nul_character(self, conn: Any) -> None:
+        # Why the store replaces it: a PDF's text layer gives NUL for a glyph it cannot
+        # map, and the whole reading would be refused for it.
+        case_id = await _case(conn)
+        with pytest.raises(psycopg.errors.UntranslatableCharacter):
+            async with conn.transaction():
+                await CaseReadingRepository(conn).put(case_id, {"completeness_note": "of\x00ce"})
+
     async def test_the_reading_goes_with_its_case(self, conn: Any) -> None:
         case_id = await _case(conn)
         await CaseReadingRepository(conn).put(case_id, {"completeness_note": "kept"})
@@ -167,6 +179,22 @@ class TestStore:
         kept = await store.get(case_id)
         assert kept == reading_payload(sent)
         assert kept is not None and set(kept) == set(KEPT_FIELDS)
+
+    async def test_text_with_a_nul_character_is_kept(self, conn: Any) -> None:
+        case_id = await _case(conn)
+        sent = _sent("link_complete", case_id)
+        assert sent.input_read is not None
+        parts = sent.input_read.parts
+        read = sent.input_read.model_copy(
+            update={"parts": (parts[0].model_copy(update={"text": "of\x00ce"}), *parts[1:])}
+        )
+        store = CaseReadingStore(_Database(conn))
+
+        await store.put(case_id, sent.model_copy(update={"input_read": read}))
+
+        kept = await store.get(case_id)
+        assert kept is not None
+        assert kept["input_read"]["parts"][0]["text"] == "of\ufffdce"
 
     async def test_a_cached_answer_is_not_kept_again(self, conn: Any) -> None:
         case_id = await _case(conn)
@@ -200,8 +228,15 @@ class TestCaseReader:
         read = await CaseReader(_Database(conn)).get(case_id)
 
         assert isinstance(read, VerifyResponse)
+        shown = read.model_dump(mode="json")
+        kept = reading_payload(sent)
         for name in KEPT_FIELDS:
-            assert getattr(read, name) == getattr(sent, name), name
+            assert shown[name] == kept[name], name
+        if THUMBNAILS not in sent.model_dump_json(include=set(KEPT_FIELDS)):
+            for name in KEPT_FIELDS:
+                assert getattr(read, name) == getattr(sent, name), name
+        # A link to a small copy of a picture is gone within the hour: none is kept.
+        assert THUMBNAILS not in read.model_dump_json()
         assert read.source_risk == sent.source_risk
         # Restored as the contract's own types, so it is sent as it was the first time.
         assert VerifyResponse.model_validate_json(read.model_dump_json()) == read
@@ -214,9 +249,11 @@ class TestCaseReader:
 
         read = await CaseReader(_Database(conn)).get(case_id)
 
-        assert read.input_read == sent.input_read
+        shown = read.model_dump(mode="json")
+        kept = reading_payload(sent)
+        assert shown["input_read"] == kept["input_read"]
+        assert shown["media_report"] == kept["media_report"]
         assert read.speech == sent.speech
-        assert read.media_report == sent.media_report
         # The claims, the summary and the rule version are what the ledger recorded.
         assert [claim.text for claim in read.claims] == ["The new UPI rule starts on 1 November."]
         assert read.summary == LEDGER_SUMMARY
@@ -235,6 +272,18 @@ class TestCaseReader:
         assert read.input_read.verdict_withheld is True
         assert read.summary == WITHHELD_SUMMARY["en"]
         assert read.skipped == sent.skipped
+
+    async def test_a_withheld_post_says_why_in_the_language_it_was_answered_in(
+        self, conn: Any
+    ) -> None:
+        # A link's case language is "und"; the sentence was said in what was read's.
+        case_id = await _case(conn, language="und")
+        sent = _sent("link_withheld", case_id, summary=WITHHELD_SUMMARY["hi"])
+        await CaseReadingStore(_Database(conn)).put(case_id, sent)
+
+        read = await CaseReader(_Database(conn)).get(case_id)
+
+        assert read.summary == WITHHELD_SUMMARY["hi"]
 
     async def test_a_case_kept_before_0011_reads_back_as_before(self, conn: Any) -> None:
         case_id = await _case(conn)

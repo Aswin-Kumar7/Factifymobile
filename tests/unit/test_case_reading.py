@@ -34,7 +34,7 @@ from app.orchestration.ledger import (
     CaseReader,
     CaseReadingStore,
     reading_payload,
-    with_reading,
+    with_kept_reading,
 )
 
 pytestmark = pytest.mark.unit
@@ -45,6 +45,13 @@ SAMPLES = sorted(path.stem for path in CONTRACT.glob("*.json"))
 LEDGER_RULES = "2026.10.01.3"
 LEDGER_SUMMARY = "No source could be found that settles when the rule starts."
 OPENED = datetime(2026, 10, 2, 9, 20, 7, tzinfo=UTC)
+
+# Our own address for a small copy of a picture, held about an hour in memory.
+THUMBNAILS = "/v1/media/thumbnails/"
+NOTHING_TO_CHECK = (
+    "Factify read all of this and found nothing in it that sources could confirm "
+    "or refute, so there is nothing to fact-check."
+)
 
 
 class _Cursor:
@@ -135,6 +142,9 @@ class _Ledger:
                 raise psycopg.errors.ForeignKeyViolation(
                     'insert on table "case_reading" violates foreign key constraint'
                 )
+            if _unstorable(json.loads(payload)):
+                # What Postgres says of a NUL in jsonb, and of half a surrogate pair.
+                raise psycopg.errors.UntranslatableCharacter("unsupported Unicode escape sequence")
             self.readings[case_id] = payload
             self.writes += 1
             return _Cursor([], rowcount=1)
@@ -174,6 +184,16 @@ class _Ledger:
         }
 
 
+def _unstorable(value: Any) -> bool:
+    if isinstance(value, str):
+        return any(ch == "\x00" or "\ud800" <= ch <= "\udfff" for ch in value)
+    if isinstance(value, dict):
+        return any(_unstorable(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_unstorable(item) for item in value)
+    return False
+
+
 def _sent(sample: str, case_id: UUID, **update: Any) -> VerifyResponse:
     """A sample answer from the contract fixtures, as if sent for `case_id`."""
     data = json.loads((CONTRACT / f"{sample}.json").read_text("utf-8"))
@@ -187,14 +207,61 @@ def _degraded(caplog: pytest.LogCaptureFixture, message: str) -> bool:
 class TestPayload:
     @pytest.mark.parametrize("sample", SAMPLES)
     def test_only_what_no_ledger_row_holds_is_kept(self, sample: str) -> None:
-        payload = reading_payload(_sent(sample, uuid4()))
+        sent = _sent(sample, uuid4())
+        payload = reading_payload(sent)
 
-        assert set(payload) == set(KEPT_FIELDS)
-        # The claims, the verdict and its sentence are the ledger's; the receipt and
-        # the app's request id belong to the one response.
-        assert not {"claims", "verdict", "summary", "receipt", "request_id"} & set(payload)
+        # The claims and the verdict are the ledger's, and so is the sentence of an
+        # answer with claims; the receipt and the app's request id belong to the one
+        # response. An answer with no claims keeps its fixed sentence.
+        assert set(payload) == set(KEPT_FIELDS) | (set() if sent.claims else {"summary"})
+        assert not {"claims", "verdict", "receipt", "request_id"} & set(payload)
         # Stored as the API's own JSON.
         assert json.loads(json.dumps(payload)) == payload
+
+    @pytest.mark.parametrize("sample", SAMPLES)
+    def test_no_link_to_a_picture_gone_within_the_hour_is_kept(self, sample: str) -> None:
+        assert THUMBNAILS not in json.dumps(reading_payload(_sent(sample, uuid4())))
+
+    def test_what_a_picture_check_found_is_kept_without_its_picture(self) -> None:
+        sent = _sent("video_upload", uuid4())
+        assert sent.media_report is not None
+        assert sent.media_report.history.earliest is not None
+        assert sent.media_report.history.earliest.thumbnail_url
+
+        earliest = reading_payload(sent)["media_report"]["history"]["earliest"]
+
+        assert earliest["thumbnail_url"] is None
+        assert earliest["publisher"] == "The News Minute"
+        assert earliest["published_at"] == "2015-12-03T08:20:00Z"
+        assert earliest["url"] == sent.media_report.history.earliest.url
+
+    def test_a_post_pictures_parts_are_kept_without_their_pictures(self) -> None:
+        sent = _sent("x_photo_post", uuid4())
+        assert sent.input_read is not None
+        assert any(part.media_url for part in sent.input_read.parts)
+
+        parts = reading_payload(sent)["input_read"]["parts"]
+
+        assert [part["media_url"] for part in parts] == [None] * len(parts)
+        # Only the link goes; the words read from each picture stay as they were.
+        assert [part["text"] for part in parts] == [part.text for part in sent.input_read.parts]
+
+    def test_text_jsonb_cannot_hold_is_kept_without_moving_an_offset(self) -> None:
+        # A PDF's text layer gives NUL for a glyph it cannot map; jsonb refuses it.
+        sent = _sent("link_complete", uuid4())
+        assert sent.input_read is not None
+        first = sent.input_read.parts[0]
+        odd = "Two\x00years on \ud800 the Moon"
+        read = sent.input_read.model_copy(
+            update={"parts": (first.model_copy(update={"text": odd}), *sent.input_read.parts[1:])}
+        )
+
+        kept = reading_payload(sent.model_copy(update={"input_read": read}))
+
+        text = kept["input_read"]["parts"][0]["text"]
+        assert text == "Two\ufffdyears on \ufffd the Moon"
+        assert len(text) == len(odd)
+        assert not _unstorable(kept)
 
     def test_the_fields_are_those_the_rows_cannot_hold(self) -> None:
         assert KEPT_FIELDS == (
@@ -221,13 +288,21 @@ class TestStore:
         read = await CaseReader(ledger).get(case_id)
 
         assert isinstance(read, VerifyResponse)
+        shown = read.model_dump(mode="json")
+        kept = {name: reading_payload(sent)[name] for name in KEPT_FIELDS}
         for name in KEPT_FIELDS:
-            assert getattr(read, name) == getattr(sent, name), name
+            assert shown[name] == kept[name], name
+        if THUMBNAILS not in sent.model_dump_json(include=set(KEPT_FIELDS)):
+            # Nothing to leave out: every field reads back exactly as it was sent.
+            for name in KEPT_FIELDS:
+                assert getattr(read, name) == getattr(sent, name), name
+        assert THUMBNAILS not in read.model_dump_json()
         # The link's risk level is its website card's, said again from it.
         assert read.source_risk == sent.source_risk
         # Restored as the contract's own types, so it is sent as it was the first time.
         assert VerifyResponse.model_validate_json(read.model_dump_json()) == read
-        assert reading_payload(read) == reading_payload(sent)
+        again = reading_payload(read)
+        assert {name: again[name] for name in KEPT_FIELDS} == kept
 
     async def test_the_payload_reads_back_as_it_was_put(self) -> None:
         ledger = _Ledger()
@@ -251,6 +326,23 @@ class TestStore:
         assert kept is not None
         assert kept["input_read"]["verdict_withheld"] is False
         assert kept["skipped"] == []
+
+    async def test_text_jsonb_cannot_hold_does_not_cost_the_reading(self) -> None:
+        ledger = _Ledger()
+        case_id = ledger.case()
+        sent = _sent("link_complete", case_id)
+        assert sent.input_read is not None
+        parts = sent.input_read.parts
+        read = sent.input_read.model_copy(
+            update={"parts": (parts[0].model_copy(update={"text": "of\x00ce"}), *parts[1:])}
+        )
+
+        await CaseReadingStore(ledger).put(case_id, sent.model_copy(update={"input_read": read}))
+        back = await CaseReader(ledger).get(case_id)
+
+        assert ledger.writes == 1
+        assert back.input_read is not None
+        assert back.input_read.parts[0].text == "of\ufffdce"
 
     async def test_a_cached_answer_is_not_kept_again(self) -> None:
         # It belongs to the case it was first computed for, whose reading was kept
@@ -335,8 +427,14 @@ class TestCaseReader:
 
         read = await CaseReader(ledger).get(case_id)
 
-        assert read.input_read == sent.input_read
+        assert read.input_read is not None and sent.input_read is not None
         assert read.input_read.platform == "x"
+        # As sent, but for the links to the pictures, which are gone within the hour.
+        assert [part.text for part in read.input_read.parts] == [
+            part.text for part in sent.input_read.parts
+        ]
+        assert all(part.media_url is None for part in read.input_read.parts)
+        assert read.input_read.gaps == sent.input_read.gaps
         assert read.image_reading == sent.image_reading
         assert read.media_report == sent.media_report
         assert read.media_reports == sent.media_reports
@@ -368,6 +466,51 @@ class TestCaseReader:
         assert read.source_profile == sent.source_profile
         assert read.source_risk == SourceRisk.MEDIUM
 
+    async def test_a_withheld_post_says_why_in_the_language_it_was_answered_in(self) -> None:
+        # A link's case language is "und": what was read decided the sentence's
+        # language when it was answered, and the sentence is kept as it was said.
+        ledger = _Ledger()
+        case_id = ledger.case(language="und")
+        sent = _sent("link_withheld", case_id, summary=WITHHELD_SUMMARY["hi"])
+        await CaseReadingStore(ledger).put(case_id, sent)
+
+        read = await CaseReader(ledger).get(case_id)
+
+        assert read.summary == WITHHELD_SUMMARY["hi"]
+
+    async def test_a_post_with_nothing_to_fact_check_reopened_says_so(self) -> None:
+        # Read in full, and nothing in it sources could settle: never searched, so the
+        # client's own "Unconfirmed" wording would say something that did not happen.
+        ledger = _Ledger()
+        case_id = ledger.case(language="und")
+        sent = _sent(
+            "link_complete",
+            case_id,
+            claims=[],
+            verdict="UNCONFIRMED",
+            confidence=None,
+            action="SEND_TO_REVIEW",
+            summary=NOTHING_TO_CHECK,
+        )
+        await CaseReadingStore(ledger).put(case_id, sent)
+
+        read = await CaseReader(ledger).get(case_id)
+
+        assert read.claims == ()
+        assert read.summary == NOTHING_TO_CHECK
+        assert read.input_read is not None and read.input_read.complete
+
+    async def test_a_claimless_answer_with_no_sentence_gains_none(self) -> None:
+        # Finding claims failed: the answer said nothing, and reads back the same.
+        ledger = _Ledger()
+        case_id = ledger.case()
+        sent = _sent("link_complete", case_id, claims=[], summary=None)
+        await CaseReadingStore(ledger).put(case_id, sent)
+
+        read = await CaseReader(ledger).get(case_id)
+
+        assert read.summary is None
+
     @pytest.mark.parametrize(
         ("language", "said"),
         [
@@ -377,12 +520,15 @@ class TestCaseReader:
             (None, WITHHELD_SUMMARY["en"]),
         ],
     )
-    async def test_a_withheld_answer_says_why_in_the_cases_language(
+    async def test_a_copy_kept_without_its_sentence_says_why_in_the_cases_language(
         self, language: str | None, said: str
     ) -> None:
+        # Kept before the sentence was: a withheld answer's is said again.
         ledger = _Ledger()
         case_id = ledger.case(language=language)
-        await CaseReadingStore(ledger).put(case_id, _sent("link_withheld", case_id))
+        kept = reading_payload(_sent("link_withheld", case_id))
+        del kept["summary"]
+        ledger.readings[case_id] = json.dumps(kept)
 
         read = await CaseReader(ledger).get(case_id)
 
@@ -473,7 +619,7 @@ class TestCaseReader:
         assert await CaseReader(_Ledger()).get(uuid4()) is None
 
 
-class TestWithReading:
+class TestWithKeptReading:
     async def test_a_repeat_served_from_the_cache_can_carry_the_first_reading(self) -> None:
         # For an answer not read through `CaseReader`: the thin result of a cache hit.
         ledger = _Ledger()
@@ -490,9 +636,12 @@ class TestWithReading:
             from_cache=True,
         )
 
-        served = with_reading(thin, await store.get(case_id))
+        served = with_kept_reading(thin, await store.get(case_id))
 
-        assert served.input_read == sent.input_read
+        assert served.input_read is not None and sent.input_read is not None
+        # As it was sent, but for the links to pictures that are gone within the hour.
+        assert served.model_dump(mode="json")["input_read"] == reading_payload(sent)["input_read"]
+        assert served.input_read.gaps == sent.input_read.gaps
         assert served.speech == sent.speech
         assert served.skipped == sent.skipped
         assert served.from_cache is True
@@ -501,5 +650,5 @@ class TestWithReading:
     def test_nothing_kept_leaves_the_answer_as_it_is(self) -> None:
         response = _sent("link_complete", uuid4())
 
-        assert with_reading(response, None) is response
-        assert with_reading(response, {}) is response
+        assert with_kept_reading(response, None) is response
+        assert with_kept_reading(response, {}) is response
