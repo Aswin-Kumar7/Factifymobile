@@ -282,6 +282,60 @@ class TestTheRules:
         assert decide(forward, smaller).rule_id == NARROWER_RULE
         assert case.rule_id == "rollup.partly_true"
 
+    def test_a_side_detail_reported_smaller_leaves_a_confirmed_story_true(self) -> None:
+        """news-3: the fire is confirmed by four outlets; one detail (which floor it
+        began on) is reported in less detail. The story is true; the detail is shown as
+        partly true on its own line."""
+        headline = claim(importance=Importance.HEADLINE, independent_origin_count=4)
+        detail = claim(
+            claim_id="cl_4", importance=Importance.SUPPORTING_DETAIL, severity=Severity.HIGH
+        )
+        hosts = ("thehindu.com", "theprint.in", "deccanchronicle.com", "indiatoday.in")
+        smaller = [_item("narrower", "timesofindia.com"), _item("narrower", "ndtv.com")]
+
+        detail_decision = decide(detail, smaller)
+        case = roll_up(
+            [
+                (headline, decide(headline, [_item("supports", host) for host in hosts])),
+                (detail, detail_decision),
+            ]
+        )
+
+        assert detail_decision.rule_id == NARROWER_RULE
+        assert case.action is Action.SAFE_TO_SHARE
+        assert "smaller version" in case.reason
+
+    def test_a_critical_detail_reported_smaller_still_makes_it_partly_true(self) -> None:
+        """Rs 5,000 for every woman as a CRITICAL detail under a true headline."""
+        headline = claim(importance=Importance.HEADLINE, independent_origin_count=3)
+        detail = claim(
+            claim_id="cl_4", importance=Importance.SUPPORTING_DETAIL, severity=Severity.CRITICAL
+        )
+        hosts = ("thehindu.com", "theprint.in", "deccanchronicle.com")
+        smaller = [_item("narrower", "timesofindia.com"), _item("narrower", "ndtv.com")]
+
+        case = roll_up(
+            [
+                (headline, decide(headline, [_item("supports", host) for host in hosts])),
+                (detail, decide(detail, smaller)),
+            ]
+        )
+
+        assert case.rule_id == "rollup.partly_true"
+
+    def test_a_side_detail_reported_smaller_with_nothing_central_confirmed_is_not_true(
+        self,
+    ) -> None:
+        headline = claim(importance=Importance.HEADLINE)
+        detail = claim(
+            claim_id="cl_4", importance=Importance.SUPPORTING_DETAIL, severity=Severity.HIGH
+        )
+        smaller = [_item("narrower", "timesofindia.com"), _item("narrower", "ndtv.com")]
+
+        case = roll_up([(headline, decide(headline, [])), (detail, decide(detail, smaller))])
+
+        assert case.action is not Action.SAFE_TO_SHARE
+
     def test_it_reports_on_the_claim_and_says_so(self) -> None:
         item = _item("partial", "thewire.in")
 

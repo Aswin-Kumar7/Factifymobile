@@ -6,7 +6,7 @@
   "summary": "Factify could not read all of this, so it has not given a verdict. Paste the text, or upload the picture or video.",
   "action": "SEND_TO_REVIEW",
   "action_reason": "No checkable claims were extracted from this input.",
-  "rule_version": "2026.10.03.6",
+  "rule_version": "2026.10.03.7",
   "claims": [],
   "advisories": [],
   "source_risk": "MEDIUM",

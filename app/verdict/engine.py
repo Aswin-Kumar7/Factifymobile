@@ -41,7 +41,7 @@ from app.domain.publishers import publishers_of
 
 # Stamped on every verdict. A cached verdict produced under older rules is therefore
 # identifiable, and the cache can refuse to serve it (M13).
-RULE_VERSION = "2026.10.03.6"
+RULE_VERSION = "2026.10.03.7"
 
 # Default number of genuinely independent origins required before corroboration can
 # support a claim. Tenant-configurable later; never below two, because one origin is
@@ -951,8 +951,13 @@ def _roll_up_action(
     # A real thing inflated: sources report a smaller version of a claim that carries
     # the piece - one state's scheme as the government's, a one-time payment as a
     # monthly one. Partly true, and shown with what the sources actually report.
+    # Only the claim that carries the piece, or a CRITICAL detail, makes it partly
+    # true when sources report it smaller. A side detail they report in less detail -
+    # which floor a fire began on, one aside in a governor's statement - made true
+    # reports from the Indian Express, NDTV and an RBI video read "partly true"
+    # (2026-10-02); it is still shown as partly true on its own line below.
     for claim, _ in partly:
-        if claim.is_material:
+        if is_central(claim) or claim.severity is Severity.CRITICAL:
             return CaseDecision(
                 action=Action.SHARE_WITH_CORRECTION,
                 rule_id="rollup.partly_true",
@@ -974,6 +979,15 @@ def _roll_up_action(
     # here: what makes a piece false is its headline, its main claim, or anything
     # CRITICAL, which the rows above still catch. A wrong HIGH detail is a
     # correction, and the claim itself is still shown as contradicted.
+    # A side detail reported only in a smaller version, under a central claim that is
+    # confirmed, is not a correction to the piece (above): it is left to its own line.
+    central_confirmed = any(
+        is_central(c) and d.status is ClaimStatus.SUPPORTED for c, d in decisions
+    )
+    smaller_side = [(c, d) for c, d in partly if not is_central(c)]
+    if central_confirmed:
+        misleading = [(c, d) for c, d in misleading if (c, d) not in smaller_side]
+
     if (contradicted or misleading) and anything_right:
         return CaseDecision(
             action=Action.SHARE_WITH_CORRECTION,
@@ -1065,9 +1079,18 @@ def _roll_up_action(
                 "Every central claim is supported by cited evidence. "
                 f"{len(unchecked)} minor detail(s) could not be checked."
             )
+        if central_confirmed and smaller_side:
+            reason += (
+                f" {len(smaller_side)} side detail(s) are reported only in a smaller "
+                "version; see each claim."
+            )
         return CaseDecision(
             action=Action.SAFE_TO_SHARE,
-            rule_id="rollup.material_supported" if unchecked else "rollup.all_supported",
+            rule_id=(
+                "rollup.material_supported"
+                if unchecked or (central_confirmed and smaller_side)
+                else "rollup.all_supported"
+            ),
             reason=reason,
         )
 

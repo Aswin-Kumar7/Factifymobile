@@ -233,16 +233,19 @@ class TestTheCase:
         assert case.verdict is Verdict.MISLEADING
 
     def test_a_smaller_version_alone_is_still_partly_true(self) -> None:
-        headline = claim(importance=Importance.HEADLINE, independent_origin_count=2)
-        detail = claim(claim_id="cl_2", importance=Importance.SUPPORTING_DETAIL)
+        """No framing anywhere: the headline itself reported only in a smaller version."""
+        headline = claim(importance=Importance.HEADLINE)
+        detail = claim(
+            claim_id="cl_2", importance=Importance.SUPPORTING_DETAIL, independent_origin_count=2
+        )
 
         case = roll_up(
             [
-                (headline, decide(headline, [_report("supports", "indiatoday.in")])),
                 (
-                    detail,
-                    decide(detail, [_report("narrower", "a.in"), _report("narrower", "b.in")]),
+                    headline,
+                    decide(headline, [_report("narrower", "a.in"), _report("narrower", "b.in")]),
                 ),
+                (detail, decide(detail, [_report("supports", "indiatoday.in")])),
             ]
         )
 
