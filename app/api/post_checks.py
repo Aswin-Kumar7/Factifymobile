@@ -79,7 +79,9 @@ from app.intake.normalizer import (
     normalise_url,
 )
 from app.intake.social_urls import Platform, PostRef, is_platform_host, recognise
-from app.media.composed import compose
+from app.media.composed import compose, described
+from app.media.sheet import contact_sheet
+from app.media.video import Keyframe
 from app.observability.logging import event
 from app.orchestration.background import set_phase
 from app.orchestration.pipeline import BACKGROUND_CEILING_SECONDS, BACKGROUND_MIN_READING_SECONDS
@@ -828,19 +830,110 @@ async def _read_youtube(request: Request, read: PostRead) -> None:
         ),
         limits=(YOUTUBE_LIMIT,),
     )
-    if post.thumbnail_url:
-        set_phase("reading_pictures")
-        picture, parts, gaps = await _read_picture(
-            request,
-            post,
-            PostMedia(kind="image", url=post.thumbnail_url),
-            index=1,
-            total=1,
-            thumbnail=True,
+    set_phase("reading_pictures")
+    stills = asyncio.ensure_future(_youtube_stills(request, post))
+    try:
+        if post.thumbnail_url:
+            picture, parts, gaps = await _read_picture(
+                request,
+                post,
+                PostMedia(kind="image", url=post.thumbnail_url),
+                index=1,
+                total=1,
+                thumbnail=True,
+            )
+            read.reading = read.reading.plus(parts=parts, gaps=_not_blocking(gaps))
+            if picture is not None:
+                read.pictures.append(picture)
+        read.reading = read.reading.plus(parts=await stills)
+    finally:
+        stills.cancel()
+
+
+# The stills YouTube publishes of a Short, in its own upright shape ("oar": original
+# aspect ratio), and about when in the video each was taken. A regular video has none
+# of these - only letterboxed 480x360 copies - and is left to its thumbnail.
+_SHORT_STILLS = ("oar1", "oar2", "oar3")
+_STILL_MOMENTS = ("about 1/4", "about 1/2", "about 3/4")
+YOUTUBE_STILLS_DESCRIBED = (
+    "What the video shows, from stills YouTube publishes of it (described by Factify)"
+)
+
+
+async def _youtube_stills(request: Request, post: SocialPost) -> tuple[ReadPart, ...]:
+    """What a Short shows, from the three stills YouTube publishes of it, when the video
+    itself cannot be watched. Never raises; nothing when they cannot be had.
+
+    A Short of a leopard lunging at a moving train's windows - AI-made, by YouTurn,
+    Factly and The Quint - was read from its title ("be careful", hashtags), Hindi
+    shouts and one thumbnail of a man leaning towards a leopard: nothing in it was a
+    claim, and the answer was "nothing to check" (2026-10-02). YouTube's own stills of
+    it show the leopard at the train's windows and doors. One contact sheet, one
+    description call; they are never put through the picture checks, which never
+    decide a YouTube answer.
+    """
+    hosted = checks._hosted_reader(getattr(request.app.state, "ocr", None))
+    reader = getattr(request.app.state, "social_reader", None)
+    video_id = post.ref.post_id
+    if hosted is None or reader is None or not video_id:
+        return ()
+    try:
+        max_bytes = request.app.state.settings.limits.max_upload_bytes
+        got = await asyncio.gather(
+            *(
+                reader.download(
+                    PostMedia(kind="image", url=f"https://i.ytimg.com/vi/{video_id}/{name}.jpg"),
+                    max_bytes=max_bytes,
+                )
+                for name in _SHORT_STILLS
+            )
         )
-        read.reading = read.reading.plus(parts=parts, gaps=_not_blocking(gaps))
-        if picture is not None:
-            read.pictures.append(picture)
+        stills = [
+            (Keyframe(index=index, timestamp_ms=0, data=item.data), moment)
+            for index, (item, moment) in enumerate(zip(got, _STILL_MOMENTS, strict=True))
+            if not isinstance(item, Gap) and item.data
+        ]
+        if len(stills) < 2:
+            return ()
+        sheet = await asyncio.to_thread(
+            contact_sheet,
+            [frame for frame, _ in stills],
+            moments=[f"{moment} of the way" for _, moment in stills],
+        )
+        if sheet is None:
+            return ()
+        outcome = await hosted.describe_video(
+            sheet,
+            frames=len(stills),
+            span=(
+                "the whole video: stills YouTube took at about a quarter, a half and "
+                "three quarters of the way through"
+            ),
+        )
+        text = described(outcome.description) if outcome.succeeded else ""
+        if not text:
+            return ()
+        key = await _kept(request, sheet)
+    except Exception:
+        logger.exception("the stills YouTube publishes of a video could not be read")
+        return ()
+    event(
+        logger,
+        "youtube stills read",
+        module="api.post_checks",
+        outcome="ok",
+        stills=len(stills),
+        characters=len(text),
+    )
+    return (
+        ReadPart(
+            kind=PartKind.VIDEO_DESCRIPTION,
+            text=text,
+            route="youtube.stills",
+            label=YOUTUBE_STILLS_DESCRIBED,
+            media_key=key,
+        ),
+    )
 
 
 def _not_blocking(gaps: tuple[Gap, ...]) -> tuple[Gap, ...]:
