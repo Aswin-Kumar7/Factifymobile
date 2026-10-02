@@ -30,6 +30,7 @@ import hashlib
 import json
 import logging
 import re
+from dataclasses import replace
 from datetime import UTC, datetime
 from time import monotonic
 from typing import Any
@@ -43,6 +44,7 @@ from app.extraction.web import extract, plain_text
 from app.governor.governor import ProviderUnavailable, Skip, SkipReason
 from app.observability.logging import event
 from app.security.fetcher import FetchResult, SecureFetcher
+from app.security.patience import current_patience
 from app.sources.base import (
     SourceCandidate,
     SourceRelation,
@@ -51,10 +53,14 @@ from app.sources.base import (
     current_follow_up,
     current_own_pages,
     insufficient,
-    locate_excerpt,
 )
 from app.sources.credibility import SourceCredibility
-from app.sources.reasoning import REASONER_VERSION, PassageReasoner, split_passages
+from app.sources.reasoning import (
+    REASONER_VERSION,
+    PassageReasoner,
+    locate_quote,
+    split_passages,
+)
 from app.sources.verification import page_key
 
 logger = logging.getLogger("factify.sources.websearch")
@@ -65,12 +71,19 @@ logger = logging.getLogger("factify.sources.websearch")
 # measured on the accuracy suites, so both stay.
 _MAX_QUERIES = 4
 
-# How long a fetched page stays reusable. Long enough for one case's claims to share
-# it, short enough that it is never a stale answer from an earlier check.
-_READ_TTL_SECONDS = 90.0
+# How long a fetched page stays reusable: as long as a check in the background can run
+# (the orchestrator's ceiling is seven minutes), so every claim of one case shares it.
+# Ninety seconds was shorter than one such check, and a page read for its first claims
+# was fetched again for its last. Never a stale answer from an earlier check: the
+# reads are kept per check and dropped when it ends (`end_check`).
+_READ_TTL_SECONDS = 480.0
+# A page that could not be read is tried again sooner, as every page was before: its
+# extract may have been paced out or cut off this once, and for the whole check would
+# leave an official source - PIB, Reuters - unread for every later claim.
+_UNREAD_TTL_SECONDS = 90.0
 
 NAME = "web_search"
-VERSION = "2026.10.03.1"
+VERSION = "2026.10.03.2"
 PROVIDER = "web_search"
 
 # How many credible sources to read. Each is a metered model call, and corroboration
@@ -179,6 +192,16 @@ _SCORING = asyncio.Semaphore(2)
 # The search provider's copy of a page we could not read is a second chance, not a
 # second full wait: one such copy took 36 s and held a whole check (2026-10-02).
 _EXTRACT_TIMEOUT_SECONDS = 12.0
+# And the longest it waits for room under the per-minute ceiling first. A page is read
+# holding one of the server's fetch slots (the orchestrator's), so a background check's
+# ninety-second wait for the budget would hold one that long, and reads that need no
+# extract, this check's and others', queued behind it.
+_EXTRACT_PACE_SECONDS = 12.0
+
+
+def _kept_for(read: tuple[str, str, str]) -> float:
+    """How long a page read stays reusable: the check, or less when nothing was read."""
+    return _READ_TTL_SECONDS if read[0] else _UNREAD_TTL_SECONDS
 
 
 class _SearchFailed(Exception):
@@ -302,6 +325,10 @@ class WebSearchResolver:
         # Pages on a fact-checker's site that reported a fact rather than rating
         # this claim (`relate`): cited as reporting, not as a fact-check.
         self._reports_by_check: dict[str, set[str]] = {}
+        # claim id -> the pages (page keys) already put before the reader for that
+        # claim. A second round reads new pages only; it used to spend its few read
+        # slots on the first round's pages again, at a model call each.
+        self._judged_by_check: dict[str, dict[str, set[str]]] = {}
 
     @property
     def reads_sources(self) -> bool:
@@ -364,6 +391,11 @@ class WebSearchResolver:
         return self._reports_by_check.setdefault(current_check.get(), set())
 
     @property
+    def _judged(self) -> dict[str, set[str]]:
+        """This check's pages already given to the reader, by claim."""
+        return self._judged_by_check.setdefault(current_check.get(), {})
+
+    @property
     def _reads(self) -> dict[str, tuple[float, tuple[str, str, str]]]:
         """This check's page reads."""
         return self._reads_by_check.setdefault(current_check.get(), {})
@@ -384,6 +416,7 @@ class WebSearchResolver:
         self._reads_by_check.pop(check_id, None)
         self._dates_by_check.pop(check_id, None)
         self._reports_by_check.pop(check_id, None)
+        self._judged_by_check.pop(check_id, None)
 
     async def candidates(self, claim: Claim) -> list[SourceCandidate]:
         # A media provenance claim is not searchable text, and must never be treated as
@@ -424,9 +457,15 @@ class WebSearchResolver:
 
         rows = await self._queries(claim)
 
+        follow_up = bool(current_follow_up.get())
+        # A second round reads what the first did not: a page the reader already judged
+        # for this claim (`relate`) would be judged the same way again, at a model call
+        # each. A page that could not be read then was never judged, and may be now.
+        judged = self._judged.setdefault(claim.id, set())
         shortlist: list[SourceCandidate] = []
         dropped = 0
         dropped_hosts: list[str] = []
+        already_judged = 0
         seen: set[str] = set()
         own = current_own_pages.get()
         own_outlets = {registrable_domain(key) for key in own} - {None}
@@ -445,6 +484,9 @@ class WebSearchResolver:
             if key in seen:
                 continue
             seen.add(key)
+            if follow_up and key in judged:
+                already_judged += 1
+                continue
             # The credibility gate. An open-web page is read and cited only if its
             # publisher is one we would cite — otherwise a conspiracy blog's "SUPPORTS"
             # counts equally against a fact-checker's "CONTRADICTS", and the verdict
@@ -478,8 +520,9 @@ class WebSearchResolver:
             # was built to stop from a medical authority the allowlist is missing,
             # and those need opposite responses.
             dropped_hosts=sorted(set(dropped_hosts)),
+            already_judged=already_judged,
         )
-        limit = _FOLLOW_UP_RESULTS if current_follow_up.get() else self._max_results
+        limit = _FOLLOW_UP_RESULTS if follow_up else self._max_results
 
         # Which pages get the read slots: the most relevant first (see
         # `_RELEVANCE_FLOOR`). Without the relevance model, as before: the wires, the
@@ -491,9 +534,11 @@ class WebSearchResolver:
 
         # The pages this claim was cited against before are read again, first, beside
         # what search found now - so a source is not lost because today's search did
-        # not return it. They add read slots rather than taking search's.
-        for remembered in await self._remembered(claim, {page_key(c.url) for c in shortlist}):
-            shortlist.insert(0, remembered)
+        # not return it. They add read slots rather than taking search's. Not in a
+        # second round: the first already read them.
+        if not follow_up:
+            for remembered in await self._remembered(claim, {page_key(c.url) for c in shortlist}):
+                shortlist.insert(0, remembered)
         return shortlist
 
     async def follow_up_queries(self, claim: Claim, notes: list[str]) -> list[str]:
@@ -677,12 +722,13 @@ class WebSearchResolver:
 
         Deliberately short-lived and small. This resolver lives for the process, so an
         unbounded dictionary here would leak for the life of the service and serve a
-        page from an hour ago as though it had just been read. Ninety seconds covers
-        one case's claims and nothing else.
+        page from an hour ago as though it had just been read. It is kept per check
+        and dropped when the check ends, and `_READ_TTL_SECONDS` covers the longest
+        check and nothing else.
         """
         now = monotonic()
         cached = self._reads.get(url)
-        if cached is not None and now - cached[0] < _READ_TTL_SECONDS:
+        if cached is not None and now - cached[0] < _kept_for(cached[1]):
             body, route, _ = cached[1]
             self._read_event(route, url, len(body), reused=True)
             return cached[1]
@@ -692,7 +738,7 @@ class WebSearchResolver:
         # Expired entries are dropped on the way past rather than on a timer; the
         # dictionary is small and only grows while a case is in flight.
         self._reads = {
-            key: value for key, value in self._reads.items() if now - value[0] < _READ_TTL_SECONDS
+            key: value for key, value in self._reads.items() if now - value[0] < _kept_for(value[1])
         }
         self._reads[url] = (now, result)
         return result
@@ -713,10 +759,16 @@ class WebSearchResolver:
                 self._read_event("web.fetched", url, len(body))
                 return body, "web.fetched", fetched.final_url or url
 
-        try:
-            body = await asyncio.wait_for(self._vendor_extract(url), _EXTRACT_TIMEOUT_SECONDS)
-        except TimeoutError:
-            body = ""
+        # The budget is asked before the clock starts. Waiting for our turn under the
+        # provider's per-minute ceiling can take far longer than the call itself, and
+        # inside the timeout it used up the twelve seconds: the page went unread, its
+        # credit already counted.
+        body = ""
+        if self._can_extract and await self._metered_briefly("extract"):
+            try:
+                body = await asyncio.wait_for(self._extract_call(url), _EXTRACT_TIMEOUT_SECONDS)
+            except TimeoutError:
+                body = ""
         if body:
             route = f"web.{self._provider}_extract"
             self._read_event(route, url, len(body))
@@ -834,18 +886,39 @@ class WebSearchResolver:
             return False
         return True
 
+    async def _metered_briefly(self, call: str) -> bool:
+        """`_metered`, waiting at most `_EXTRACT_PACE_SECONDS` for room under the
+        per-minute ceiling whatever the check's own patience."""
+        patience = current_patience.get()
+        token = current_patience.set(
+            replace(patience, pace_seconds=min(patience.pace_seconds, _EXTRACT_PACE_SECONDS))
+        )
+        try:
+            return await self._metered(call)
+        finally:
+            current_patience.reset(token)
+
     async def _vendor_extract(self, url: str) -> str:
         """Ask the search provider for the text of one page we could not read.
 
         Only for the minority that refuse us, so the cost is a fraction of a request
         rather than one per source. Exa returns page text with its search results
         already, so there is nothing to ask for.
-        """
-        if self._provider != "tavily" or not self._api_key:
-            return ""
-        if not await self._metered("extract"):
-            return ""
 
+        Metered, then made. The read ladder does the two apart (`_read_uncached`), so
+        the wait for the budget is not counted against the call's own timeout.
+        """
+        if not self._can_extract or not await self._metered("extract"):
+            return ""
+        return await self._extract_call(url)
+
+    @property
+    def _can_extract(self) -> bool:
+        """Whether the provider has an extract endpoint we hold a key for."""
+        return self._provider == "tavily" and bool(self._api_key)
+
+    async def _extract_call(self, url: str) -> str:
+        """The extract call itself, already paid for: the page's text, or empty."""
         result = await self._fetcher.post_json(
             "https://api.tavily.com/extract",
             {"urls": [url], "extract_depth": "basic"},
@@ -896,6 +969,8 @@ class WebSearchResolver:
         )
         if not outcome.succeeded:
             return insufficient(NAME, VERSION, f"reasoning unavailable: {outcome.reason}")
+        # Judged for this claim: a second round reads other pages (`candidates`).
+        self._judged.setdefault(claim.id, set()).add(page_key(snapshot.url))
 
         best = outcome.best()
         if best is None:
@@ -903,7 +978,9 @@ class WebSearchResolver:
                 NAME, VERSION, f"read {outcome.passages_read} passages; none addresses this claim"
             )
 
-        _, anchor = locate_excerpt(snapshot.text, best.quote)
+        # A table's caption and header read in front of its rows are located apart
+        # from them (`locate_quote`).
+        _, anchor = locate_quote(snapshot.text, best)
         if not anchor:
             # Logged, because it should not happen: the gate already found this quote.
             # When it did happen, it was two locating rules disagreeing, and it went

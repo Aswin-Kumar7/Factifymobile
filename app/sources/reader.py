@@ -24,7 +24,9 @@ from __future__ import annotations
 
 import asyncio
 import io
+import re
 import time
+from bisect import bisect_right
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -84,12 +86,59 @@ def _locate(quote: str, paragraphs: list[str]) -> tuple[int, int, int] | None:
             # Folding flattens whitespace; the cleaned paragraph is already flat, so
             # positions agree up to case and typography, which are one-for-one.
             return index, at, at + len(wanted)
+    if "|" in wanted:
+        found = _locate_rows(wanted, paragraphs)
+        if found is not None:
+            return found
     # The quote's opening words, when the page's punctuation differs from ours.
     head = " ".join(wanted.split()[:8])
     if len(head.split()) >= 5:
         for index, paragraph in enumerate(paragraphs):
             if head in fold(paragraph):
                 return index, 0, 0
+    return None
+
+
+# Between two bars: where one row of a table quote ends and the next begins (or an
+# empty cell).
+_BETWEEN_BARS = re.compile(r"(?<=\|)\s+(?=\|)")
+# The least of a table quote's rows that must be found for the passage to count as
+# found: a paragraph's worth (app/extraction/web.py `_MIN_PARAGRAPH_CHARS`).
+_MIN_ROWS_CHARS = 40
+
+
+def _locate_rows(wanted: str, paragraphs: list[str]) -> tuple[int, int, int] | None:
+    """A quote from a table, found by its rows (`wanted` already folded).
+
+    The check reads a table in parts, each with the table's caption and header row in
+    front of its rows, and cites such a part with them (app/sources/reasoning.py
+    `locate_quote`). On the page those stand apart from the rows - the separator line
+    under the header, or earlier rows, lies between - and each row is a paragraph of
+    its own, so the quote was never found in one paragraph and the source view said
+    the passage was "no longer on the page as quoted". The quote's rows are looked
+    for across the paragraphs instead, from its first row on, then from each later
+    one, starting a paragraph of the page; a paragraph's worth of them must be found.
+    The view points at the paragraph they start in.
+    """
+    folded = [fold(paragraph) for paragraph in paragraphs]
+    starts: list[int] = []
+    cursor = 0
+    for text in folded:
+        starts.append(cursor)
+        cursor += len(text) + 1
+    joined = " ".join(folded)
+    for between in _BETWEEN_BARS.finditer(wanted):
+        rows = wanted[between.end() :]
+        if len(rows) < _MIN_ROWS_CHARS:
+            break
+        at = joined.find(rows)
+        while at >= 0:
+            # From the start of a row's paragraph: the last bar of the separator line
+            # under the header ("|---|") reads like the first bar of a row.
+            index = bisect_right(starts, at) - 1
+            if starts[index] == at:
+                return index, 0, min(len(rows), len(folded[index]))
+            at = joined.find(rows, at + 1)
     return None
 
 
