@@ -344,6 +344,18 @@ class TestTheSourceCheck:
 
         assert is_out_of_context(kept.match_basis.metric)
 
+    def test_a_published_rating_of_false_is_never_softened(self) -> None:
+        """BOOM's ClaimReview: "BOOM Fact Check rated this False: Old photograph of
+        Prime Minister Narendra Modi and Home Minister Amit Shah" (ig-5)."""
+        rated = evidence(
+            basis=MatchBasis(metric="claim_similarity", value=0.9, threshold=0.62),
+            source_excerpt="BOOM Fact Check rated this False: Old photograph of PM Modi.",
+        )
+
+        [kept] = _verified(_Checker("FALSE", out_of_context=True), [rated]).evidence
+
+        assert kept.direction is Direction.CONTRADICTS
+
     def test_a_support_the_check_calls_a_fabrication_is_not_kept(self) -> None:
         item = _report("supports", "altnews.in", source_excerpt="The quote is fabricated.")
 

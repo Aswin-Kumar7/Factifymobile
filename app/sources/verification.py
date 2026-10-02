@@ -227,7 +227,10 @@ def _settled(
             if read != "supports":
                 outcome = f"kept (out of context; read {read})"
             return _as_out_of_context(item, reading.reason), outcome
-        if read == "contradicts" and not _made_up(item):
+        # Never a published rating of false ("Alt News rated this False"): it is the
+        # fact-checker's own verdict, not a passage this call can read otherwise.
+        rating = not item.match_basis.metric.startswith("passage_")
+        if read == "contradicts" and not rating and not _made_up(item):
             return (
                 _as_out_of_context(item, reading.reason),
                 "kept (out of context; read contradicts)",
