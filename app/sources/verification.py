@@ -48,7 +48,7 @@ from datetime import date
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
-from app.domain.claim import Claim
+from app.domain.claim import Claim, about_material, depicts
 from app.domain.enums import ClaimType, Direction, EvidenceKind
 from app.domain.evidence import (
     NARROWER_SCOPE,
@@ -119,9 +119,16 @@ _MADE_UP = re.compile(
 )
 
 
-def _made_up(item: Evidence) -> bool:
+# For a claim about what a picture or video shows, a passage calling the claim false
+# says the scene did not happen, not that the footage was misframed: BOOM's "Cropped
+# video falsely claims Iran President Pezeshkian touched Hindu seer's feet".
+_CALLED_FALSE = re.compile(r"\b(?:falsely|false claims?|fake)\b", re.IGNORECASE)
+
+
+def _made_up(item: Evidence, *, depiction: bool = False) -> bool:
     """Whether a source's headline or passage calls the claim's material made up."""
-    return _affirmed(_MADE_UP, f"{item.title or ''}. {item.source_excerpt}")
+    text = f"{item.title or ''}. {item.source_excerpt}"
+    return _affirmed(_MADE_UP, text) or (depiction and _affirmed(_CALLED_FALSE, text))
 
 
 # A word that turns what follows it in the same clause into its opposite, and where a
@@ -145,12 +152,6 @@ def _affirmed(pattern: re.Pattern[str], text: str) -> bool:
     return False
 
 
-# A claim about what a picture or video shows: who is pictured, what it is a photo of.
-_DEPICTS = re.compile(
-    r"\b(?:pictured|appears? to be|are seen|is seen|are shown|is shown|selfie|"
-    r"(?:photo(?:graph)?|picture|image|video|clip|footage)s? (?:shows?|of))\b",
-    re.IGNORECASE,
-)
 # A passage saying a picture or video itself was made or altered: narrower than
 # `_MADE_UP`, because it turns a source to the other side (`_settled`).
 _MEDIA_FAKED = re.compile(
@@ -161,31 +162,6 @@ _MEDIA_FAKED = re.compile(
 )
 
 
-def depicts(claim: Claim) -> bool:
-    """Whether a claim is about what a picture or video shows."""
-    return any(_DEPICTS.search(text) for text in (claim.search_text, claim.text) if text)
-
-
-# Claims about material - who said what, what a picture or video shows - which alone
-# can be genuine and shown out of context.
-_MATERIAL_TYPES = frozenset({ClaimType.QUOTE, ClaimType.ATTRIBUTION, ClaimType.MEDIA})
-
-
-def about_material(claim: Claim) -> bool:
-    """Whether a claim is about words, a picture or footage, which alone can be
-    genuine and presented out of context: a quote or an attribution, a claim about
-    what a picture or video shows, or the claim that a post's footage was taken at
-    its event (`app/extraction/llm.py` `_footage_claim`).
-
-    Not a claim that an event happened. BOOM's "Cropped video falsely claims Iran
-    President touched Hindu seer's feet" says the event did not happen, and the video
-    is genuine: read as out of context, that FALSE would have read MISLEADING.
-    """
-    return (
-        claim.claim_type in _MATERIAL_TYPES or claim.anchor.section == "footage" or depicts(claim)
-    )
-
-
 def _settled(
     item: Evidence,
     read: str,
@@ -193,6 +169,7 @@ def _settled(
     *,
     depiction: bool = False,
     material: bool = False,
+    footage: bool = False,
 ) -> tuple[Evidence | None, str]:
     """What the check's answer makes of one source: the copy to keep, or None, and
     the outcome for the log.
@@ -224,6 +201,10 @@ def _settled(
     # A fact-check rated the claim "missing context" or "clipped": kept when the
     # check finds it is about this claim, whatever it makes of the rest.
     if read == "out_of_context":
+        # Never for a claim that something happened: such a rating of it says the
+        # event is not as told, which is for the rules on denials, not rule 3e.
+        if not material:
+            return None, f"{rejected} (out of context, but not about words or footage)"
         if about:
             return item, "kept (out of context)"
         return None, rejected
@@ -249,15 +230,31 @@ def _settled(
         )
 
     if framed and about:
-        if supports and not (verdict == "FALSE" and _made_up(item)):
+        # Never against the check's own TRUE: one reader's "out of context" must not
+        # turn a report it finds establishes the claim into framing, or one credible
+        # source could outvote three that report it.
+        if (
+            supports
+            and verdict != "TRUE"
+            and not (verdict == "FALSE" and _made_up(item, depiction=depiction))
+        ):
             outcome = "kept (out of context)"
             if read != "supports":
                 outcome = f"kept (out of context; read {read})"
             return _as_out_of_context(item, reading.reason), outcome
         # Never a published rating of false ("Alt News rated this False"): it is the
         # fact-checker's own verdict, not a passage this call can read otherwise.
+        # Nor a fact-check page's contradiction, unless the claim is that the footage
+        # was taken at the post's event: a fact-check of "video shows X doing Y" that
+        # calls it false says it did not happen, however the clip was cut.
         rating = not item.match_basis.metric.startswith("passage_")
-        if read == "contradicts" and not rating and not _made_up(item):
+        fact_check = item.kind is EvidenceKind.FACT_CHECK and not footage
+        if (
+            read == "contradicts"
+            and not rating
+            and not fact_check
+            and not _made_up(item, depiction=depiction)
+        ):
             return (
                 _as_out_of_context(item, reading.reason),
                 "kept (out of context; read contradicts)",
@@ -305,8 +302,16 @@ def _settled(
     # Wire, TOI and NIE were narrower versions of "Baghel repeatedly alleged a larger
     # conspiracy" for not saying "repeatedly", and the NDTV report of the Jhiram Ghati
     # sentences read "partly true" (2026-10-02).
+    #
+    # Never a smaller version, whatever the check said of stating it differently: a
+    # proposal reported for a claim of a decision, kept as part of the claim, would
+    # stop holding a clearance back (`holds_back`).
     partial = (
-        read == "narrower" and about and not reading.states_differently and not reading.other_group
+        read == "narrower"
+        and about
+        and not reading.smaller_version
+        and not reading.states_differently
+        and not reading.other_group
     )
 
     if verdict == "PARTLY":
@@ -327,16 +332,23 @@ def _settled(
         # for interns is no smaller version of "every woman gets Rs 5,000"
         # (`other_group`).
         #
-        # "Smaller version" also needs a detail stated differently: it was said of
-        # pages that merely said less ("the photographs were also shared", for a
-        # claim naming Facebook and X), and of reports that each carried part of a
-        # fire officer's account. A smaller version states something smaller - another
-        # state, once rather than monthly, a lower amount, a proposal for a decision;
-        # leaving a detail out states nothing (`partial`, below). Tamil Nadu's Rs 1,000
-        # a month for women heads of families, read as denying "every woman gets Rs
-        # 5,000 a month", is a smaller version too: the user decided a real smaller
-        # version for the same people makes such a claim partly true (2026-09-28).
-        smaller = reading.smaller_version and reading.states_differently and not reading.other_group
+        # Read as support or as a denial, "smaller version" also needs a detail stated
+        # differently: it was said of pages that merely said less ("the photographs
+        # were also shared", for a claim naming Facebook and X). A smaller version
+        # states something smaller - another state, once rather than monthly, a lower
+        # amount, a proposal for a decision. Read as a narrower version already, the
+        # first reader said that much, and the check's agreement that it is smaller
+        # keeps it even when it forgets to say what differs: otherwise an inflated
+        # claim ("approved" for a proposal) would read as reported in part and stop
+        # holding a clearance back. Tamil Nadu's Rs 1,000 a month for women heads of
+        # families, read as denying "every woman gets Rs 5,000 a month", is a smaller
+        # version too: the user decided a real smaller version for the same people
+        # makes such a claim partly true (2026-09-28).
+        smaller = (
+            reading.smaller_version
+            and not reading.other_group
+            and (reading.states_differently or read == "narrower")
+        )
         if smaller:
             return _as_narrower(item, reading.reason), "kept (narrower than the claim)"
         # Checked after the smaller version, so a source both readers found smaller
@@ -635,7 +647,14 @@ class SourceVerification:
                 continue
             read = _read_as(item)
             assert read is not None
-            settled, outcome = _settled(item, read, reading, depiction=depiction, material=material)
+            settled, outcome = _settled(
+                item,
+                read,
+                reading,
+                depiction=depiction,
+                material=material,
+                footage=claim.anchor.section == "footage",
+            )
             if settled is not None:
                 kept.append(settled)
             outcomes.append(

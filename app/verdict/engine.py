@@ -14,7 +14,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, replace
 
-from app.domain.claim import Claim
+from app.domain.claim import Claim, about_material
 from app.domain.enums import (
     Action,
     ClaimStatus,
@@ -41,7 +41,7 @@ from app.domain.publishers import publishers_of
 
 # Stamped on every verdict. A cached verdict produced under older rules is therefore
 # identifiable, and the cache can refuse to serve it (M13).
-RULE_VERSION = "2026.10.03.5"
+RULE_VERSION = "2026.10.03.6"
 
 # Default number of genuinely independent origins required before corroboration can
 # support a claim. Tenant-configurable later; never below two, because one origin is
@@ -340,7 +340,7 @@ def _decide_status(
             # A finding that the words or the footage are genuine but cut from their
             # context explains such a split - one outlet repeats the words, another
             # says they were never his - better than leaving it undecided.
-            framed = _out_of_context(evidence, min_origins=min_origins)
+            framed = _out_of_context(claim, evidence, min_origins=min_origins)
             if framed is not None:
                 return framed
             return Decision(
@@ -373,7 +373,7 @@ def _decide_status(
     return decision
 
 
-def _out_of_context(evidence: list[Evidence], *, min_origins: int) -> Decision | None:
+def _out_of_context(claim: Claim, evidence: list[Evidence], *, min_origins: int) -> Decision | None:
     """MISLEADING_CONTEXT when sources find the claim's words, picture or video
     genuine but presented out of context, or None.
 
@@ -386,7 +386,15 @@ def _out_of_context(evidence: list[Evidence], *, min_origins: int) -> Decision |
     Held to the bar a contradiction meets: a published fact-check, one highly
     credible source, or two independent publishers. A shared fact-check rated
     "missing context" says it of the very claim it examines.
+
+    Only for a claim about words, a picture or footage (`about_material`): an event
+    that never happened is not "shown out of context". And framing read from
+    passages, with no fact-check among it, never outvotes the publishers that
+    support the claim: one credible source read as "out of context" could otherwise
+    make a claim three outlets report MISLEADING.
     """
+    if not about_material(claim):
+        return None
     framing = [
         e
         for e in evidence
@@ -406,6 +414,12 @@ def _out_of_context(evidence: list[Evidence], *, min_origins: int) -> Decision |
         or len(origins) >= min_origins
     ):
         return None
+    if not any(e.kind is EvidenceKind.FACT_CHECK for e in framing):
+        supporting = _publishers(
+            [e for e in evidence if e.direction is Direction.SUPPORTS and e.is_decisive_capable]
+        )
+        if len(origins) < len(supporting):
+            return None
     return Decision(
         status=ClaimStatus.MISLEADING_CONTEXT,
         rule_id=OUT_OF_CONTEXT_RULE,
@@ -528,7 +542,7 @@ def _decide_rules(
     # contradiction, so a credible "he never said it" or "it never happened" still
     # decides the claim false; before support, so a report repeating the words
     # cannot clear a clip cut to change what they meant.
-    framed = _out_of_context(evidence, min_origins=min_origins)
+    framed = _out_of_context(claim, evidence, min_origins=min_origins)
     if framed is not None:
         return framed
 

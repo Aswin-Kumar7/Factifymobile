@@ -34,6 +34,7 @@ from app.domain import (
     Method,
     Severity,
     Tier,
+    Verdict,
 )
 from app.domain.enums import Relation
 from app.domain.evidence import NARROWER_SCOPE, PARTIAL_SCOPE, is_partial_scope
@@ -145,6 +146,58 @@ class TestTheSourceCheck:
     def test_a_plain_support_is_never_made_partial(self) -> None:
         """Only a reading the first reader already found narrower."""
         assert _verified(_Checker("UNCLEAR"), [_item("supports", "thehindu.com")]) == []
+
+    @pytest.mark.parametrize("verdict", ["PARTLY", "UNCLEAR"])
+    def test_a_smaller_version_is_never_part_of_it(self, verdict: str) -> None:
+        """smaller_version without states_differently: a proposal reported for a
+        claim of a decision stays narrower, never part of the claim."""
+        checker = _Checker(verdict, smaller_version=True, states_differently=False)
+
+        kept = _verified(checker, [_item("narrower", "thehindu.com")])
+
+        assert not any(is_partial_scope(e.match_basis.metric) for e in kept)
+        if verdict == "PARTLY":
+            [narrower] = kept
+            assert narrower.match_basis.metric.startswith(NARROWER_SCOPE)
+
+
+class TestAnInflatedCriticalDetail:
+    """ "Govt approved Rs 5,000/month for every woman", where outlets report only a
+    proposal: the check says smaller and forgets to say it states it differently."""
+
+    def test_it_still_holds_the_case_back_from_true(self) -> None:
+        headline = claim(importance=Importance.HEADLINE, independent_origin_count=2)
+        detail = claim(
+            claim_id="cl_2",
+            text="Govt approved Rs 5,000/month for every woman.",
+            importance=Importance.SUPPORTING_DETAIL,
+            severity=Severity.CRITICAL,
+        )
+        checker = _Checker("PARTLY", smaller_version=True, states_differently=False)
+        reports = _verified(
+            checker,
+            [
+                _item("narrower", "thewire.in", claim_id="cl_2"),
+                _item("narrower", "ndtv.com", claim_id="cl_2"),
+            ],
+        )
+        decision = decide(detail, reports)
+
+        case = roll_up(
+            [
+                (
+                    headline,
+                    decide(
+                        headline,
+                        [_item("supports", "thehindu.com"), _item("supports", "indiatoday.in")],
+                    ),
+                ),
+                (detail, decision),
+            ]
+        )
+
+        assert decision.rule_id != REPORTED_IN_PART_RULE
+        assert case.verdict is not Verdict.TRUE
 
 
 # ---------------------------------------------------------------------- the rules

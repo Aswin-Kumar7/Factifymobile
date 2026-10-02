@@ -118,6 +118,11 @@ def _report(
     )
 
 
+def _quote(**fields: Any) -> Any:
+    """A claim about words: the kind that can be shown out of context."""
+    return claim(claim_type=ClaimType.QUOTE, **fields)
+
+
 # ------------------------------------------------------------------ the rule
 
 
@@ -138,17 +143,17 @@ class TestTheRule:
         assert decision.supporting_evidence_ids == (items[0].id,)
 
     def test_one_highly_credible_source_is_enough(self) -> None:
-        decision = decide(claim(), [_framed(credibility=Credibility.HIGH)])
+        decision = decide(_quote(), [_framed(credibility=Credibility.HIGH)])
 
         assert decision.rule_id == OUT_OF_CONTEXT_RULE
 
     def test_or_two_independent_publishers(self) -> None:
-        decision = decide(claim(), [_framed("snopes.com"), _framed("newschecker.in")])
+        decision = decide(_quote(), [_framed("snopes.com"), _framed("newschecker.in")])
 
         assert decision.rule_id == OUT_OF_CONTEXT_RULE
 
     def test_one_ordinary_report_decides_nothing(self) -> None:
-        decision = decide(claim(), [_framed()])
+        decision = decide(_quote(), [_framed()])
 
         assert decision.status is ClaimStatus.UNVERIFIED
 
@@ -156,7 +161,7 @@ class TestTheRule:
         """After every contradiction: "he never said it" stays a refutation."""
         denial = _report("contradicts", "reuters.com", Credibility.HIGH)
 
-        decision = decide(claim(), [_framed(credibility=Credibility.HIGH), denial])
+        decision = decide(_quote(), [_framed(credibility=Credibility.HIGH), denial])
 
         assert decision.status is ClaimStatus.CONTRADICTED
 
@@ -167,11 +172,11 @@ class TestTheRule:
             _report("supports", "ndtv.com"),
             _report("contradicts", "thehindu.com"),
         ]
-        assert decide(claim(), items).rule_id == "rule.conflicting_evidence"
+        assert decide(_quote(), items).rule_id == "rule.conflicting_evidence"
 
         framed = _framed("newschecker.in", kind=EvidenceKind.FACT_CHECK)
 
-        assert decide(claim(), [*items, framed]).rule_id == OUT_OF_CONTEXT_RULE
+        assert decide(_quote(), [*items, framed]).rule_id == OUT_OF_CONTEXT_RULE
 
     def test_a_shared_fact_check_rated_missing_context(self) -> None:
         shared = evidence(
@@ -179,12 +184,12 @@ class TestTheRule:
             basis=MatchBasis(metric=SHARED_REVIEW, value=1.0, threshold=0.8),
         )
 
-        assert decide(claim(), [shared]).rule_id == OUT_OF_CONTEXT_RULE
+        assert decide(_quote(), [shared]).rule_id == OUT_OF_CONTEXT_RULE
 
     def test_reports_of_the_words_do_not_lower_its_confidence(self) -> None:
-        alone = decide(claim(), [_framed(credibility=Credibility.HIGH)])
+        alone = decide(_quote(), [_framed(credibility=Credibility.HIGH)])
         beside = decide(
-            claim(independent_origin_count=1),
+            _quote(independent_origin_count=1),
             [_framed(credibility=Credibility.HIGH), _report("supports", "ndtv.com")],
         )
 
@@ -210,7 +215,9 @@ class TestTheCase:
         fire damage shown as heat damage."""
         headline = claim(importance=Importance.HEADLINE, independent_origin_count=2)
         detail = claim(claim_id="cl_2", importance=Importance.SUPPORTING_DETAIL)
-        footage = claim(claim_id="cl_3", importance=Importance.SUPPORTING_DETAIL)
+        footage = claim(
+            claim_id="cl_3", importance=Importance.SUPPORTING_DETAIL, claim_type=ClaimType.MEDIA
+        )
         narrower = [_report("narrower", "france24.com"), _report("narrower", "un.org")]
 
         case = roll_up(
@@ -297,7 +304,7 @@ class TestTheSourceCheck:
     @pytest.mark.parametrize("read", ["supports", "attributed", "narrower"])
     def test_a_support_found_out_of_context_is_kept_as_that(self, read: str) -> None:
         """Snopes: "said the words while quoting Hasan Piker", read as support."""
-        verified = _verified(_Checker("TRUE", out_of_context=True), [_report(read, "snopes.com")])
+        verified = _verified(_Checker("PARTLY", out_of_context=True), [_report(read, "snopes.com")])
 
         [kept] = verified.evidence
         assert kept.direction is Direction.CONTEXTUALIZES
@@ -615,6 +622,121 @@ def test_a_held_back_fact_check_is_not_cited_without_the_check() -> None:
 
 def test_a_severity_is_irrelevant_to_the_rule() -> None:
     """The finding decides a CRITICAL claim as it does any other."""
-    critical = claim(severity=Severity.CRITICAL)
+    critical = _quote(severity=Severity.CRITICAL)
 
     assert decide(critical, [_framed(credibility=Credibility.HIGH)]).rule_id == OUT_OF_CONTEXT_RULE
+
+
+# ------------------------------------------------- review findings (2026-10-02)
+
+
+class TestOneReadingNeverOutvotesTheReports:
+    """One credible source read as "out of context" made a quote three outlets
+    report MISLEADING."""
+
+    def test_the_checks_own_true_keeps_a_support(self) -> None:
+        [kept] = _verified(
+            _Checker("TRUE", out_of_context=True), [_report("supports", "reuters.com")]
+        ).evidence
+
+        assert kept.direction is Direction.SUPPORTS
+
+    def test_passage_framing_does_not_outvote_more_publishers(self) -> None:
+        subject = _quote(independent_origin_count=3)
+        items = [
+            _framed("reuters.com", credibility=Credibility.HIGH),
+            _report("supports", "ndtv.com"),
+            _report("supports", "thehindu.com"),
+            _report("supports", "indiatoday.in"),
+        ]
+
+        assert decide(subject, items).rule_id != OUT_OF_CONTEXT_RULE
+
+    def test_as_many_framing_publishers_still_decide_it(self) -> None:
+        subject = _quote(independent_origin_count=2)
+        items = [
+            _framed("reuters.com", credibility=Credibility.HIGH),
+            _framed("snopes.com"),
+            _report("supports", "ndtv.com"),
+            _report("supports", "thehindu.com"),
+        ]
+
+        assert decide(subject, items).rule_id == OUT_OF_CONTEXT_RULE
+
+
+BOOM_TITLE = "Cropped video falsely claims Iran President Pezeshkian touched Hindu seer's feet"
+SEER = "Video shows Iran's President touching a Hindu seer's feet"
+
+
+class TestAFactCheckOfAScene:
+    """A fact-check page read by web search that calls "video shows X doing Y"
+    false says it did not happen, however the clip was cut."""
+
+    def _boom(self, kind: EvidenceKind = EvidenceKind.FACT_CHECK) -> Any:
+        return evidence(
+            kind=kind,
+            direction=Direction.CONTRADICTS,
+            tier=Tier.C if kind is EvidenceKind.FACT_CHECK else Tier.D,
+            method=Method.PASSAGE_ENTAILMENT,
+            basis=MatchBasis(metric="passage_entailment: r", value=0.9, threshold=0.5),
+            citation_url="https://www.boomlive.in/fact-check/pezeshkian-hindu-seer",
+            publisher="boomlive.in",
+            title=BOOM_TITLE,
+            source_excerpt="Pezeshkian bent down to pick something up; the clip was cropped.",
+            credibility=Credibility.HIGH,
+        )
+
+    def test_it_stays_false(self) -> None:
+        subject = claim(text=SEER, importance=Importance.HEADLINE)
+        assert about_material(subject)
+
+        verified = _verified(_Checker("FALSE", out_of_context=True), [self._boom()], subject)
+        [kept] = verified.evidence
+        decision = decide(subject, list(verified.evidence))
+
+        assert kept.direction is Direction.CONTRADICTS
+        assert decision.status is ClaimStatus.CONTRADICTED
+        assert roll_up([(subject, decision)]).verdict is Verdict.FALSE
+
+    def test_a_report_calling_it_false_stays_a_contradiction(self) -> None:
+        subject = claim(text=SEER)
+        boom = self._boom(EvidenceKind.CORROBORATION)
+
+        [kept] = _verified(_Checker("FALSE", out_of_context=True), [boom], subject).evidence
+
+        assert kept.direction is Direction.CONTRADICTS
+
+
+class TestAnEventClaim:
+    """A fact-check parsed as "missing context" of an event claim: not rule 3e."""
+
+    def test_the_rating_is_not_kept_for_an_event(self) -> None:
+        event = claim(text="A bus hit a car in Coimbatore.")
+        rated = _framed("newschecker.in", kind=EvidenceKind.FACT_CHECK, credibility=None)
+
+        assert _verified(_Checker("UNCLEAR"), [rated], event).evidence == []
+
+    def test_the_rule_does_not_decide_an_event(self) -> None:
+        event = claim(text="A bus hit a car in Coimbatore.")
+        rated = _framed("newschecker.in", kind=EvidenceKind.FACT_CHECK)
+
+        assert decide(event, [rated]).rule_id != OUT_OF_CONTEXT_RULE
+        assert decide(_quote(), [rated]).rule_id == OUT_OF_CONTEXT_RULE
+
+
+class TestTheCorpusFactCheckTest:
+    def test_a_viral_news_report_keeps_its_support(self) -> None:
+        relation = TestTheCorpusWordMatch()._related(
+            "Viral video shows Netanyahu at the UN General Assembly",
+            "https://www.thehindu.com/news/international/viral-netanyahu-un-speech",
+        )
+
+        assert relation.relation is Relation.SUPPORTS
+
+    def test_a_plain_fact_check_title_is_held_back(self) -> None:
+        relation = TestTheCorpusWordMatch()._related(
+            "Fact Check: Netanyahu did not say America deserved 9/11",
+            "https://www.example-news.in/netanyahu-un-speech",
+        )
+
+        assert relation.relation is Relation.CONTEXTUALIZES

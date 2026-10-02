@@ -169,18 +169,28 @@ class TestANarrowerReadingTheCheckCallsPartly:
     code also wanted "states a detail differently", and four were thrown away."""
 
     def test_nothing_stated_differently_is_part_of_the_claim(self) -> None:
-        """A smaller version states something smaller. Two reports each carrying half
-        of a fire officer's account of the Koder House fire, and three that did not
-        say Baghel "repeatedly" alleged a conspiracy, were kept as smaller versions
-        and two true reports read "partly true" (2026-10-02). They are kept as what
-        they are: part of the claim - not narrower, not support."""
-        checker = _Checker("PARTLY", smaller_version=True, states_differently=False)
+        """Three reports that did not say Baghel "repeatedly" alleged a conspiracy
+        were kept as smaller versions and a true report read "partly true"
+        (2026-10-02). Not a smaller version, and nothing stated differently: part of
+        the claim - not narrower, not support."""
+        checker = _Checker("PARTLY", smaller_version=False, states_differently=False)
 
         [kept] = _verified(checker, [_item("narrower")]).evidence
 
         assert kept.direction is Direction.CONTEXTUALIZES
         assert not is_narrower_scope(kept.match_basis.metric)
         assert is_partial_scope(kept.match_basis.metric)
+
+    def test_a_smaller_version_is_never_part_of_the_claim(self) -> None:
+        """Read narrower, and the check says smaller but forgets to say what differs:
+        still a smaller version. As part of the claim, an inflated "approved" for a
+        proposal would stop holding a clearance back (review, 2026-10-02)."""
+        checker = _Checker("PARTLY", smaller_version=True, states_differently=False)
+
+        [kept] = _verified(checker, [_item("narrower")]).evidence
+
+        assert is_narrower_scope(kept.match_basis.metric)
+        assert not is_partial_scope(kept.match_basis.metric)
 
     def test_a_smaller_version_states_something_smaller(self) -> None:
         checker = _Checker("PARTLY", smaller_version=True, states_differently=True)
