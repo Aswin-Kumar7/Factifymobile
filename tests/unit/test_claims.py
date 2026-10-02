@@ -305,13 +305,93 @@ class TestWhatTheExtractorIsTold:
         assert "ME ON MONDAY MORNING" in _SYSTEM_INSTRUCTION
         assert "an empty list is the right answer" in _SYSTEM_INSTRUCTION
 
-    def test_a_forwards_own_point_is_checked_but_never_a_debunks(self) -> None:
+    def test_a_forwards_own_point_is_checked_and_a_news_report_of_a_denial_is_not(
+        self,
+    ) -> None:
         from app.extraction.llm import _SYSTEM_INSTRUCTION
 
         # The lemon-water poster was checked only as "doctors said so".
         assert "names an authority only to lend it weight" in _SYSTEM_INSTRUCTION
-        # ...and the exclusion that keeps a PIB fact-check from being called false.
-        assert "Never do this for a report of a denial, a debunk" in _SYSTEM_INSTRUCTION
+        # ...and a news report of a denial stays a report of who denied what.
+        assert "Nor is a news report of a denial" in _SYSTEM_INSTRUCTION
+
+
+class TestDebunksQuoteCardsAndLabels:
+    """What the extractor is told after the 45-input audit (2026-10-02)."""
+
+    def test_a_debunk_is_checked_on_the_claim_it_debunks(self) -> None:
+        """PIB Fact Check's graphic of a fake gazette, stamped FAKE, came back True 93
+        "safe to share": only the debunk's own sentence was checked, never the
+        gazette's claim that every Saturday is a bank holiday."""
+        from app.extraction.llm import _SYSTEM_INSTRUCTION
+
+        assert "THE CLAIM IT EXAMINES" in _SYSTEM_INSTRUCTION
+        assert "stamped or labelled FAKE" in _SYSTEM_INSTRUCTION
+        assert "#PIBFactCheck" in _SYSTEM_INSTRUCTION
+        # The finding follows as a detail that cannot outweigh the claim it debunks.
+        assert "SUPPORTING_DETAIL of severity HIGH at most" in _SYSTEM_INSTRUCTION
+        assert "never HEADLINE, MAIN_THESIS or CRITICAL" in _SYSTEM_INSTRUCTION
+
+    def test_a_quote_card_is_checked_on_who_said_it(self) -> None:
+        """A quote card put words in Gaurav Bhatia's mouth; the words were checked as
+        a bare assertion and the fact-checks of the card had nothing to answer."""
+        from app.extraction.llm import _SYSTEM_INSTRUCTION
+
+        assert "'<person> said \"<the words>\"' as the HEADLINE" in _SYSTEM_INSTRUCTION
+        assert "typed QUOTE" in _SYSTEM_INSTRUCTION
+        assert "A quote card is not this case" in _SYSTEM_INSTRUCTION
+
+    def test_every_label_factify_writes_is_named_as_factifys(self) -> None:
+        from app.extraction import reading
+        from app.extraction.llm import _SYSTEM_INSTRUCTION
+
+        labels = (
+            reading.picture_text_label(1, 1),
+            reading.picture_text_label(2, 3),
+            reading.SAID_IN_VIDEO,
+            reading.TEXT_IN_VIDEO,
+            reading.TITLE,
+            reading.DESCRIPTION,
+            reading.ARTICLE,
+            "Spoken in the video",
+            "Post text",
+            "Quoted post",
+        )
+        for label in labels:
+            assert f"'{label}:'" in _SYSTEM_INSTRUCTION
+        assert "is Factify's label for the text under it" in _SYSTEM_INSTRUCTION
+
+    def test_a_description_by_factify_gives_only_what_the_visuals_present(self) -> None:
+        from app.extraction.llm import _SYSTEM_INSTRUCTION
+
+        assert "'What the picture shows (described by Factify):'" in _SYSTEM_INSTRUCTION
+        assert "'What the video shows (described by Factify):'" in _SYSTEM_INSTRUCTION
+        assert "Putin, Modi, Xi and Raisi took a selfie together" in _SYSTEM_INSTRUCTION
+        assert "Never extract how something looks" in _SYSTEM_INSTRUCTION
+
+    def test_a_claim_keeps_the_names_the_document_writes(self) -> None:
+        from app.extraction.llm import _SYSTEM_INSTRUCTION
+
+        assert "a claim's text keeps the names the document writes" in _SYSTEM_INSTRUCTION
+
+    def test_what_a_quote_asserts_is_still_checked(self) -> None:
+        """A "Ratan Tata" card saying hot lemon water kills cancer cells was checked only
+        on whether he said it: the health claim, a CRITICAL headline before, went
+        unchecked, and a real person's false figure could read true (2026-10-02 review).
+        """
+        from app.extraction.llm import _SYSTEM_INSTRUCTION
+
+        assert "A real person can be quoted saying something false" in _SYSTEM_INSTRUCTION
+        assert "SUPPORTING_DETAIL with its own severity" in _SYSTEM_INSTRUCTION
+        assert "CRITICAL for a health or safety claim" in _SYSTEM_INSTRUCTION
+        assert "Never extract the words as a bare assertion" not in _SYSTEM_INSTRUCTION
+
+    def test_a_screenshot_of_a_post_is_read_like_the_post(self) -> None:
+        from app.extraction.llm import _SYSTEM_INSTRUCTION
+
+        assert "A screenshot of a post" in _SYSTEM_INSTRUCTION
+        assert "is read like the post itself" in _SYSTEM_INSTRUCTION
+        assert "said to have said or posted" not in _SYSTEM_INSTRUCTION
 
 
 class TestStoredReadingsArePerModel:
@@ -416,3 +496,395 @@ class TestAShortMessageIsItsOwnClaim:
         result = await pipeline.extract(self.HINGLISH, content_hash="sha256:invented")
 
         assert result.claims == ()
+
+
+class TestAFaithfulRewriteStillAnchors:
+    """The 45-input audit (2026-10-02): faithful claims thrown away as "not found in
+    source", and what still has to be thrown away."""
+
+    SPY_BUST = (
+        "Anas, Mohammad, Danish, Arif, Sabir, Khalid, Junaid - arrested by Delhi police "
+        "in Pakistan-ISI-linked spy agency bust. Always Peacefuls 💔"
+    )
+    JAN_DHAN = (
+        "Under Pradhan Mantri Jan Dhan Yojana (PMJDY) 2026, eligible Indian citizens aged "
+        "13–65 years will be given financial assistance from ₹50,000 to ₹200,000.\n"
+        "Age 13–25 (₹50,000–₹90,000)\n"
+        "Age 25–65 (₹90,000–₹200,000)"
+    )
+    CAPTIONS = (
+        "A couple of other things that I want to point out from this statement saying "
+        "that Manchester City were part of a disguised funding scheme and reduced its "
+        "cost by more than900 million pounds during the affected period."
+    )
+
+    @pytest.mark.parametrize(
+        ("claim_text", "source"),
+        [
+            # Words added for a self-contained sentence: "espionage", "seven people".
+            (
+                "Anas, Mohammad, Danish, Arif, Sabir, Khalid and Junaid were arrested by "
+                "Delhi Police in a Pakistan ISI-linked espionage bust.",
+                SPY_BUST,
+            ),
+            # An acronym the post writes, spelled out.
+            (
+                "Delhi Police arrested Anas, Mohammad, Danish, Arif, Sabir, Khalid and "
+                "Junaid in a spy ring linked to Pakistan's Inter-Services Intelligence.",
+                SPY_BUST,
+            ),
+            # A range in rupees, written apart, and an age range with an en dash.
+            (
+                "Citizens aged 13 to 25 will get Rs 50,000 to Rs 90,000 under the Pradhan "
+                "Mantri Jan Dhan Yojana 2026.",
+                JAN_DHAN,
+            ),
+            (
+                "Under PMJDY 2026, citizens aged 25–65 will receive ₹90,000–₹200,000.",
+                JAN_DHAN,
+            ),
+            # A caption track that runs the number into the word before it.
+            (
+                "Manchester City were part of a disguised funding scheme and reduced its "
+                "costs by more than £900m during the affected period.",
+                CAPTIONS,
+            ),
+            # A hyphen where the captions have a space.
+            (
+                "India defeated 10-time Olympic champions South Korea 5-3 to win gold",
+                "India defeated 10 time Olympic champions South Korea 5-3 to win gold",
+            ),
+            # Indian and international grouping of the same number; an acronym's plural.
+            (
+                "Maruti Suzuki sold 236,013 vehicles, including 78,911 SUVs, in September 2026.",
+                "Maruti Suzuki sold 2,36,013 vehicles in September 2026. Utility vehicle "
+                "(SUV) sales hit 78,911.",
+            ),
+            # A quote card's claim adds "said that" to the words the card carries bare.
+            (
+                'गौटव भटिया ने कहा कि "स्वतंत्र भारद्वाज नामक युवा एक दिमागी नक्सली है"',
+                "NBT\nस्वतंत्र भारद्वाज नामक युवा एक\nदिमागी नक्सली है\nगौटव भटिया\nBJP नेता",
+            ),
+        ],
+    )
+    def test_it_is_kept(self, claim_text: str, source: str) -> None:
+        from app.extraction.claims import _locate
+
+        assert _locate(claim_text, source) is not None
+
+    @pytest.mark.parametrize(
+        ("claim_text", "source"),
+        [
+            # A name the post never writes, however many of its words are there.
+            (
+                "The people arrested by Delhi Police in the Pakistan-ISI-linked spy agency "
+                "bust are Muslims.",
+                SPY_BUST,
+            ),
+            (
+                "Anas, Mohammad, Danish, Arif, Sabir, Khalid and Junaid were arrested by "
+                "Mumbai Police in a Pakistan ISI-linked spy bust.",
+                SPY_BUST,
+            ),
+            # The names are there; what happened to them is not.
+            (
+                "Anas, Mohammad, Danish, Arif, Sabir, Khalid and Junaid were released by "
+                "Delhi Police after a court hearing on bail.",
+                SPY_BUST,
+            ),
+            # Another number, in a range, in a figure and in a score.
+            (
+                "Citizens aged 13 to 25 will get Rs 60,000 to Rs 90,000 under the Pradhan "
+                "Mantri Jan Dhan Yojana 2026.",
+                JAN_DHAN,
+            ),
+            (
+                "Manchester City were part of a disguised funding scheme and reduced its "
+                "costs by more than £800m during the affected period.",
+                CAPTIONS,
+            ),
+            (
+                "India defeated 10-time Olympic champions South Korea 6-3 to win gold",
+                "India defeated 10 time Olympic champions South Korea 5-3 to win gold",
+            ),
+            # Most of a sentence word for word, with the one figure that matters changed.
+            (
+                "The RBI kept the repo rate unchanged at 6.5% on Wednesday",
+                "The RBI kept the repo rate unchanged at 5.5% on Wednesday, Governor "
+                "Sanjay Malhotra said.",
+            ),
+        ],
+    )
+    def test_it_is_not(self, claim_text: str, source: str) -> None:
+        from app.extraction.claims import _locate
+
+        assert _locate(claim_text, source) is None
+
+
+class TestADiscardSaysWhichClaimAndWhy:
+    """ "anchor did not resolve", with no claim, left every lost claim in the audit
+    unexplained (2026-10-02)."""
+
+    async def test_the_claim_and_the_reason_are_logged(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import json
+        import logging
+
+        from app.observability.logging import ContextFormatter
+
+        invented = _proposal("The scheme gives every farmer Rs 9,000 a month from Monday")
+        pipeline = ClaimPipeline(FakeExtractor(ExtractionOutcome(claims=(invented,))))
+
+        with caplog.at_level(logging.INFO, logger="factify.claims"):
+            await pipeline.extract(DOCUMENT, content_hash="sha256:doc")
+
+        formatter = ContextFormatter("%(asctime)s %(level)s %(name)s %(message)s")
+        [line] = [
+            json.loads(formatter.format(record))
+            for record in caplog.records
+            if record.getMessage() == "claim discarded: not found in source"
+        ]
+        assert line["level"] == "INFO"
+        assert line["detail"]["claim"].startswith("The scheme gives every farmer")
+        assert line["failure_reason"] == (
+            "anchor did not resolve: a number it gives is not in the source: 9000"
+        )
+
+
+class TestAShortPostKeepsItsOwnSentence:
+    """An Instagram caption's "our country's Prime Minister Ji" was read as Narendra
+    Modi, a name the caption never writes; the post's only claim was thrown away and
+    the post came back with nothing to check (2026-10-02)."""
+
+    CAPTION = (
+        '1 likes, 1 comments - venukolangara on August 13, 2026: "An old photograph of '
+        "our country's Prime Minister Ji and Home Minister Amit Shah Ji. \n"
+        "This duo has changed the history of India \n"
+        'Such leadership comes once in centuries 😊 \nJai Ho \nJai Bharat...".'
+    )
+
+    async def test_the_sentence_the_claim_is_about_stands_as_the_claim(self) -> None:
+        resolved = _proposal(
+            "An old photograph of Prime Minister Narendra Modi and Home Minister Amit Shah.",
+            claim_type="MEDIA",
+            importance="HEADLINE",
+            standalone_english="An old photograph shows Narendra Modi and Amit Shah.",
+        )
+        pipeline = ClaimPipeline(FakeExtractor(ExtractionOutcome(claims=(resolved,))))
+
+        result = await pipeline.extract(self.CAPTION, content_hash="sha256:caption")
+
+        [claim] = result.claims
+        assert claim.text == (
+            "An old photograph of our country's Prime Minister Ji and Home Minister Amit Shah Ji."
+        )
+        assert claim.english_text == "An old photograph shows Narendra Modi and Amit Shah."
+        assert result.discarded == ()
+
+    async def test_a_reading_with_a_number_the_post_does_not_give_is_not_kept(self) -> None:
+        misread = _proposal(
+            "An old photograph from 1987 of Narendra Modi and Amit Shah.",
+            importance="HEADLINE",
+            standalone_english="An old photograph from 1987 shows Narendra Modi and Amit Shah.",
+        )
+        pipeline = ClaimPipeline(FakeExtractor(ExtractionOutcome(claims=(misread,))))
+
+        result = await pipeline.extract(self.CAPTION, content_hash="sha256:caption")
+
+        assert result.claims == ()
+
+    async def test_factifys_own_lines_never_stand_as_the_claim(self) -> None:
+        """Only the person's own words are shown as their claim: never a label, nor
+        Factify's description of the picture."""
+        document = (
+            "Text in the picture:\nJai Bharat\n\n"
+            "What the picture shows (described by Factify):\n"
+            "An old black-and-white photograph of two men, said to be Narendra Modi and "
+            "Amit Shah."
+        )
+        resolved = _proposal(
+            "Narendra Modi and Amit Shah appear together in an old photograph from Gujarat.",
+            importance="HEADLINE",
+            standalone_english="Narendra Modi and Amit Shah appear in an old photograph.",
+        )
+        pipeline = ClaimPipeline(FakeExtractor(ExtractionOutcome(claims=(resolved,))))
+
+        result = await pipeline.extract(document, content_hash="sha256:described")
+
+        assert result.claims == ()
+
+    async def test_a_reading_that_names_someone_else_is_not_kept(self) -> None:
+        """The message's sentence is shown, but the model's English is searched: a
+        name the message never writes, with no title it could stand for, would be
+        checked in the person's name (2026-10-02 review)."""
+        message = (
+            "Breaking news. Seven men were held in a spy bust by the police in Delhi on "
+            "Sunday. Share widely."
+        )
+        renamed = _proposal(
+            "Mumbai Police arrested seven men for spying on Sunday.",
+            importance="HEADLINE",
+            standalone_english="Mumbai Police arrested seven men for spying on Sunday.",
+        )
+        pipeline = ClaimPipeline(FakeExtractor(ExtractionOutcome(claims=(renamed,))))
+
+        result = await pipeline.extract(message, content_hash="sha256:renamed", language="en")
+
+        assert result.claims == ()
+
+
+class TestTheAnchorCheckAfterReview:
+    """The 2026-10-02 review of the anchor check: faithful claims it threw away, and
+    substitutions it let through."""
+
+    # Over the short-message length, so no fallback can rescue a claim.
+    PADDING = " The statement was issued late on Tuesday evening after a meeting." * 10
+    FORWARD = (
+        "URGENT!! Central Govt has declared every Saturday a public holiday for all public "
+        "sector banks with immediate effect. Banks will remain closed on all Saturdays "
+        "from next week. Please share with everyone." + PADDING
+    )
+    SPY_BUST = TestAFaithfulRewriteStillAnchors.SPY_BUST
+
+    @pytest.mark.parametrize(
+        ("claim_text", "source"),
+        [
+            # A run of most of the claim's words, with a name spelled out or added: kept
+            # before the name check ran ahead of it, and kept again.
+            (
+                "The Central Government has declared every Saturday a public holiday for "
+                "all public sector banks with immediate effect.",
+                FORWARD,
+            ),
+            (
+                "The Indian Army killed the terrorist Hashim Moosa in an encounter in Budgam",
+                "The army killed the terrorist Hashim Moosa in an encounter in Budgam on "
+                "Monday." + PADDING,
+            ),
+            # A number in digits where the source spells it out.
+            (
+                "Police arrested 7 men in Delhi on Sunday for spying",
+                "Police arrested seven men in Delhi on Sunday for spying, officials said.",
+            ),
+            # A date written in numbers, a leading zero, and a month given by number.
+            (
+                "The RBI notice dated 30.09.2026 says banks will be closed on all Saturdays "
+                "from October 2026",
+                "RBI notice No. 12 dated 30.09.2026: banks will be closed on all Saturdays "
+                "from October",
+            ),
+            (
+                "Schools will remain closed on 9 October in Delhi",
+                "Schools will remain closed on 09 October in Delhi due to pollution, the "
+                "order said.",
+            ),
+            (
+                "CBSE has postponed the Class 10 and 12 board exams to 15 March 2027.",
+                "CBSE circular No. Acad-45/2026 dated 28.09.2026: Board exams for Class 10 "
+                "and 12 are postponed to 15.03.2027 due to the new syllabus.",
+            ),
+            # A place's people for the place, and an acronym written in capitals.
+            (
+                "Pakistani drones were shot down by the army over Jammu on Monday night",
+                "Drones from Pakistan were shot down by the army over Jammu on Monday "
+                "night, officials said.",
+            ),
+            (
+                "The Ministry of Home Affairs ordered all schools in Manipur to close for a week",
+                "MHA ordered all schools in Manipur to close for a week after the violence",
+            ),
+        ],
+    )
+    def test_it_is_kept(self, claim_text: str, source: str) -> None:
+        from app.extraction.claims import _locate
+
+        assert _locate(claim_text, source) is not None
+
+    @pytest.mark.parametrize(
+        ("claim_text", "source"),
+        [
+            # A name substituted at the start of the claim, where a capital alone is no
+            # sign of a name - but "Mumbai Police" is two.
+            (
+                "Mumbai Police arrested Anas, Mohammad, Danish, Arif, Sabir, Khalid and "
+                "Junaid in a Pakistan ISI-linked spy agency bust.",
+                SPY_BUST,
+            ),
+            # Initials that are a word or another acronym: a "Local MP" is not Mumbai
+            # Police, "told us" is not the United States, and the MP who spoke is not
+            # Madhya Pradesh.
+            (
+                "Anas, Mohammad, Danish, Arif, Sabir, Khalid and Junaid were arrested by "
+                "Mumbai Police in a Pakistan ISI-linked spy bust.",
+                SPY_BUST + " Local MP demands answers.",
+            ),
+            (
+                "The United States banned the import of 40 kg of ganja seized by police",
+                "Andhra police seized 40 kg of ganja, officials told us. They banned the import.",
+            ),
+            (
+                "Madhya Pradesh police seized 40 kg of ganja from the gang",
+                "Andhra police seized 40 kg of ganja, the MP said. Officials said the gang "
+                "was busted.",
+            ),
+            # Another date, another figure where the source spells one out.
+            (
+                "The RBI notice dated 30.08.2026 says banks will be closed on all Saturdays",
+                "RBI notice No. 12 dated 30.09.2026: banks will be closed on all Saturdays "
+                "from October",
+            ),
+            (
+                "Police arrested 8 men in Delhi on Sunday for spying",
+                "Police arrested seven men in Delhi on Sunday for spying, officials said.",
+            ),
+        ],
+    )
+    def test_it_is_not(self, claim_text: str, source: str) -> None:
+        from app.extraction.claims import _locate
+
+        assert _locate(claim_text, source) is None
+
+    @pytest.mark.parametrize(
+        ("one", "other"),
+        [
+            ("Rs 5cr", "Rs 5 crores"),
+            ("£900m", "900 million"),
+            ("dated 09.10.2026", "dated 9 Oct 2026"),
+            ("a 6.50% rise", "a 6.5 per cent rise"),
+            ("Central Govt", "Central Government"),
+        ],
+    )
+    def test_the_same_fact_written_two_ways_reads_the_same(self, one: str, other: str) -> None:
+        from app.extraction.claims import _fact_words
+
+        assert set(_fact_words(other)) <= set(_fact_words(one))
+
+    async def test_the_source_is_read_once_for_every_claim(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Two full passes over the source for every claim not found word for word, and
+        two more for each discard's reason, held the event loop for seconds on a long
+        PDF (2026-10-02 review)."""
+        from app.extraction import claims
+
+        reads = 0
+        of = claims._Source.of
+
+        def counted(source: str, folded: str) -> claims._Source:
+            nonlocal reads
+            reads += 1
+            return of(source, folded)
+
+        monkeypatch.setattr(claims._Source, "of", staticmethod(counted))
+        proposals = (
+            _proposal("The government announced a relief scheme for farmers on Friday"),
+            _proposal("Aliens landed in Delhi yesterday"),
+            _proposal("Reuters said the outlay is five hundred crore rupees for farmers"),
+        )
+        pipeline = ClaimPipeline(FakeExtractor(ExtractionOutcome(claims=proposals)))
+
+        result = await pipeline.extract(DOCUMENT, content_hash="sha256:doc")
+
+        assert len(result.discarded) >= 1
+        assert reads == 1
