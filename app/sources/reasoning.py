@@ -61,7 +61,7 @@ from app.sources.local_reading import local_reading, local_same_claim
 logger = logging.getLogger("factify.sources.reasoning")
 
 PROVIDER = "llm"
-REASONER_VERSION = "2026.10.03.3"
+REASONER_VERSION = "2026.10.03.4"
 
 # The metric prefix of a support the article attributes to someone else - "the Army
 # said", "police said" - held as context until the source check, reading the passage
@@ -85,14 +85,22 @@ _REPORTS_A_DENIAL = re.compile(
     re.IGNORECASE,
 )
 
-# The same in the other languages a claim is read in. The English above sees a claim's
-# English line, and a claim nobody translated - typed in Hinglish, or when translation
-# failed - kept "PIB ने खंडन किया" a contradiction of itself. Built the way the English
-# is, so it is no wider: a word that reports a denial or a debunk on its own (refuted,
-# denied, rejected, clarified, fact check), or a label - fake, false, a rumour,
-# baseless, misleading - only where the claim says someone gave it ("called it fake",
-# "फर्जी बताया", "போலி என்று"). A fabricated quote that merely contains the word "lie"
-# must still be refutable by the denial that it was ever said.
+# The same for a claim with no English line - typed in Hinglish, or when translation
+# failed - which kept "PIB ने खंडन किया" a contradiction of itself. A claim with an
+# English line is read by the English alone (`reports_a_denial`): the original then is
+# Tamil or Telugu for "X said that Y is fake", which these patterns cannot always tell
+# from "X declared Y fake", and the English can.
+#
+# Built the way the English is, so it is no wider: a word that reports a denial or a
+# debunk on its own (refuted, denied, dismissed, fact check), or a label - fake, false,
+# a rumour, baseless, misleading - only where the claim says someone gave it ("called
+# it fake", "फर्जी बताया", "నకిలీగా తేల్చింది"). Not where someone only said it: "X said
+# that Y is fake" - "போலி என்று ... கூறினார்", "నకిలీ అని ... అన్నారు" - is the commonest
+# shape of a fabricated quote, which must stay refutable by the denial that it was ever
+# said. Where the label is joined by a plain quotative (என்று, అని, ಎಂದು, ന്ന്, ବୋଲି,
+# বলে, असल्याचे), the verb that gives it must say declared, confirmed or concluded.
+# Left out: words with a second, common sense - Hindi नकारा ("useless") but for
+# "denied the reports", स्पष्टीकरण ("an explanation"), Telugu ఖండించ ("condemned").
 #
 # Matched with nukta signs dropped and Arabic-script letter variants made one
 # (`_denial_folded`), so the words match however they were typed.
@@ -102,13 +110,12 @@ _DENIAL_VERBS = (
     "खण्डन",
     "इनकार",
     "इंकार",
-    # Not नकारात्मक, "negative": no letter or vowel sign may follow (a danda may).
-    "नकार(?:ा|े|ी|ते|ता|ती|ने)?(?![\u0900-\u0963\u0970-\u097f])",
+    # Only of reports, claims or allegations: "नकारा" alone is also "useless".
+    r"(?:आरोपों|दावों|ख़बरों|रिपोर्टों|अटकलों)\s+(?:को|का)\s+(?:सिरे\s+से\s+)?नकार",
     "ख़ारिज",
     "फेटाळ",
     "नाकार",
     r"फ़ैक्ट\s*-?\s*चेक",
-    "स्पष्टीकरण",
     r"स्पष्ट\s*(?:किया|की|केले|केला|केली)",
     # Bengali
     "অস্বীকার",
@@ -122,8 +129,7 @@ _DENIAL_VERBS = (
     r"உண்மைச்?\s*சரிபார்ப்பு",
     r"ஃ?பேக்ட்\s*செக்",
     # Telugu
-    "ఖండించ",
-    "ఖండన",
+    "తోసిపుచ్చ",
     r"ఫ్యాక్ట్\s*చెక్",
     # Kannada
     "ನಿರಾಕರಿಸ",
@@ -151,13 +157,25 @@ _DENIAL_VERBS = (
     "انکار",
 )
 
-# (labels, the words that give one) per script. The label may carry its own ending
-# (झूठा, போலியானது, నకిలీదని) before the giving word: "फर्जी बताया", "ভুয়া আখ্যা",
-# "போலி என்று", "నకిలీ అని", "ಸುಳ್ಳೆಂದು", "വ്യാജമാണെന്ന്", "ਫ਼ਰਜ਼ੀ ਦੱਸਿਆ", "جعلی قرار".
+
+@dataclass(frozen=True, slots=True)
+class _Labels:
+    """How one script gives a label: [labels] taken by a verb in [giving] ("फर्जी
+    बताया", "ভুয়া আখ্যা"), or joined by a quotative in [said] and given by one in
+    [declaring] ("போலி என்று காவல்துறை அறிவித்தது")."""
+
+    labels: tuple[str, ...]
+    giving: tuple[str, ...] = ()
+    said: tuple[str, ...] = ()
+    declaring: tuple[str, ...] = ()
+
+
+# The label may carry its own ending (झूठा, போலியானது, నకిలీదని) before the word that
+# gives it.
 _DENIAL_LABELS = (
     # Hindi and Marathi
-    (
-        (
+    _Labels(
+        labels=(
             "फ़र्ज़ी",
             "फरजी",
             "झूठ",
@@ -172,52 +190,73 @@ _DENIAL_LABELS = (
             "दिशाभूल",
             "बनावट",
         ),
-        ("बता", "क़रार", "ठहरा", "घोषित", "असल्याच", "ठरव"),
+        giving=("बता", "क़रार", "ठहरा", "घोषित", "ठरव"),
+        said=("असल्याच",),
+        declaring=("स्पष्ट", "जाहीर", "घोषित"),
     ),
     # Bengali
-    (
-        ("ভুয়া", "ভুয়ো", "মিথ্যা", "গুজব", "বিভ্রান্তিকর", "ভিত্তিহীন"),
-        ("আখ্যা", "ঘোষণা", r"বলে\s*(?:জানি|দাবি|উল্লেখ)"),
+    _Labels(
+        labels=("ভুয়া", "ভুয়ো", "মিথ্যা", "গুজব", "বিভ্রান্তিকর", "ভিত্তিহীন"),
+        giving=("আখ্যা", "ঘোষণা", r"বলে\s*উল্লেখ"),
+        said=("বলে",),
+        declaring=("ঘোষণা", "স্পষ্ট", "নিশ্চিত"),
     ),
     # Tamil
-    (
-        ("போலி", "பொய்", "வதந்தி", "ஆதாரமற்ற", "தவறான"),
-        ("என(?:்று|்ற)?(?![\u0b80-\u0be5])",),  # not எனக்கு, "to me"
+    _Labels(
+        labels=("போலி", "பொய்", "வதந்தி", "ஆதாரமற்ற", "தவறான"),
+        said=("என(?:்று|்ற)?(?![\u0b80-\u0be5])",),  # not எனக்கு, "to me"
+        declaring=("அறிவி", "உறுதிப்படுத்", "தெளிவுபடுத்"),
     ),
     # Telugu
-    (
-        ("నకిలీ", "అబద్ధ", "అబద్ద", "అసత్య", "పుకార", "వదంత", "తప్పుడు", "నిరాధార", "ఫేక్"),
-        ("అని", "దని", "మని", r"గా\s*(?:తేల్చ|పేర్కొ|ప్రకటి)"),
+    _Labels(
+        labels=(
+            "నకిలీ",
+            "అబద్ధ",
+            "అబద్ద",
+            "అసత్య",
+            "పుకార",
+            "వదంత",
+            "తప్పుడు",
+            "నిరాధార",
+            "ఫేక్",
+        ),
+        giving=(r"గా\s*(?:తేల్చ|పేర్కొ|ప్రకటి)",),
+        said=("అని", "దని", "మని"),
+        declaring=("ప్రకటి", "తేల్చ", "స్పష్టం", "నిర్ధారి"),
     ),
     # Kannada
-    (
-        ("ನಕಲಿ", "ಸುಳ್ಳ", "ವದಂತಿ", "ಆಧಾರರಹಿತ", "ಫೇಕ್"),
-        ("(?:ಎಂ|\u0cc6\u0c82)(?:ದ|ಬ)",),  # ಎಂದು, or joined on: ಸುಳ್ಳೆಂದು
+    _Labels(
+        labels=("ನಕಲಿ", "ಸುಳ್ಳ", "ವದಂತಿ", "ಆಧಾರರಹಿತ", "ಫೇಕ್"),
+        said=("(?:ಎಂ|\u0cc6\u0c82)(?:ದ|ಬ)",),  # ಎಂದು, or joined on: ಸುಳ್ಳೆಂದು
+        declaring=("ಘೋಷಿಸ", "ಸ್ಪಷ್ಟಪಡಿಸ", "ದೃಢಪಡಿಸ"),
     ),
     # Malayalam
-    (
-        ("വ്യാജ", "കിംവദന്തി", "അടിസ്ഥാനരഹിത"),
-        ("ന്ന്", "എന്ന"),
+    _Labels(
+        labels=("വ്യാജ", "കിംവദന്തി", "അടിസ്ഥാനരഹിത"),
+        said=("ന്ന്", "എന്ന"),
+        declaring=("പ്രഖ്യാപി", "സ്ഥിരീകരി", "വ്യക്തമാക്ക"),
     ),
     # Gujarati
-    (
-        ("નકલી", "ખોટ(?:ું|ી|ા|ો)", "અફવા", "ભ્રામક", "પાયાવિહોણ", "બનાવટી", "ફેક"),
-        ("ગણાવ", "ઠેરવ", "જાહેર"),
+    _Labels(
+        labels=("નકલી", "ખોટ(?:ું|ી|ા|ો)", "અફવા", "ભ્રામક", "પાયાવિહોણ", "બનાવટી", "ફેક"),
+        giving=("ગણાવ", "ઠેરવ", "જાહેર"),
     ),
     # Punjabi
-    (
-        ("ਫ਼ਰਜ਼ੀ", "ਫਰਜੀ", "ਝੂਠ", "ਅਫ਼ਵਾਹ", "ਗੁੰਮਰਾਹਕੁੰਨ", "ਬੇਬੁਨਿਆਦ", "ਫੇਕ"),
-        ("ਦੱਸ", "ਕਰਾਰ", "ਐਲਾਨ"),
+    _Labels(
+        labels=("ਫ਼ਰਜ਼ੀ", "ਫਰਜੀ", "ਝੂਠ", "ਅਫ਼ਵਾਹ", "ਗੁੰਮਰਾਹਕੁੰਨ", "ਬੇਬੁਨਿਆਦ", "ਫੇਕ"),
+        giving=("ਦੱਸ", "ਕਰਾਰ", "ਐਲਾਨ"),
     ),
     # Odia
-    (
-        ("ମିଥ୍ୟା", "ଭୁଆ", "ଗୁଜବ", "ଭିତ୍ତିହୀନ", "ବିଭ୍ରାନ୍ତିକର"),
-        ("ବୋଲି", "ଆଖ୍ୟା", "ଘୋଷଣା"),
+    _Labels(
+        labels=("ମିଥ୍ୟା", "ଭୁଆ", "ଗୁଜବ", "ଭିତ୍ତିହୀନ", "ବିଭ୍ରାନ୍ତିକର"),
+        giving=("ଆଖ୍ୟା", "ଘୋଷଣା"),
+        said=("ବୋଲି",),
+        declaring=("ଘୋଷଣା", "ସ୍ପଷ୍ଟ", "ନିଶ୍ଚିତ"),
     ),
     # Urdu
-    (
-        ("جھوٹ", "جعلی", "فرضی", "افواہ", r"بے\s*بنیاد", r"گمراہ\s*کن", "فیک"),
-        ("قرار", "بتا"),
+    _Labels(
+        labels=("جھوٹ", "جعلی", "فرضی", "افواہ", r"بے\s*بنیاد", r"گمراہ\s*کن", "فیک"),
+        giving=("قرار", "بتا"),
     ),
 )
 
@@ -239,14 +278,24 @@ def _one_of(words: tuple[str, ...]) -> str:
     return "(?:" + "|".join(_denial_folded(word) for word in words) + ")"
 
 
+def _label_patterns(entry: _Labels) -> list[str]:
+    label = rf"{_one_of(entry.labels)}\S{{0,12}}\s*"
+    patterns = [label + _one_of(entry.giving)] if entry.giving else []
+    if entry.said:
+        # The one giving it may come between: "இது போலி என்று காவல்துறை அறிவித்தது".
+        patterns.append(
+            label
+            + rf"{_one_of(entry.said)}[^.!?\n\u0964\u06d4]{{0,60}}?"
+            + _one_of(entry.declaring)
+        )
+    return patterns
+
+
 _REPORTS_A_DENIAL_ELSEWHERE = re.compile(
     "|".join(
         [
             _one_of(_DENIAL_VERBS),
-            *(
-                rf"{_one_of(labels)}\S{{0,12}}\s*{_one_of(giving)}"
-                for labels, giving in _DENIAL_LABELS
-            ),
+            *(pattern for entry in _DENIAL_LABELS for pattern in _label_patterns(entry)),
             # Hindi typed in Latin letters, as forwards often are.
             r"\b(?:khandan\s+(?:kiya|kar\w*|hua)|inkaa?r)\b",
             r"\b(?:farzi|farji|jh[ou]{1,2}th?[aie]?|afwaa?h|bebuniyaa?d|galat|fake)\s+"
@@ -256,14 +305,23 @@ _REPORTS_A_DENIAL_ELSEWHERE = re.compile(
     re.IGNORECASE,
 )
 
+# The English line `Claim.reading_text` puts beside a claim made in other words.
+_ENGLISH_LINE = re.compile(r"\n\((?:In English|In full): .*\)\s*$", re.DOTALL)
+
 
 def reports_a_denial(claim_text: str) -> bool:
     """Whether a claim itself reports a denial or a debunk, in whatever language it
-    was made: "PIB has debunked claims that ...", "मंत्रालय ने खबरों का खंडन किया"."""
-    return bool(
-        _REPORTS_A_DENIAL.search(claim_text)
-        or _REPORTS_A_DENIAL_ELSEWHERE.search(_denial_folded(claim_text))
-    )
+    was made: "PIB has debunked claims that ...", "मंत्रालय ने खबरों का खंडन किया".
+
+    [claim_text] is the claim as the readers see it (`Claim.reading_text`). With an
+    English line it is read in English only; the patterns for the other languages are
+    for a claim that has none.
+    """
+    if _REPORTS_A_DENIAL.search(claim_text):
+        return True
+    if _ENGLISH_LINE.search(claim_text):
+        return False
+    return bool(_REPORTS_A_DENIAL_ELSEWHERE.search(_denial_folded(claim_text)))
 
 
 # What a model provider's refusal on its content policy reads like in a failed call
