@@ -27,6 +27,12 @@ Not handled here, on purpose:
     `image_url` data URL for OpenAI, an `inlineData` part for Gemini. Reading a
     picture is the same JSON-returning call with a picture in the user position, so
     `app/extraction/ocr.py` uses this rather than a third request shape of its own.
+  * **Videos, Gemini only.** A YouTube address goes as a `fileData` part
+    (`video_uri=`), or a short clip's bytes inline (`video=`), with `videoMetadata`
+    bounding how much of it is watched. Only Gemini reads a video it is handed by
+    address, and the OpenAI-compatible endpoints take no video at all, so asking one
+    to raises rather than quietly sending the prompt without the video
+    (`app/extraction/video_reader.py`).
   * **Azure's auth header.** Azure OpenAI authenticates with an `api-key` header and
     puts the deployment in the URL rather than the body. Bearer covers Groq and
     OpenRouter; Azure needs the small variant noted at `_openai_headers`.
@@ -51,6 +57,11 @@ class WireFormat(StrEnum):
 # A document sent in place of a picture (`build_call`'s `image`).
 PDF_MIME = "application/pdf"
 
+# Gemini's coarsest reading of each frame: about 100 tokens a second of video with
+# its sound, against about 300 at the default. Enough for captions, tickers and who
+# is on screen, and what makes a half-hour video an affordable read (`media_resolution`).
+MEDIA_RESOLUTION_LOW = "MEDIA_RESOLUTION_LOW"
+
 
 def build_call(
     *,
@@ -65,6 +76,10 @@ def build_call(
     thinking: str | None = None,
     image: tuple[bytes, str] | None = None,
     max_output_tokens: int | None = None,
+    video_uri: str | None = None,
+    video: tuple[bytes, str] | None = None,
+    video_seconds: tuple[int, int] | None = None,
+    media_resolution: str | None = None,
 ) -> tuple[str, dict[str, str], dict[str, Any]]:
     """Assemble one JSON-returning completion as ``(url, headers, body)``.
 
@@ -72,13 +87,26 @@ def build_call(
     model that reads images - or a PDF (`PDF_MIME`), which it reads page by page. It
     travels in the user position too, which is where untrusted content belongs.
 
+    `video_uri` is a YouTube address Gemini watches itself, and `video` a clip's
+    ``(bytes, mime type)`` sent inline; `video_seconds` is ``(start, end)``, the part
+    of it watched, which bounds the cost of a long video before a token is spent. The
+    video goes before the text, the order Gemini reads video prompts best in, and in
+    the same user turn: it is the untrusted content. Gemini only - an OpenAI-compatible
+    endpoint takes no video, and sending it the prompt alone would come back as a
+    confident reading of a video nobody watched, so that raises `ValueError`.
+
+    `media_resolution` (`MEDIA_RESOLUTION_LOW`) sets how finely Gemini reads each
+    frame. Gemini only, like `thinking`.
+
     The external text always travels in the user position — a `contents` part for
     Gemini, a `user` message for OpenAI — never spliced into the system instruction.
     That placement is the injection boundary, and it is identical in both formats.
 
-    `thinking` (e.g. "low") turns Gemini's deliberation down — the largest latency
-    win in the reading path, and safe there because the task is classification, not
-    composition. It is applied only to Gemini: it is not a portable knob, and the
+    `thinking` turns Gemini's deliberation down — the largest latency win in the
+    reading path, and safe there because the task is classification, not
+    composition. A word ("low") is a Gemini 3 `thinkingLevel`; a number ("0",
+    "1024") is a Gemini 2.5 `thinkingBudget` in tokens, since each family refuses the
+    other's knob. It is applied only to Gemini: it is not a portable knob, and the
     OpenAI-compatible models reached this way are already fast without one, so it is
     dropped rather than guessed at a per-provider equivalent that some would reject.
 
@@ -95,11 +123,18 @@ def build_call(
             "responseSchema": response_schema,
             "temperature": temperature,
         }
-        if thinking is not None:
-            generation["thinkingConfig"] = {"thinkingLevel": thinking}
+        # A blank setting is no setting: sent, Gemini refuses it with a 400 on every
+        # call ("Invalid value at 'generation_config.thinking_config.thinking_level'").
+        if thinking is not None and thinking.strip():
+            generation["thinkingConfig"] = _thinking_config(thinking)
         if max_output_tokens is not None:
             generation["maxOutputTokens"] = max_output_tokens
-        parts: list[dict[str, Any]] = [{"text": user_block}]
+        if media_resolution is not None:
+            generation["mediaResolution"] = media_resolution
+        parts: list[dict[str, Any]] = []
+        if video_uri is not None or video is not None:
+            parts.append(_video_part(video_uri, video, video_seconds))
+        parts.append({"text": user_block})
         if image is not None:
             parts.append({"inlineData": {"mimeType": image[1], "data": _base64(image[0])}})
         body: dict[str, Any] = {
@@ -108,6 +143,9 @@ def build_call(
             "generationConfig": generation,
         }
         return url, headers, body
+
+    if video_uri is not None or video is not None:
+        raise ValueError("a video can only be read by a Gemini endpoint")
 
     # OpenAI-compatible. The schema is not a first-class field here as it is for
     # Gemini, so it is stated in the system message and the answer is constrained to
@@ -183,6 +221,37 @@ def reasoning_model(model_id: str) -> bool:
 
 def _base64(data: bytes) -> str:
     return base64.b64encode(data).decode("ascii")
+
+
+def _thinking_config(thinking: str) -> dict[str, Any]:
+    """Gemini 3's `thinkingLevel` for a word, Gemini 2.5's `thinkingBudget` for a number."""
+    value = thinking.strip()
+    if value.lstrip("-").isdigit():
+        return {"thinkingBudget": int(value)}
+    return {"thinkingLevel": value}
+
+
+def _video_part(
+    uri: str | None, data: tuple[bytes, str] | None, seconds: tuple[int, int] | None
+) -> dict[str, Any]:
+    """One video part: by address, or inline, and the stretch of it to watch.
+
+    No `mimeType` for an address: Gemini works a YouTube page's type out itself, and
+    the documented REST requests for one send none.
+    """
+    part: dict[str, Any]
+    if uri is not None and data is not None:
+        raise ValueError("a call carries one video: an address or its bytes, not both")
+    if uri is not None:
+        part = {"fileData": {"fileUri": uri}}
+    elif data is not None:
+        part = {"inlineData": {"mimeType": data[1], "data": _base64(data[0])}}
+    else:
+        raise ValueError("a video part needs an address or bytes")
+    if seconds is not None:
+        start, end = seconds
+        part["videoMetadata"] = {"startOffset": f"{start}s", "endOffset": f"{end}s"}
+    return part
 
 
 def _openai_headers(api_key: str) -> dict[str, str]:

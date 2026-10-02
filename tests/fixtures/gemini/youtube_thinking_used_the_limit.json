@@ -1,0 +1,38 @@
+{
+  "candidates": [
+    {
+      "content": {},
+      "finishReason": "MAX_TOKENS",
+      "index": 0
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 16919,
+    "totalTokenCount": 17305,
+    "cachedContentTokenCount": 14003,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 445
+      },
+      {
+        "modality": "VIDEO",
+        "tokenCount": 16474
+      }
+    ],
+    "cacheTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 368
+      },
+      {
+        "modality": "VIDEO",
+        "tokenCount": 13635
+      }
+    ],
+    "thoughtsTokenCount": 386,
+    "serviceTier": "standard"
+  },
+  "modelVersion": "gemini-3.8-flash",
+  "responseId": "52K_ateZCaaJ1e8Pq_3LgAQ"
+}

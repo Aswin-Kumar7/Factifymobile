@@ -1,0 +1,47 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "{\n \"duration_seconds\": 182,\n \"last_seen_seconds\": 182,\n \"speech_present\": true,\n \"transcript_language\": \"en\",\n \"transcript\": \"India's women's recurve archery team of Kumkum Anil Mohod, Ankita Bhakat and Kirti have in fact beaten the South Korea team 5-3 to win the gold medal at the Asian Games.\\nThat's right, India has won the gold medal at the Asian Games after beating South Korea from 5-3. India's were one in fact the gold in the women's recurve archery category. India's beat the South Korea team for the gold. And the star of this is the 17-year-old Kumkum Mohod who has in fact shined at the event. That's the latest update that we have coming in from Asian Games, as we understand that India has won its 11th gold medal.\\nMy colleagues Rica as well as Boria are with us on the broadcast. You know, coming to you first Rica, this is wonderful news coming in. The women have made us proud time and again, and I believe that the tally of the gold medals has now reached to 11.\\nWell, this is not just wonderful, this is by far the most brilliant result in this edition of the Asian Games, I would say, because India has beaten, these young Indian girls have beaten a very experienced South Korean side that has won 10 Olympic gold medals, they're 10-time Olympic champions, and South Af- and South Koreans are second to none when it comes in archery. To beat them in recurve archery is a very very big deal, because India has time and again faltered on the big stage in recurve archery for a very long time. India has been trying to cross the finish line, they haven't managed to, but today, this young team, as you see the picture on your screen, of Ankita, Kumkum, and Kirti has done um an impos- has achieved something impossible. Uh so kudos to them. After great wins in compound, it is the recurve archery team that has taken India to a golden finish here at the uh Asian Games 2026.\\nAbsolutely. I also need to get Boria into the conversation. Boria, India's gold now shines bright. The women have made us proud. But also talk to us about some of the athletes, you know, a little about them. I understand that the youngest is as young as 17 years old.\\nYeah, that's Kumkum Mohod. And Kumkum Mohod, you must understand and put it in perspective. Rica just said about the 10-time Olympic gold medalists, Korea being beaten. But what are Kumkum's scores? You have so much, you know, heard so much about mental fragility, right? That the Indians are mentally fragile. Let me tell you Kumkum's scores: 10, 10, 9, 9, 10, 10. And that includes one, two, two bullseye, so the inner 10. That is mental fragility. And by the way, in the first set in the first set, Korea was up, Kumkum's bullseye got you a point. In the second set, Korea was up, Kumkum's bullseye got you the equal point. In the third, in the fourth set, the final set, you needed a tenner from Kumkum to close out the gold medal, and the 17-year-old\\nRight. I'm really sorry to cut you off there, Boria. We're getting some important updates coming\",\n \"on_screen_text\": \"NDTV\\nLIVE BREAKING NEWS\\nINDIA WIN GOLD IN WOMEN'S RECURVE ARCHERY\\nSOMANY\\nTILES BATH BUILDING SOLUTIONS\\nINDIA BEAT SOUTH KOREA\\nBREAKING NEWS\\nAichi-Nagoya 2026\\nINDIA BEAT SOUTH KOREA FOR GOLD\\n17-YEAR-OLD KUMKUM MOHOD SHINES\\nMAHA'S KUMKUM PART OF GOLD-WINNING T\\nINDIA WIN 11TH GOLD MEDAL\\n17-YEAR-OLD KUMKUM\\nMAHA'S KUMKUM PART OF GOLD-WINNING TEAM\\nRICA ROY\\nBORIA MAJUMDAR\\nCONSULTING SPORTS EDITOR\",\n \"shows\": \"A female news presenter stands in an NDTV studio reporting on breaking news about India winning a gold medal in women's recurve archery. Archived footage and pictures of the Indian archery team competing and standing on a podium alternate on a display screen. Split screens appear featuring sports journalists Rica Roy and Boria Majumdar joining via video link from outside and inside settings to discuss the match. The broadcast continues with graphical banners and text updates at the bottom and left side of the screen.\"\n}",
+            "thoughtSignature": "Et4DCtsDAWkUfRMhGFamhG7h5HGkIhJ3leMw4DVKlWpu9gYCS00azJpV/9a9MXrI+vC0jw/827oA0sqaM4DXdesBCv+u2bQDGs4JKbfzmjamOWYbm6vvlU0WYpGbmnFNL3pmrm19oJDcsmT/lNaKzwZKUUb7O1gxfRqpFm10JKKwPsnBW7uS1OY4hy7ldS1xw/4Px7ifxWyun1DerYb8cphbsixMSzSzS16+bmTF7h9zdwf7jQm04SwyViiwWJf6HMg/EqaUJteusQh55DMTBAf+TmeBciIlNQDftPHx9QSx2ertM1MMoUksG8kwlE0jYoXUnKIX+CI4aE0IZpUnGUTP7hPPCm6VkyGiu2PEzacx2FtWOommrtCPeJ6FZ9lyjX2oNh3UQNFIPybTkiyQkcznWHq9wSL4cAS9Og761lVjtNejoKsunjz37sMpKrZc8CUMdo0K5EBF+qVGiPl6HdrxL5I1xJQhVPEFI0s6nZvYQUJkhiy5wwOVMKBYEaDMZddUyoKP7XXaBxH2r+xXO2n8/SMmK0M696bxCfOhYsRVsabvyZrY7KsGgqubS+BHDmpzwHD3B5GsScg7w7XA9/W4q7G4ctegW3JZdwsWlHeKq9EmkW1e66cZrz4BUowM2Q=="
+          }
+        ],
+        "role": "model"
+      },
+      "finishReason": "STOP",
+      "index": 0
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 16919,
+    "candidatesTokenCount": 1064,
+    "totalTokenCount": 18084,
+    "cachedContentTokenCount": 14003,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 445
+      },
+      {
+        "modality": "VIDEO",
+        "tokenCount": 16474
+      }
+    ],
+    "cacheTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 368
+      },
+      {
+        "modality": "VIDEO",
+        "tokenCount": 13635
+      }
+    ],
+    "thoughtsTokenCount": 101,
+    "serviceTier": "standard"
+  },
+  "modelVersion": "gemini-3.8-flash",
+  "responseId": "ZWK_aqS0DJO-1e8P9P--KA"
+}

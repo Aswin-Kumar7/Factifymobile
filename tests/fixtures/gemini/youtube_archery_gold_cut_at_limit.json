@@ -1,0 +1,35 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "{\n \"duration_seconds\": 181,\n \"last_seen_seconds\": 181,\n \"speech_present\": true,\n \"transcript_language\": \"en\",\n \"transcript\": \"India's women's recurve archery team of Kumkum Anil Mohod, Ankita Bhakat, and Kirti have, in fact, beaten the South Korea team 5-3 to win the gold medal at the Asian Games. That's right, India has won the gold medal at the Asian Games after beating South Korea from 5-3. India's were, won, in fact, the gold in the women's recurve archery category. India's beat the South Korea team for the gold. And the star of this is the 17-year-old Kumkum Mohod, who has, in fact, shined at the event. That's the latest update that we have coming in from Asian Games, as we understand that India has won its 11th gold medal.\\n\\nMy colleagues Rica, as well as Boria, are with us on the broadcast. You know, coming to you first, Rica, this is wonderful news coming in. The women have made us proud time and again. And I believe that the tally of the gold medals has now reached to 11.\\n\\nAnd this is not just wonderful, this is by far the most brilliant result in this edition of the Asian Games, I would say, because India has beaten, these young Indian girls have beaten a very experienced South Korean side that has won 10 Olympic gold medals, their 10-time Olympic champions. And South, and South Koreans are second to none when it comes in archery. To beat them in recurve archery is a very, very big deal, because India has time and again faltered on the big stage in recurve archery for a very long time. India has been trying to cross the finish line. They haven't managed to, but today, this young team, as you see the picture on your screen of Ankita, Kumkum, and Kirti has done, uh, an impos- has achieved something impossible. Uh, so, kudos to them. After great wins in compound, it is the recurve archery team that has taken India to a golden finish here at the, uh, Asian Games 2026.\\n\\nAbsolutely. I also need to get Boria into the conversation. Boria, India's gold now shines bright. The women have made us proud, but also talk to us about some of the athletes, you know, a little about them. I understand that the youngest is as young as 17 years old.\\n\\nYeah, that's Kumkum Mohod. And Kumkum Mohod, you must understand and put it in perspective. Rica just said about the 10-time Olympic gold medalists Korea being beaten, but what are Kumkum's scores? You have so much, you know, heard so much about mental fragility, right? That the Indians are mentally fragile. Let me tell you Kumkum's scores: 10, 10, 9, 9, 10, 10. And that includes one, two, two bullseye, so that inner 10. That is mental fragility. And by the way, in the first set in the first set, Korea was up. Kumkum's bullseye got you a point. In the second set, Korea was up. Kumkum's bullseye got you the equal point. In the third in the fourth set, the final set, you needed a tenner from Kumkum to close out the gold medal, and the 17-year-old—\\n\\nI'm really sorry to cut you off there, Boria, we're getting some important updates coming\",\n \"on_screen_text\": \"LIVE BREAKING NEWS\\nINDIA WIN GOLD IN WOMEN'S RECURVE ARCHERY\\nSOMANY\\nTILES BATH BUILDING SOLUTIONS\\nINDIA BEAT SOUTH KOREA\\nBREAKING NEWS\\nAichi-\\nNagoya\\n2026\\nINDIA BEAT SOUTH K",
+            "thoughtSignature": "EmkKZwFpFH0T3R7+MuJdAZSJZcSUPljHKWmkO/Z++r9oYM/NYD+ae4T/X7donnX9XT8D7qthF18bfWzpXvk1PPJcLXmSS+vMw8gg4qAbHlsFaXR6ewjgew0pXPymZAN7GFLUkRbbU6xudRw="
+          }
+        ],
+        "role": "model"
+      },
+      "finishReason": "MAX_TOKENS",
+      "index": 0
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 16919,
+    "candidatesTokenCount": 886,
+    "totalTokenCount": 17805,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 445
+      },
+      {
+        "modality": "VIDEO",
+        "tokenCount": 16474
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "modelVersion": "gemini-3.8-flash",
+  "responseId": "A2O_asGvHf2_g8UP5O7rgQ4"
+}
