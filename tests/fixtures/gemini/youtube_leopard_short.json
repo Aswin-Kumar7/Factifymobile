@@ -1,0 +1,36 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "{\n \"duration_seconds\": 37,\n \"last_seen_seconds\": 37,\n \"speech_present\": true,\n \"transcript_language\": \"hi\",\n \"transcript\": \"Look, look, it's crossing.\\nअरे बाप रे!\\nOh, my god!\\nअरे शटर लगाओ शटर लगाओ।\\nपकड़ा थोड़ी आ नहीं गया।\\nOh, thank God!\\nखिड़की बंद करो! हटो हटो!\\nवो तो लंबा मार रहा है।\\nपीछे हटो।\\nदरवाजा लगाओ जल्दी!\\nOh, my God!\\nफोन को\\nआ गया फिर से!\\nअरे अब निकल गया।\\nअरे!\\nअरे बाप रे बाप!\\nअरे खींच रहा है! पकड़ो!\\nबचाओ भगवान!\\nहटो, पीछे हो जाओ!\",\n \"on_screen_text\": \"\",\n \"shows\": \"A video compilation shows multiple encounters between leopards and moving passenger trains. In the first clip, a leopard runs across the tracks beside the train. Later clips taken from train windows and doorways show a leopard jumping toward a window, chasing the carriage, and in the final scene, leaping onto the open doorway of a coach before being kicked away by a passenger.\"\n}",
+            "thoughtSignature": "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"
+          }
+        ],
+        "role": "model"
+      },
+      "finishReason": "STOP",
+      "index": 0
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 3879,
+    "candidatesTokenCount": 275,
+    "totalTokenCount": 4871,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 505
+      },
+      {
+        "modality": "VIDEO",
+        "tokenCount": 3374
+      }
+    ],
+    "thoughtsTokenCount": 717,
+    "serviceTier": "standard"
+  },
+  "modelVersion": "gemini-3.8-flash",
+  "responseId": "_oy_atjjIvvHg8UP3bi8iQo"
+}
