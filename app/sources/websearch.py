@@ -30,6 +30,7 @@ import hashlib
 import json
 import logging
 import re
+from dataclasses import replace
 from datetime import UTC, datetime
 from time import monotonic
 from typing import Any
@@ -43,6 +44,7 @@ from app.extraction.web import extract, plain_text
 from app.governor.governor import ProviderUnavailable, Skip, SkipReason
 from app.observability.logging import event
 from app.security.fetcher import FetchResult, SecureFetcher
+from app.security.patience import current_patience
 from app.sources.base import (
     SourceCandidate,
     SourceRelation,
@@ -75,6 +77,10 @@ _MAX_QUERIES = 4
 # was fetched again for its last. Never a stale answer from an earlier check: the
 # reads are kept per check and dropped when it ends (`end_check`).
 _READ_TTL_SECONDS = 480.0
+# A page that could not be read is tried again sooner, as every page was before: its
+# extract may have been paced out or cut off this once, and for the whole check would
+# leave an official source - PIB, Reuters - unread for every later claim.
+_UNREAD_TTL_SECONDS = 90.0
 
 NAME = "web_search"
 VERSION = "2026.10.03.2"
@@ -186,6 +192,16 @@ _SCORING = asyncio.Semaphore(2)
 # The search provider's copy of a page we could not read is a second chance, not a
 # second full wait: one such copy took 36 s and held a whole check (2026-10-02).
 _EXTRACT_TIMEOUT_SECONDS = 12.0
+# And the longest it waits for room under the per-minute ceiling first. A page is read
+# holding one of the server's fetch slots (the orchestrator's), so a background check's
+# ninety-second wait for the budget would hold one that long, and reads that need no
+# extract, this check's and others', queued behind it.
+_EXTRACT_PACE_SECONDS = 12.0
+
+
+def _kept_for(read: tuple[str, str, str]) -> float:
+    """How long a page read stays reusable: the check, or less when nothing was read."""
+    return _READ_TTL_SECONDS if read[0] else _UNREAD_TTL_SECONDS
 
 
 class _SearchFailed(Exception):
@@ -442,8 +458,9 @@ class WebSearchResolver:
         rows = await self._queries(claim)
 
         follow_up = bool(current_follow_up.get())
-        # A second round reads what the first did not: a page already judged for this
-        # claim would be judged the same way again, at a model call each.
+        # A second round reads what the first did not: a page the reader already judged
+        # for this claim (`relate`) would be judged the same way again, at a model call
+        # each. A page that could not be read then was never judged, and may be now.
         judged = self._judged.setdefault(claim.id, set())
         shortlist: list[SourceCandidate] = []
         dropped = 0
@@ -522,7 +539,6 @@ class WebSearchResolver:
         if not follow_up:
             for remembered in await self._remembered(claim, {page_key(c.url) for c in shortlist}):
                 shortlist.insert(0, remembered)
-        judged.update(page_key(candidate.url) for candidate in shortlist)
         return shortlist
 
     async def follow_up_queries(self, claim: Claim, notes: list[str]) -> list[str]:
@@ -712,7 +728,7 @@ class WebSearchResolver:
         """
         now = monotonic()
         cached = self._reads.get(url)
-        if cached is not None and now - cached[0] < _READ_TTL_SECONDS:
+        if cached is not None and now - cached[0] < _kept_for(cached[1]):
             body, route, _ = cached[1]
             self._read_event(route, url, len(body), reused=True)
             return cached[1]
@@ -722,7 +738,7 @@ class WebSearchResolver:
         # Expired entries are dropped on the way past rather than on a timer; the
         # dictionary is small and only grows while a case is in flight.
         self._reads = {
-            key: value for key, value in self._reads.items() if now - value[0] < _READ_TTL_SECONDS
+            key: value for key, value in self._reads.items() if now - value[0] < _kept_for(value[1])
         }
         self._reads[url] = (now, result)
         return result
@@ -748,7 +764,7 @@ class WebSearchResolver:
         # inside the timeout it used up the twelve seconds: the page went unread, its
         # credit already counted.
         body = ""
-        if self._can_extract and await self._metered("extract"):
+        if self._can_extract and await self._metered_briefly("extract"):
             try:
                 body = await asyncio.wait_for(self._extract_call(url), _EXTRACT_TIMEOUT_SECONDS)
             except TimeoutError:
@@ -870,6 +886,18 @@ class WebSearchResolver:
             return False
         return True
 
+    async def _metered_briefly(self, call: str) -> bool:
+        """`_metered`, waiting at most `_EXTRACT_PACE_SECONDS` for room under the
+        per-minute ceiling whatever the check's own patience."""
+        patience = current_patience.get()
+        token = current_patience.set(
+            replace(patience, pace_seconds=min(patience.pace_seconds, _EXTRACT_PACE_SECONDS))
+        )
+        try:
+            return await self._metered(call)
+        finally:
+            current_patience.reset(token)
+
     async def _vendor_extract(self, url: str) -> str:
         """Ask the search provider for the text of one page we could not read.
 
@@ -941,6 +969,8 @@ class WebSearchResolver:
         )
         if not outcome.succeeded:
             return insufficient(NAME, VERSION, f"reasoning unavailable: {outcome.reason}")
+        # Judged for this claim: a second round reads other pages (`candidates`).
+        self._judged.setdefault(claim.id, set()).add(page_key(snapshot.url))
 
         best = outcome.best()
         if best is None:

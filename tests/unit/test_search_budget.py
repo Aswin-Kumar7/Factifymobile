@@ -1,8 +1,9 @@
 """What a web search spends, and what it reads for it (work package E, phase 1).
 
-Held here: a second round reads pages the first did not; a page read early in a
-background check is still in hand for its last claim; and waiting for the budget is
-not counted against the twelve seconds an extract call is given.
+Held here: a second round reads pages the first did not judge; a page read early in a
+background check is still in hand for its last claim, and one that could not be read is
+tried again; and waiting for the budget is not counted against the twelve seconds an
+extract call is given, nor held for a background check's ninety seconds.
 """
 
 from __future__ import annotations
@@ -19,9 +20,11 @@ from app.governor.governor import Skip, SkipReason
 from app.knowledge.memory import RememberedPage
 from app.orchestration.pipeline import BACKGROUND_CEILING_SECONDS
 from app.security.fetcher import FetchResult
+from app.security.patience import PATIENT, current_patience
 from app.sources import websearch
-from app.sources.base import current_check, current_follow_up
+from app.sources.base import SourceSnapshot, current_check, current_follow_up
 from app.sources.credibility import SourceCredibility
+from app.sources.reasoning import ReasoningOutcome
 from app.sources.verification import page_key
 from app.sources.websearch import WebSearchResolver
 from tests.unit.factories import claim
@@ -41,9 +44,12 @@ class _Governor:
         self.allow = allow
         self.waits = waits
         self.asked = 0
+        # The longest each acquisition was allowed to wait for room (the patience).
+        self.patience: list[float] = []
 
     async def try_acquire(self, provider: str) -> object:
         self.asked += 1
+        self.patience.append(current_patience.get().pace_seconds)
         if self.waits:
             await asyncio.sleep(self.waits)
         if self.allow is not None and self.asked > self.allow:
@@ -63,12 +69,24 @@ class _Memory:
         return [RememberedPage(url=url, publisher=None, title="Earlier") for url in self.urls]
 
 
+class _Reasoner:
+    """Reads every page, finding nothing in it - or fails, when [fails]."""
+
+    def __init__(self, *, fails: bool = False) -> None:
+        self.fails = fails
+
+    async def judge(self, *_args: Any, **_kwargs: Any) -> ReasoningOutcome:
+        if self.fails:
+            return ReasoningOutcome(reason="provider failed: HTTP 500")
+        return ReasoningOutcome(passages_read=1)
+
+
 def _resolver(
-    *, governor: Any = None, memory: Any = None, fetcher: Any = None
+    *, governor: Any = None, memory: Any = None, fetcher: Any = None, reasoner: Any = None
 ) -> WebSearchResolver:
     return WebSearchResolver(
         fetcher=fetcher,
-        reasoner=None,
+        reasoner=reasoner,
         provider="tavily",
         endpoint="https://api.tavily.example/search",
         api_key="k",
@@ -104,12 +122,29 @@ def _searching(resolver: WebSearchResolver, answers: dict[str, list[dict[str, An
     return sent
 
 
+def _snapshot(url: str) -> SourceSnapshot:
+    return SourceSnapshot(
+        id="web:test",
+        url=url,
+        final_url=url,
+        content_hash="sha256:test",
+        fetched_at=datetime.now(UTC),
+        text=ARTICLE,
+    )
+
+
+async def _judge_all(resolver: WebSearchResolver, target: Any, candidates: list[Any]) -> None:
+    """What the pipeline does with a round's pages once they are read."""
+    for candidate in candidates:
+        await resolver.relate(target, _snapshot(candidate.url))
+
+
 class TestASecondRoundReadsNewPages:
     """The second round's four read slots went to pages the first had already read."""
 
     async def test_pages_judged_for_the_claim_and_remembered_pages_are_left_out(self) -> None:
         memory = _Memory("https://www.bbc.co.uk/earlier")
-        resolver = _resolver(memory=memory)
+        resolver = _resolver(memory=memory, reasoner=_Reasoner())
         _searching(
             resolver,
             {"*": _rows("https://www.thehindu.com/a", "https://www.ndtv.com/b")},
@@ -118,6 +153,7 @@ class TestASecondRoundReadsNewPages:
         check = current_check.set("case-1")
         try:
             first = await resolver.candidates(target)
+            await _judge_all(resolver, target, first)
             _searching(
                 resolver,
                 {
@@ -149,11 +185,12 @@ class TestASecondRoundReadsNewPages:
 
     async def test_another_claim_may_still_read_the_same_page(self) -> None:
         """The judgement is per claim: what a page says of one says nothing of another."""
-        resolver = _resolver()
+        resolver = _resolver(reasoner=_Reasoner())
         _searching(resolver, {"*": _rows("https://www.thehindu.com/a")})
         check = current_check.set("case-2")
         try:
-            await resolver.candidates(_claim(claim_id="cl_1"))
+            first = _claim(claim_id="cl_1")
+            await _judge_all(resolver, first, await resolver.candidates(first))
             token = current_follow_up.set(("a sharper query",))
             try:
                 other = await resolver.candidates(_claim(claim_id="cl_2"))
@@ -165,11 +202,12 @@ class TestASecondRoundReadsNewPages:
         assert [candidate.url for candidate in other] == ["https://www.thehindu.com/a"]
 
     async def test_another_check_may_still_read_the_same_page(self) -> None:
-        resolver = _resolver()
+        resolver = _resolver(reasoner=_Reasoner())
         _searching(resolver, {"*": _rows("https://www.thehindu.com/a")})
         check = current_check.set("case-2a")
         try:
-            await resolver.candidates(_claim())
+            target = _claim()
+            await _judge_all(resolver, target, await resolver.candidates(target))
         finally:
             current_check.reset(check)
 
@@ -185,23 +223,50 @@ class TestASecondRoundReadsNewPages:
 
     async def test_a_first_round_is_never_narrowed(self) -> None:
         """Only a second round leaves pages out; a later first round reads them all."""
-        resolver = _resolver()
+        resolver = _resolver(reasoner=_Reasoner())
         _searching(resolver, {"*": _rows("https://www.thehindu.com/a")})
         check = current_check.set("case-3")
         try:
-            await resolver.candidates(_claim())
+            target = _claim()
+            await _judge_all(resolver, target, await resolver.candidates(target))
             again = await resolver.candidates(_claim())
         finally:
             current_check.reset(check)
 
         assert [candidate.url for candidate in again] == ["https://www.thehindu.com/a"]
 
+    @pytest.mark.parametrize("fails", [None, True, False], ids=["unread", "failed", "judged"])
+    async def test_a_page_the_first_round_never_judged_is_read_now(
+        self, fails: bool | None
+    ) -> None:
+        """Shortlisted is not judged: a page that could not be read (no snapshot, so
+        no `relate`), or whose reading failed, has told the claim nothing yet."""
+        resolver = _resolver(reasoner=_Reasoner(fails=bool(fails)))
+        _searching(resolver, {"*": _rows("https://www.thehindu.com/a")})
+        target = _claim()
+        check = current_check.set("case-3a")
+        try:
+            first = await resolver.candidates(target)
+            if fails is not None:
+                await _judge_all(resolver, target, first)
+            token = current_follow_up.set(("a sharper query",))
+            try:
+                second = await resolver.candidates(target)
+            finally:
+                current_follow_up.reset(token)
+        finally:
+            current_check.reset(check)
+
+        expected = [] if fails is False else ["https://www.thehindu.com/a"]
+        assert [candidate.url for candidate in second] == expected
+
     async def test_the_end_of_a_check_forgets_what_it_judged(self) -> None:
-        resolver = _resolver()
+        resolver = _resolver(reasoner=_Reasoner())
         _searching(resolver, {"*": _rows("https://www.thehindu.com/a")})
         check = current_check.set("case-4")
         try:
-            await resolver.candidates(_claim())
+            target = _claim()
+            await _judge_all(resolver, target, await resolver.candidates(target))
             assert resolver._judged["cl_1"] == {page_key("https://www.thehindu.com/a")}
         finally:
             current_check.reset(check)
@@ -296,6 +361,29 @@ class TestAReadLastsTheCheck:
 
         assert fetcher.fetched == 2
 
+    async def test_a_page_that_could_not_be_read_is_tried_again_sooner(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Its extract may have been paced out or cut off once; kept for the whole
+        check, an official source stayed unread for every later claim."""
+        now = [1000.0]
+        monkeypatch.setattr(websearch, "monotonic", lambda: now[0])
+        fetcher = _Fetcher(None, vendor="")
+        resolver = _resolver(fetcher=fetcher)
+        check = current_check.set("case-6c")
+        try:
+            await resolver._read("https://www.pib.gov.in/f")
+            now[0] += 30.0
+            await resolver._read("https://www.pib.gov.in/f")
+            assert fetcher.fetched == 1  # not again for every claim
+            now[0] += websearch._UNREAD_TTL_SECONDS
+            await resolver._read("https://www.pib.gov.in/f")
+        finally:
+            current_check.reset(check)
+
+        assert fetcher.fetched == 2
+        assert websearch._UNREAD_TTL_SECONDS < websearch._READ_TTL_SECONDS
+
     async def test_nor_into_another_check(self) -> None:
         fetcher = _Fetcher(f"<html><body><article><p>{ARTICLE}</p></article></body></html>")
         resolver = _resolver(fetcher=fetcher)
@@ -336,6 +424,28 @@ class TestWaitingForTheBudgetIsNotTheExtractsTime:
         assert route == "web.tavily_extract"
         assert body.startswith("The state government said")
         assert governor.asked == 1
+
+    async def test_a_background_check_waits_for_the_budget_only_briefly(self) -> None:
+        """The read holds a server-wide fetch slot: a ninety-second wait for the budget
+        held one that long, and reads needing no extract queued behind it."""
+        governor = _Governor()
+        fetcher = _Fetcher(None, vendor=ARTICLE)
+        resolver = _resolver(governor=governor, fetcher=fetcher)
+
+        check = current_check.set("case-7a")
+        patient = current_patience.set(PATIENT)
+        try:
+            body, _, _ = await resolver._read("https://www.reuters.com/world/p")
+            after = current_patience.get()
+        finally:
+            current_patience.reset(patient)
+            current_check.reset(check)
+
+        assert body.startswith("The state government said")
+        assert governor.patience == [websearch._EXTRACT_PACE_SECONDS]
+        assert websearch._EXTRACT_PACE_SECONDS < PATIENT.pace_seconds
+        # The check's own patience is left as it was, for its other calls.
+        assert after is PATIENT
 
     async def test_the_call_itself_is_still_cut_off(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(websearch, "_EXTRACT_TIMEOUT_SECONDS", 0.1)
