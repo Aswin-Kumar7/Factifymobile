@@ -451,20 +451,28 @@ class TestReadingASubmittedLink:
         assert text is not None and "hallway diplomacy" in text.text
 
     def test_a_link_with_nothing_checked_is_not_answered_unconfirmed(self) -> None:
-        """Zero claims used to verify as "Unconfirmed" - as if sources had been sought."""
+        """Zero claims used to verify as "Unconfirmed" - as if sources had been sought -
+        and then were refused with a 422 that told the person to paste the page. A page
+        read in full with nothing in it to check now says exactly that (2026-10-02)."""
         from typing import Any
 
         from fastapi.testclient import TestClient
 
         from app.extraction.claims import ExtractedClaims
         from app.main import create_app
+        from tests.unit.test_orchestration import _result
+
+        verified: list[dict[str, Any]] = []
 
         class _Orchestrator:
             async def cached(self, *args: Any, **kwargs: Any) -> None:
                 return None
 
-            async def verify(self, *args: Any, **kwargs: Any) -> Any:
-                raise AssertionError("nothing to check must not be verified")
+            async def verify(self, intake: Any, **kwargs: Any) -> Any:
+                # Recorded as a case, with nothing to search for.
+                assert kwargs["claims"] == []
+                verified.append(kwargs)
+                return _result(case_id=kwargs["case_id"])
 
         class _NothingFound:
             async def extract(self, *args: Any, **kwargs: Any) -> ExtractedClaims:
@@ -485,8 +493,15 @@ class TestReadingASubmittedLink:
         finally:
             verify_module._read_linked_article = original  # type: ignore[assignment]
 
-        assert response.status_code == 422
-        assert "Nothing was checked" in response.json()["detail"]
+        assert response.status_code == 200
+        body = response.json()
+        assert body["claims"] == []
+        assert "nothing to fact-check" in body["summary"]
+        read = body["input_read"]
+        assert (read["kind"], read["complete"], read["verdict_withheld"]) == ("link", True, False)
+        assert [part["kind"] for part in read["parts"]] == ["article"]
+        assert not [item for item in body["skipped"] if item["check"] == "claim_extraction"]
+        assert verified and verified[0]["fresh"] is True
 
 
 class TestALinkInsideAMessage:

@@ -17,6 +17,9 @@ from app.extraction import reading as rd
 from app.extraction.reading import (
     BLOCKING,
     CONTEXT_ONLY,
+    DESCRIPTIONS,
+    NOTHING_TO_CHECK_IN_PART_SUMMARY,
+    NOTHING_TO_CHECK_SUMMARY,
     WITHHELD_SUMMARY,
     Composed,
     Gap,
@@ -26,7 +29,10 @@ from app.extraction.reading import (
     ReadingPolicy,
     ReadPart,
     gap,
+    picture_description_label,
     policy,
+    served_policy,
+    withheld_without_claims,
 )
 
 pytestmark = pytest.mark.unit
@@ -56,6 +62,9 @@ def _post(*gaps: Gap, picture: str = PICTURE) -> Reading:
 # ---------------------------------------------------------------------- the document
 
 
+DESCRIBED = "A document styled as a press release."
+
+
 class TestTheDocument:
     def test_each_checked_part_is_written_under_its_label_a_blank_line_apart(self) -> None:
         composed = _post().document()
@@ -64,26 +73,40 @@ class TestTheDocument:
             "Post by Daily Updates (@daily) on X, 1 Oct 2026:\n"
             f"{POST}\n\n"
             "Text in picture 1 of 1:\n"
-            f"{PICTURE}"
+            f"{PICTURE}\n\n"
+            "Shows:\n"
+            f"{DESCRIBED}"
         )
 
     def test_the_spans_are_the_parts_own_text_in_the_document(self) -> None:
         composed = _post().document()
 
-        assert [index for index, _, _ in composed.spans] == [0, 1]
+        assert [index for index, _, _ in composed.spans] == [0, 1, 2]
         for index, start, end in composed.spans:
             assert composed.text[start:end] == _post().parts[index].text
         # The labels are Factify's words, not the post's: they sit outside every span.
         assert composed.spans[0][1] == len("Post by Daily Updates (@daily) on X, 1 Oct 2026:\n")
 
-    def test_a_description_is_shown_but_never_in_the_document(self) -> None:
-        """Design law: a model's account of what it saw is context, not a claim source."""
+    def test_a_description_is_checked_under_its_label(self) -> None:
+        """Since 2026-10-02 what a picture shows is checked: the claim a picture makes
+        is often only in what it shows. It stays Factify's words, never the input's."""
         reading = _post()
 
-        assert not reading.parts[2].checked
-        assert "press release" not in reading.document().text
-        assert {PartKind.PICTURE_DESCRIPTION, PartKind.VIDEO_DESCRIPTION} == CONTEXT_ONLY
-        assert all(_part(kind, "x").checked is (kind not in CONTEXT_ONLY) for kind in PartKind)
+        assert reading.parts[2].checked and reading.parts[2].described
+        assert not reading.parts[0].described
+        assert DESCRIBED in reading.document().text
+        assert frozenset() == CONTEXT_ONLY
+        assert {PartKind.PICTURE_DESCRIPTION, PartKind.VIDEO_DESCRIPTION} == DESCRIPTIONS
+        assert all(_part(kind, "x").checked for kind in PartKind)
+
+    def test_without_descriptions_the_input_s_own_words_are_left(self) -> None:
+        """A wordless photograph is asked its own questions, not checked on Factify's
+        account of it (`verify._to_check`)."""
+        composed = _post().document(descriptions=False)
+
+        assert DESCRIBED not in composed.text
+        assert [index for index, _, _ in composed.spans] == [0, 1]
+        assert composed.span_of(2) is None
 
     def test_a_pasted_message_composes_to_exactly_what_was_sent(self) -> None:
         """1.3 anchors are into the text as sent, line breaks and spaces included."""
@@ -97,8 +120,10 @@ class TestTheDocument:
         """A picture read in full with no words in it is read, and adds nothing."""
         composed = _post(picture="  ").document()
 
-        assert composed.text == f"Post by Daily Updates (@daily) on X, 1 Oct 2026:\n{POST}"
-        assert [index for index, _, _ in composed.spans] == [0]
+        assert composed.text == (
+            f"Post by Daily Updates (@daily) on X, 1 Oct 2026:\n{POST}\n\nShows:\n{DESCRIBED}"
+        )
+        assert [index for index, _, _ in composed.spans] == [0, 2]
 
     def test_a_label_ending_in_a_colon_is_not_given_a_second(self) -> None:
         reading = Reading(kind="video", parts=(_part(PartKind.TRANSCRIPT, "hello", "Said:"),))
@@ -123,7 +148,8 @@ class TestTheDocument:
 
         start, end = composed.span_of(1) or (0, 0)
         assert composed.text[start:end] == PICTURE
-        assert composed.span_of(2) is None  # the description
+        assert composed.span_of(3) is None  # there is no fourth part
+        assert _post(picture="").document().span_of(1) is None  # nothing in it
 
     def test_an_empty_reading_composes_to_nothing(self) -> None:
         assert Reading(kind="link").document() == Composed(text="", spans=())
@@ -163,8 +189,9 @@ class TestTheReading:
             ((_part(PartKind.MESSAGE, "Banks shut"),), False),
             # A picture read with no words in it can still be checked for its history.
             ((_part(PartKind.PICTURE_TEXT, ""),), True),
-            # A description alone is not something to check, however long.
-            ((_part(PartKind.VIDEO_DESCRIPTION, "A crowd gathers in a city square."),), False),
+            # What a silent video shows is checked, so it is enough to check.
+            ((_part(PartKind.VIDEO_DESCRIPTION, "A crowd gathers in a city square."),), True),
+            ((_part(PartKind.PICTURE_DESCRIPTION, "A leopard"),), False),
             ((_part(PartKind.TITLE, "Big news"), _part(PartKind.DESCRIPTION, "Read more")), False),
             ((), False),
         ],
@@ -215,6 +242,105 @@ class TestThePolicy:
         assert set(WITHHELD_SUMMARY) == {"en", "hi"}
         assert WITHHELD_SUMMARY["en"].startswith("Factify could not read all of this")
         assert all(sentence.strip() for sentence in WITHHELD_SUMMARY.values())
+        assert set(NOTHING_TO_CHECK_SUMMARY) == {"en", "hi"}
+        assert "nothing to fact-check" in NOTHING_TO_CHECK_SUMMARY["en"]
+        assert set(NOTHING_TO_CHECK_IN_PART_SUMMARY) == {"en", "hi"}
+        assert "nothing to fact-check" in NOTHING_TO_CHECK_IN_PART_SUMMARY["en"]
+
+    def test_the_withheld_summary_offers_nothing_that_gives_the_same_answer(self) -> None:
+        """Asking to check what was read (`accept_partial`) cannot change an answer
+        withheld for having no claim in it while blocking gaps are checked past."""
+        assert rd.WITHHOLD_WHEN_BLOCKED is False
+        assert "only what it could read" not in WITHHELD_SUMMARY["en"]
+        assert "जितना वह पढ़ पाया" not in WITHHELD_SUMMARY["hi"]
+
+
+class TestThePolicyAsServed:
+    """The owner's demo decision (2026-10-02): held back only when nothing that could be
+    checked was read; otherwise checked on what was read, and never TRUE."""
+
+    BLOCKING_GAP = TestThePolicy.BLOCKING_GAP
+    NOTE = TestThePolicy.NOTE
+
+    @pytest.mark.parametrize("accept_partial", [False, True])
+    @pytest.mark.parametrize(
+        ("gaps", "expected"),
+        [
+            ((), ReadingPolicy.CHECK),
+            ((NOTE,), ReadingPolicy.CHECK),
+            # A post whose video could not be read is checked on its words.
+            ((BLOCKING_GAP,), ReadingPolicy.CHECK_PARTIALLY),
+            ((NOTE, BLOCKING_GAP), ReadingPolicy.CHECK_PARTIALLY),
+        ],
+    )
+    def test_a_blocking_gap_is_checked_past_whether_or_not_it_was_asked(
+        self, gaps: tuple[Gap, ...], expected: ReadingPolicy, accept_partial: bool
+    ) -> None:
+        assert rd.WITHHOLD_WHEN_BLOCKED is False
+        assert served_policy(_post(*gaps), accept_partial=accept_partial) is expected
+
+    def test_a_picture_only_post_whose_picture_failed_is_held_back(self) -> None:
+        reading = Reading(
+            kind="social_post",
+            parts=(_part(PartKind.POST_TEXT, "😱😱"),),
+            gaps=(gap("picture_text", GapCode.PICTURE_UNREAD, "The picture failed."),),
+        )
+
+        assert served_policy(reading, accept_partial=True) is ReadingPolicy.WITHHOLD
+
+    def test_with_no_claims_only_a_gap_that_could_decide_it_holds_the_answer_back(
+        self,
+    ) -> None:
+        """A YouTube video nobody may download is said not to have been watched, and
+        is never held back for that alone (2026-10-02 review)."""
+        unwatched = gap("video", GapCode.VIDEO_UNREAD, "Not watched.", blocking=False)
+        youtube = Reading(
+            kind="social_post",
+            parts=(
+                _part(PartKind.TITLE, "#shorts #leopard", label="Title"),
+                _part(
+                    PartKind.PICTURE_DESCRIPTION,
+                    "A leopard is attacking a man on a village street.",
+                    label=rd.THUMBNAIL_DESCRIBED,
+                ),
+            ),
+            gaps=(unwatched,),
+        )
+        assert withheld_without_claims(youtube) is False
+        assert withheld_without_claims(_post()) is False
+        assert withheld_without_claims(_post(self.BLOCKING_GAP)) is True
+        # Nothing checkable read at all: held back, whatever the gaps.
+        assert withheld_without_claims(Reading(kind="social_post", gaps=(unwatched,))) is True
+
+    def test_package_0_s_withholding_is_one_switch_away(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(rd, "WITHHOLD_WHEN_BLOCKED", True)
+
+        assert served_policy(_post(self.BLOCKING_GAP), accept_partial=False) is (
+            ReadingPolicy.WITHHOLD
+        )
+        assert served_policy(_post(self.BLOCKING_GAP), accept_partial=True) is (
+            ReadingPolicy.CHECK_PARTIALLY
+        )
+
+
+class TestTheDescriptionLabels:
+    @pytest.mark.parametrize(
+        ("index", "total", "label"),
+        [
+            (1, 1, "What the picture shows (described by Factify)"),
+            (2, 3, "What picture 2 of 3 shows (described by Factify)"),
+        ],
+    )
+    def test_a_picture_s_description_says_it_is_factify_s(
+        self, index: int, total: int, label: str
+    ) -> None:
+        assert picture_description_label(index, total) == label
+
+    def test_the_thumbnail_labels_say_it_is_the_video_s_thumbnail(self) -> None:
+        assert rd.THUMBNAIL_TEXT == "Text in the video's thumbnail"
+        assert rd.THUMBNAIL_DESCRIBED.endswith("(described by Factify)")
 
 
 # --------------------------------------------------------------------------- the gaps
