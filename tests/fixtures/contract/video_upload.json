@@ -6,7 +6,7 @@
   "summary": "இந்த வீடியோ 2015 சென்னை வெள்ளத்தின் போது வெளியானது; இன்று எடுத்தது அல்ல.",
   "action": "SHARE_WITH_CONTEXT",
   "action_reason": "The media is genuine but its framing is misleading. Share only with context.",
-  "rule_version": "2026.10.02.1",
+  "rule_version": "2026.10.03.1",
   "claims": [
     {
       "id": "cl_1",
@@ -17,7 +17,7 @@
       "importance": "HEADLINE",
       "reason": "The media is genuine but predates or otherwise conflicts with the asserted date or place.",
       "rule_id": "rule.dated_media_conflict",
-      "rule_version": "2026.10.02.1",
+      "rule_version": "2026.10.03.1",
       "strength": {
         "score": 0.74,
         "band": "strong",

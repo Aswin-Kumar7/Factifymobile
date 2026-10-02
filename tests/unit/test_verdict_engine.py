@@ -634,17 +634,46 @@ class TestSilenceIsReportedWhenItMeansSomething:
     a different disaster.
     """
 
-    def test_a_high_coverage_claim_with_no_support_says_so(self) -> None:
-        decision = decide(
+    def test_a_high_coverage_claim_nothing_reports_says_so(self) -> None:
+        from app.verdict.engine import _silence_clause
+
+        assert "no source found reports it" in _silence_clause(
+            claim(coverage_expectation=CoverageExpectation.HIGH), []
+        )
+
+    def test_a_source_that_disagrees_has_reported_the_event(self) -> None:
+        """Three outlets contradicted a flydubai post's passenger count by reporting
+        the flight with another figure, and the reason still said no source reports
+        it (2026-10-02)."""
+        for direction in (Direction.CONTRADICTS, Direction.CONTEXTUALIZES):
+            decision = decide(
+                claim(coverage_expectation=CoverageExpectation.HIGH),
+                [evidence(direction=direction, tier=Tier.D, kind=EvidenceKind.CORROBORATION)],
+            )
+
+            assert "no source found reports it" not in decision.reason, direction
+
+        contradicted = decide(
             claim(coverage_expectation=CoverageExpectation.HIGH),
             [
                 evidence(
-                    direction=Direction.CONTRADICTS, tier=Tier.D, kind=EvidenceKind.CORROBORATION
+                    direction=Direction.CONTRADICTS,
+                    tier=Tier.D,
+                    kind=EvidenceKind.CORROBORATION,
+                    citation_url=f"https://{host}/flydubai",
                 )
+                for host in ("timesofindia.com", "indiatoday.in", "ynetnews.com")
             ],
         )
+        assert contradicted.status is ClaimStatus.CONTRADICTED
+        assert "no source found reports it" not in contradicted.reason
 
-        assert "no source found reports it" in decision.reason
+    def test_an_opinion_is_never_called_unreported(self) -> None:
+        from app.verdict.engine import _silence_clause
+
+        opinion = claim(coverage_expectation=CoverageExpectation.HIGH, claim_type=ClaimType.OPINION)
+
+        assert _silence_clause(opinion, []) == ""
 
     def test_a_local_claim_stays_silent_about_silence(self) -> None:
         """A district event missing from national sources means nothing at all."""
@@ -786,20 +815,53 @@ class TestAMinorDetailDoesNotSinkTheCase:
 
         assert outcome.action is Action.SEND_TO_REVIEW
 
-    def test_a_severe_unverified_claim_still_abstains(self) -> None:
-        """Severity counts wherever the claim sits in the piece."""
+    def test_an_unconfirmed_critical_detail_does_not_outvote_the_headline(self) -> None:
+        """NDTV on death sentences for the 2013 Jhiram Ghati attack: the headline was
+        carried by three outlets, four background details were rated CRITICAL by the
+        extractor, and the case came back Unconfirmed because they were not separately
+        reported (2026-10-02). Severity says what a claim is about, not what the piece
+        rests on."""
+        for importance in (Importance.SUPPORTING_DETAIL, Importance.BACKGROUND):
+            severe = claim(claim_id="cl_2", importance=importance, severity=Severity.CRITICAL)
+
+            outcome = roll_up(
+                [
+                    (claim(independent_origin_count=2, document_count=2), self._supported()),
+                    (severe, self._unverified()),
+                ]
+            )
+
+            assert outcome.action is Action.SAFE_TO_SHARE, importance
+            assert "could not be checked" in outcome.reason
+
+    def test_a_contradicted_critical_detail_still_sinks_the_case(self) -> None:
         severe = claim(
-            claim_id="cl_2", importance=Importance.BACKGROUND, severity=Severity.CRITICAL
+            claim_id="cl_2", importance=Importance.SUPPORTING_DETAIL, severity=Severity.CRITICAL
         )
-
-        outcome = roll_up(
+        contradicted = decide(
+            severe,
             [
-                (claim(independent_origin_count=2, document_count=2), self._supported()),
-                (severe, self._unverified()),
-            ]
+                evidence(
+                    direction=Direction.CONTRADICTS,
+                    tier=Tier.C,
+                    kind=EvidenceKind.FACT_CHECK,
+                    citation_url="https://www.boomlive.in/fact-check/x",
+                )
+            ],
         )
 
-        assert outcome.action is Action.SEND_TO_REVIEW
+        headline = claim(independent_origin_count=2, document_count=2)
+        supported = decide(
+            headline,
+            [
+                evidence(direction=Direction.SUPPORTS, tier=Tier.D, citation_url="https://a.com/1"),
+                evidence(direction=Direction.SUPPORTS, tier=Tier.D, citation_url="https://b.com/2"),
+            ],
+        )
+
+        outcome = roll_up([(headline, supported), (severe, contradicted)])
+
+        assert outcome.action is not Action.SAFE_TO_SHARE
 
     def test_silence_about_everything_is_not_a_clearance(self) -> None:
         """At least one claim has to be positively supported."""

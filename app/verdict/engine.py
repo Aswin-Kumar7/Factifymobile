@@ -34,7 +34,7 @@ from app.domain.publishers import publishers_of
 
 # Stamped on every verdict. A cached verdict produced under older rules is therefore
 # identifiable, and the cache can refuse to serve it (M13).
-RULE_VERSION = "2026.10.02.1"
+RULE_VERSION = "2026.10.03.1"
 
 # Default number of genuinely independent origins required before corroboration can
 # support a claim. Tenant-configurable later; never below two, because one origin is
@@ -129,7 +129,7 @@ def _publishers(evidence: list[Evidence]) -> set[str]:
     return publishers_of([item.citation_url for item in evidence])
 
 
-def _silence_clause(claim: Claim, supporting: list[Evidence]) -> str:
+def _silence_clause(claim: Claim, evidence: list[Evidence]) -> str:
     """What it means that nothing supports a claim this big.
 
     `coverage_expectation` has been captured at extraction, written to the ledger and
@@ -145,11 +145,21 @@ def _silence_clause(claim: Claim, supporting: list[Evidence]) -> str:
     searched are ones that would have carried it, and that is the provenance work this
     system has not built yet.
 
-    So: a sentence, not a verdict.
+    So: a sentence, not a verdict - and only when nothing found reports the event at
+    all. It was added beside three outlets that contradicted a claim by reporting the
+    event with other figures, and beside six reports of the Jhiram Ghati ambush the
+    check had set aside for detail (2026-10-02): a source that disagrees, or shows a
+    smaller version, has reported it.
     """
-    if supporting or claim.coverage_expectation is not CoverageExpectation.HIGH:
+    if claim.coverage_expectation is not CoverageExpectation.HIGH or not claim.is_checkable:
+        return ""
+    if any(item.direction in _REPORTS for item in evidence):
         return ""
     return " An event like this would be widely reported, and no source found reports it."
+
+
+# What a source does when it reports on a claim, whichever way it reads.
+_REPORTS = frozenset({Direction.SUPPORTS, Direction.CONTRADICTS, Direction.CONTEXTUALIZES})
 
 
 def decide(
@@ -414,7 +424,7 @@ def _decide_rules(
             rule_id="rule.independent_contradiction",
             reason=(
                 f"{len(against_origins)} independent sources contradict this claim: "
-                f"{', '.join(sorted(against_origins))}.{_silence_clause(claim, supporting)}"
+                f"{', '.join(sorted(against_origins))}."
             ),
             supporting_evidence_ids=tuple(e.id for e in contradicting),
         )
@@ -520,6 +530,14 @@ def _decide_rules(
     # Held to the bar a contradiction meets (rules 3b and 3c): two independent
     # publishers, or one highly credible one. Checked after rule 4, so a claim that
     # two independent origins establish in full is still SUPPORTED.
+    #
+    # And never over a highly credible source that establishes the claim in full,
+    # unless one as credible shows the smaller version. Reuters reported the Delhi
+    # chief minister's account of the Satya Niketan collapse as the claim put it; The
+    # Hill and Hindustan Times worded it more cautiously, and two ordinary publishers
+    # outvoted the wire into "partly true" for a BBC report that was right
+    # (2026-10-02). Sources that disagree about how much is established leave the
+    # claim undecided, not misleading.
     narrower = [
         e
         for e in evidence
@@ -528,10 +546,11 @@ def _decide_rules(
         and e.is_decisive_capable
     ]
     narrower_origins = _publishers(narrower)
-    if narrower and (
-        len(narrower_origins) >= min_origins
-        or any(e.credibility is Credibility.HIGH for e in narrower)
-    ):
+    narrower_credible = any(e.credibility is Credibility.HIGH for e in narrower)
+    outweighed = not narrower_credible and any(
+        e.credibility is Credibility.HIGH for e in supporting
+    )
+    if narrower and not outweighed and (len(narrower_origins) >= min_origins or narrower_credible):
         return Decision(
             status=ClaimStatus.MISLEADING_CONTEXT,
             rule_id=NARROWER_RULE,
@@ -568,8 +587,7 @@ def _decide_rules(
     return Decision(
         status=ClaimStatus.UNVERIFIED,
         rule_id="rule.no_qualifying_evidence",
-        reason="No evidence strong enough to decide this claim."
-        + _silence_clause(claim, supporting),
+        reason="No evidence strong enough to decide this claim." + _silence_clause(claim, evidence),
     )
 
 
@@ -690,15 +708,30 @@ def case_confidence(verdict: Verdict, claims: list[tuple[ClaimStatus, int | None
 
 
 def blocks_clearance(claim: Claim) -> bool:
-    """Whether this claim, left unconfirmed, keeps the case from being called true.
+    """Whether this claim, left unconfirmed, keeps the case from being called true:
+    the headline or the main thesis.
+
+    Severity no longer counts. The extractor rates severity by what a claim is about,
+    not by what the piece rests on: an NDTV report of death sentences for the 2013
+    Jhiram Ghati attack had four of its five claims rated CRITICAL - the ambush route,
+    the toll, the NIA's conspiracy finding - and its headline, carried by three
+    outlets, came back Unconfirmed because those background details were not
+    separately reported (2026-10-02). A detail that is contradicted still sinks the
+    case (`_roll_up_action`); one nobody reported is shown as unchecked.
+    """
+    return claim.importance in {Importance.HEADLINE, Importance.MAIN_THESIS}
+
+
+def is_central(claim: Claim) -> bool:
+    """Whether a claim can decide the case: the headline, the main thesis, or anything
+    rated critical. Contradicted, it sinks the case; confirmed, it keeps a piece with
+    one wrong claim partly true rather than false (`_roll_up_action`). Only left
+    unconfirmed does severity stop counting (`blocks_clearance`).
 
     Public because the pipeline ranks claims for searching by it: a claim that can
-    hold the verdict back must never be the one left unsearched.
+    decide the verdict must never be the one left unsearched.
     """
-    return (
-        claim.importance in {Importance.HEADLINE, Importance.MAIN_THESIS}
-        or claim.severity is Severity.CRITICAL
-    )
+    return blocks_clearance(claim) or claim.severity is Severity.CRITICAL
 
 
 def _roll_up_action(
@@ -731,14 +764,12 @@ def _roll_up_action(
     right_central = [
         c
         for c, d in decisions
-        if blocks_clearance(c) and (d.status is ClaimStatus.SUPPORTED or d.rule_id == NARROWER_RULE)
+        if is_central(c) and (d.status is ClaimStatus.SUPPORTED or d.rule_id == NARROWER_RULE)
     ]
     anything_right = any(d.status is ClaimStatus.SUPPORTED for _, d in decisions) or bool(partly)
 
     for claim, _ in contradicted:
-        if claim.importance in {Importance.HEADLINE, Importance.MAIN_THESIS} or (
-            claim.severity is Severity.CRITICAL
-        ):
+        if is_central(claim):
             # Some of it right, some of it wrong: said as that, with each claim shown
             # as what it is, rather than the whole piece called false for one part.
             # Only when a claim that carries the piece is confirmed - a true aside
@@ -857,10 +888,13 @@ def _roll_up_action(
     # sentence — a dharna "a month earlier" — found no coverage. The article's own
     # claims were true; one aside nobody had written about outvoted all of them.
     #
-    # So a clearance needs the headline and the main claims supported, and anything
-    # CRITICAL — a health danger, a safety instruction. A HIGH-severity detail that is
-    # *contradicted* still sinks the case above; one that is merely unconfirmed is
-    # reported as unchecked, not treated as a strike against what was confirmed.
+    # So a clearance needs the headline and the main thesis supported. CRITICAL used
+    # to be required too, and the extractor rates background details CRITICAL by
+    # their subject - an ambush route, a death toll - so a court verdict reported by
+    # three outlets read Unconfirmed for them (2026-10-02, `blocks_clearance`). A
+    # CRITICAL or HIGH detail that is *contradicted* still sinks the case above; one
+    # that is merely unconfirmed is reported as unchecked, not treated as a strike
+    # against what was confirmed.
     supported = [decision for _, decision in decisions if decision.status is ClaimStatus.SUPPORTED]
     unchecked = [claim for claim, _ in unverified if not blocks_clearance(claim)]
 

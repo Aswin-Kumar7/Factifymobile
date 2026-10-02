@@ -41,13 +41,14 @@ from app.domain.enums import (
     ClaimStatus,
     ClaimType,
     CoverageExpectation,
+    Credibility,
     Direction,
     EvidenceKind,
     Importance,
     SourceRisk,
     Verdict,
 )
-from app.domain.evidence import Advisory, Evidence
+from app.domain.evidence import Advisory, Evidence, is_narrower_scope
 from app.domain.publishers import registrable_domain
 from app.governor.governor import ProviderUnavailable
 from app.intake.normalizer import NormalisedIntake
@@ -75,6 +76,7 @@ from app.verdict.engine import (
     blocks_clearance,
     decide,
     fabricated_news,
+    is_central,
     roll_up,
     verdict_for,
 )
@@ -345,17 +347,67 @@ def _unreported_note(
     publisher we trust ([reported]): then the claim IS reported, by them. ISRO's own
     Chandrayaan-3 page had its launch-orbit detail called "likely false" because no
     other outlet repeated the numbers (2026-09-28).
+
+    Nor when anything found reports on the claim at all, whichever way: a source that
+    contradicts it, or shows a smaller version, has reported the event. "Found nothing
+    reporting this" stood beside The Quint's debunk of the same forward (2026-10-02).
+    And never for an opinion or a forecast, which nothing is expected to report: an
+    unchecked "America deserved 9-Eleven" was called likely false.
     """
-    if reported or not blocks_clearance(claim):
+    if reported or not blocks_clearance(claim) or not claim.is_checkable:
         return None
     if claim.coverage_expectation is not CoverageExpectation.HIGH:
         return None
-    if any(item.direction is Direction.SUPPORTS for item in evidence):
+    if any(_reports_on(item) for item in evidence):
         return None
     language = claim.language or "en"
     return _UNREPORTED.get(language) or WORDING.get(language, {}).get(
         "pipeline.unreported", _UNREPORTED["en"]
     )
+
+
+def _reports_on(item: Evidence) -> bool:
+    return item.direction in (Direction.SUPPORTS, Direction.CONTRADICTS) or (
+        item.direction is Direction.CONTEXTUALIZES and is_narrower_scope(item.match_basis.metric)
+    )
+
+
+# Every wording of the note, to recognise it on a finished claim.
+_UNREPORTED_TEXTS = frozenset(_UNREPORTED.values()) | frozenset(
+    text for words in WORDING.values() if (text := words.get("pipeline.unreported"))
+)
+
+
+def _story_reported(outcomes: list[ClaimOutcome]) -> bool:
+    """Whether reliable sources report what the piece is about: one of its claims, other
+    than background, confirmed, or supported by a highly credible publisher."""
+    return any(
+        outcome.claim.importance is not Importance.BACKGROUND
+        and (
+            outcome.decision.status is ClaimStatus.SUPPORTED
+            or any(
+                item.direction is Direction.SUPPORTS and item.credibility is Credibility.HIGH
+                for item in outcome.evidence
+            )
+        )
+        for outcome in outcomes
+    )
+
+
+def _without_unreported_notes(outcomes: list[ClaimOutcome]) -> None:
+    """Drop "nothing reports this" from every claim of a piece whose story is reported.
+
+    A PIB release supported the GST figures of a true post, and the post's headline
+    figure - which the same release carries - read "found nothing reporting this ...
+    treat it as likely false" as the whole answer (2026-10-02). Said of one claim, the
+    sentence reads as a verdict on the piece; when reliable sources report the piece,
+    it is not true of it.
+    """
+    if not _story_reported(outcomes):
+        return
+    for outcome in outcomes:
+        if outcome.explanation in _UNREPORTED_TEXTS:
+            outcome.explanation = None
 
 
 def _not_own(evidence: list[Evidence], own_pages: frozenset[str]) -> list[Evidence]:
@@ -607,6 +659,7 @@ class Orchestrator:
                 end_check = getattr(resolver, "end_check", None)
                 if end_check is not None:
                     end_check(str(case_id))
+        _without_unreported_notes(outcomes)
 
         case_decision = roll_up(
             [(outcome.claim, outcome.decision) for outcome in outcomes],
@@ -766,8 +819,8 @@ class Orchestrator:
         """Resolve every claim, bounded by the concurrency ceiling.
 
         Every claim is searched and read. They start in order of importance - first
-        each claim that can hold the verdict back (`blocks_clearance`: the headline,
-        the main thesis, anything of critical severity), then the rest - so when
+        each claim that can decide the verdict (`is_central`: the headline, the
+        main thesis, anything of critical severity), then the rest - so when
         slots are scarce the claims that decide the answer are not the ones waiting.
         The ranking is stable, so equally ranked claims keep the extractor's order.
         """
@@ -778,7 +831,7 @@ class Orchestrator:
         ranked = sorted(
             range(len(claims)),
             key=lambda index: (
-                not blocks_clearance(claims[index]),
+                not is_central(claims[index]),
                 _IMPORTANCE_ORDER.get(claims[index].importance, unranked),
             ),
         )
@@ -983,7 +1036,7 @@ class Orchestrator:
         # left undecided: the model writes up to two queries from what the pages said,
         # and a few more pages are read (`current_follow_up`). Only for such claims, so
         # the extra searches go where they can change the answer.
-        if fallback and searched and blocks_clearance(claim):
+        if fallback and searched and is_central(claim):
             counted = await self._count_origins(claim, evidence=evidence, skipped=[])
             if not decide(counted, evidence).status.is_decisive:
                 more = await self._follow_up(
