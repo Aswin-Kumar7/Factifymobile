@@ -3,6 +3,10 @@
 // A check, in three steps on one page: what to check (the box alone), the check
 // running (what was sent, small, and how far it has got), then the answer with a
 // single "check again" box. Opened from History (?case=…) it is the answer alone.
+//
+// An answer held back because part of the input could not be read (1.8) offers to
+// send the rest - back to the box, on the right tab - or to check what was read: the
+// same input again with `accept_partial`.
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -15,7 +19,23 @@ import { api, ApiFailure, getAccount } from "@/lib/api";
 import { n } from "@/lib/format";
 import { addHistory, FAILED, PENDING, removeHistory, updateHistory } from "@/lib/history";
 
-type Accepted = { case_id: string; status?: string; claims_done?: number; claims_total?: number; elapsed_seconds?: number };
+// `phase` (1.8): what a background check is doing now - reading_post,
+// reading_pictures, reading_video, finding_claims or checking.
+type Accepted = { case_id: string; status?: string; claims_done?: number; claims_total?: number; elapsed_seconds?: number; phase?: string | null };
+
+// What to send instead of what is in the box: the input of an answer opened from
+// History, which only its reading still holds.
+type Again = { url?: string; text?: string; acceptPartial?: boolean };
+
+/** The input of an answer, sent again from what was read: a link or a post by its
+ * address, a message by its text. A file cannot be: it is not kept. */
+function inputOf(v: Verdict): Again | null {
+  const read = v.input_read;
+  if (!read) return null;
+  if ((read.kind === "link" || read.kind === "social_post") && read.url) return { url: read.url };
+  const message = read.parts?.length === 1 && read.parts[0].kind === "message" ? read.parts[0].text : "";
+  return read.kind === "text" && message.trim() ? { text: message } : null;
+}
 
 const URL_ONLY = /^https?:\/\/\S+$/i;
 
@@ -73,6 +93,14 @@ function Sent({ shown, onCancel }: { shown: Shown | null; onCancel?: () => void 
   );
 }
 
+// What the first step says while a post, its pictures or its video is being read: a
+// video takes minutes, and saying so is better than a step that seems stuck.
+const READING = new Map([
+  ["reading_post", "Reading the post"],
+  ["reading_pictures", "Reading the pictures"],
+  ["reading_video", "Watching and listening to the video"],
+]);
+
 /** How far a running check has got, from what the server reports. */
 function Progress({ progress, started }: { progress: Accepted | null; started: number }) {
   const [now, setNow] = useState(Date.now());
@@ -82,12 +110,21 @@ function Progress({ progress, started }: { progress: Accepted | null; started: n
   }, []);
   const total = progress?.claims_total ?? 0;
   const done = progress?.claims_done ?? 0;
+  // A 1.8 server says what it is doing (`phase`); an older one only that it has the
+  // input, and how many claims it has checked. A phase this page does not know is
+  // left to the counts.
+  const phase = progress?.phase ?? "";
+  const reading = READING.get(phase);
+  const stage = reading ? 0 : phase === "finding_claims" ? 1 : phase === "checking" ? 2 : null;
   const steps = [
-    { label: "Read what you sent", state: progress ? "done" : "now" },
-    { label: total ? `Found ${n(total)} ${total === 1 ? "claim" : "claims"}` : "Finding the claims in it", state: total ? "done" : progress ? "now" : "wait" },
+    { label: reading ?? "Read what you sent", state: stage === 0 || !progress ? "now" : "done" },
+    {
+      label: total ? `Found ${n(total)} ${total === 1 ? "claim" : "claims"}` : "Finding the claims in it",
+      state: total || (stage ?? 0) >= 2 ? "done" : stage === 0 || !progress ? "wait" : "now",
+    },
     {
       label: total ? `Checking each claim against trusted sources · ${n(done)} of ${n(total)}` : "Checking each claim against trusted sources",
-      state: total && done >= total ? "done" : total ? "now" : "wait",
+      state: total && done >= total ? "done" : total || stage === 2 ? "now" : "wait",
     },
     { label: "Deciding", state: total && done >= total ? "now" : "wait" },
   ];
@@ -118,7 +155,9 @@ function Progress({ progress, started }: { progress: Accepted | null; started: n
           </li>
         ))}
       </ol>
-      <p className="mt-4 text-xs text-ink3">Usually 20–60 seconds; a video takes a few minutes. You can leave this page: it&apos;ll be in History.</p>
+      <p className="mt-4 text-xs text-ink3">
+        Usually 20–60 seconds; a video, or a post with one, takes a few minutes. You can leave this page: it&apos;ll be in History.
+      </p>
     </section>
   );
 }
@@ -141,16 +180,21 @@ function CheckPage() {
   const stop = useRef(false);
   // The check running now, by the id the server accepted it under: what Stop stops.
   const running = useRef<string | null>(null);
+  // Set by "Paste the text": the box takes the focus once it is back on screen.
+  const box = useRef<HTMLTextAreaElement>(null);
+  const [focusBox, setFocusBox] = useState(false);
 
-  const follow = useCallback(async (caseId: string) => {
-    stop.current = false;
-    for (let i = 0; i < 400 && !stop.current; i++) {
+  // `stopped` says when to give up following: Stop and New check, and for a case
+  // opened from History also leaving it - which must not stop a check started from
+  // that case's answer ("Check what was read"), so it is not the shared `stop`.
+  const follow = useCallback(async (caseId: string, stopped: () => boolean) => {
+    for (let i = 0; i < 400 && !stopped(); i++) {
       const answer = await api<Verdict | Accepted>(`/v1/cases/${caseId}`);
       if ((answer as Verdict).verdict) return answer as Verdict;
       setProgress(answer as Accepted);
       await new Promise((r) => setTimeout(r, 2000));
     }
-    if (stop.current) throw new Error("stopped");
+    if (stopped()) throw new Error("stopped");
     throw new Error("This check is taking unusually long. Look for it in History later.");
   }, []);
 
@@ -176,13 +220,15 @@ function CheckPage() {
   // Opened from History: follow that case, nothing else.
   useEffect(() => {
     if (!opened) return;
+    let left = false;
     const k = SHOWN_KINDS.find((kind) => kind === params.get("kind"));
     setShown(k ? { kind: k, submitted: null, preview: null } : null);
     setResult(null);
     setError(null);
     setBusy(true);
     setStarted(Date.now());
-    follow(opened)
+    stop.current = false;
+    follow(opened, () => left || stop.current)
       .then((answer) => {
         setResult(answer);
         // One left running in History: its verdict, now that it has one.
@@ -194,11 +240,22 @@ function CheckPage() {
         if (e instanceof ApiFailure) updateHistory(opened, { verdict: FAILED });
         setError(e.message);
       })
-      .finally(() => setBusy(false));
+      .finally(() => {
+        // Left for another check by then: its own run says when it is busy.
+        if (!left) setBusy(false);
+      });
     return () => {
-      stop.current = true;
+      left = true;
     };
   }, [opened, params, follow]);
+
+  // The box is on screen only once nothing is running, shown or opened.
+  useEffect(() => {
+    if (focusBox && box.current) {
+      box.current.focus();
+      setFocusBox(false);
+    }
+  }, [focusBox, tab, busy, result, opened]);
 
   /** Stop the check on the server, so it is never charged; then it leaves History. */
   async function cancel(caseId: string) {
@@ -219,22 +276,51 @@ function CheckPage() {
     reset();
   }
 
-  async function run(e?: React.FormEvent) {
+  /** Back to the empty box, on the tab for what to send instead of what was held back. */
+  function sendInstead(what: "text" | "file") {
+    reset();
+    setText("");
+    setFile(null);
+    setTab(what);
+    if (what === "text") setFocusBox(true);
+    if (opened) router.replace("/app/check");
+  }
+
+  /** Check what could be read of an answer held back: the same input again, accepting
+   * that part of it could not be read. Opened from History, the input is the one its
+   * reading names (`inputOf`); the page then leaves the case for the new check. */
+  function checkWhatWasRead() {
+    if (!opened) return void run(undefined, { acceptPartial: true });
+    const again = result ? inputOf(result) : null;
+    if (!again) return;
+    router.replace("/app/check");
+    void run(undefined, { ...again, acceptPartial: true });
+  }
+
+  async function run(e?: React.FormEvent, again: Again = {}) {
     e?.preventDefault();
     setError(null);
     setResult(null);
     setProgress(null);
-    const input = text.trim();
-    const kind = tab === "file" ? "file" : URL_ONLY.test(input) ? "link" : "text";
-    if (tab === "file" && !file) return setError("Choose a picture, PDF or video first.");
-    if (tab === "file" && file && file.size > MAX_UPLOAD) return setError("That file is over 25 MB. Choose a smaller one.");
-    if (tab === "text" && !input) return setError("Paste a message, a claim or a link first.");
+    // A link or a message given here is sent in place of what is in the box.
+    const given = again.url ?? again.text;
+    const useFile = given == null && tab === "file";
+    const input = (given ?? text).trim();
+    const kind = useFile ? "file" : again.url || (again.text == null && URL_ONLY.test(input)) ? "link" : "text";
+    if (useFile && !file) return setError("Choose a picture, PDF or video first.");
+    if (useFile && file && file.size > MAX_UPLOAD) return setError("That file is over 25 MB. Choose a smaller one.");
+    if (!useFile && !input) return setError("Paste a message, a claim or a link first.");
     if (shown?.preview) URL.revokeObjectURL(shown.preview);
     setShown(
-      tab === "file" && file
+      useFile && file
         ? { kind: fileKind(file), submitted: null, preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : null, name: file.name }
         : { kind: kind === "link" ? "link" : "text", submitted: input, preview: null },
     );
+    if (given != null) {
+      // Into the box, so "Check again" sends it as it would any other check.
+      setTab("text");
+      setText(input);
+    }
     setBusy(true);
     setStarted(Date.now());
     stop.current = false;
@@ -243,16 +329,21 @@ function CheckPage() {
     const historyKind = kind === "file" && file ? fileKind(file) : kind;
     try {
       let accepted: Accepted;
-      if (tab === "file" && file) {
+      if (useFile && file) {
         const form = new FormData();
         form.append("file", file);
         form.append("consent_to_process_media", "true");
         form.append("background", "true");
+        if (again.acceptPartial) form.append("accept_partial", "true");
         accepted = await api<Accepted>("/v1/verify/file", { method: "POST", body: form });
       } else {
         accepted = await api<Accepted>("/v1/verify", {
           method: "POST",
-          json: { ...(kind === "link" ? { url: input } : { text: input }), mode: "background" },
+          json: {
+            ...(kind === "link" ? { url: input } : { text: input }),
+            mode: "background",
+            ...(again.acceptPartial ? { accept_partial: true } : {}),
+          },
         });
       }
       const at = new Date().toISOString();
@@ -272,7 +363,7 @@ function CheckPage() {
           return;
         }
         setProgress(accepted);
-        answer = await follow(accepted.case_id);
+        answer = await follow(accepted.case_id, () => stop.current);
       }
       running.current = null;
       setResult(answer);
@@ -329,7 +420,16 @@ function CheckPage() {
         </Link>
         {error && <Notice tone="error">{error}</Notice>}
         {busy && !result && <Progress progress={progress} started={started} />}
-        {result && <Result result={result} kind={shown?.kind} submitted={shown?.submitted} preview={shown?.preview} />}
+        {result && (
+          <Result
+            result={result}
+            kind={shown?.kind}
+            submitted={shown?.submitted}
+            preview={shown?.preview}
+            onCheckRead={inputOf(result) ? checkWhatWasRead : undefined}
+            onSend={sendInstead}
+          />
+        )}
       </div>
     );
   }
@@ -346,7 +446,14 @@ function CheckPage() {
         )}
         {result && (
           <>
-            <Result result={result} kind={shown?.kind} submitted={shown?.submitted} preview={shown?.preview} />
+            <Result
+              result={result}
+              kind={shown?.kind}
+              submitted={shown?.submitted}
+              preview={shown?.preview}
+              onCheckRead={checkWhatWasRead}
+              onSend={sendInstead}
+            />
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-dashed border-line2 px-4.5 py-4">
               <span className="text-sm text-ink2">Got another forward?</span>
               <span className="flex gap-2">
@@ -407,6 +514,7 @@ function CheckPage() {
 
         {tab === "text" ? (
           <textarea
+            ref={box}
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
