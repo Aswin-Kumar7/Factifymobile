@@ -30,6 +30,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+import 'support/contract.dart';
+
 const _claim = 'Govt to pay Rs 5,000 a month to every woman from 1 July.';
 const _pib = 'https://pib.gov.in/factcheck/1';
 
@@ -256,6 +258,58 @@ void main() {
     expect(find.text('Try again'), findsOneWidget);
     await tester.tap(find.text('Open Factify'));
     expect(host.calls, ['full:$_claim']);
+  });
+
+  group('what was read (contract 1.8)', () {
+    http.Response sample(String name) => http.Response.bytes(
+      contractBytes(name),
+      200,
+      headers: {'content-type': 'application/json; charset=utf-8'},
+    );
+
+    testWidgets('a post read in part says so in one line, and what was read in another', (
+      tester,
+    ) async {
+      final services = await _services(verify: () => sample('instagram_reel_partial'));
+      await _open(tester, services);
+
+      expect(find.text('Unconfirmed'), findsOneWidget);
+      expect(find.text('Part of it could not be read'), findsOneWidget);
+      expect(find.text('Too recent to confirm yet'), findsNothing);
+      expect(find.byKey(const ValueKey('quick-read-partial')), findsOneWidget);
+      expect(find.text('Checked from part of the post'), findsOneWidget);
+      expect(find.text('Read: post · video 14:02'), findsOneWidget);
+    });
+
+    testWidgets('a post read in full says only what was read', (tester) async {
+      final services = await _services(verify: () => sample('x_photo_post'));
+      await _open(tester, services);
+
+      expect(find.text('False'), findsOneWidget);
+      expect(find.byKey(const ValueKey('quick-read-partial')), findsNothing);
+      expect(find.text('Read: post · 2 pictures'), findsOneWidget);
+      expect(find.text('Copy correction'), findsOneWidget);
+    });
+
+    testWidgets('an answer held back names no verdict, copies nothing, and opens the result', (
+      tester,
+    ) async {
+      final services = await _services(verify: () => sample('link_withheld'));
+      final (host, _) = await _open(tester, services);
+
+      expect(find.text('Not checked yet'), findsOneWidget);
+      expect(find.text('Unconfirmed'), findsNothing);
+      expect(
+        find.text('Factify could not read all of this, so it has not given a verdict.'),
+        findsOneWidget,
+      );
+      expect(find.text('Factify could only read part of this page.'), findsOneWidget);
+      expect(find.text('Copy a note'), findsNothing);
+      // The full result has the ways on: check what was read, paste, upload.
+      final kept = services.history.records.single;
+      await tester.tap(find.text('Open full result'));
+      expect(host.calls, ['result:${kept.id}']);
+    });
   });
 
   testWidgets('X, or a tap on the chat, closes the window', (tester) async {

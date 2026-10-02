@@ -35,6 +35,7 @@ import '../widgets/language_menu.dart';
 import '../widgets/source_tile.dart';
 import '../widgets/teaching_line.dart';
 import '../widgets/ui/fx_confidence_ring.dart';
+import '../widgets/what_we_read.dart';
 
 class EvidenceScreen extends StatelessWidget {
   const EvidenceScreen({
@@ -91,20 +92,35 @@ class EvidenceScreen extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               if (verdict.claims.isEmpty)
-                _Plain(text: l10n.unconfirmedBody)
+                _Plain(
+                  text: verdict.withheld
+                      ? l10n.withheldBody
+                      : verdict.unreadNothingFound
+                      ? l10n.unreadNothingFoundBody
+                      : l10n.unconfirmedBody,
+                )
               else
                 for (final (index, claim) in verdict.claims.indexed) ...[
                   if (index > 0) const SizedBox(height: 12),
                   if (identical(claim, focus) || (focus != null && claim.id == focus!.id))
                     _Focused(
-                      child: _ClaimCard(claim: claim, submission: submission, focused: true),
+                      child: _ClaimCard(
+                        claim: claim,
+                        submission: submission,
+                        read: verdict.inputRead,
+                        focused: true,
+                      ),
                     )
                   else
-                    _ClaimCard(claim: claim, submission: submission),
+                    _ClaimCard(claim: claim, submission: submission, read: verdict.inputRead),
                 ],
-              if (verdict.completenessNote != null) ...[
+              // Only when the time ran out, or a check did not run: what could not be
+              // read is under How we checked, gap by gap (1.8).
+              if (verdict.ranOutOfTime || verdict.missedChecks) ...[
                 const SizedBox(height: 12),
-                _Plain(text: l10n.incompleteNote),
+                _Plain(
+                  text: verdict.ranOutOfTime ? l10n.incompleteNote : l10n.incompleteChecksNote,
+                ),
               ],
               const SizedBox(height: 16),
               _HowWeChecked(verdict: verdict),
@@ -131,8 +147,11 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     final confidence = verdict.confidence;
     final decided = verdict.factVerdict.isDecided;
+    // Held back (1.8): no verdict to name, and never "Unconfirmed".
+    final withheld = verdict.withheld;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(color: style.container, borderRadius: BorderRadius.circular(18)),
@@ -145,14 +164,14 @@ class _Header extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  style.headline,
+                  withheld ? l10n.withheldTitle : style.headline,
                   style: theme.textTheme.headlineSmall?.copyWith(color: style.onContainer),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   // The explanation is in the claim cards below; saying it here
                   // too put the same paragraph on screen twice.
-                  style.subhead,
+                  withheld ? l10n.withheldBody : verdictSubhead(verdict, style, l10n),
                   style: theme.textTheme.bodySmall?.copyWith(color: style.onContainer),
                 ),
               ],
@@ -206,10 +225,19 @@ class _FocusedState extends State<_Focused> {
 
 /// One claim: what it says, what the sources made of it, and the sources.
 class _ClaimCard extends StatelessWidget {
-  const _ClaimCard({required this.claim, required this.submission, this.focused = false});
+  const _ClaimCard({
+    required this.claim,
+    required this.submission,
+    this.read,
+    this.focused = false,
+  });
 
   final Claim claim;
   final Submission? submission;
+
+  /// What was read from the input (1.8): the claim is quoted from the part it was
+  /// found in, which a link or a post never had on the phone.
+  final InputRead? read;
 
   /// The claim the person tapped: outlined in the accent colour.
   final bool focused;
@@ -258,7 +286,8 @@ class _ClaimCard extends StatelessWidget {
                   style: theme.textTheme.bodySmall?.copyWith(color: FactifyTokens.of(context).ink3),
                 ),
               ),
-            if (anchor != null) _InputAnchorBlock(anchor: anchor, submission: submission),
+            if (anchor != null)
+              _InputAnchorBlock(anchor: anchor, submission: submission, read: read),
             const SizedBox(height: 10),
             Row(
               children: [
@@ -333,22 +362,55 @@ String _whyUndecided(Claim claim, AppLocalizations l10n) {
 
 /// Where the claim sits in what was submitted: the reader's own words with the
 /// span marked when the message is at hand, or its position otherwise.
+///
+/// From 1.8 the words are those of the part the claim was found in - the post, the
+/// text in its second picture, what is said in its video - as the server read them.
+/// A link's page or a post was never on the phone, and the typed link is not where
+/// the claim was said; `submission.text` serves only a result from before.
 class _InputAnchorBlock extends StatelessWidget {
-  const _InputAnchorBlock({required this.anchor, required this.submission});
+  const _InputAnchorBlock({required this.anchor, required this.submission, this.read});
 
   final InputAnchor anchor;
   final Submission? submission;
+  final InputRead? read;
 
   /// Characters of the message kept either side of the marked span.
   static const int _surrounding = 40;
+
+  /// [offset] in [text], moved off the middle of a surrogate pair: [back] to the
+  /// start of the character it splits, otherwise past its end.
+  static int _edge(String text, int offset, {required bool back}) {
+    if (offset <= 0 || offset >= text.length) return offset.clamp(0, text.length);
+    final unit = text.codeUnitAt(offset);
+    final low = unit >= 0xDC00 && unit <= 0xDFFF;
+    final high = text.codeUnitAt(offset - 1);
+    if (!low || high < 0xD800 || high > 0xDBFF) return offset;
+    return back ? offset - 1 : offset + 1;
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
-    final text = submission?.text;
-    final start = anchor.charStart;
-    final end = anchor.charEnd;
+    final read = this.read;
+    final found = read == null ? null : anchorInPart(read, anchor);
+    final String? text;
+    final int? start;
+    final int? end;
+    var heading = l10n.inputAnchorLabel;
+    if (read != null && found != null) {
+      text = found.part.text;
+      start = found.start;
+      end = found.end;
+      // A message on its own needs no name for its one part.
+      if (read.parts.where((p) => p.checked).length > 1) {
+        heading = '$heading · ${partLabel(found.part, read, l10n)}';
+      }
+    } else {
+      text = read == null ? submission?.text : null;
+      start = anchor.charStart;
+      end = anchor.charEnd;
+    }
 
     final Widget detail;
     if (text != null &&
@@ -357,22 +419,26 @@ class _InputAnchorBlock extends StatelessWidget {
         0 <= start &&
         start < end &&
         end <= text.length) {
-      final from = math.max(0, start - _surrounding);
-      final to = math.min(text.length, end + _surrounding);
+      // Every cut on a character's edge: a window counted in UTF-16 units can land
+      // inside an emoji, and half of one is text the engine will not lay out.
+      final at = _edge(text, start, back: true);
+      final until = math.max(at, _edge(text, end, back: false));
+      final from = _edge(text, math.max(0, at - _surrounding), back: true);
+      final to = _edge(text, math.min(text.length, until + _surrounding), back: false);
       detail = Text.rich(
         TextSpan(
           children: [
             if (from > 0) const TextSpan(text: '…'),
-            TextSpan(text: text.substring(from, start)),
+            TextSpan(text: text.substring(from, at)),
             TextSpan(
-              text: text.substring(start, end),
+              text: text.substring(at, until),
               style: TextStyle(
                 backgroundColor: FactifyTokens.of(context).accS,
                 color: FactifyTokens.of(context).acc,
                 fontWeight: FontWeight.w600,
               ),
             ),
-            TextSpan(text: text.substring(end, to)),
+            TextSpan(text: text.substring(until, to)),
             if (to < text.length) const TextSpan(text: '…'),
           ],
         ),
@@ -395,7 +461,7 @@ class _InputAnchorBlock extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            l10n.inputAnchorLabel,
+            heading,
             style: theme.textTheme.labelSmall?.copyWith(color: FactifyTokens.of(context).ink3),
           ),
           const SizedBox(height: 4),
@@ -465,6 +531,15 @@ class _HowWeChecked extends StatelessWidget {
     final body = theme.textTheme.bodySmall;
     final recurrence = verdict.recurrence;
     final provenance = verdict.mediaProvenance;
+    final read = verdict.inputRead;
+    // What could not be read is said gap by gap, in the reader's language; the same
+    // gaps also arrive as skipped checks (kind "reading") in the server's English,
+    // and are not said twice.
+    final gaps = read?.gaps ?? const <ReadGap>[];
+    final skipped = [
+      for (final item in verdict.skipped)
+        if (!(read != null && item.isReading)) item,
+    ];
 
     return Card(
       child: Theme(
@@ -495,11 +570,27 @@ class _HowWeChecked extends StatelessWidget {
               const SizedBox(height: 4),
               Text(provenance.summary, style: body),
             ],
-            if (verdict.skipped.isNotEmpty) ...[
+            if (gaps.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              Text(l10n.notReadTitle, style: heading),
+              const SizedBox(height: 4),
+              for (final line in gapLines(gaps, l10n))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text('•  $line', style: body),
+                ),
+            ],
+            if (read != null)
+              for (final limit in read.limits)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(limitLine(limit, l10n), style: body),
+                ),
+            if (skipped.isNotEmpty) ...[
               const SizedBox(height: 14),
               Text(l10n.notCheckedTitle, style: heading),
               const SizedBox(height: 4),
-              for (final item in verdict.skipped)
+              for (final item in skipped)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 4),
                   child: Text('${item.check}: ${item.reason}', style: body),

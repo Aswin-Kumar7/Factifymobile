@@ -15,6 +15,7 @@ import 'package:factify_mobile/models/verdict.dart';
 import 'package:factify_mobile/quick/quick_verdict.dart';
 import 'package:factify_mobile/screens/checking_screen.dart';
 import 'package:factify_mobile/screens/error_screen.dart';
+import 'package:factify_mobile/screens/evidence_screen.dart';
 import 'package:factify_mobile/screens/history_screen.dart';
 import 'package:factify_mobile/screens/main_shell.dart';
 import 'package:factify_mobile/screens/profile_screen.dart';
@@ -28,6 +29,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:share_plus/share_plus.dart';
 
+import 'support/contract.dart';
 import 'support/screens.dart';
 
 class _Host implements QuickHost {
@@ -53,6 +55,17 @@ final Map<String, _Screen> _screens = {
       services: s,
       verdict: sampleVerdict(kind),
       submission: Submission.text(sampleClaim),
+    ),
+  // What was read (contract 1.8), from the server's own sample responses.
+  for (final (name, sample) in [
+    ('Result, X post', 'x_photo_post'),
+    ('Result, post read in part', 'instagram_reel_partial'),
+    ('Result, held back', 'link_withheld'),
+  ])
+    name: (s) => ResultScreen(
+      services: s,
+      verdict: contractVerdict(sample),
+      submission: Submission.link(contractVerdict(sample).inputRead!.url!),
     ),
   'Why sheet': (s) => Scaffold(
     body: SingleChildScrollView(child: WhySheet(verdict: sampleVerdict(FactVerdict.falseClaim))),
@@ -120,6 +133,26 @@ void main() {
       });
     });
   }
+
+  // Layout only: its app bar's language menu is under 44 tall, which predates the
+  // claim quoted from the part it was found in (1.8) that this is here for.
+  testWidgets('Sources, X post: Hindi, dark, 130% text', (tester) async {
+    tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await withClock(Clock.fixed(galleryNow), () async {
+      final services = await galleryServices(theme: ThemeMode.dark, locale: const Locale('hi'));
+      final verdict = contractVerdict('x_photo_post');
+      await _pump(
+        tester,
+        services,
+        EvidenceScreen(
+          verdict: verdict,
+          language: services.language,
+          submission: Submission.link(verdict.inputRead!.url!),
+        ),
+      );
+    });
+  });
 
   testWidgets('Checking, mid-check: targets, and Hindi at 130%', (tester) async {
     final handle = tester.ensureSemantics();

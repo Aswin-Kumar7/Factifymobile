@@ -48,6 +48,7 @@ class CheckingScreen extends StatefulWidget {
     required this.services,
     required this.submission,
     this.recheck = false,
+    this.acceptPartial = false,
     this.onFinished,
     this.job,
     super.key,
@@ -58,6 +59,10 @@ class CheckingScreen extends StatefulWidget {
 
   /// Checked fresh rather than answered from the server's store ("Check again").
   final bool recheck;
+
+  /// "Check what was read" (contract 1.8): checked from what could be read of an
+  /// input whose answer was held back because part of it could not be.
+  final bool acceptPartial;
 
   /// Called once the answer is in, before it is shown (Home clears its input).
   final VoidCallback? onFinished;
@@ -111,6 +116,7 @@ class _CheckingScreenState extends State<CheckingScreen> {
           submission: widget.submission,
           language: _language,
           recheck: widget.recheck,
+          acceptPartial: widget.acceptPartial,
           notifyWhenReady: _services.notifyByDefault.value,
         );
     setState(() {

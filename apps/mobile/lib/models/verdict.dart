@@ -1,4 +1,4 @@
-/// Wire models for the Factify contract (M41), contract_version 1.4 (read back to 1.0).
+/// Wire models for the Factify contract (M41), contract_version 1.8 (read back to 1.0).
 ///
 /// Mirrors app/api/schemas.py field for field. Two properties of the server
 /// contract are load-bearing and are preserved deliberately:
@@ -503,13 +503,255 @@ class Claim {
 
 /// Something the pipeline could not do, and why.
 class SkippedCheck {
-  const SkippedCheck({required this.check, required this.reason});
+  const SkippedCheck({required this.check, required this.reason, this.kind = 'other'});
 
   final String check;
   final String reason;
 
-  factory SkippedCheck.fromJson(Map<String, dynamic> json) =>
-      SkippedCheck(check: json['check'] as String, reason: json['reason'] as String);
+  /// What kind of gap it is (contract 1.8): "reading" (part of the input could not be
+  /// read, which [InputRead.gaps] says in full), "deadline" (the check ran out of
+  /// time), "provider" (an outside service did not answer) or "other" - which is also
+  /// what every item from an older server reads as.
+  final String kind;
+
+  bool get isReading => kind == 'reading';
+
+  /// The check ran out of time. A server that does not mark its timeouts yet names
+  /// them in the reason ("deadline of 300s exceeded"), and that counts too.
+  bool get isDeadline => kind == 'deadline' || (kind == 'other' && reason.contains('deadline'));
+
+  factory SkippedCheck.fromJson(Map<String, dynamic> json) => SkippedCheck(
+    check: json['check'] as String,
+    reason: json['reason'] as String,
+    kind: json['kind'] as String? ?? 'other',
+  );
+}
+
+/// One thing read from the input, in the words it was read in (contract 1.8).
+///
+/// A post's own text, the text in one of its pictures, what is said in its video:
+/// each is a part, in the order a person meets them. [checked] says whether claims
+/// were looked for in it. A model's description of what a picture or video shows is
+/// checked only beside words of the input's own, and otherwise only shown.
+class ReadPart {
+  const ReadPart({
+    required this.kind,
+    required this.text,
+    required this.checked,
+    required this.route,
+    this.label,
+    this.complete = true,
+    this.note,
+    this.mediaUrl,
+    this.charStart,
+    this.charEnd,
+    this.secondsRead,
+    this.secondsTotal,
+    this.language,
+  });
+
+  /// message, post_text, quoted_post, title, description, article, linked_article,
+  /// picture_text, picture_description, transcript, on_screen_text,
+  /// video_description or document_text.
+  final String kind;
+  final String text;
+  final bool checked;
+
+  /// How it was read: x.syndication, instagram.embed, whisper, ocr.local, fetched...
+  final String route;
+
+  /// The server's English heading for it ("Text in picture 1 of 2"). The app words
+  /// its own from [kind]; this is read only for what it adds: who a quoted post is
+  /// by, which site a linked article is on.
+  final String? label;
+
+  /// False when this part itself was read only in part; [InputRead.gaps] says why.
+  final bool complete;
+
+  /// An English aside from the reader ("read from 24 frames").
+  final String? note;
+
+  /// The picture this part was read from, on our own server (kept an hour; hidden
+  /// once it has gone). Never the platform's own address.
+  final String? mediaUrl;
+
+  /// Where this part's text sits in the text claims were found in, in characters as
+  /// the server counts them (Unicode code points): the same offsets as a claim's
+  /// [InputAnchor]. Null for a part that is not in it.
+  final int? charStart;
+  final int? charEnd;
+
+  /// For speech: how many seconds of the video were heard, of how many.
+  final int? secondsRead;
+  final int? secondsTotal;
+  final String? language;
+
+  bool get isPictureText => kind == 'picture_text';
+
+  /// Factify's own account of what a picture or a video shows, not the input's words.
+  bool get isDescription => kind == 'picture_description' || kind == 'video_description';
+
+  /// Whether a claim found at [offset] of the checked text came from this part.
+  bool holds(int offset) {
+    final start = charStart;
+    final end = charEnd;
+    return start != null && end != null && start <= offset && offset < end;
+  }
+
+  static ReadPart? tryParse(Object? json) {
+    if (json is! Map) return null;
+    final kind = json['kind'];
+    if (kind is! String) return null;
+    return ReadPart(
+      kind: kind,
+      text: json['text'] as String? ?? '',
+      checked: json['checked'] as bool? ?? true,
+      route: json['route'] as String? ?? '',
+      label: json['label'] as String?,
+      complete: json['complete'] as bool? ?? true,
+      note: json['note'] as String?,
+      mediaUrl: json['media_url'] as String?,
+      charStart: (json['char_start'] as num?)?.toInt(),
+      charEnd: (json['char_end'] as num?)?.toInt(),
+      secondsRead: (json['seconds_read'] as num?)?.toInt(),
+      secondsTotal: (json['seconds_total'] as num?)?.toInt(),
+      language: json['language'] as String?,
+    );
+  }
+}
+
+/// Something that could not be read (contract 1.8).
+///
+/// [code] is what the app words in the reader's language; [detail] is the server's
+/// English sentence, shown only for a code this version of the app does not know.
+class ReadGap {
+  const ReadGap({
+    required this.part,
+    required this.code,
+    required this.detail,
+    required this.blocking,
+  });
+
+  /// What is missing: a part kind ("transcript") or something with no part at all
+  /// ("post", "video", "linked_page").
+  final String part;
+  final String code;
+  final String detail;
+
+  /// Whether what was missed could decide the answer.
+  final bool blocking;
+
+  static ReadGap? tryParse(Object? json) {
+    if (json is! Map) return null;
+    final code = json['code'];
+    if (code is! String) return null;
+    return ReadGap(
+      part: json['part'] as String? ?? '',
+      code: code,
+      detail: json['detail'] as String? ?? '',
+      blocking: json['blocking'] as bool? ?? false,
+    );
+  }
+}
+
+/// What Factify read from the input, part by part, and what it could not (1.8).
+///
+/// The answer is only ever about what was read. This is what lets a person see the
+/// part of a post that was checked - and the part that was not - before trusting a
+/// verdict built on it. Null on a result from before 1.8, which the result screen
+/// shows the way it always did.
+class InputRead {
+  const InputRead({
+    required this.kind,
+    this.platform,
+    this.url,
+    this.author,
+    this.handle,
+    this.publishedAt,
+    this.parts = const [],
+    this.gaps = const [],
+    this.limits = const [],
+    this.complete = true,
+    this.verdictWithheld = false,
+    this.checkedPartially = false,
+  });
+
+  /// text, link, social_post, image, pdf or video.
+  final String kind;
+
+  /// x, instagram, youtube or facebook, for a social post.
+  final String? platform;
+  final String? url;
+  final String? author;
+  final String? handle;
+  final DateTime? publishedAt;
+  final List<ReadPart> parts;
+  final List<ReadGap> gaps;
+
+  /// Limits that are not about reading, as the server's English sentences.
+  final List<String> limits;
+
+  /// Everything was read: no gap of any kind.
+  final bool complete;
+
+  /// Not checked: what could not be read could decide the answer, so no verdict was
+  /// given. The verdict is UNCONFIRMED with no claims.
+  final bool verdictWithheld;
+
+  /// Checked from what could be read, as the person asked ("Check what was read").
+  final bool checkedPartially;
+
+  bool get isPost => kind == 'social_post';
+
+  /// Something that could decide the answer was not read.
+  bool get blocked => gaps.any((g) => g.blocking);
+
+  /// Enough was read to check anything at all, as the server counts it
+  /// (app/extraction/reading.py, `Reading.substantive`): a part of the input's own
+  /// words of three words or more, or a picture read in full - Factify's
+  /// descriptions do not count. Asking to "check what was read" of a reading that is
+  /// not would only be held back again.
+  bool get substantive => parts.any(
+    (p) =>
+        p.isPictureText ||
+        (p.checked && !p.isDescription && p.text.trim().split(RegExp(r'\s+')).length >= 3),
+  );
+
+  /// The site a link is on, from what was read rather than what was typed.
+  String? get host {
+    final host = Uri.tryParse(url ?? '')?.host ?? '';
+    return host.isEmpty ? null : host.replaceFirst(RegExp(r'^www\.'), '');
+  }
+
+  /// The part a claim found at [offset] of the checked text came from, or null.
+  ReadPart? partAt(int offset) {
+    for (final part in parts) {
+      if (part.holds(offset)) return part;
+    }
+    return null;
+  }
+
+  static InputRead? tryParse(Object? json) {
+    if (json is! Map) return null;
+    final kind = json['kind'];
+    if (kind is! String) return null;
+    List<Object?> list(String key) => (json[key] as List?) ?? const [];
+    final gaps = list('gaps').map(ReadGap.tryParse).whereType<ReadGap>().toList();
+    return InputRead(
+      kind: kind,
+      platform: json['platform'] as String?,
+      url: json['url'] as String?,
+      author: json['author'] as String?,
+      handle: json['handle'] as String?,
+      publishedAt: DateTime.tryParse(json['published_at'] as String? ?? ''),
+      parts: list('parts').map(ReadPart.tryParse).whereType<ReadPart>().toList(),
+      gaps: gaps,
+      limits: list('limits').whereType<String>().toList(),
+      complete: json['complete'] as bool? ?? gaps.isEmpty,
+      verdictWithheld: json['verdict_withheld'] as bool? ?? false,
+      checkedPartially: json['checked_partially'] as bool? ?? false,
+    );
+  }
 }
 
 class Recurrence {
@@ -890,8 +1132,10 @@ class Verdict {
     this.sourceRisk = 'UNKNOWN',
     this.imageReading,
     this.mediaReport,
+    this.mediaReports = const [],
     this.speech,
     this.sourceProfile,
+    this.inputRead,
     this.raw = const {},
   });
 
@@ -936,11 +1180,19 @@ class Verdict {
   /// 1.3). Beside the verdict, never inside it.
   final MediaReport? mediaReport;
 
+  /// For a post with more than one picture: the checks of pictures 2 to n, in order
+  /// (contract 1.8). [mediaReport] stays picture 1.
+  final List<MediaReport> mediaReports;
+
   /// For an uploaded video: what is said in it (contract 1.5), checked as a message is.
   final SpokenWords? speech;
 
   /// For a submitted link: what is known about its website.
   final SourceProfile? sourceProfile;
+
+  /// What was read from the input and what could not be (contract 1.8). Null on a
+  /// result from an older server, or a case stored before it was recorded.
+  final InputRead? inputRead;
 
   /// The claim the checked thing is mainly about: the headline claim, else the
   /// first. Null when nothing checkable was found.
@@ -998,8 +1250,13 @@ class Verdict {
         ? null
         : ImageReading.fromJson((json['image_reading'] as Map).cast<String, dynamic>()),
     mediaReport: MediaReport.tryParse(json['media_report']),
+    mediaReports: ((json['media_reports'] as List?) ?? const [])
+        .map(MediaReport.tryParse)
+        .whereType<MediaReport>()
+        .toList(),
     speech: SpokenWords.tryParse(json['speech']),
     sourceProfile: SourceProfile.tryParse(json['source_profile']),
+    inputRead: InputRead.tryParse(json['input_read']),
     raw: json,
   );
 
@@ -1022,19 +1279,111 @@ class Verdict {
   /// and a sunset photo or a joke must not be told to "treat it with caution".
   ///
   /// Never when reading or extraction failed: no claims then means nothing was
-  /// read, not that nothing was said.
-  bool get nothingToCheck =>
+  /// read, not that nothing was said. Nor when the answer was held back: "nothing to
+  /// fact-check" said of a post whose caption could not be read would be a guess.
+  bool get nothingToCheck => noClaimFound && !readingFailed;
+
+  /// No claim a source could settle was found in what was read - a picture's own
+  /// question with no earlier copy, or opinion - and the answer was not held back.
+  /// Whether that is "nothing to check" depends on whether all of it was read
+  /// ([readingFailed]); either way no claim was searched for.
+  bool get noClaimFound =>
       factVerdict == FactVerdict.unconfirmed &&
+      !withheld &&
       // A picture with no claim in it, or only opinion: "I think cricket is the best
       // sport" read "Unconfirmed", as though sources had been looked for (2026-09-30).
       claims.every(
         (c) =>
             (c.claimType == 'MEDIA' && !c.isDecisive && c.evidence.isEmpty) ||
             c.claimType == 'OPINION',
-      ) &&
-      !skipped.any((s) => _readingChecks.contains(s.check));
+      );
 
-  static const _readingChecks = {'claim_extraction', 'image_text', 'document_text'};
+  /// Something that could hold a claim was not read, so finding no claim does not
+  /// mean none was made.
+  ///
+  /// Claims that could not be found in the text (`claim_extraction`, sent without a
+  /// kind by every server) always count. Otherwise, from 1.8, only a gap that could
+  /// decide the answer ([InputRead.blocked]): every gap of an upload arrives as a
+  /// skipped check of kind "reading", the frames left unread for time and the tail
+  /// of a long transcript too, and a two-minute forward with no claim in it is
+  /// still nothing to check. A result with no reading counts every reading gap, as
+  /// it always did.
+  bool get readingFailed {
+    if (skipped.any((s) => !s.isReading && _readingChecks.contains(s.check))) return true;
+    final read = inputRead;
+    return read != null ? read.blocked : skipped.any(_isReading);
+  }
+
+  /// Part of the input that could decide the answer could not be read, and no claim
+  /// was found in the rest (1.8). Not "nothing to check", which would be a guess,
+  /// and not "unconfirmed" in its usual words either: no source was looked for.
+  bool get unreadNothingFound =>
+      noClaimFound &&
+      (inputRead?.blocked ?? false) &&
+      !skipped.any((s) => !s.isReading && _readingChecks.contains(s.check));
+
+  /// The checks that are a reading of the input rather than a search, by the
+  /// server's names for them (1.8 adds a linked page, a post's text, a video, the
+  /// speech and the words shown in it, a post's pictures; app/api/verify.py), for the
+  /// items a server sends without a kind.
+  static const _readingChecks = {
+    'claim_extraction',
+    'image_text',
+    'document_text',
+    'linked_page',
+    'post_text',
+    'picture_text',
+    'video',
+    'video_text',
+    'speech',
+    'input',
+  };
+
+  static bool _isReading(SkippedCheck s) => s.isReading || _readingChecks.contains(s.check);
+
+  /// No verdict was given, because what could not be read could decide it
+  /// (contract 1.8). Shown as "Not checked yet", never as "Unconfirmed": nothing was
+  /// looked up, so nothing failed to be confirmed.
+  bool get withheld => inputRead?.verdictWithheld ?? false;
+
+  /// Unconfirmed only because part of the input could not be read: what could be
+  /// read was supported, and the server would not call the whole thing true from
+  /// part of it (rule `rollup.partly_read`). Its words must say so - "Too recent to
+  /// confirm yet", which the same action reads as otherwise, would be untrue.
+  bool get partlyRead =>
+      action == VerdictAction.waitAndRecheck &&
+      ((inputRead?.checkedPartially ?? false) || actionReason == partlyReadReason);
+
+  /// The server's fixed reason for [partlyRead] (app/verdict/engine.py).
+  static const partlyReadReason =
+      'What could be read is supported; part of the input could not be read.';
+
+  /// The check ran out of time before every source was read: "couldn't be checked
+  /// in time" is said then, and only then.
+  ///
+  /// From 1.8 what could not be read is said where what was read is shown, and
+  /// "couldn't be checked in time" under a post whose caption was cut would send the
+  /// person to check again for nothing. A result from before 1.8 reads as it always
+  /// did: any gap at all.
+  bool get ranOutOfTime {
+    if (completenessNote == null) return false;
+    if (inputRead == null && skipped.every((s) => s.kind == 'other')) return true;
+    return skipped.any((s) => s.isDeadline);
+  }
+
+  /// Some check other than the reading did not run - an outside service did not
+  /// answer - though the time did not run out (1.8). Said, in its own words: the
+  /// answer may rest on less than a check normally reads.
+  bool get missedChecks =>
+      completenessNote != null &&
+      !ranOutOfTime &&
+      skipped.any((s) => !s.isDeadline && !_isReading(s) && !_readingNotes.contains(s.check));
+
+  /// Notes a server sends beside its skipped checks that say what was read rather
+  /// than what did not run: every uploaded video carries a `video_frames` line
+  /// ("read the words on 12 frames taken from 0:00 to 1:30"), which is no check
+  /// missed.
+  static const _readingNotes = {'video_frames'};
 
   /// The news search could not be reached for some claim, so the answer rests on
   /// less than a check normally reads.

@@ -5,10 +5,16 @@
 /// The bottom bar re-runs the check fresh, and carries the one thing to do next:
 /// send a correction back for False, context for Misleading, the result for True,
 /// or check again for Unconfirmed.
+///
+/// An answer held back because part of the input could not be read (contract 1.8)
+/// offers, at the top, the ways on: check what could be read, paste the text, or
+/// upload the picture or video. Each starts a new check from here.
 library;
 
 import 'dart:async';
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -28,6 +34,17 @@ import 'checking_screen.dart';
 import 'evidence_screen.dart';
 import 'source_reader_screen.dart';
 
+/// Picks a picture or a video from the phone for "Upload the picture or video".
+/// Null when the person chose nothing.
+typedef MediaPicker = Future<File?> Function();
+
+// The upload rules of Check (home_screen.dart), for a file chosen from a result: a
+// video over the server's limit is refused here rather than after the upload, and a
+// picture is read once for its preview.
+const int _largestUpload = 25 * 1024 * 1024;
+const int _previewBytesLimit = 4 * 1024 * 1024;
+const Set<String> _videoEndings = {'mp4', 'm4v', 'mov', '3gp', 'webm', 'mkv'};
+
 class ResultScreen extends StatefulWidget {
   ResultScreen({
     required this.services,
@@ -38,6 +55,7 @@ class ResultScreen extends StatefulWidget {
     Uint8List? thumbnail,
     this.justChecked = false,
     this.openShare = false,
+    this.pickMedia,
     super.key,
   }) : submission = submission,
        kind = kind ?? submission?.kind ?? SubmissionKind.text,
@@ -61,6 +79,9 @@ class ResultScreen extends StatefulWidget {
 
   /// Opened from a notification's "Share correction": the share sheet opens at once.
   final bool openShare;
+
+  /// Supplied by tests; the system's file picker otherwise.
+  final MediaPicker? pickMedia;
 
   @override
   State<ResultScreen> createState() => _ResultScreenState();
@@ -125,11 +146,94 @@ class _ResultScreenState extends State<ResultScreen> {
     unawaited(
       Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(
-          builder: (_) =>
-              CheckingScreen(services: widget.services, submission: submission, recheck: true),
+          builder: (_) => CheckingScreen(
+            services: widget.services,
+            submission: submission,
+            recheck: true,
+            // An answer checked from part of a post, checked again, is checked the
+            // same way: without it, a post still read in part is only held back.
+            acceptPartial: _verdict.inputRead?.checkedPartially ?? false,
+          ),
         ),
       ),
     );
+  }
+
+  /// "Check what was read" is offered only where it can give an answer: the same
+  /// thing can be sent again, and enough of it was read to check anything at all.
+  /// Otherwise the server would only hold the answer back a second time.
+  bool get _canCheckWhatWasRead {
+    final read = _verdict.inputRead;
+    return _canCheckAgain && read != null && read.verdictWithheld && read.substantive;
+  }
+
+  /// "Upload the picture or video" is for a link or a message whose post could not
+  /// be read in full; an upload that could not be read is not helped by sending it
+  /// again.
+  bool get _canUpload => switch (_verdict.inputRead?.kind) {
+    'link' || 'social_post' || 'text' => true,
+    _ => false,
+  };
+
+  /// The same input again, checked from what could be read (1.8).
+  void _checkWhatWasRead() {
+    final submission = widget.submission;
+    if (submission != null) _startCheck(submission, acceptPartial: true);
+  }
+
+  /// A new check, in place of this answer.
+  void _startCheck(Submission submission, {bool acceptPartial = false}) => unawaited(
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => CheckingScreen(
+          services: widget.services,
+          submission: submission,
+          acceptPartial: acceptPartial,
+        ),
+      ),
+    ),
+  );
+
+  /// "Paste the text": the words of the post or the page, checked as a message is.
+  Future<void> _pasteText() async {
+    final text = await showFxSheet<String>(context, builder: (_) => const _PasteSheet());
+    if (!mounted || text == null || text.trim().isEmpty) return;
+    _startCheck(Submission.text(text.trim()));
+  }
+
+  /// "Upload the picture or video": the thing itself, rather than the link to it.
+  Future<void> _upload() async {
+    final l10n = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    void say(String message) => messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+    try {
+      final file = await (widget.pickMedia ?? _pickFromPhone)();
+      if (!mounted || file == null) return;
+      final path = file.path;
+      final ending = path.contains('.') ? path.split('.').last.toLowerCase() : '';
+      final video = _videoEndings.contains(ending);
+      final size = await file.length();
+      if (!mounted) return;
+      if (video && size > _largestUpload) {
+        say(l10n.videoTooLarge(_largestUpload ~/ (1024 * 1024)));
+        return;
+      }
+      final preview = !video && size <= _previewBytesLimit ? await file.readAsBytes() : null;
+      if (!mounted) return;
+      _startCheck(Submission.image(file, preview, video: video));
+    } on PlatformException {
+      say(l10n.errorFileUnopenable);
+    } on FileSystemException {
+      say(l10n.errorFileUnopenable);
+    }
+  }
+
+  static Future<File?> _pickFromPhone() async {
+    final picked = await FilePicker.platform.pickFiles(type: FileType.media);
+    final path = picked?.files.single.path;
+    return path == null ? null : File(path);
   }
 
   void _home() => Navigator.of(context).popUntil((route) => route.isFirst);
@@ -200,12 +304,15 @@ class _ResultScreenState extends State<ResultScreen> {
     final k = FactifyTokens.of(context);
     final l10n = AppLocalizations.of(context);
     final nothing = _verdict.nothingToCheck;
+    final withheld = _verdict.withheld;
     final (_, soft) = nothing ? (k.uC, k.uS) : ActionStyle.colours(_verdict.factVerdict, k);
     final tint = Color.alphaBlend(soft, k.bg);
     final top = MediaQuery.paddingOf(context).top;
 
     final (label, icon, action) = switch (_verdict.factVerdict) {
       _ when nothing => (l10n.newCheck, FxIcons.forward, _home),
+      // The ways on are at the top of an answer held back; the bar starts afresh.
+      _ when withheld => (l10n.newCheck, FxIcons.forward, _home),
       FactVerdict.falseClaim ||
       FactVerdict.partlyTrue => (l10n.shareCorrection, FxIcons.correction, _share),
       FactVerdict.misleading => (l10n.shareContext, FxIcons.correction, _share),
@@ -251,7 +358,8 @@ class _ResultScreenState extends State<ResultScreen> {
                         _ => l10n.shareCorrection,
                       },
                       iconSize: 19,
-                      onPressed: nothing ? null : _share,
+                      // An answer held back says nothing about the claims to share.
+                      onPressed: nothing || withheld ? null : _share,
                     ),
                   ],
                 ),
@@ -271,6 +379,9 @@ class _ResultScreenState extends State<ResultScreen> {
                 receiptId: _receiptId,
                 serverUrl: widget.services.client.baseUrl,
                 onOpenPage: _openPage,
+                onCheckWhatWasRead: _canCheckWhatWasRead ? _checkWhatWasRead : null,
+                onPasteText: withheld ? () => unawaited(_pasteText()) : null,
+                onUpload: withheld && _canUpload ? () => unawaited(_upload()) : null,
               ),
             ],
           ),
@@ -334,6 +445,106 @@ class _ResultScreenState extends State<ResultScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// "Paste the text": a box for the words of a post or a page that could not be read
+/// in full. The clipboard is read only when the person taps "Paste copied text", as
+/// on Check. Closes with the text to check, or with nothing.
+class _PasteSheet extends StatefulWidget {
+  const _PasteSheet();
+
+  @override
+  State<_PasteSheet> createState() => _PasteSheetState();
+}
+
+class _PasteSheetState extends State<_PasteSheet> {
+  final TextEditingController _text = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _text.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _text.dispose();
+    super.dispose();
+  }
+
+  Future<void> _paste() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = data?.text?.trim() ?? '';
+    if (mounted && text.isNotEmpty) _text.text = text;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final k = FactifyTokens.of(context);
+    final l10n = AppLocalizations.of(context);
+    final ready = _text.text.trim().isNotEmpty;
+    return Padding(
+      // Above the keyboard, which opens over a bottom sheet.
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            l10n.pasteSheetTitle,
+            style: FactifyText.sans(17, weight: FontWeight.w600, color: k.ink),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            l10n.pasteSheetBody,
+            style: FactifyText.sans(13, color: k.ink2).copyWith(height: 1.45),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: k.bg,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: k.line),
+            ),
+            child: TextField(
+              key: const ValueKey('paste-sheet-text'),
+              controller: _text,
+              autofocus: true,
+              minLines: 4,
+              maxLines: 8,
+              style: FactifyText.sans(15, color: k.ink).copyWith(height: 1.45),
+              decoration: InputDecoration(
+                hintText: l10n.pasteSheetHint,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (!ready) ...[
+            FxButton(
+              label: l10n.pasteCopiedText,
+              icon: FxIcons.paste,
+              variant: FxButtonVariant.outline,
+              height: 46,
+              fontSize: 14,
+              onPressed: () => unawaited(_paste()),
+            ),
+            const SizedBox(height: 8),
+          ],
+          FxButton(
+            label: l10n.checkNow,
+            icon: FxIcons.check,
+            height: 52,
+            fontSize: 15,
+            onPressed: ready ? () => Navigator.of(context).pop(_text.text) : null,
+          ),
+        ],
       ),
     );
   }

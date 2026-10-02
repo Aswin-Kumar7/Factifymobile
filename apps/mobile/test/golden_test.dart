@@ -1,16 +1,19 @@
 /// Golden images of the v5 screens, light and dark (v5 build brief, section 6).
 ///
-/// Check, Checking mid-way, the four verdicts, the Why sheet, History and Profile,
-/// drawn at 360 wide with the app's own fonts and a fixed date (Saturday 26 September
-/// 2026, as in the design gallery), so an image drawn today matches one drawn next
-/// month. They are compared with a small tolerance: font rendering differs by a few
-/// pixels between machines, and a real change to a screen moves far more than that.
+/// Check, Checking mid-way, the four verdicts, a post checked from part of it, an
+/// answer held back and an uploaded picture (contract 1.8), the Why sheet, History
+/// and Profile, drawn at 360 wide with the app's own fonts and a fixed date (Saturday
+/// 26 September 2026, as in the design gallery), so an image drawn today matches one
+/// drawn next month. They are compared with a small tolerance: font rendering differs
+/// by a few pixels between machines, and a real change to a screen moves far more
+/// than that.
 ///
 /// After a deliberate change to a screen, redraw them:
 ///   flutter test --update-goldens test/golden_test.dart
 library;
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:clock/clock.dart';
 import 'package:factify_mobile/api/check_events.dart';
@@ -26,6 +29,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/contract.dart';
 import 'support/screens.dart';
 
 /// Passes an image that differs from its golden by at most [tolerance] of its pixels.
@@ -129,6 +133,41 @@ void main() {
         );
       });
     }
+
+    // What was read (contract 1.8): a post checked from part of it, and a link whose
+    // answer was held back, from the server's own sample responses.
+    for (final (name, sample) in [
+      ('verdict_readInPart', 'instagram_reel_partial'),
+      ('verdict_withheld', 'link_withheld'),
+    ]) {
+      testWidgets('${name.split('_').last}, ${theme.name}', (tester) async {
+        await _golden(
+          tester,
+          name,
+          theme,
+          (s) => ResultScreen(
+            services: s,
+            verdict: contractVerdict(sample),
+            submission: Submission.link(contractVerdict(sample).inputRead!.url!),
+          ),
+        );
+      });
+    }
+
+    // An uploaded picture, as a 1.8 server answers it: what it was read as, and what
+    // was read from it, in place of "What we checked".
+    testWidgets('imageUpload, ${theme.name}', (tester) async {
+      await _golden(
+        tester,
+        'verdict_imageUpload',
+        theme,
+        (s) => ResultScreen(
+          services: s,
+          verdict: Verdict.fromJson(sampleImageUploadJson()),
+          submission: Submission.image(File('forward.png'), null),
+        ),
+      );
+    });
 
     testWidgets('Why sheet, ${theme.name}', (tester) async {
       await _golden(
