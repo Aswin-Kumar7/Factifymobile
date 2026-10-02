@@ -38,6 +38,7 @@ import asyncio
 import json
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Any
@@ -60,7 +61,7 @@ from app.sources.local_reading import local_reading, local_same_claim
 logger = logging.getLogger("factify.sources.reasoning")
 
 PROVIDER = "llm"
-REASONER_VERSION = "2026.10.03.2"
+REASONER_VERSION = "2026.10.03.3"
 
 # The metric prefix of a support the article attributes to someone else - "the Army
 # said", "police said" - held as context until the source check, reading the passage
@@ -83,6 +84,187 @@ _REPORTS_A_DENIAL = re.compile(
     r"\b(?:fake|false|baseless|misleading|untrue|a hoax|doctored|morphed))",
     re.IGNORECASE,
 )
+
+# The same in the other languages a claim is read in. The English above sees a claim's
+# English line, and a claim nobody translated - typed in Hinglish, or when translation
+# failed - kept "PIB ने खंडन किया" a contradiction of itself. Built the way the English
+# is, so it is no wider: a word that reports a denial or a debunk on its own (refuted,
+# denied, rejected, clarified, fact check), or a label - fake, false, a rumour,
+# baseless, misleading - only where the claim says someone gave it ("called it fake",
+# "फर्जी बताया", "போலி என்று"). A fabricated quote that merely contains the word "lie"
+# must still be refutable by the denial that it was ever said.
+#
+# Matched with nukta signs dropped and Arabic-script letter variants made one
+# (`_denial_folded`), so the words match however they were typed.
+_DENIAL_VERBS = (
+    # Hindi and Marathi
+    "खंडन",
+    "खण्डन",
+    "इनकार",
+    "इंकार",
+    # Not नकारात्मक, "negative": no letter or vowel sign may follow (a danda may).
+    "नकार(?:ा|े|ी|ते|ता|ती|ने)?(?![\u0900-\u0963\u0970-\u097f])",
+    "ख़ारिज",
+    "फेटाळ",
+    "नाकार",
+    r"फ़ैक्ट\s*-?\s*चेक",
+    "स्पष्टीकरण",
+    r"स्पष्ट\s*(?:किया|की|केले|केला|केली)",
+    # Bengali
+    "অস্বীকার",
+    "খণ্ডন",
+    "খন্ডন",
+    "নাকচ",
+    r"ফ্যাক্ট\s*চেক",
+    # Tamil
+    "மறுப்பு",
+    "மறுத்",
+    r"உண்மைச்?\s*சரிபார்ப்பு",
+    r"ஃ?பேக்ட்\s*செக்",
+    # Telugu
+    "ఖండించ",
+    "ఖండన",
+    r"ఫ్యాక్ట్\s*చెక్",
+    # Kannada
+    "ನಿರಾಕರಿಸ",
+    "ನಿರಾಕರಣೆ",
+    r"ತಳ್ಳಿ\s*ಹಾಕ",
+    r"ಫ್ಯಾಕ್ಟ್\s*ಚೆಕ್",
+    # Malayalam
+    "നിഷേധി",
+    "നിഷേധം",
+    r"ഫാക്ട്\s*ചെക്ക്",
+    r"വസ്തുതാ\s*പരിശോധന",
+    # Gujarati
+    "ઇનકાર",
+    "ઈનકાર",
+    "ખંડન",
+    r"ફેક્ટ\s*ચેક",
+    # Punjabi
+    "ਖੰਡਨ",
+    "ਇਨਕਾਰ",
+    # Odia
+    "ଖଣ୍ଡନ",
+    "ଅସ୍ୱୀକାର",
+    # Urdu
+    "تردید",
+    "انکار",
+)
+
+# (labels, the words that give one) per script. The label may carry its own ending
+# (झूठा, போலியானது, నకిలీదని) before the giving word: "फर्जी बताया", "ভুয়া আখ্যা",
+# "போலி என்று", "నకిలీ అని", "ಸುಳ್ಳೆಂದು", "വ്യാജമാണെന്ന്", "ਫ਼ਰਜ਼ੀ ਦੱਸਿਆ", "جعلی قرار".
+_DENIAL_LABELS = (
+    # Hindi and Marathi
+    (
+        (
+            "फ़र्ज़ी",
+            "फरजी",
+            "झूठ",
+            "भ्रामक",
+            "अफ़वा",
+            "बेबुनियाद",
+            "निराधार",
+            "आधारहीन",
+            "फ़ेक",
+            "ग़लत",
+            "खोट",
+            "दिशाभूल",
+            "बनावट",
+        ),
+        ("बता", "क़रार", "ठहरा", "घोषित", "असल्याच", "ठरव"),
+    ),
+    # Bengali
+    (
+        ("ভুয়া", "ভুয়ো", "মিথ্যা", "গুজব", "বিভ্রান্তিকর", "ভিত্তিহীন"),
+        ("আখ্যা", "ঘোষণা", r"বলে\s*(?:জানি|দাবি|উল্লেখ)"),
+    ),
+    # Tamil
+    (
+        ("போலி", "பொய்", "வதந்தி", "ஆதாரமற்ற", "தவறான"),
+        ("என(?:்று|்ற)?(?![\u0b80-\u0be5])",),  # not எனக்கு, "to me"
+    ),
+    # Telugu
+    (
+        ("నకిలీ", "అబద్ధ", "అబద్ద", "అసత్య", "పుకార", "వదంత", "తప్పుడు", "నిరాధార", "ఫేక్"),
+        ("అని", "దని", "మని", r"గా\s*(?:తేల్చ|పేర్కొ|ప్రకటి)"),
+    ),
+    # Kannada
+    (
+        ("ನಕಲಿ", "ಸುಳ್ಳ", "ವದಂತಿ", "ಆಧಾರರಹಿತ", "ಫೇಕ್"),
+        ("(?:ಎಂ|\u0cc6\u0c82)(?:ದ|ಬ)",),  # ಎಂದು, or joined on: ಸುಳ್ಳೆಂದು
+    ),
+    # Malayalam
+    (
+        ("വ്യാജ", "കിംവദന്തി", "അടിസ്ഥാനരഹിത"),
+        ("ന്ന്", "എന്ന"),
+    ),
+    # Gujarati
+    (
+        ("નકલી", "ખોટ(?:ું|ી|ા|ો)", "અફવા", "ભ્રામક", "પાયાવિહોણ", "બનાવટી", "ફેક"),
+        ("ગણાવ", "ઠેરવ", "જાહેર"),
+    ),
+    # Punjabi
+    (
+        ("ਫ਼ਰਜ਼ੀ", "ਫਰਜੀ", "ਝੂਠ", "ਅਫ਼ਵਾਹ", "ਗੁੰਮਰਾਹਕੁੰਨ", "ਬੇਬੁਨਿਆਦ", "ਫੇਕ"),
+        ("ਦੱਸ", "ਕਰਾਰ", "ਐਲਾਨ"),
+    ),
+    # Odia
+    (
+        ("ମିଥ୍ୟା", "ଭୁଆ", "ଗୁଜବ", "ଭିତ୍ତିହୀନ", "ବିଭ୍ରାନ୍ତିକର"),
+        ("ବୋଲି", "ଆଖ୍ୟା", "ଘୋଷଣା"),
+    ),
+    # Urdu
+    (
+        ("جھوٹ", "جعلی", "فرضی", "افواہ", r"بے\s*بنیاد", r"گمراہ\s*کن", "فیک"),
+        ("قرار", "بتا"),
+    ),
+)
+
+# Nukta signs (Devanagari, Bengali, Gurmukhi, Gujarati, Odia), dropped; and the Arabic
+# letters an Urdu claim is often typed with, made the Urdu ones: yeh, kaf, heh.
+_DENIAL_FOLDING = str.maketrans(
+    {"\u093c": "", "\u09bc": "", "\u0a3c": "", "\u0abc": "", "\u0b3c": ""}
+    | {"\u064a": "\u06cc", "\u0643": "\u06a9", "\u0647": "\u06c1"}
+)
+
+
+def _denial_folded(text: str) -> str:
+    # NFC first: it splits a letter typed with its nukta as one character (फ़, য়, ਫ਼)
+    # into the letter and the nukta, and the table then drops the nukta.
+    return unicodedata.normalize("NFC", text).translate(_DENIAL_FOLDING)
+
+
+def _one_of(words: tuple[str, ...]) -> str:
+    return "(?:" + "|".join(_denial_folded(word) for word in words) + ")"
+
+
+_REPORTS_A_DENIAL_ELSEWHERE = re.compile(
+    "|".join(
+        [
+            _one_of(_DENIAL_VERBS),
+            *(
+                rf"{_one_of(labels)}\S{{0,12}}\s*{_one_of(giving)}"
+                for labels, giving in _DENIAL_LABELS
+            ),
+            # Hindi typed in Latin letters, as forwards often are.
+            r"\b(?:khandan\s+(?:kiya|kar\w*|hua)|inkaa?r)\b",
+            r"\b(?:farzi|farji|jh[ou]{1,2}th?[aie]?|afwaa?h|bebuniyaa?d|galat|fake)\s+"
+            r"(?:bata\w*|karar|thehra\w*)",
+        ]
+    ),
+    re.IGNORECASE,
+)
+
+
+def reports_a_denial(claim_text: str) -> bool:
+    """Whether a claim itself reports a denial or a debunk, in whatever language it
+    was made: "PIB has debunked claims that ...", "मंत्रालय ने खबरों का खंडन किया"."""
+    return bool(
+        _REPORTS_A_DENIAL.search(claim_text)
+        or _REPORTS_A_DENIAL_ELSEWHERE.search(_denial_folded(claim_text))
+    )
+
 
 # What a model provider's refusal on its content policy reads like in a failed call
 # (app/security/fetcher.py `_provider_error`): Azure's "content_filter".
@@ -1870,7 +2052,7 @@ class PassageReasoner:
         reported_speech = claim_type in ("QUOTE", "ATTRIBUTION")
         # And when what it reports is itself a denial, refuting the thing denied
         # agrees with it.
-        reports_a_denial = reported_speech and bool(_REPORTS_A_DENIAL.search(claim_text))
+        denied_in_claim = reported_speech and reports_a_denial(claim_text)
         by_index = {p.index: p for p in passages}
         kept: list[PassageJudgement] = []
         rejected = 0
@@ -2004,7 +2186,7 @@ class PassageReasoner:
                 denial = judgement.contradiction_basis == "DENIES" or (
                     fact_check and judgement.contradiction_basis == "INCOMPATIBLE"
                 )
-                if reports_a_denial or not denial:
+                if denied_in_claim or not denial:
                     relation = Relation.CONTEXTUALIZES
                     _count(demoted, "reported speech")
 
