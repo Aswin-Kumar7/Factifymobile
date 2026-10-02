@@ -133,6 +133,10 @@ def _shrunk(data: bytes, *, side: int = 320) -> bytes | None:
         return None
 
 
+# Uploads whose detectors and forensic panel may run at the same time (see MediaInspector).
+HEAVY_AT_ONCE = 1
+
+
 class MediaInspector:
     """Runs the picture checks for one upload."""
 
@@ -148,6 +152,11 @@ class MediaInspector:
         self._detector: Detects = detector or UnavailableDetector()
         self._fetcher = fetcher
         self.thumbnails = thumbnails or ThumbnailStore()
+        # The detectors and the forensic panel hold large arrays while they run: four
+        # pictures of one Instagram post inspected at once took a 6.5 GB container
+        # past its memory and killed it. One upload's checks at a time, server-wide;
+        # the others wait their turn instead of all running together.
+        self._heavy = asyncio.Semaphore(HEAVY_AT_ONCE)
 
     def keep_picture(self, data: bytes) -> str | None:
         """Our own small copy of a picture that was read, and the key it is kept under.
@@ -164,12 +173,17 @@ class MediaInspector:
         return self.thumbnails.put(shrunk) if shrunk else None
 
     async def inspect_image(self, data: bytes, *, mime: str = "image/jpeg") -> MediaReport:
-        credentials, editing, synthetic, history = await asyncio.gather(
-            _guarded(asyncio.to_thread(provenance.read, data, filename="upload"), _no_credentials),
-            _guarded(asyncio.to_thread(forensics.analyse, data, artifact_ref="upload"), _no_panel),
-            _guarded(self._detector.read(data, mime=mime), _no_reading),
-            _guarded(self._discovery.discover(data), _no_history),
-        )
+        async with self._heavy:
+            credentials, editing, synthetic, history = await asyncio.gather(
+                _guarded(
+                    asyncio.to_thread(provenance.read, data, filename="upload"), _no_credentials
+                ),
+                _guarded(
+                    asyncio.to_thread(forensics.analyse, data, artifact_ref="upload"), _no_panel
+                ),
+                _guarded(self._detector.read(data, mime=mime), _no_reading),
+                _guarded(self._discovery.discover(data), _no_history),
+            )
         return await self._finish(
             kind="image",
             credentials=credentials,
@@ -183,6 +197,12 @@ class MediaInspector:
         self, video: bytes, frames: list[bytes], face_frames: list[bytes] | None = None
     ) -> MediaReport:
         """A video, from its still frames: the opening, middle and end of the clip."""
+        async with self._heavy:
+            return await self._inspect_video(video, frames, face_frames)
+
+    async def _inspect_video(
+        self, video: bytes, frames: list[bytes], face_frames: list[bytes] | None
+    ) -> MediaReport:
         picked = _spread(frames, FRAMES_SEARCHED)
         credentials = await _guarded(
             asyncio.to_thread(provenance.read, video, filename="upload.mp4"), _no_credentials
