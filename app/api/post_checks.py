@@ -351,7 +351,10 @@ async def read_post(request: Request, post: SocialPost, *, background: bool) -> 
         if post.videos:
             set_phase("reading_video")
             await _read_videos(request, read, post.videos, background=background)
-    await _read_linked(request, read)
+    try:
+        await _read_linked(request, read)
+    except Exception:  # the article a post links to is a help, never a dependency
+        logger.exception("the article a post links to could not be read")
     return read
 
 
@@ -406,7 +409,8 @@ async def _read_picture(
     thumbnail: bool = False,
 ) -> tuple[_Picture | None, tuple[ReadPart, ...], tuple[Gap, ...]]:
     """One picture: downloaded from the platform's own media host, read - its words and
-    what it shows - and put through the picture checks. Never raises."""
+    what it shows - and put through the picture checks. Never raises: a picture whose
+    reading broke is one picture unread, never a failed check."""
     if thumbnail:
         subject = "The video's thumbnail"
     elif total <= 1:
@@ -415,6 +419,34 @@ async def _read_picture(
         subject = f"Picture {index} of {total}"
     if item.in_quoted_post:
         subject += " in the quoted post"
+    try:
+        return await _picture(
+            request, item, index=index, total=total, thumbnail=thumbnail, subject=subject
+        )
+    except Exception as error:
+        logger.exception("a post's picture could not be read")
+        return (
+            None,
+            (),
+            (
+                gap(
+                    "thumbnail" if thumbnail else "picture_text",
+                    GapCode.PICTURE_UNREAD,
+                    f"{subject} could not be read ({type(error).__name__}).",
+                ),
+            ),
+        )
+
+
+async def _picture(
+    request: Request,
+    item: PostMedia,
+    *,
+    index: int,
+    total: int,
+    thumbnail: bool,
+    subject: str,
+) -> tuple[_Picture | None, tuple[ReadPart, ...], tuple[Gap, ...]]:
     settings = request.app.state.settings
     max_bytes = settings.limits.max_upload_bytes
     got = await request.app.state.social_reader.download(item, max_bytes=max_bytes)

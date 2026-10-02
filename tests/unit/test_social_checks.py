@@ -264,6 +264,22 @@ class TestAnXPostWithAPicture:
         assert (missed["code"], missed["blocking"]) == ("picture_unread", True)
         assert missed["detail"] == "The post's picture could not be downloaded."
 
+    async def test_a_picture_whose_reader_broke_is_one_picture_unread(self) -> None:
+        class _Broken:
+            async def transcribe(self, image: bytes, *, mime_type: str = "") -> OcrOutcome:
+                raise TimeoutError("the reader hung")
+
+        platform, checker = _Platform(_x_post()), _Checker()
+        app = _app(platform, checker)
+        app.state.ocr = _Broken()
+
+        body = await _check(app, {"url": X_URL})
+
+        [missed] = body["input_read"]["gaps"]
+        assert missed["code"] == "picture_unread"
+        assert "TimeoutError" in missed["detail"]
+        assert checker.documents[0][0] == f"Post text:\n{SAID}"
+
     async def test_a_picture_only_post_whose_picture_failed_is_held_back(self) -> None:
         platform = _Platform(_x_post(text="😱😱"), media={})
         checker = _Checker()

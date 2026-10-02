@@ -397,3 +397,60 @@ class TestThePhase:
 
         assert polled.status_code == 202
         assert polled.json()["phase"] == "finding_claims"
+
+
+@pytest.mark.skipif(
+    not __import__("app.media.video", fromlist=["ffmpeg_available"]).ffmpeg_available(),
+    reason="ffmpeg is not installed",
+)
+class TestAnUploadedVideo:
+    async def test_a_repeat_is_answered_before_the_video_is_read(self, tmp_path: Any) -> None:
+        """Its speech, frames and description were read again on every repeat, only to
+        be served the stored verdict afterwards (round-1 note, 2026-10-03)."""
+        from app.extraction.ocr import READER_VERSION
+        from tests.unit.test_upload_reading import (
+            _Describer,
+            _FrameWords,
+            _heard,
+            _request,
+            _video,
+        )
+
+        intake, data = _video(tmp_path)
+        request, checker, ears = _request(
+            speech=_heard(), describer=_Describer(), words=_FrameWords()
+        )
+
+        async def stored(intake: Any, *, case_id: UUID) -> Any:
+            checker.probed.append(intake)
+            return _result(case_id=case_id, from_cache=True)
+
+        checker.cached = stored  # type: ignore[method-assign]
+
+        response = await verify_module._checked_video(
+            request, intake, data, case_id=uuid4(), recheck=False
+        )
+
+        assert response.from_cache is True
+        assert ears.windows == []  # nothing was heard
+        assert checker.documents == [] and checker.verified == []
+        [probed] = checker.probed
+        assert probed.cache_identity == f"{intake.cache_identity}|reader:{READER_VERSION}"
+
+    async def test_speech_that_could_not_be_read_keeps_the_answer_from_true(
+        self, tmp_path: Any
+    ) -> None:
+        from app.media.speech import SpeechOutcome
+        from tests.unit.test_upload_reading import _Describer, _FrameWords, _request, _video
+
+        intake, data = _video(tmp_path)
+        failed = SpeechOutcome(status="failed", reason="the speech reader stopped")
+        request, checker, _ = _request(speech=failed, describer=_Describer(), words=_FrameWords())
+
+        response = await verify_module._checked_video(
+            request, intake, data, case_id=uuid4(), recheck=False
+        )
+
+        assert checker.verified[0]["partial_input"] is True
+        read = response.input_read
+        assert read is not None and read.checked_partially and not read.verdict_withheld
