@@ -170,6 +170,13 @@ BACKGROUND_SECONDS = 300.0
 BACKGROUND_MIN_READING_SECONDS = 150.0
 BACKGROUND_CEILING_SECONDS = 420.0
 
+# What still runs after the deadline: deciding each claim, the presence check, the
+# roll-up, the ledger and the receipt. The deadline stops this much short of the
+# ceiling, so the answer is stored before the apps stop waiting for it - the app
+# released today gives up after about four hundred seconds, and the live stream at
+# six minutes.
+_BACKGROUND_TAIL_SECONDS = 20.0
+
 _IMPORTANCE_ORDER = {
     Importance.HEADLINE: 0,
     Importance.MAIN_THESIS: 1,
@@ -682,7 +689,7 @@ class Orchestrator:
             # five minutes, it would have left the claims almost nothing.
             deadline = min(
                 max(started + background, time.perf_counter() + BACKGROUND_MIN_READING_SECONDS),
-                started + BACKGROUND_CEILING_SECONDS,
+                started + BACKGROUND_CEILING_SECONDS - _BACKGROUND_TAIL_SECONDS,
             )
             budget = deadline - started
         else:
@@ -1046,9 +1053,22 @@ class Orchestrator:
         # This claim's own gaps and page count, to say what was done for it.
         mine: list[SkippedCheck] = []
         looked = [0]
-        evidence = await self._run_stage(
-            primary, claim, skipped=mine, deadline=deadline, tally=looked
-        )
+        # Set when this claim's search was not started for want of time (`_run_stage`).
+        late = [False]
+        evidence: list[Evidence]
+        if self._reading_left(deadline) <= 0:
+            # Its turn (`_CLAIMS_AT_ONCE`) came only after reading had to stop. Read,
+            # it ran past the deadline in waves of three - each of its stages given
+            # its two-second floor and the grace after it - and its search was said
+            # to be skipped twice, once for the round it never had. It is decided
+            # from nothing, and said once to have run out of time.
+            mine.extend(self._too_late(fallback or primary))
+            late[0] = True
+            evidence = []
+        else:
+            evidence = await self._run_stage(
+                primary, claim, skipped=mine, deadline=deadline, tally=looked
+            )
 
         # Corroboration is counted after the evidence exists and before anything
         # decides. Rule 4 reads `independent_origin_count` off the claim, and nothing
@@ -1065,14 +1085,14 @@ class Orchestrator:
         counted = await self._count_origins(claim, evidence=evidence, skipped=scratch)
 
         searched = False
-        if fallback and not decide(counted, evidence).status.is_decisive:
+        if fallback and not late[0] and not decide(counted, evidence).status.is_decisive:
             evidence.extend(
                 await self._run_stage(
-                    fallback, claim, skipped=mine, deadline=deadline, tally=looked
+                    fallback, claim, skipped=mine, deadline=deadline, tally=looked, late=late
                 )
             )
-            searched = True
-        elif fallback:
+            searched = not late[0]
+        elif fallback and not late[0]:
             event(
                 logger,
                 "fallback resolvers not consulted",
@@ -1093,15 +1113,15 @@ class Orchestrator:
         # Verification can remove the very source that made the first stage look
         # decided, which is exactly when the open web was skipped. Search now rather
         # than answer from nothing.
-        if fallback and not searched:
+        if fallback and not searched and not late[0]:
             counted = await self._count_origins(claim, evidence=evidence, skipped=[])
             if not decide(counted, evidence).status.is_decisive:
                 evidence.extend(
                     await self._run_stage(
-                        fallback, claim, skipped=mine, deadline=deadline, tally=looked
+                        fallback, claim, skipped=mine, deadline=deadline, tally=looked, late=late
                     )
                 )
-                searched = True
+                searched = not late[0]
                 evidence = _not_own(evidence, own_pages)
                 evidence, explanation = await self._verify_sources(
                     claim, evidence, skipped=skipped, deadline=deadline
@@ -1373,6 +1393,7 @@ class Orchestrator:
         skipped: list[SkippedCheck],
         deadline: float | None,
         tally: list[int] | None = None,
+        late: list[bool] | None = None,
     ) -> list[Evidence]:
         """Run a set of resolvers concurrently for one claim and collect their evidence.
 
@@ -1380,39 +1401,26 @@ class Orchestrator:
         rather than around the gather: a timeout on the gather cancels everything,
         discarding the evidence the fast resolvers already produced, and a partial
         answer that says what was skipped beats an empty one that took just as long.
+
+        `late[0]` is set when a web search was not started for want of time.
         """
         evidence: list[Evidence] = []
         if not resolvers:
             return evidence
 
-        # Reading stops early enough for the source check to run after it.
-        read_by = deadline
-        if deadline is not None and self._verification is not None:
-            read_by = deadline - _verify_reserve()
-
+        read_by = self._read_by(deadline)
         remaining = max(2.0, read_by - time.perf_counter()) if read_by is not None else None
         backstop = None if remaining is None else remaining + _RESOLVER_GRACE_SECONDS
 
         # A claim that waited its turn in the background (`_CLAIMS_AT_ONCE`) can reach
         # the web search with no reading time left. Its search is not started then:
         # the queries would be paid for and every page found cut off unread.
-        if (
-            _in_background()
-            and self._reads_sources
-            and read_by is not None
-            and read_by - time.perf_counter() < _MIN_SEARCH_SECONDS
-        ):
-            late = [r for r in resolvers if getattr(r, "fallback", False)]
-            for resolver in late:
-                skipped.append(
-                    SkippedCheck(
-                        check=getattr(resolver, "name", type(resolver).__name__),
-                        # "deadline" is what marks the claim's search as timed out.
-                        reason=f"deadline of {self._budget():.0f}s reached before it was searched",
-                        kind="deadline",
-                    )
-                )
-            resolvers = [r for r in resolvers if r not in late]
+        if self._reading_left(deadline) < _MIN_SEARCH_SECONDS:
+            searches = [r for r in resolvers if getattr(r, "fallback", False)]
+            skipped.extend(self._too_late(searches))
+            if searches and late is not None:
+                late[0] = True
+            resolvers = [r for r in resolvers if r not in searches]
             if not resolvers:
                 return evidence
 
@@ -1466,6 +1474,35 @@ class Orchestrator:
             evidence.extend(found)
 
         return evidence
+
+    def _read_by(self, deadline: float | None) -> float | None:
+        """When reading stops: early enough for the source check to run after it."""
+        if deadline is not None and self._verification is not None:
+            return deadline - _verify_reserve()
+        return deadline
+
+    def _reading_left(self, deadline: float | None) -> float:
+        """Seconds of reading left to a claim of a background check; unbounded for
+        any other, which starts every claim at once and has no turn to wait for."""
+        read_by = self._read_by(deadline)
+        if not _in_background() or not self._reads_sources or read_by is None:
+            return float("inf")
+        return read_by - time.perf_counter()
+
+    def _too_late(self, resolvers: list[SourceResolver]) -> list[SkippedCheck]:
+        """What a claim says of [resolvers] it reached with no time left to run."""
+        return [
+            SkippedCheck(
+                check=getattr(resolver, "name", type(resolver).__name__),
+                # "deadline" is what marks the claim's search as timed out.
+                reason=(
+                    f"deadline of {self._budget():.0f}s reached before it was "
+                    + ("searched" if getattr(resolver, "fallback", False) else "checked")
+                ),
+                kind="deadline",
+            )
+            for resolver in resolvers
+        ]
 
     def _budget(self) -> float:
         """The time this check had, in seconds, for saying what it ran out of.

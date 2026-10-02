@@ -123,10 +123,15 @@ class TestTheBackgroundDeadline:
         assert budget == pytest.approx(total, abs=0.01)
 
     async def test_never_past_what_the_apps_wait_for(self) -> None:
+        """Nor so close to it that deciding and storing the answer runs past it: the
+        app released today stops polling at about four hundred seconds."""
         with _Background():
             total, left, _ = await _deadline_of(_orchestrator(), spent=350.0)
 
-        assert total == pytest.approx(BACKGROUND_CEILING_SECONDS, abs=0.5)
+        assert total == pytest.approx(
+            BACKGROUND_CEILING_SECONDS - pipeline._BACKGROUND_TAIL_SECONDS, abs=0.5
+        )
+        assert total <= 400.0
         assert left < BACKGROUND_MIN_READING_SECONDS
 
     async def test_a_check_someone_waits_on_is_unchanged(self) -> None:
@@ -546,7 +551,12 @@ class TestASkippedSecondRoundIsSaid:
                 case_id=uuid4(),
                 claims=[claim(importance=Importance.HEADLINE)],
                 # Started long ago: under a minute is left to search and read.
-                started_at=time.perf_counter() - BACKGROUND_CEILING_SECONDS + 30.0,
+                started_at=(
+                    time.perf_counter()
+                    - BACKGROUND_CEILING_SECONDS
+                    + pipeline._BACKGROUND_TAIL_SECONDS
+                    + 30.0
+                ),
             )
 
         (outcome,) = result.claims
@@ -568,3 +578,81 @@ class TestAnUnavailableSearchIsStillAProviderGap:
         (outcome,) = result.claims
         assert outcome.search == "unavailable"
         assert [(gap.check, gap.kind) for gap in result.skipped] == [("web_search", "provider")]
+
+
+class _Primary(_Search):
+    """The corpus and the fact-check API: a resolver the claim reads before searching."""
+
+    name = "corpus"
+    fallback = False
+
+
+class TestALateClaimIsDecidedFromNothing:
+    """A claim whose turn came after reading had to stop still ran its stages past the
+    deadline in waves of three, and was said to be skipped twice - the second time for
+    a search round it never had."""
+
+    async def test_past_the_reading_time_nothing_runs_and_it_is_said_once(self) -> None:
+        primary, search = _Primary(), _SecondRound()
+        orchestrator = _orchestrator([primary, search])
+        skipped: list[SkippedCheck] = []
+
+        with _Background():
+            outcome = await orchestrator._resolve_claim(
+                claim(importance=Importance.HEADLINE),
+                skipped=skipped,
+                deadline=time.perf_counter() - 1.0,
+            )
+
+        assert (primary.started, search.started, search.rounds) == ([], [], 0)
+        assert skipped == [
+            SkippedCheck(
+                check="web_search",
+                reason=f"deadline of {_BACKGROUND:.0f}s reached before it was searched",
+                kind="deadline",
+            )
+        ]
+        assert outcome.search == "timed_out"
+
+    async def test_a_search_skipped_for_time_is_not_owed_a_second_round(self) -> None:
+        """Its first stage ran; its search did not, so no second round is missing."""
+        primary, search = _Primary(), _SecondRound()
+        orchestrator = _orchestrator([primary, search])
+        skipped: list[SkippedCheck] = []
+
+        with _Background():
+            outcome = await orchestrator._resolve_claim(
+                claim(importance=Importance.HEADLINE),
+                skipped=skipped,
+                # Five seconds: the primary stage runs, a search would not finish.
+                deadline=time.perf_counter() + 5.0,
+            )
+
+        assert primary.started == ["cl_1"]
+        assert (search.started, search.rounds) == ([], 0)
+        assert [gap.check for gap in skipped] == ["web_search"]
+        assert outcome.search == "timed_out"
+
+    async def test_with_time_left_every_stage_runs(self) -> None:
+        primary, search = _Primary(), _SecondRound()
+        orchestrator = _orchestrator([primary, search])
+
+        with _Background():
+            outcome = await orchestrator._resolve_claim(
+                claim(importance=Importance.HEADLINE),
+                skipped=[],
+                deadline=time.perf_counter() + 120.0,
+            )
+
+        assert (primary.started, search.started) == (["cl_1"], ["cl_1", "cl_1"])
+        assert search.rounds == 1
+        assert outcome.search == "searched"
+
+    async def test_a_check_someone_waits_on_is_never_late(self) -> None:
+        """It starts every claim at once; past its deadline each is cut off as before."""
+        primary, search = _Primary(), _SecondRound()
+        orchestrator = _orchestrator([primary, search])
+
+        await orchestrator._resolve_claim(claim(), skipped=[], deadline=time.perf_counter() - 1.0)
+
+        assert primary.started == ["cl_1"]
