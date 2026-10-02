@@ -1112,6 +1112,31 @@ class ReceiptRepository(_Repository):
         )
 
 
+class CaseReadingRepository(_Repository):
+    """What was read from a case's input, as the answer showed it (0011).
+
+    The payload is opaque here: the API's own JSON for the parts of an answer the
+    ledger's rows cannot hold. `app/orchestration/ledger.py` decides what goes in and
+    how it is read back.
+    """
+
+    async def put(self, case_id: UUID, payload: dict[str, Any]) -> None:
+        # One answer per case, so a second write for the same case is that answer
+        # finished later, and replaces the first rather than failing.
+        await self._execute(
+            """
+            INSERT INTO case_reading (case_id, payload)
+            VALUES (%s, %s)
+            ON CONFLICT (case_id) DO UPDATE SET payload = EXCLUDED.payload
+            """,
+            (case_id, json.dumps(payload)),
+        )
+
+    async def get(self, case_id: UUID) -> dict[str, Any] | None:
+        row = await self._one("SELECT payload FROM case_reading WHERE case_id = %s", (case_id,))
+        return None if row is None else dict(row["payload"])
+
+
 class AccountRepository(_Repository):
     """People and their credit ledger (0003_accounts).
 

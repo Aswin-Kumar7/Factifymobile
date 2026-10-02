@@ -63,7 +63,7 @@ from app.orchestration.adapters import (
     PoolLoginStore,
     PoolReviewQueue,
 )
-from app.orchestration.ledger import CaseReader, Ledger
+from app.orchestration.ledger import CaseReader, CaseReadingStore, Ledger
 from app.orchestration.media import MediaVerification
 from app.orchestration.pipeline import Orchestrator, SkippedCheck, VerificationResult
 from app.orchestration.receipt import ReceiptReader, ReceiptSigner
@@ -491,6 +491,9 @@ async def build(settings: Settings) -> dict[str, Any]:
         # page: its rating as the fact-checker published it there.
         "factcheck_resolver": factchecks,
         "case_reader": CaseReader(database, ranker=SourceCredibility.load()),
+        # What each answer showed that the ledger's rows do not hold (0011), kept so a
+        # case opened from History later reads back whole.
+        "case_readings": CaseReadingStore(database),
         "ingestion": ingestion,
         "factcheck_keeper": keeper,
         "review_queue": review_queue,
