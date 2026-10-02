@@ -6,7 +6,7 @@
   "summary": "सरकार ने उत्पाद शुल्क 2 रुपये प्रति लीटर घटाया है, 20 रुपये नहीं।",
   "action": "SHARE_WITH_CORRECTION",
   "action_reason": "Part of this is confirmed and part of it is contradicted by cited evidence. Share only with the correction.",
-  "rule_version": "2026.10.03.3",
+  "rule_version": "2026.10.03.4",
   "claims": [
     {
       "id": "cl_1",
@@ -17,7 +17,7 @@
       "importance": "MAIN_THESIS",
       "reason": "2 independent origins across 2 documents support this claim.",
       "rule_id": "rule.independent_corroboration",
-      "rule_version": "2026.10.03.3",
+      "rule_version": "2026.10.03.4",
       "strength": {
         "score": 0.8,
         "band": "strong",
@@ -138,7 +138,7 @@
       "importance": "HEADLINE",
       "reason": "2 independent sources contradict this claim: BusinessLine, Press Information Bureau.",
       "rule_id": "rule.independent_contradiction",
-      "rule_version": "2026.10.03.3",
+      "rule_version": "2026.10.03.4",
       "strength": {
         "score": 0.82,
         "band": "strong",

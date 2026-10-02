@@ -431,6 +431,15 @@ def _reports_on(item: Evidence) -> bool:
     )
 
 
+# What an AI-made picture can present as news that nobody reports (`_fabricated`): an
+# event, a figure, or who is pictured together. An AI selfie of the BRICS leaders -
+# the late Ebrahim Raisi among them - was read as "figures who appear to be Putin,
+# Modi, Xi ... are pictured at the BRICS Summit 2026", an IDENTITY claim, and fell
+# outside the rule with every other condition met (2026-10-02). Never a quote: who
+# said what is answered by its denials, not by silence.
+_FABRICATED_TYPES = frozenset({ClaimType.EVENT, ClaimType.STATISTIC, ClaimType.IDENTITY})
+
+
 def _search_settled(decision: Decision) -> bool:
     """Whether a claim's evidence already settles it, so no (further) web search is
     worth its cost.
@@ -992,7 +1001,7 @@ class Orchestrator:
             for o in outcomes
             if o.decision.status is ClaimStatus.UNVERIFIED
             and not o.decision.conflicting
-            and o.claim.claim_type in (ClaimType.EVENT, ClaimType.STATISTIC)
+            and o.claim.claim_type in _FABRICATED_TYPES
             and o.claim.coverage_expectation is CoverageExpectation.HIGH
             and is_central(o.claim)
             and not o.claim.within_developing_window

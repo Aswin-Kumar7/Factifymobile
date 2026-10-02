@@ -6,7 +6,7 @@
   "summary": null,
   "action": "WAIT_AND_RECHECK",
   "action_reason": "What could be read is supported; part of the input could not be read.",
-  "rule_version": "2026.10.03.3",
+  "rule_version": "2026.10.03.4",
   "claims": [
     {
       "id": "cl_1",
@@ -17,7 +17,7 @@
       "importance": "HEADLINE",
       "reason": "2 independent origins across 2 documents support this claim.",
       "rule_id": "rule.independent_corroboration",
-      "rule_version": "2026.10.03.3",
+      "rule_version": "2026.10.03.4",
       "strength": {
         "score": 0.79,
         "band": "strong",
@@ -138,7 +138,7 @@
       "importance": "SUPPORTING_DETAIL",
       "reason": "2 independent origins across 2 documents support this claim.",
       "rule_id": "rule.independent_corroboration",
-      "rule_version": "2026.10.03.3",
+      "rule_version": "2026.10.03.4",
       "strength": {
         "score": 0.79,
         "band": "strong",

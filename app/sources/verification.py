@@ -29,7 +29,10 @@ someone else's word ("the Army said"), is support when this call reads it as
 establishing the claim. Two readings that both find support are agreement, and
 throwing such a page away cost true news reports their only evidence (2026-10-02).
 And it can say a source finds the claim's words, picture or video genuine but
-presented out of context, which is neither side: kept as that, never as support.
+presented out of context, which is neither side: kept as that, never as support. The
+one exception to "never to the other side" is a claim about who a picture shows, read
+as support from a debunk calling the picture itself AI-made (`_MEDIA_FAKED`): the fake
+does show them, and the check's FALSE is kept.
 
 Credibility is attached last, from the curated publisher list rather than from a
 model, so the same outlet weighs the same on every request.
@@ -121,7 +124,30 @@ def _made_up(item: Evidence) -> bool:
     return _MADE_UP.search(f"{item.title or ''} {item.source_excerpt}") is not None
 
 
-def _settled(item: Evidence, read: str, reading: Any) -> tuple[Evidence | None, str]:
+# A claim about what a picture or video shows: who is pictured, what it is a photo of.
+_DEPICTS = re.compile(
+    r"\b(?:pictured|appears? to be|are seen|is seen|are shown|is shown|selfie|"
+    r"(?:photo(?:graph)?|picture|image|video|clip|footage)s? (?:shows?|of))\b",
+    re.IGNORECASE,
+)
+# A passage saying a picture or video itself was made or altered: narrower than
+# `_MADE_UP`, because it turns a source to the other side (`_settled`).
+_MEDIA_FAKED = re.compile(
+    r"\b(?:ai[- ]generated|(?:made|created|generated) (?:with|using|by) "
+    r"(?:ai|artificial intelligence)|deep ?fakes?|digitally (?:altered|created|edited|"
+    r"manipulated)|morphed|doctored|photoshopped)\b",
+    re.IGNORECASE,
+)
+
+
+def depicts(claim: Claim) -> bool:
+    """Whether a claim is about what a picture or video shows."""
+    return any(_DEPICTS.search(text) for text in (claim.search_text, claim.text) if text)
+
+
+def _settled(
+    item: Evidence, read: str, reading: Any, *, depiction: bool = False
+) -> tuple[Evidence | None, str]:
     """What the check's answer makes of one source: the copy to keep, or None, and
     the outcome for the log.
 
@@ -153,6 +179,26 @@ def _settled(item: Evidence, read: str, reading: Any) -> tuple[Evidence | None, 
         if about:
             return item, "kept (out of context)"
         return None, rejected
+
+    # A claim about who or what a picture shows, and a passage saying the picture
+    # itself is AI-made or altered: a contradiction, however the first reader read
+    # it. An AI selfie of the BRICS leaders was read as "figures who appear to be
+    # Putin, Modi, Xi ... are pictured", and France 24's "Viral Putin, Modi and Xi
+    # selfie at BRICS summit is AI-generated" was read as support - a fake does show
+    # them. The check said FALSE and about this claim for that and three more debunks,
+    # and all four were thrown away (2026-10-02). The one place this step turns a
+    # source to the other side, and only on the check's own FALSE and the debunk's
+    # own words.
+    if (
+        depiction
+        and supports
+        and about
+        and verdict == "FALSE"
+        and _MEDIA_FAKED.search(f"{item.title or ''} {item.source_excerpt}")
+    ):
+        return _as_contradiction(item, reading.reason), (
+            "kept (contradicts: the picture itself is called AI-made or altered)"
+        )
 
     if framed and about:
         if supports and not (verdict == "FALSE" and _made_up(item)):
@@ -277,6 +323,20 @@ def _as_support(item: Evidence) -> Evidence:
 def _as_narrower(item: Evidence, reason: str) -> Evidence:
     """A support the check read as only part of the claim: kept, as a narrower version."""
     return _marked(item, NARROWER_SCOPE, reason)
+
+
+def _as_contradiction(item: Evidence, reason: str) -> Evidence:
+    """A source the check read as calling the claim's picture made or altered."""
+    return item.model_copy(
+        update={
+            "direction": Direction.CONTRADICTS,
+            "match_basis": MatchBasis(
+                metric=f"passage_entailment: {reason}"[:200],
+                value=item.match_basis.value,
+                threshold=item.match_basis.threshold,
+            ),
+        }
+    )
 
 
 def _as_out_of_context(item: Evidence, reason: str) -> Evidence:
@@ -512,6 +572,7 @@ class SourceVerification:
             )
 
         kept: list[Evidence] = []
+        depiction = depicts(claim)
         for index, item in enumerate(sided):
             reading = answer.readings.get(index)
             host = _host(item.citation_url)
@@ -522,7 +583,7 @@ class SourceVerification:
                 continue
             read = _read_as(item)
             assert read is not None
-            settled, outcome = _settled(item, read, reading)
+            settled, outcome = _settled(item, read, reading, depiction=depiction)
             if settled is not None:
                 kept.append(settled)
             outcomes.append(
