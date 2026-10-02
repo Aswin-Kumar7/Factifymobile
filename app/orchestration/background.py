@@ -20,6 +20,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -31,6 +32,10 @@ logger = logging.getLogger("factify.background")
 _KEEP_SECONDS = 900.0
 
 Progress = Callable[[int, int], None]
+
+# What a running check is doing, for the app's progress line before any claim is
+# counted: reading a post can take a minute before there is a claim to count.
+PHASES = ("reading_post", "reading_pictures", "reading_video", "finding_claims", "checking")
 
 
 @dataclass(slots=True)
@@ -47,11 +52,23 @@ class BackgroundRun:
     on_cancel: Callable[[], Awaitable[None]] | None = field(default=None, repr=False)
     claims_done: int = 0
     claims_total: int = 0
+    # One of `PHASES`, once the check has said; None before.
+    phase: str | None = None
     response: Any = None
     error_status: int = 500
     error_detail: str = "the check did not finish"
     finished: float | None = None
     task: asyncio.Task[None] | None = field(default=None, repr=False)
+
+
+_current_run: ContextVar[BackgroundRun | None] = ContextVar("_current_run", default=None)
+
+
+def set_phase(phase: str) -> None:
+    """Say what the background check running here is doing now; nothing outside one."""
+    run = _current_run.get()
+    if run is not None and phase in PHASES:
+        run.phase = phase
 
 
 class BackgroundChecks:
@@ -77,6 +94,8 @@ class BackgroundChecks:
             run.claims_done, run.claims_total = done, total
 
         async def _go() -> None:
+            # The task's own copy of the context: `set_phase` inside it reaches this run.
+            _current_run.set(run)
             try:
                 run.response = await work(progress)
                 run.status = "done"

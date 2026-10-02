@@ -76,16 +76,19 @@ from app.extraction.ocr import READER_VERSION, OcrOutcome, looks_designed
 from app.extraction.pdf import PdfRejected, first_pages
 from app.extraction.pdf import extract as extract_pdf
 from app.extraction.reading import (
-    CONTEXT_ONLY,
+    NOTHING_TO_CHECK_SUMMARY,
+    WITHHELD_SUMMARY,
     Composed,
     Gap,
     GapCode,
     PartKind,
     Reading,
+    ReadingPolicy,
     ReadPart,
     gap,
     linked_article_label,
     picture_text_label,
+    served_policy,
 )
 from app.extraction.web import extract as extract_article
 from app.extraction.web import headline_and_summary
@@ -97,6 +100,7 @@ from app.intake.normalizer import (
     normalise_upload,
     normalise_url,
 )
+from app.intake.social_urls import Platform, PostRef, is_video_route, recognise
 from app.knowledge.registry import authenticate_trigger
 from app.media.composed import (
     PICTURE_DESCRIBED,
@@ -120,7 +124,7 @@ from app.media.video import (
 )
 from app.observability.logging import event
 from app.observability.middleware import REQUEST_ID_HEADER
-from app.orchestration.background import BackgroundChecks
+from app.orchestration.background import BackgroundChecks, set_phase
 from app.orchestration.correction import correction_message
 from app.orchestration.pipeline import (
     BACKGROUND_CEILING_SECONDS,
@@ -182,9 +186,30 @@ async def extract_claims_for(request: Request, intake: NormalisedIntake) -> Extr
     and "we read it and found nothing to check" are different answers, and collapsing
     them would let a configuration gap render as a clean bill of health.
     """
+    extracted, _ = await read_and_extract(request, intake)
+    return extracted
+
+
+async def read_and_extract(
+    request: Request, intake: NormalisedIntake
+) -> tuple[ExtractedClaims, Reading]:
+    """Read a pasted message or a submitted link, and pull its checkable claims out.
+
+    Beside the claims, what was read and what could not be (contract 1.8): the
+    message, the page's headline and article, the page a message links to, each a
+    part, and a gap for each thing missed - a page read only by its headline, an
+    article longer than is read, a linked page that could not be opened.
+
+    The parts carry no labels, so the text claims are found in is exactly the text
+    this read before 1.8: the message, then the linked page, a blank line apart.
+    """
+    reading = Reading(
+        kind="link" if intake.input_type is InputType.URL else "text",
+        url=intake.primary.source_url if intake.input_type is InputType.URL else None,
+    )
     pipeline = getattr(request.app.state, "claim_pipeline", None)
     if pipeline is None:
-        return ExtractedClaims(reason="claim extraction is not configured")
+        return ExtractedClaims(reason="claim extraction is not configured"), reading
 
     text = intake.primary.text or ""
     language = intake.language.language.value
@@ -193,23 +218,45 @@ async def extract_claims_for(request: Request, intake: NormalisedIntake) -> Extr
     # and the article it points at was never opened, so the substance of most shared
     # news went unread. The article is read and checked alongside the message, which
     # keeps whatever the message itself claims.
-    partial: str | None = None
     reviewed: tuple[str, ...] = ()
     reviews: tuple[ClaimReview, ...] = ()
     # The linked page's address, and where its text starts in what is extracted.
     page_url: str | None = None
     page_start = 0
     if intake.input_type is InputType.TEXT:
+        reading = reading.plus(parts=(ReadPart(kind=PartKind.MESSAGE, text=text, route="pasted"),))
         link = _first_link(text)
         if link is not None:
             page = await _read_linked_article(request, link)
-            if page is not None:
+            if page is None:
+                reading = reading.plus(
+                    gaps=(
+                        gap(
+                            "linked_page",
+                            GapCode.LINKED_PAGE_UNREAD,
+                            "The page the message links to could not be read; the message "
+                            "was checked on its own words.",
+                        ),
+                    )
+                )
+            else:
                 page_start = len(text) + 2
                 text = f"{text}\n\n{page.text}"
-                partial = page.partial
                 reviewed = page.reviewed
                 reviews = page.reviews
                 page_url = link
+                reading = reading.plus(
+                    parts=(
+                        ReadPart(
+                            kind=PartKind.LINKED_ARTICLE,
+                            text=page.text,
+                            route=page.route,
+                            complete=page.partial is None and not page.truncated,
+                            note=f"read from {link}",
+                        ),
+                    ),
+                    gaps=_page_gaps(page, part="linked_article", linked=True),
+                )
 
     if not text.strip() and intake.input_type is InputType.URL:
         # A submitted link carries no text of its own — normalisation is local and
@@ -218,12 +265,21 @@ async def extract_claims_for(request: Request, intake: NormalisedIntake) -> Extr
         # abstaining on an empty body. This was the gap that made every URL a no-op.
         page = await _read_linked_article(request, intake.primary.source_url or "")
         if page is None:
-            return ExtractedClaims(reason="the linked page could not be read")
+            return ExtractedClaims(reason="the linked page could not be read"), reading.plus(
+                gaps=(
+                    gap(
+                        "page",
+                        GapCode.PAGE_UNREAD,
+                        "Factify could not read this page: not its article, and not even "
+                        "its headline. Paste the text of the page instead.",
+                    ),
+                )
+            )
         text = page.text
-        partial = page.partial
         reviewed = page.reviewed
         reviews = page.reviews
         page_url = intake.primary.source_url
+        reading = reading.plus(parts=_page_parts(page), gaps=_page_gaps(page, part="article"))
         # What "on Monday" in its claims means (`current_reference_date`).
         current_reference_date.set(page.published)
         # The article's own language, detected on its body — not the URL's, which
@@ -231,23 +287,32 @@ async def extract_claims_for(request: Request, intake: NormalisedIntake) -> Extr
         language = detect(text).language.value
 
     if not text.strip():
-        return ExtractedClaims(reason="no readable text in this submission")
+        return ExtractedClaims(reason="no readable text in this submission"), reading
 
+    set_phase("finding_claims")
+    # Keyed by the text read, not by the address: a page read anew - its article this
+    # time, where last time only its headline - is found new claims in. For a message
+    # alone this is the message's own identity, as before.
+    content_hash = text_hash(text)
     extracted: ExtractedClaims = await pipeline.extract(
         text,
-        content_hash=intake.primary.sha256,
+        content_hash=content_hash,
         input_kind=intake.input_type.value,
         language=language,
     )
-    if partial and extracted.claims:
-        extracted = replace(extracted, partial_source=partial)
+    shared = _shared_fact_check(reviews, page_url)
     restated: tuple[Claim, ...] = ()
-    if reviewed and extracted.claims:
+    if shared is not None and reviewed and extracted.claims:
+        # Set aside only when the fact-check's own rating answers the claim it
+        # examines (`_answered_by_the_fact_check`). On a page it cannot answer by - a
+        # desk not on the fact-checker list, a roundup rating several claims, a rating
+        # it cannot read - the debunked claim, which extraction makes the HEADLINE, is
+        # what is searched and checked: set aside, only the findings were left, and one
+        # supported finding answered TRUE for a debunk (2026-10-03 review, finding 6).
         before = extracted.claims
         extracted = _without_the_reviewed_claim(extracted, reviewed)
         restated = tuple(claim for claim in before if claim not in extracted.claims)
 
-    shared = _shared_fact_check(reviews, page_url)
     if shared is not None:
         extracted = _answered_by_the_fact_check(
             extracted,
@@ -255,11 +320,67 @@ async def extract_claims_for(request: Request, intake: NormalisedIntake) -> Extr
             restated=restated,
             source=text,
             page_start=page_start,
-            content_hash=intake.primary.sha256,
+            content_hash=content_hash,
             input_kind=intake.input_type.value,
         )
         current_shared_review.set(shared)
-    return extracted
+    return extracted, reading
+
+
+def _page_parts(page: LinkedPage) -> tuple[ReadPart, ...]:
+    """A submitted page's parts: its headline, then its article - or its summary, when
+    the headline and summary were all that could be read.
+
+    Bare, with no labels: the two compose to `page.text`, the text claims have always
+    been found in. A page built from its text alone is one article part.
+    """
+    if page.title is None and not page.body:
+        return (ReadPart(kind=PartKind.ARTICLE, text=page.text, route=page.route),)
+    parts: list[ReadPart] = []
+    if page.title and page.title.strip():
+        parts.append(ReadPart(kind=PartKind.TITLE, text=page.title, route=page.route))
+    if page.body.strip():
+        parts.append(
+            ReadPart(
+                kind=PartKind.DESCRIPTION if page.partial else PartKind.ARTICLE,
+                text=page.body,
+                route=page.route,
+                complete=page.partial is None and not page.truncated,
+            )
+        )
+    return tuple(parts)
+
+
+def _page_gaps(page: LinkedPage, *, part: str, linked: bool = False) -> tuple[Gap, ...]:
+    """What a page's reading missed: its article, read only by its headline and
+    summary, or its tail, past `_MAX_ARTICLE_CHARS`."""
+    whose = "The page the message links to" if linked else "The page"
+    if page.partial:
+        if linked:
+            return (
+                gap(
+                    part,
+                    GapCode.LINKED_PAGE_UNREAD,
+                    f"{whose} gave only its headline and summary, not the article.",
+                ),
+            )
+        return (
+            gap(
+                part,
+                GapCode.HEADLINE_ONLY,
+                "Only the page's headline and summary could be read, not the full article.",
+            ),
+        )
+    if page.truncated:
+        return (
+            gap(
+                part,
+                GapCode.ARTICLE_TRUNCATED,
+                f"{whose} is long: its first {_MAX_ARTICLE_CHARS:,} characters of "
+                f"{page.total_chars:,} were read and checked.",
+            ),
+        )
+    return ()
 
 
 # The website of the link read for this request, set where the page is read
@@ -382,6 +503,12 @@ def _answered_by_the_fact_check(
     """
     record = shared.record
     like = restated[0] if restated else None
+    # Its type from a restatement that says what happened, never from one that only
+    # describes the fake: "a letter attributed to Nehru says ..." set aside as a QUOTE
+    # made the examined claim a "misattributed quote" (fake-7, 2026-10-03).
+    typed = next(
+        (c for c in restated if c.claim_type in (ClaimType.EVENT, ClaimType.STATISTIC)), None
+    )
     at = source.casefold().find(record.claim_text.casefold())
     anchor = ClaimAnchor(
         input_kind=input_kind,
@@ -396,11 +523,7 @@ def _answered_by_the_fact_check(
         id=SHARED_CLAIM_ID,
         text=record.claim_text,
         normalized_text=" ".join(record.claim_text.casefold().split()),
-        claim_type=(
-            like.claim_type
-            if like is not None and like.claim_type not in (ClaimType.OPINION, ClaimType.PREDICTION)
-            else ClaimType.EVENT
-        ),
+        claim_type=typed.claim_type if typed is not None else ClaimType.EVENT,
         severity=(
             Severity.CRITICAL
             if like is not None and like.severity is Severity.CRITICAL
@@ -524,8 +647,10 @@ def _first_link(text: str) -> str | None:
 
 
 # Longest article body sent to extraction. A news story fits well within this; a
-# very long reference page is truncated to its opening, where the headline claims sit.
-_MAX_ARTICLE_CHARS = 6000
+# very long reference page is truncated to its opening, where the headline claims
+# sit, and the answer says so (`GapCode.ARTICLE_TRUNCATED`). It was 6,000, which cut
+# a long-form report or a YouTube video's captions mid-story (2026-10-02).
+_MAX_ARTICLE_CHARS = 12000
 
 # Below this, what our own fetch got is a bot wall, a consent page or a paywall stub,
 # not the article — the same line the search path draws (`websearch._MIN_ARTICLE_CHARS`).
@@ -550,6 +675,18 @@ class LinkedPage:
     published: date | None = None
     # Those reviews in full: the claim, the rating, who gave it (`_shared_fact_check`).
     reviews: tuple[ClaimReview, ...] = ()
+    # The headline and the body `text` was made of, as read (contract 1.8).
+    title: str | None = None
+    body: str = ""
+    # How it was read: fetched, vendor_extract, headline_summary or search_listing.
+    route: str = "fetched"
+    # How long the body was before it was cut to `_MAX_ARTICLE_CHARS`.
+    total_chars: int = 0
+
+    @property
+    def truncated(self) -> bool:
+        """Only the opening of a longer article was read."""
+        return self.total_chars > _MAX_ARTICLE_CHARS
 
 
 async def _read_linked_article(request: Request, url: str) -> LinkedPage | None:
@@ -642,7 +779,28 @@ async def _read_linked_article(request: Request, url: str) -> LinkedPage | None:
         )
     except Exception:  # what is known about the site is a help, never a dependency
         logger.exception("the link's website could not be profiled")
-    return LinkedPage("\n\n".join(parts), partial, reviewed, published, reviews) if parts else None
+    if not parts:
+        return None
+    return LinkedPage(
+        "\n\n".join(parts),
+        partial,
+        reviewed,
+        published,
+        reviews,
+        title=title if title and title.strip() else None,
+        body=body if body.strip() else "",
+        route=_ROUTES.get(route, route),
+        total_chars=total,
+    )
+
+
+# How a page was read, in the words the contract uses for `parts[].route`.
+_ROUTES = {
+    "fetched": "fetched",
+    "vendor extract": "vendor_extract",
+    "page headline and summary": "headline_summary",
+    "search listing": "search_listing",
+}
 
 
 async def _indexed_reviews(request: Request, url: str) -> tuple[ClaimReview, ...]:
@@ -945,7 +1103,8 @@ def to_response(result: VerificationResult, *, receipt_url: str | None = None) -
         claims=claims,
         advisories=tuple(advisory_to_response(item) for item in result.advisories),
         skipped=tuple(
-            SkippedCheckResponse(check=item.check, reason=item.reason) for item in result.skipped
+            SkippedCheckResponse(check=item.check, reason=item.reason, kind=item.kind)
+            for item in result.skipped
         ),
         completeness_note=result.completeness_note(),
         # Offered only when one was actually issued and stored, so the link a
@@ -1045,6 +1204,8 @@ async def _verify(payload: VerifyRequest, request: Request) -> VerifyResponse | 
                 lambda: _checked(payload, request, time.perf_counter(), case_id=case_id),
                 user=user,
                 cost=cost,
+                # A post with a video is downloaded, heard and read before it is checked.
+                estimated_seconds=120 if _is_video_post(payload.url) else 90,
             )
 
         try:
@@ -1052,10 +1213,54 @@ async def _verify(payload: VerifyRequest, request: Request) -> VerifyResponse | 
         except BaseException:
             await release_credit(request)
             raise
-        await charge(request, user, cost, response=response)
+        await _settle(request, user, cost, response)
         if watching is not None:
             await watching.done(response.case_id)
     return _echo(response, key)
+
+
+def _is_video_post(url: str | None) -> bool:
+    """Whether a submitted link's address says it is a video post (a reel, YouTube)."""
+    ref = recognise(url) if url else None
+    return ref is not None and is_video_route(ref)
+
+
+def billable(response: VerifyResponse) -> bool:
+    """Whether a finished check is charged.
+
+    Not an answer held back because too little of the input could be read
+    (`verdict_withheld`), nor a link or a post with no claim in it to check: neither
+    was checked against anything, and the person is told to send it another way.
+    """
+    read = response.input_read
+    if read is None:
+        return True
+    if read.verdict_withheld:
+        return False
+    return not (read.kind in ("link", "social_post") and not response.claims)
+
+
+async def _settle(request: Request, user: Any, cost: int, response: VerifyResponse) -> None:
+    """Charge a finished check, or give back what was held for it when it is not
+    billable; then keep what was read with the case. Neither may fail the check."""
+    if billable(response):
+        await charge(request, user, cost, response=response)
+    else:
+        await release_credit(request)
+    await _keep_reading(request, response)
+
+
+async def _keep_reading(request: Request, response: VerifyResponse) -> None:
+    """Keep what was read with the case (`case_readings`), so the answer read back
+    later shows it too. Not for an answer served from the cache: its case was kept
+    when it was first checked. A failure is logged and never fails the check."""
+    store = getattr(request.app.state, "case_readings", None)
+    if store is None or response.from_cache:
+        return
+    try:
+        await store.put(UUID(response.case_id), response)
+    except Exception:
+        logger.exception("what was read could not be kept with the case")
 
 
 def _in_background(
@@ -1092,7 +1297,7 @@ def _in_background(
                 run = runs.get(str(case_id))
                 if run is not None:
                     run.settling = True
-                await charge(request, user, cost, response=response)
+                await _settle(request, user, cost, response)
                 if watching is not None:
                     await watching.done(str(case_id))
         finally:
@@ -1122,7 +1327,7 @@ async def _checked(
     payload: VerifyRequest, request: Request, arrived: float, *, case_id: UUID | None = None
 ) -> VerifyResponse:
     """The check itself; `verify` above decides who may run it and records the cost."""
-    orchestrator = get_orchestrator(request)
+    get_orchestrator(request)
 
     try:
         intake = (
@@ -1130,12 +1335,65 @@ async def _checked(
             if payload.url
             else normalise_text(payload.text or "", consent=payload.consent_to_process_media)
         )
+        # A post's address pasted as a message, with a word or two of the share sheet's
+        # around it, is the post: read as text it was one more page nobody could read.
+        shared = _only_a_post(payload.text or "") if not payload.url else None
+        if shared is not None:
+            intake = normalise_url(shared, consent=payload.consent_to_process_media)
     except IntakeRejected as rejected:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(rejected)
         ) from rejected
 
     case_id = case_id or uuid4()
+    ref = _post_of(request, intake)
+    if ref is not None:
+        # A post on X, Instagram or YouTube: read whole - its words, its pictures, its
+        # video - through the platform's own embed addresses (`app/api/post_checks.py`).
+        from app.api.post_checks import checked_post
+
+        return await checked_post(request, payload, intake, ref, case_id=case_id, arrived=arrived)
+    return await checked_input(request, payload, intake, case_id=case_id, arrived=arrived)
+
+
+def _post_of(request: Request, intake: NormalisedIntake) -> PostRef | None:
+    """The social post a submitted link is, when this server reads that platform's
+    posts; None for any other input, which is read as it always was."""
+    if intake.input_type is not InputType.URL or intake.extraction_route != "url.social":
+        return None
+    ref = recognise(intake.primary.source_url or "")
+    reader = getattr(request.app.state, "social_reader", None)
+    if ref is None or reader is None or ref.platform is Platform.FACEBOOK:
+        return None
+    return ref if reader.handles(ref) else None
+
+
+# How many words of its own a message may have and still be only a post's address:
+# "Check this out", "via @app" - the share sheet's, not a claim.
+_SHARE_WORDS = 3
+
+
+def _only_a_post(text: str) -> str | None:
+    """A social post's address, when a message is that and little more; else None."""
+    link = _first_link(text)
+    if link is None or recognise(link) is None:
+        return None
+    rest = _LINK_IN_TEXT.sub(" ", text)
+    if len(_WORD.findall(rest.casefold())) > _SHARE_WORDS:
+        return None
+    return link
+
+
+async def checked_input(
+    request: Request,
+    payload: VerifyRequest,
+    intake: NormalisedIntake,
+    *,
+    case_id: UUID,
+    arrived: float,
+) -> VerifyResponse:
+    """A pasted message or a link to a page: read, its claims found, and checked."""
+    orchestrator = get_orchestrator(request)
     _LINK_PROFILE.set(None)
 
     # A repeat is answered before anything is spent on it. Extraction is a metered
@@ -1167,33 +1425,33 @@ async def _checked(
                         "source_risk": report.level,
                     }
                 )
-        return served
+        return recalled(request, intake.cache_identity, served)
 
-    extracted = await extract_claims_for(request, intake)
+    extracted, reading = await read_and_extract(request, intake)
     profile = _LINK_PROFILE.get()
+    shown: dict[str, Any] = (
+        {"source_profile": _profile_response(profile), "source_risk": profile.level}
+        if profile is not None
+        else {}
+    )
+    composed = reading.document()
+    chosen = served_policy(reading, accept_partial=payload.accept_partial)
 
-    # A link nobody could open is not a verdict about the link.
+    # A link with no claims to check is not a verdict about the link.
     #
-    # The gap was reported as a skipped check and the response still read "not
-    # enough evidence to decide" — a sentence about evidence, for a page that was
-    # never fetched. Measured on an Olympics.com report of a result carried
-    # worldwide: zero bytes, zero claims, and an answer that blamed the record.
-    # "We could not read this page" and "we read it and found nothing" are
-    # different answers and the caller has to be able to tell them apart.
-    #
-    # Nor is a link with no claims to check. It used to pass through when extraction
-    # ran cleanly and found nothing, and a verification of zero claims came back
-    # "Unconfirmed" — on a Reuters bot wall and on a page whose every claim failed
-    # its anchor. Unconfirmed means sources were looked for; here none were.
+    # It used to pass through when extraction ran cleanly and found nothing, and a
+    # verification of zero claims came back "Unconfirmed" - on a Reuters bot wall and
+    # on a page whose every claim failed its anchor. Unconfirmed means sources were
+    # looked for; here none were. Then it was refused (422) with "try pasting the
+    # text of the page", which is no advice for a video and told the person nothing
+    # of what had been read. Now the answer says: a page that could not be read in
+    # full is held back, saying what was missed; a page read in full with nothing in
+    # it to check says exactly that (`answer_without_claims`). Neither is charged.
     if not extracted.claims and intake.input_type is InputType.URL:
-        reason = extracted.reason or "no checkable claims were found on the page"
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=(
-                f"{reason}. Nothing was checked. Try pasting the text of "
-                "the page instead of the link."
-            ),
+        response = await answer_without_claims(
+            request, intake, reading, case_id=case_id, reason=extracted.reason
         )
+        return response.model_copy(update=shown)
 
     # The pages the person submitted, which can never be evidence for themselves.
     own_pages: set[str] = set()
@@ -1205,6 +1463,7 @@ async def _checked(
     if embedded is not None:
         own_pages.add(page_key(embedded))
 
+    set_phase("checking")
     result = await orchestrator.verify(  # type: ignore[attr-defined]
         intake,
         case_id=case_id,
@@ -1215,24 +1474,22 @@ async def _checked(
         # A site with strong warnings can hold the answer back from "True", never
         # make a claim false (`roll_up`).
         source_risk=profile.level if profile is not None else SourceRisk.UNKNOWN,
-    )
-    shown: dict[str, Any] = (
-        {"source_profile": _profile_response(profile), "source_risk": profile.level}
-        if profile is not None
-        else {}
+        # What could not be read, where it could decide the answer or may be read
+        # next time, keeps the run out of the cache; a gap that could decide it keeps
+        # the answer from TRUE.
+        noted=gaps_as_skips(noted_gaps(reading)),
+        partial_input=chosen is ReadingPolicy.CHECK_PARTIALLY,
     )
 
     cached = await _from_cache(request, result)
     if cached is not None:
-        return cached.model_copy(update=shown)
+        return recalled(request, intake.cache_identity, cached.model_copy(update=shown))
 
     # Extraction failing is a gap in the answer, not a failure of the request. It is
     # attached so the response can say the text could not be read into claims rather
     # than presenting "nothing to check" as "nothing wrong".
     if extracted.reason:
         result.skipped.append(SkippedCheck(check="claim_extraction", reason=extracted.reason))
-    if extracted.partial_source:
-        result.skipped.append(SkippedCheck(check="linked_page", reason=extracted.partial_source))
 
     event(
         logger,
@@ -1243,8 +1500,176 @@ async def _checked(
         claims=len(extracted.claims),
         from_cache=result.from_cache,
         elapsed_ms=result.elapsed_ms,
+        read_parts=len(reading.parts),
+        read_gaps=[item.code.value for item in reading.gaps],
     )
-    return to_response(result).model_copy(update=shown)
+    response = with_reading(
+        to_response(result),
+        reading,
+        composed,
+        partially=chosen is ReadingPolicy.CHECK_PARTIALLY,
+    )
+    remember_reading(request, intake.cache_identity, response)
+    return response.model_copy(update=shown)
+
+
+# A gap that may not be there next time, in what the answer rests on - a page that gave
+# only its headline today, a YouTube video's captions the vendor did not return - keeps
+# the answer out of the cache even when it could not decide it. A gap that will be
+# there every time (a long article's tail, an album's fifth picture, a YouTube video
+# nobody may download) does not; nor does a page a message or a post merely links to,
+# whose own words are the answer and whose dead links would otherwise be re-checked on
+# every forward.
+_MAY_READ_NEXT_TIME = frozenset(
+    {
+        GapCode.HEADLINE_ONLY,
+        GapCode.DESCRIPTION_UNREAD,
+        GapCode.PAGE_UNREAD,
+    }
+)
+
+
+def noted_gaps(reading: Reading) -> tuple[Gap, ...]:
+    """The gaps that keep an answer out of the cache: those that could decide it, and
+    those that may be read next time (`_MAY_READ_NEXT_TIME`)."""
+    return tuple(item for item in reading.gaps if item.blocking or item.code in _MAY_READ_NEXT_TIME)
+
+
+# The check a gap is reported under in `skipped`, by what is missing - names an older
+# app already knows where it can ("image_text", "document_text").
+_CHECK_OF_PART = {
+    "picture_text": "image_text",
+    "picture": "image_text",
+    "picture_description": "image_text",
+    "thumbnail": "image_text",
+    "document_text": "document_text",
+    "article": "linked_page",
+    "page": "linked_page",
+    "linked_page": "linked_page",
+    "linked_article": "linked_page",
+    "transcript": "speech",
+    "speech": "speech",
+    "video": "video",
+    "on_screen_text": "video",
+    "video_description": "video",
+}
+
+
+def gaps_as_skips(gaps: Sequence[Gap]) -> list[SkippedCheck]:
+    """Each gap as the skipped check an older app shows: "post_text was not checked:
+    <detail>", marked as a gap in reading (`kind="reading"`)."""
+    return [
+        SkippedCheck(
+            check=_CHECK_OF_PART.get(item.part, "post_text"), reason=item.detail, kind="reading"
+        )
+        for item in gaps
+    ]
+
+
+def with_reading(
+    response: VerifyResponse,
+    reading: Reading,
+    composed: Composed,
+    *,
+    partially: bool = False,
+    withheld: bool = False,
+) -> VerifyResponse:
+    """The answer with what was read (`input_read`), and every gap in its skipped
+    checks, marked as reading - those the pipeline was told of and the rest."""
+    return response.model_copy(
+        update={
+            "input_read": input_read_response(
+                reading, composed, partially=partially, withheld=withheld
+            ),
+            "skipped": _with_reading_gaps(response.skipped, gaps_as_skips(reading.gaps), ()),
+        }
+    )
+
+
+async def answer_without_claims(
+    request: Request,
+    intake: NormalisedIntake,
+    reading: Reading,
+    *,
+    case_id: UUID,
+    reason: str | None = None,
+) -> VerifyResponse:
+    """The answer for a link or a post in which no claim was found to check.
+
+    When something of it could not be read - its article, its picture, its video -
+    the claim may be in what was missed, and the verdict is withheld: no verdict, the
+    gaps said, and "paste the text or upload the picture or video" (`WITHHELD_SUMMARY`).
+    When all of it was read, there is nothing to fact-check, and the answer says so
+    (`NOTHING_TO_CHECK_SUMMARY`). When finding claims failed, the answer says that.
+
+    Recorded as a case (the person can report it, and find it in their history), with
+    nothing searched and nothing cached, and never charged (`billable`). An older app
+    is told the input was not checked (`claim_extraction`), so it does not show
+    "Nothing to fact-check" for a post it could not read.
+    """
+    withheld = bool(reading.gaps)
+    noted = gaps_as_skips(reading.gaps)
+    if withheld:
+        noted.append(
+            SkippedCheck(
+                check="claim_extraction",
+                reason="not checked: Factify could not read all of it",
+                kind="reading",
+            )
+        )
+    elif reason:
+        noted.append(SkippedCheck(check="claim_extraction", reason=reason))
+    result = await get_orchestrator(request).verify(  # type: ignore[attr-defined]
+        intake, case_id=case_id, claims=[], fresh=True, noted=noted
+    )
+    language = _reading_language(reading)
+    summary: str | None
+    if withheld:
+        summary = WITHHELD_SUMMARY.get(language, WITHHELD_SUMMARY["en"])
+    elif reason:
+        summary = None
+    else:
+        summary = NOTHING_TO_CHECK_SUMMARY.get(language, NOTHING_TO_CHECK_SUMMARY["en"])
+    response = to_response(result)
+    event(
+        logger,
+        "verify request served",
+        module="api.verify",
+        outcome="ok",
+        action=result.action.value,
+        claims=0,
+        from_cache=False,
+        verdict_withheld=withheld,
+        read_parts=len(reading.parts),
+        read_gaps=[item.code.value for item in reading.gaps],
+        reason=reason,
+    )
+    response = with_reading(
+        response.model_copy(update={"summary": summary, "case_id": str(case_id)}),
+        reading,
+        # Nothing was checked in a withheld answer: no part is said to be.
+        Composed(text="") if withheld else reading.document(),
+        withheld=withheld,
+    )
+    # Said even when the pipeline did not report what it was told.
+    present = {(item.check, item.reason) for item in response.skipped}
+    missing = tuple(
+        SkippedCheckResponse(check=item.check, reason=item.reason, kind=item.kind)
+        for item in noted
+        if (item.check, item.reason) not in present
+    )
+    if not missing:
+        return response
+    return response.model_copy(update={"skipped": (*response.skipped, *missing)})
+
+
+def _reading_language(reading: Reading) -> str:
+    """The language a fixed sentence about a reading is written in: that of what was
+    read in the input's own words, English when nothing was."""
+    authored = _authored(reading)
+    if not authored.strip():
+        return "en"
+    return detect(authored).language.value
 
 
 @router.get(
@@ -1268,6 +1693,9 @@ async def get_case(case_id: UUID, request: Request) -> VerifyResponse | JSONResp
                     "claims_done": run.claims_done,
                     "claims_total": run.claims_total,
                     "elapsed_seconds": runs.elapsed(run),
+                    # What it is doing (1.8): reading_post, reading_pictures,
+                    # reading_video, finding_claims or checking; null before it says.
+                    "phase": run.phase,
                 },
             )
         if run.status == "failed":
@@ -1439,6 +1867,9 @@ async def verify_file(
     consent_to_process_media: Annotated[bool, Form()] = False,
     recheck: Annotated[bool, Form()] = False,
     background: Annotated[bool, Form()] = False,
+    # "Check what was read" (1.8). Accepted for the contract; an upload is always
+    # checked on what could be read, and says what could not (`served_policy`).
+    accept_partial: Annotated[bool, Form()] = False,
 ) -> VerifyResponse | JSONResponse:
     """Images and PDFs resolve in this request unless `background` is set; video
     always returns 202.
@@ -1480,7 +1911,7 @@ async def verify_file(
             raise
         # A video is charged by its background check, when it has its answer.
         if isinstance(response, VerifyResponse):
-            await charge(request, user, cost, response=response)
+            await _settle(request, user, cost, response)
         if watching is not None:
             # A video is answered with a case id to poll, which is where it ends too.
             answered = (
@@ -1644,6 +2075,7 @@ async def _checked_upload(
     synthetic: Callable[[], Awaitable[bool]] | None = None,
     seen: _Seen | None = None,
     started_at: float | None = None,
+    probed: bool = False,
 ) -> VerifyResponse:
     """A picture or a PDF, read and checked. Also a video, already `read`, checked
     through one of its frames.
@@ -1651,12 +2083,13 @@ async def _checked_upload(
     `synthetic` says whether the upload's own checks found it AI-made; the pipeline
     asks it only when that could decide the case (`Orchestrator._fabricated`). `seen`
     is told what the picture was read as. `started_at` is when the check's own time
-    began (`Orchestrator.verify`): for a video, when its reading was done.
+    began (`Orchestrator.verify`): for a video, when its reading was done. `probed`:
+    the caller already asked the verdict cache (`_checked_video`, before reading).
     """
     orchestrator = get_orchestrator(request)
     # Kept under what read it as well: a verdict stored for what an older reader made
     # of this picture is not served once the reading has changed.
-    keyed = replace(intake, cache_identity=f"{intake.cache_identity}|reader:{READER_VERSION}")
+    keyed = _upload_identity(intake)
     # Read here, rather than handed in: a picture or a PDF, whose reading is
     # remembered for a repeat served from the cache.
     own_reading = read is None
@@ -1665,7 +2098,9 @@ async def _checked_upload(
     # the text path probes before extraction: a repeat should cost nothing. "Check
     # again" is the exception, as it is there.
     readings = _remembered_readings(request)
-    hit = None if recheck else await orchestrator.cached(keyed, case_id=case_id)  # type: ignore[attr-defined]
+    hit = (
+        None if recheck or probed else await orchestrator.cached(keyed, case_id=case_id)  # type: ignore[attr-defined]
+    )
     if hit is not None:
         served = await cached_full_response(request, hit) or _thin(hit)
         shown = (
@@ -1723,10 +2158,13 @@ async def _checked_upload(
                     ReadPart(
                         kind=PartKind.LINKED_ARTICLE,
                         text=page.text,
-                        route="fetched",
+                        route=page.route,
                         label=linked_article_label(urlsplit(link).hostname),
+                        complete=page.partial is None and not page.truncated,
                     )
                 )
+                for missed in _page_gaps(page, part="linked_article", linked=True):
+                    read = read.missing("linked_page", missed)
                 composed = _to_check(read.reading)
                 own_pages.add(page_key(link))
         extracted = await _extract_from_document(
@@ -1753,6 +2191,9 @@ async def _checked_upload(
         # (`_with_reading_gaps`), and the answer is kept: the same video would be cut
         # the same way next time, and was never served from the cache.
         noted=_blocking_notes(read),
+        # Checked past a gap that could decide it, the answer is never TRUE: an upload
+        # is always checked on what could be read (`served_policy`), and says so.
+        partial_input=read.reading.blocked,
     )
 
     response = await _from_cache(request, result) or to_response(result)
@@ -1783,6 +2224,11 @@ async def _checked_upload(
     )
 
 
+def _upload_identity(intake: NormalisedIntake) -> NormalisedIntake:
+    """An upload as its verdict is cached: by its bytes, and by the reader that read it."""
+    return replace(intake, cache_identity=f"{intake.cache_identity}|reader:{READER_VERSION}")
+
+
 # How many words of its own an upload needs - on it, said in it, shown across it -
 # before what it shows is checked beside them: three, as `Reading.substantive`
 # counts.
@@ -1791,7 +2237,7 @@ _OWN_WORDS = 3
 
 def _authored(reading: Reading) -> str:
     """The upload's own words: everything read from it but Factify's descriptions."""
-    return "\n".join(part.text for part in reading.parts if part.kind not in CONTEXT_ONLY)
+    return "\n".join(part.text for part in reading.parts if not part.described)
 
 
 def _to_check(reading: Reading) -> Composed:
@@ -1799,15 +2245,15 @@ def _to_check(reading: Reading) -> Composed:
 
     Its own words and what it shows, each under its label (`compose`), when it has
     words of its own (`_OWN_WORDS`). A photograph with none - or a watermark, a sign -
-    is its own words alone (`Reading.document()`), often nothing: with no claims it
-    is checked as a picture, for where it was published before and what its file
-    says (`MediaVerification`). Claims made only of Factify's description of an old
-    flood photograph are nothing a search can settle, and they took the place of the
-    picture's own questions (2026-10-03 review).
+    is its own words alone (`Reading.document(descriptions=False)`), often nothing:
+    with no claims it is checked as a picture, for where it was published before and
+    what its file says (`MediaVerification`). Claims made only of Factify's
+    description of an old flood photograph are nothing a search can settle, and they
+    took the place of the picture's own questions (2026-10-03 review).
     """
     if len(_authored(reading).split()) >= _OWN_WORDS:
         return compose(reading)
-    return reading.document()
+    return reading.document(descriptions=False)
 
 
 def _blocking_notes(read: _Read) -> tuple[SkippedCheck, ...]:
@@ -1843,10 +2289,22 @@ def _with_reading_gaps(
 
 
 def _input_read(reading: Reading, composed: Composed) -> InputReadResponse:
-    """What was read from an upload, part by part, for the answer (contract 1.8).
+    """What was read from an upload, part by part, for the answer (contract 1.8)."""
+    return input_read_response(reading, composed, partially=reading.blocked)
 
-    A part is `checked` when it is in the text claims were found in, at the offsets
-    given - for an upload that includes what the picture or the video shows.
+
+def input_read_response(
+    reading: Reading,
+    composed: Composed,
+    *,
+    partially: bool = False,
+    withheld: bool = False,
+) -> InputReadResponse:
+    """What was read from the input, part by part, for the answer (contract 1.8).
+
+    A part is `checked` when it is in the text claims were found in (`composed`), at
+    the offsets given - what a picture or a video shows included. `partially`: the
+    answer was checked past a blocking gap; `withheld`: it was not checked at all.
     """
     parts = []
     for index, part in enumerate(reading.parts):
@@ -1872,6 +2330,11 @@ def _input_read(reading: Reading, composed: Composed) -> InputReadResponse:
         )
     return InputReadResponse(
         kind=reading.kind,
+        platform=reading.platform,
+        url=reading.url,
+        author=reading.author,
+        handle=reading.handle,
+        published_at=reading.published_at,
         parts=tuple(parts),
         gaps=tuple(
             ReadGapResponse(
@@ -1881,7 +2344,46 @@ def _input_read(reading: Reading, composed: Composed) -> InputReadResponse:
         ),
         limits=reading.limits,
         complete=reading.complete,
+        verdict_withheld=withheld,
+        checked_partially=partially and not withheld and reading.blocked,
     )
+
+
+# What was read for recent answers, by the identity they are cached under, so a
+# repeat served from the verdict cache - which reads nothing - can still say what was
+# read: the parts, the gaps, the picture and video checks. In memory and bounded,
+# like `_remembered_readings`; the case's own record (`case_readings`) outlives it.
+_RECALLED_FIELDS = ("input_read", "media_report", "media_reports", "image_reading", "speech")
+
+
+def remember_reading(request: Request, identity: str, response: VerifyResponse) -> None:
+    """Keep what an answer says was read, for a repeat of it served from the cache."""
+    memo = getattr(request.app.state, "input_reads", None)
+    if memo is None:
+        memo = {}
+        request.app.state.input_reads = memo
+    kept: dict[str, Any] = {name: getattr(response, name) for name in _RECALLED_FIELDS}
+    kept["skipped"] = tuple(item for item in response.skipped if item.kind == "reading")
+    memo.pop(identity, None)
+    memo[identity] = kept
+    while len(memo) > _READINGS_KEPT:
+        memo.pop(next(iter(memo)))
+
+
+def recalled(request: Request, identity: str, served: VerifyResponse) -> VerifyResponse:
+    """A cached answer with what was read when it was first checked, where it lacks it."""
+    memo = getattr(request.app.state, "input_reads", None)
+    kept = memo.get(identity) if isinstance(memo, dict) else None
+    if not kept:
+        return served
+    update: dict[str, Any] = {
+        name: kept[name] for name in _RECALLED_FIELDS if kept[name] and not getattr(served, name)
+    }
+    present = {(item.check, item.reason) for item in served.skipped}
+    missing = tuple(item for item in kept["skipped"] if (item.check, item.reason) not in present)
+    if missing:
+        update["skipped"] = (*served.skipped, *missing)
+    return served.model_copy(update=update) if update else served
 
 
 # Where the picture checks' own copies of earlier appearances are served from.
@@ -2081,16 +2583,19 @@ async def _checked_video(
     """
     began = time.perf_counter()
     window = _video_window(request)
-    # What is said takes longest to read, so it is read from the start, beside the
-    # frames being taken.
-    hearing = asyncio.create_task(_heard(request, data, max_seconds=window))
-    try:
-        extracted = await KeyframeExtractor.reading(read_seconds=window).extract(data)
-    except BaseException:
-        hearing.cancel()
-        raise
-    if not extracted.succeeded:
-        hearing.cancel()
+    keyed = _upload_identity(intake)
+    # A repeat is answered before the video is read: reading it - its speech, the
+    # words on its frames, one description - took a minute and more, and was spent
+    # again on every repeat only to be served the stored verdict afterwards.
+    hit = (
+        None if recheck else await get_orchestrator(request).cached(keyed, case_id=case_id)  # type: ignore[attr-defined]
+    )
+    if hit is not None:
+        served = await cached_full_response(request, hit) or _thin(hit)
+        return recalled(request, keyed.cache_identity, served)
+
+    extracted, video = await read_video(request, data, window=window)
+    if video is None:
         # Nothing could be taken from the clip: said, and nothing else claimed.
         await _record_unprocessed_video(request, case_id=case_id, intake=intake)
         result = await get_orchestrator(request).verify(  # type: ignore[attr-defined]
@@ -2110,8 +2615,129 @@ async def _checked_video(
             }
         )
 
-    frames = [frame.data for frame in extracted.keyframes]
     settings = request.app.state.settings
+    inspection = video.inspection
+    heard = video.heard
+    read = video.read
+
+    # The answer is checked through one of the frames read - the picture questions
+    # (has it been published before) are asked of it - and kept under the video's own
+    # identity, never the frame's: the same frame can open another video.
+    middle = replace(
+        normalise_upload(
+            video.middle,
+            max_bytes=settings.limits.max_upload_bytes,
+            declared_type="image/jpeg",
+            consent=True,
+        ),
+        cache_identity=intake.cache_identity,
+    )
+
+    async def video_made_by_ai() -> bool:
+        if inspection is None:
+            return False
+        return ai_made(media_report_to_response(await inspection, thumbnails=_THUMBNAILS))
+
+    # The check's time is counted from when the video's own began: reading a long
+    # clip takes minutes, and the person's wait (`BACKGROUND_CEILING_SECONDS`) holds
+    # the reading and the searching together. However long the reading took, the
+    # searching keeps `BACKGROUND_MIN_READING_SECONDS`.
+    searching = _searching_seconds(time.perf_counter() - began)
+    budget = check_seconds.set(searching) if searching is not None else None
+    try:
+        response = await _checked_upload(
+            request,
+            middle,
+            case_id=case_id,
+            recheck=recheck,
+            read=read,
+            synthetic=video_made_by_ai,
+            started_at=time.perf_counter(),
+            probed=True,
+        )
+    finally:
+        if budget is not None:
+            check_seconds.reset(budget)
+    notes = (SkippedCheckResponse(check="video_frames", reason=video.note()),)
+    if heard.transcript is not None:
+        response = response.model_copy(
+            update={
+                "speech": SpeechResponse(
+                    text=heard.transcript.text,
+                    language=heard.transcript.language,
+                    cut_off=heard.transcript.cut_off,
+                )
+            }
+        )
+    response = response.model_copy(update={"skipped": (*response.skipped, *notes)})
+    if inspection is not None:
+        try:
+            report = await inspection
+        except Exception:
+            logger.exception("the video's picture checks failed")
+        else:
+            response = response.model_copy(
+                update={
+                    "media_report": media_report_to_response(report, thumbnails=_THUMBNAILS),
+                    "advisories": (
+                        *response.advisories,
+                        *(advisory_to_response(item) for item in report.advisories),
+                    ),
+                }
+            )
+    if not response.from_cache:
+        remember_reading(request, keyed.cache_identity, response)
+    return response
+
+
+@dataclass(slots=True)
+class VideoRead:
+    """A video read whole: what is said, the words shown across it, what it shows,
+    and the picture checks of its keyframes, started beside the reading."""
+
+    extracted: ExtractedVideo
+    taken: FramesRead
+    heard: SpeechOutcome
+    shown_words: FramesText
+    looked: _Described
+    read: _Read
+    duration: float
+    # The frame the answer is checked through: the middle one of those read.
+    middle: bytes
+    inspection: asyncio.Task[Any] | None
+    window: int
+
+    def note(self) -> str:
+        """What was read of the video and what was checked, in one line."""
+        return _video_note(
+            self.extracted,
+            self.taken,
+            self.heard,
+            self.shown_words,
+            self.looked,
+            window=self.window,
+        )
+
+
+async def read_video(
+    request: Request, data: bytes, *, window: int
+) -> tuple[ExtractedVideo, VideoRead | None]:
+    """Read a video - an upload, or one downloaded from a post - and start its picture
+    checks. None beside what the extractor said when no frame could be taken at all.
+    """
+    # What is said takes longest to read, so it is read from the start, beside the
+    # frames being taken.
+    hearing = asyncio.create_task(_heard(request, data, max_seconds=window))
+    try:
+        extracted = await KeyframeExtractor.reading(read_seconds=window).extract(data)
+    except BaseException:
+        hearing.cancel()
+        raise
+    if not extracted.succeeded:
+        hearing.cancel()
+        return extracted, None
+
+    frames = [frame.data for frame in extracted.keyframes]
     inspector = getattr(request.app.state, "media_inspector", None)
     # The face model reads frames spread evenly across the clip (`even_frames`).
     even = [frame.data for frame in extracted.even_frames]
@@ -2141,81 +2767,23 @@ async def _checked_video(
         )
     except BaseException:
         hearing.cancel()
+        if inspection is not None:
+            inspection.cancel()
         raise
-    read = _video_reading(taken, heard, shown_words, looked, duration=duration)
-
-    # The answer is checked through one of the frames read - the picture questions
-    # (has it been published before) are asked of it - and kept under the video's own
-    # identity, never the frame's: the same frame can open another video.
     picture = (
         taken.frames[len(taken.frames) // 2].data if taken.frames else frames[len(frames) // 2]
     )
-    middle = replace(
-        normalise_upload(
-            picture,
-            max_bytes=settings.limits.max_upload_bytes,
-            declared_type="image/jpeg",
-            consent=True,
-        ),
-        cache_identity=intake.cache_identity,
-    )
-
-    async def video_made_by_ai() -> bool:
-        if inspection is None:
-            return False
-        return ai_made(media_report_to_response(await inspection, thumbnails=_THUMBNAILS))
-
-    # The check's time is counted from when the video's own began: reading a long
-    # clip takes minutes, and the person's wait (`BACKGROUND_CEILING_SECONDS`) holds
-    # the reading and the searching together. However long the reading took, the
-    # searching keeps `BACKGROUND_MIN_READING_SECONDS`.
-    searching = _searching_seconds(time.perf_counter() - began)
-    budget = check_seconds.set(searching) if searching is not None else None
-    try:
-        response = await _checked_upload(
-            request,
-            middle,
-            case_id=case_id,
-            recheck=recheck,
-            read=read,
-            synthetic=video_made_by_ai,
-            started_at=time.perf_counter(),
-        )
-    finally:
-        if budget is not None:
-            check_seconds.reset(budget)
-    notes = (
-        SkippedCheckResponse(
-            check="video_frames",
-            reason=_video_note(extracted, taken, heard, shown_words, looked, window=window),
-        ),
-    )
-    if heard.transcript is not None:
-        response = response.model_copy(
-            update={
-                "speech": SpeechResponse(
-                    text=heard.transcript.text,
-                    language=heard.transcript.language,
-                    cut_off=heard.transcript.cut_off,
-                )
-            }
-        )
-    response = response.model_copy(update={"skipped": (*response.skipped, *notes)})
-    if inspection is None:
-        return response
-    try:
-        report = await inspection
-    except Exception:
-        logger.exception("the video's picture checks failed")
-        return response
-    return response.model_copy(
-        update={
-            "media_report": media_report_to_response(report, thumbnails=_THUMBNAILS),
-            "advisories": (
-                *response.advisories,
-                *(advisory_to_response(item) for item in report.advisories),
-            ),
-        }
+    return extracted, VideoRead(
+        extracted=extracted,
+        taken=taken,
+        heard=heard,
+        shown_words=shown_words,
+        looked=looked,
+        read=_video_reading(taken, heard, shown_words, looked, duration=duration),
+        duration=duration,
+        middle=picture,
+        inspection=inspection,
+        window=window,
     )
 
 

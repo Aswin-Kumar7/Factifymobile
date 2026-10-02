@@ -6,6 +6,52 @@ nothing that was there changes name, type or meaning. A client built against an 
 version keeps working and simply does not show the new fields. 1.4 adds a value to
 `verdict`; see below for how an older client reads it.
 
+## 1.8, as served (2026-10-02): links and posts read whole, and what that changes
+
+Still 1.8 and still additive; what the server now does with the fields below, and
+three small additions. The samples in `tests/fixtures/contract/` are updated to match.
+
+- **Social posts are read whole.** A link to an X post, an Instagram post or reel, or
+  a YouTube video is read through the platform's embed addresses: the post's words,
+  a quoted post, each picture (words and what it shows), the video (what is said,
+  the words on its frames, what it shows) and the article it links to. `input_read`
+  has `kind: "social_post"`, `platform`, `author`, `handle` and `published_at`;
+  `media_report` is the first picture's or video's checks and `media_reports` the
+  rest; `image_reading` and `speech` are the first picture's and video's.
+- **YouTube** is read from its title and channel, its description and captions, and
+  its thumbnail (labelled "Text in the video's thumbnail" and "What the video's
+  thumbnail shows (described by Factify)"). The video itself is not watched on this
+  server: a `video_unread` gap with `blocking: false` says so, and `limits[]` says its
+  voice and face checks did not run. The verdict is not held back for that.
+- **Descriptions are checked.** `picture_description` and `video_description` parts
+  are now part of the text claims are found in, under a label ending "(described by
+  Factify)", so they come with `checked: true` and `char_start`/`char_end`. A
+  wordless photograph's description is the exception (`checked: false`): its own
+  questions are asked instead. Show a description as Factify's words, never as the
+  author's.
+- **No more 422 for a link or post with nothing to check.** It used to answer 422
+  "no checkable claims were found on the page … Try pasting the text". Now it is a
+  200 with no claims, never charged:
+  - when something of it could not be read, the verdict is withheld
+    (`input_read.verdict_withheld: true`, `summary` the fixed withheld sentence, and a
+    `claim_extraction` skipped check with `kind: "reading"`, so an older app does not
+    say "Nothing to fact-check");
+  - when all of it was read, `input_read.complete` is true and `summary` says there
+    is nothing in it to fact-check.
+- **`checked_partially` without asking.** A blocking gap no longer holds the verdict
+  back when something that could be checked was read: the answer is checked on what
+  was read, `checked_partially` is true, and the verdict is never `TRUE`. Only an
+  input of which nothing checkable was read is withheld. `accept_partial` is still
+  accepted.
+- **Every gap is in `skipped[]`** with `kind: "reading"`, blocking or not.
+- **New gap code `page_unread`** (blocking): a submitted link whose page could not be
+  read at all, not even its headline.
+- **A long article** is read to 12,000 characters (it was 6,000); past that an
+  `article_truncated` gap says how much was read.
+- **`GET /v1/cases/{id}`'s 202 body gains `phase`**: `reading_post`,
+  `reading_pictures`, `reading_video`, `finding_claims` or `checking`, or `null`
+  before the check says.
+
 ## 1.8 (2026-10-02): what Factify read, and answers held back when it could not
 
 Additive: every 1.7 field is unchanged. Sample responses for building against are in
@@ -25,16 +71,18 @@ Additive: every 1.7 field is unchanged. Sample responses for building against ar
     and `char_end` (where the part's text sits in the text claims were found in, the
     same offsets as `claims[].input_anchor`), and for speech `seconds_read` of
     `seconds_total` and the `language` heard.
-  - `checked: false` marks a description of what a picture or video shows: shown as
-    context, never checked, and never part of the text claims are found in. Show it
-    muted, as "description only, not checked".
+  - `checked: false` marks a part that is not in the text claims were found in. (As
+    first written, every description of what a picture or video shows was such a
+    part; since the same day it is checked - see "1.8, as served" above.)
   - `gaps[]`: `part`, `code`, `detail` (one English sentence, the fallback for a code
     a client does not know) and `blocking`. Codes: `headline_only`,
     `text_truncated`, `post_unavailable`, `login_required`, `not_supported`,
     `picture_unread`, `video_unread`, `speech_unread`, `cut_off`, `pages_unread`,
-    `too_large`, `needs_background`, `reader_unavailable` (blocking), and
-    `first_picture_only`, `article_truncated`, `description_unread`,
-    `linked_page_unread` (not blocking).
+    `too_large`, `needs_background`, `reader_unavailable`, `page_unread` (blocking),
+    and `first_picture_only`, `article_truncated`, `description_unread`,
+    `linked_page_unread` (not blocking). A reader may say a gap of a blocking kind
+    does not block in its case: a capped album's later pictures, a YouTube video that
+    was not watched.
   - `limits[]`: limits that are not about reading, as sentences ("YouTube does not
     let Factify download the video, so its AI, face-swap and voice checks did not
     run.").

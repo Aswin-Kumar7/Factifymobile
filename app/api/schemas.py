@@ -345,8 +345,12 @@ class SkippedCheckResponse(BaseModel):
 class ReadPartResponse(BaseModel):
     """One thing read from the input, as it was read (1.8).
 
-    `checked` is false for a description of what a picture or video shows: shown as
-    context, never checked, and never in the text claims were found in.
+    `checked` says whether the part is in the text claims were found in. Since
+    2026-10-02 that includes Factify's description of what a picture or video shows
+    (`picture_description`, `video_description`, labelled "(described by Factify)"),
+    where the claim a picture makes is often found; a part left out of that text - a
+    wordless photograph's description, any part of an answer that was withheld - is
+    `checked: false`.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -369,7 +373,7 @@ class ReadPartResponse(BaseModel):
     # (/v1/media/thumbnails/<key>). Kept for an hour; a client hides it on a 404.
     media_url: str | None = None
     # Where this part's text sits in the text claims were found in: the same offsets
-    # as `claims[].input_anchor`. None for a part that is not in it (a description).
+    # as `claims[].input_anchor`. None for a part that is not in it.
     char_start: int | None = None
     char_end: int | None = None
     # For speech: how many seconds of the video were heard, of how many.
@@ -384,8 +388,9 @@ class ReadGapResponse(BaseModel):
     `code` is what a client words in its own language: headline_only,
     text_truncated, post_unavailable, login_required, not_supported, picture_unread,
     video_unread, speech_unread, cut_off, pages_unread, too_large, needs_background,
-    reader_unavailable, first_picture_only, article_truncated, description_unread or
-    linked_page_unread. `detail` is one English sentence, for a code it does not know.
+    reader_unavailable, first_picture_only, article_truncated, description_unread,
+    linked_page_unread or page_unread. `detail` is one English sentence, for a code it
+    does not know.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -393,8 +398,9 @@ class ReadGapResponse(BaseModel):
     part: str
     code: str
     detail: str
-    # Whether what was missed could decide the answer. A blocking gap holds the
-    # verdict back unless the person asked to check what was read.
+    # Whether what was missed could decide the answer. A blocking gap keeps the
+    # verdict from TRUE (`checked_partially`), or holds it back when nothing that
+    # could be checked was read (`verdict_withheld`).
     blocking: bool
 
 
@@ -423,11 +429,13 @@ class InputReadResponse(BaseModel):
     limits: tuple[str, ...] = ()
     # Everything was read: no gap of any kind.
     complete: bool = True
-    # Not checked: what could not be read could decide the answer, so no verdict was
-    # given. `verdict` is UNCONFIRMED, with no claims, and `summary` says why.
+    # Not checked: nothing that could be checked was read, so no verdict was given.
+    # `verdict` is UNCONFIRMED, with no claims, and `summary` says why.
     verdict_withheld: bool = False
-    # Checked from what could be read, as the person asked ("Check what was read").
-    # The verdict is never TRUE then.
+    # Checked from what could be read: something that could decide the answer was
+    # not read (a blocking gap), and the rest was checked all the same - as the
+    # person asked ("Check what was read"), or as the server does by default
+    # (`reading.WITHHOLD_WHEN_BLOCKED`). The verdict is never TRUE then.
     checked_partially: bool = False
 
     @model_validator(mode="after")

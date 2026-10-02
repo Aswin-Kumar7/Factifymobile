@@ -13,9 +13,13 @@ whether that gap is large enough to hold the verdict back. `document()` joins th
 parts claims are found in into the one text extraction reads, and says where each
 part sits in it, so a claim's `input_anchor` can be traced to the part it came from.
 
-The design law holds here too. A model's description of what a picture or a video
-shows is context, never evidence: it is shown beside the answer and never put in the
-document, so no claim is ever found in it (`CONTEXT_ONLY`).
+A model's description of what a picture or a video shows is Factify's own words, never
+evidence: nothing it says is taken as proof of anything. It is still part of the
+document, under a label that says it is Factify's ("What the picture shows (described
+by Factify)"), because the claim a picture or a video makes is often only in what it
+shows - eight leaders in one selfie, a leopard in a village street - and a claim left
+unread there was never checked (2026-10-02). The extraction prompt is told what those
+labels mean (`app/extraction/llm.py`).
 
 Pure: no input or output of any kind. The readers that fill a `Reading` live in
 their own modules.
@@ -56,12 +60,18 @@ class PartKind(StrEnum):
     DOCUMENT_TEXT = "document_text"
 
 
-# Shown, never checked: a model's description of what it saw is context, not
-# evidence, and a claim "found" in it would be the model's words checked as the
-# post's. Left out of `Reading.document()` for that reason.
-CONTEXT_ONLY: frozenset[PartKind] = frozenset(
+# Factify's own account of what a picture or a video shows, not the input's words.
+# Checked, under a label that says whose words they are, but never counted as what
+# the input itself says (`app/api/verify.py` `_authored`), and left out of the
+# document of a photograph with no words of its own (`Reading.document`).
+DESCRIPTIONS: frozenset[PartKind] = frozenset(
     {PartKind.PICTURE_DESCRIPTION, PartKind.VIDEO_DESCRIPTION}
 )
+
+# Parts that are shown and never checked. Empty since 2026-10-02: the descriptions
+# were here, and the claim a picture or a video made only in what it shows was never
+# checked. Kept so a part kind can be made shown-only again in one place.
+CONTEXT_ONLY: frozenset[PartKind] = frozenset()
 
 
 class GapCode(StrEnum):
@@ -108,6 +118,9 @@ class GapCode(StrEnum):
     # An article a post or a message links to gave its headline only, and was left
     # out of what was checked.
     LINKED_PAGE_UNREAD = "linked_page_unread"
+    # A submitted link whose page could not be read at all: not its article, not
+    # even its headline.
+    PAGE_UNREAD = "page_unread"
 
 
 # Whether each gap, by default, holds the verdict back. A blocking gap is one where
@@ -134,6 +147,7 @@ BLOCKING: dict[GapCode, bool] = {
     GapCode.ARTICLE_TRUNCATED: False,
     GapCode.DESCRIPTION_UNREAD: False,
     GapCode.LINKED_PAGE_UNREAD: False,
+    GapCode.PAGE_UNREAD: True,
 }
 
 
@@ -169,8 +183,13 @@ class ReadPart:
 
     @property
     def checked(self) -> bool:
-        """Whether claims are found in this part; a description is only shown."""
+        """Whether claims are found in this part. Every kind is, descriptions included."""
         return self.kind not in CONTEXT_ONLY
+
+    @property
+    def described(self) -> bool:
+        """Factify's description of what a picture or video shows, not the input's words."""
+        return self.kind in DESCRIPTIONS
 
 
 @dataclass(frozen=True, slots=True)
@@ -286,27 +305,30 @@ class Reading:
     def substantive(self) -> bool:
         """Enough was read to check anything at all.
 
-        A checked part of three words or more, or a picture read in full: a picture
-        with no words in it can still be checked for where it appeared before.
+        A checked part of three words or more - what a picture or a video shows
+        included, as it is checked - or a picture read in full: a picture with no
+        words in it can still be checked for where it appeared before.
         """
         return any(
             part.kind is PartKind.PICTURE_TEXT or (part.checked and _words(part.text) >= 3)
             for part in self.parts
         )
 
-    def document(self) -> Composed:
+    def document(self, *, descriptions: bool = True) -> Composed:
         """The checked parts as one text: each "<label>:\\n<text>", a blank line apart.
 
-        A part with no label is written bare, and one with no text is left out, as
-        is every description (`CONTEXT_ONLY`). A pasted message on its own therefore
-        composes to exactly the text that was sent, and its anchors stay where 1.3
-        put them.
+        A part with no label is written bare, and one with no text is left out. A
+        pasted message on its own therefore composes to exactly the text that was
+        sent, and its anchors stay where 1.3 put them. Without `descriptions`, what a
+        picture or a video shows is left out too: the input's own words alone.
         """
         pieces: list[str] = []
         spans: list[tuple[int, int, int]] = []
         at = 0
         for index, part in enumerate(self.parts):
             if not part.checked or not part.text.strip():
+                continue
+            if not descriptions and part.described:
                 continue
             if pieces:
                 pieces.append(_BETWEEN)
@@ -356,6 +378,21 @@ def policy(reading: Reading, *, accept_partial: bool) -> ReadingPolicy:
     if reading.blocked:
         return ReadingPolicy.CHECK_PARTIALLY if accept_partial else ReadingPolicy.WITHHOLD
     return ReadingPolicy.CHECK
+
+
+# Whether a reading with a blocking gap is held back when the person did not ask to
+# check what was read. The owner's decision for the 3 October demo (2026-10-02): be
+# conservative - hold an answer back only when nothing that could be checked was read
+# at all (a picture-only post whose picture failed), and otherwise check what was read
+# and say so (`CHECK_PARTIALLY`: never TRUE, the gaps shown). A post whose video could
+# not be downloaded is still checked on its words. True withholds as package 0
+# designed, with "Check what was read" to go on.
+WITHHOLD_WHEN_BLOCKED = False
+
+
+def served_policy(reading: Reading, *, accept_partial: bool) -> ReadingPolicy:
+    """The policy `/v1/verify` applies: `policy`, under `WITHHOLD_WHEN_BLOCKED`."""
+    return policy(reading, accept_partial=accept_partial or not WITHHOLD_WHEN_BLOCKED)
 
 
 # What a withheld answer says, for a client that shows only `summary`. Fixed
@@ -435,11 +472,43 @@ def post_label(
     return label
 
 
+# What an answer with no claims in it says when everything was read: nothing in it is
+# something sources could confirm or refute. Fixed sentences, never a model's words.
+NOTHING_TO_CHECK_SUMMARY: dict[str, str] = {
+    "en": (
+        "Factify read all of this and found nothing in it that sources could confirm "
+        "or refute, so there is nothing to fact-check."
+    ),
+    "hi": (
+        "Factify ने इसे पूरा पढ़ा, पर इसमें ऐसा कोई दावा नहीं मिला जिसे स्रोतों से जाँचा जा "
+        "सके, इसलिए इसमें जाँचने लायक कुछ नहीं है।"
+    ),
+}
+
+
 def picture_text_label(index: int, total: int) -> str:
     """ "Text in picture 2 of 3"; "Text in the picture" when there is only one."""
     if total <= 1:
         return "Text in the picture"
     return f"Text in picture {index} of {total}"
+
+
+# Says a description is Factify's own: the extraction prompt knows this mark.
+_DESCRIBED_BY = "(described by Factify)"
+
+
+def picture_description_label(index: int, total: int) -> str:
+    """ "What picture 2 of 3 shows (described by Factify)"; "What the picture shows
+    (described by Factify)" when there is only one."""
+    if total <= 1:
+        return f"What the picture shows {_DESCRIBED_BY}"
+    return f"What picture {index} of {total} shows {_DESCRIBED_BY}"
+
+
+# A YouTube video's thumbnail, read as a picture: YouTube lets no server download the
+# video itself, and the thumbnail is often where a fake Short's claim is shown.
+THUMBNAIL_TEXT = "Text in the video's thumbnail"
+THUMBNAIL_DESCRIBED = f"What the video's thumbnail shows {_DESCRIBED_BY}"
 
 
 def linked_article_label(host: str | None) -> str:
