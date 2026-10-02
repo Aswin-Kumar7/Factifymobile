@@ -472,14 +472,24 @@ def _post_parts(post: SocialPost) -> tuple[ReadPart, ...]:
     )
 
 
+# A post's pictures read at the same time (download, words, description).
+PICTURES_AT_ONCE = 2
+
+
 async def _read_pictures(request: Request, read: PostRead, pictures: tuple[PostMedia, ...]) -> None:
-    """Each picture downloaded and read like an uploaded picture, all at once."""
+    """Each picture downloaded and read like an uploaded picture, two at a time: an
+    album read all at once held every picture's reading in memory together."""
     total = len(pictures)
+    gate = asyncio.Semaphore(PICTURES_AT_ONCE)
+
+    async def one(
+        index: int, item: PostMedia
+    ) -> tuple[_Picture | None, tuple[ReadPart, ...], tuple[Gap, ...]]:
+        async with gate:
+            return await _read_picture(request, read.post, item, index=index, total=total)
+
     found = await asyncio.gather(
-        *(
-            _read_picture(request, read.post, item, index=index, total=total)
-            for index, item in enumerate(pictures, start=1)
-        )
+        *(one(index, item) for index, item in enumerate(pictures, start=1))
     )
     for picture, parts, gaps in found:
         read.reading = read.reading.plus(parts=parts, gaps=gaps)

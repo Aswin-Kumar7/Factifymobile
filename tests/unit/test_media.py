@@ -473,3 +473,35 @@ class TestKeptPictures:
 
         assert len(set(keys)) == 400
         assert sum(store.get(key) is not None for key in keys) == 25
+
+
+class TestOneUploadsChecksAtATime:
+    """The detectors and the forensic panel hold large arrays while they run: an album's
+    pictures inspected together once took a 6.5 GB container past its memory."""
+
+    @pytest.mark.asyncio
+    async def test_pictures_inspected_together_take_their_turn(self) -> None:
+        import asyncio
+
+        from app.media.report import MediaInspector
+        from app.media.synthetic import SyntheticReading
+
+        running = 0
+        most = 0
+
+        class _Slow:
+            async def read(self, image: bytes, *, mime: str = "image/jpeg") -> SyntheticReading:
+                nonlocal running, most
+                running += 1
+                most = max(most, running)
+                await asyncio.sleep(0.02)
+                running -= 1
+                return SyntheticReading(reason="unavailable: test")
+
+        inspector = MediaInspector(detector=_Slow())
+        picture = images.original()
+
+        reports = await asyncio.gather(*(inspector.inspect_image(picture) for _ in range(4)))
+
+        assert len(reports) == 4
+        assert most == 1
