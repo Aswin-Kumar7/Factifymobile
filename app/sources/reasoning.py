@@ -1113,7 +1113,7 @@ For each source:
   passage only leaves details out: a report of the launch that does not name the
   launch site, of a fire that does not say which floor it began on, of an
   assessment that names two of the four effects the claim lists, or of statements
-  that does not say they were made "repeatedly", states nothing differently.
+  without the word "repeatedly", states nothing differently.
 - other_group: true if what the passage reports is for a different group of people
   than the claim names, rather than for all of them or some of them: interns,
   students or employees of any gender for a claim about every woman; traders for a
