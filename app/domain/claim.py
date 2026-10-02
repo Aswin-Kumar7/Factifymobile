@@ -7,6 +7,7 @@ verdict is an assertion rather than an audit trail.
 
 from __future__ import annotations
 
+import re
 from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -151,3 +152,36 @@ class Claim(BaseModel):
             Importance.HEADLINE,
             Importance.MAIN_THESIS,
         } or self.severity in {Severity.HIGH, Severity.CRITICAL}
+
+
+# A claim about what a picture or video shows: who is pictured, what it is a photo of.
+_DEPICTS = re.compile(
+    r"\b(?:pictured|appears? to be|are seen|is seen|are shown|is shown|selfie|"
+    r"(?:photo(?:graph)?|picture|image|video|clip|footage)s? (?:shows?|of))\b",
+    re.IGNORECASE,
+)
+
+
+def depicts(claim: Claim) -> bool:
+    """Whether a claim is about what a picture or video shows."""
+    return any(_DEPICTS.search(text) for text in (claim.search_text, claim.text) if text)
+
+
+# Claims about material - who said what, what a picture or video shows - which alone
+# can be genuine and shown out of context.
+_MATERIAL_TYPES = frozenset({ClaimType.QUOTE, ClaimType.ATTRIBUTION, ClaimType.MEDIA})
+
+
+def about_material(claim: Claim) -> bool:
+    """Whether a claim is about words, a picture or footage, which alone can be
+    genuine and presented out of context: a quote or an attribution, a claim about
+    what a picture or video shows, or the claim that a post's footage was taken at
+    its event (`app/extraction/llm.py` `_footage_claim`).
+
+    Not a claim that an event happened. BOOM's "Cropped video falsely claims Iran
+    President touched Hindu seer's feet" says the event did not happen, and the video
+    is genuine: read as out of context, that FALSE would have read MISLEADING.
+    """
+    return (
+        claim.claim_type in _MATERIAL_TYPES or claim.anchor.section == "footage" or depicts(claim)
+    )

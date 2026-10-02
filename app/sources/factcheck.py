@@ -33,7 +33,7 @@ from urllib.parse import urlencode, urlsplit
 
 from app.domain.claim import Claim
 from app.domain.enums import EvidenceKind, Method, Relation, Tier
-from app.domain.evidence import SHARED_REVIEW
+from app.domain.evidence import OUT_OF_CONTEXT, SHARED_REVIEW
 from app.embeddings.image import cosine
 from app.embeddings.text import TextEmbedder
 from app.governor.governor import Governor, ProviderUnavailable, Skip, SkipReason
@@ -51,7 +51,7 @@ from app.sources.reasoning import PassageReasoner
 logger = logging.getLogger("factify.factcheck")
 
 NAME = "factcheck"
-VERSION = "2026.09.29.1"
+VERSION = "2026.10.03.2"
 PROVIDER = "factcheck"
 
 # A fact-check must be about *this* claim before its rating means anything. Below
@@ -177,6 +177,25 @@ _FALSE_RATINGS = {
 
 _TRUE_RATINGS = {"true", "correct", "accurate", "verified", "mostly true", "सही", "सच"}
 
+# Ratings that say the claim's words, picture or video are genuine and shown out of
+# context: neither true nor false, and never support. Newschecker's "Did Benjamin
+# Netanyahu Say 'America Deserved 9/11'? No, Clipped Video Goes Viral" carried its
+# rating in "clipped", which nothing read, and the clip it debunked came back TRUE
+# (2026-10-02). Read only when no false or true rating is named: a headline that says
+# both "clipped" and "fake" is a debunk of a fake.
+#
+# Not "old video": in a headline it as often debunks an event that never happened
+# ("old video shared as a dam burst in ...") as it misdates one that did, and which
+# is for the reader of the page to say. "Needs context" is left out too: some
+# fact-checkers give it while they are still checking.
+_CONTEXT_RATINGS = {
+    "missing context",
+    "out of context",
+    "lacks context",
+    "clipped",
+    "cropped",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class FactCheckRecord:
@@ -203,6 +222,9 @@ class FactCheckRecord:
         normalised = self.rating.strip().lower()
         if any(token in normalised for token in _FALSE_RATINGS):
             return Relation.CONTRADICTS
+        # Before the true ratings: "out of context" is no rating of true.
+        if any(token in normalised for token in _CONTEXT_RATINGS):
+            return Relation.CONTEXTUALIZES
         if any(token in normalised for token in _TRUE_RATINGS):
             return Relation.SUPPORTS
         return None
@@ -261,7 +283,26 @@ def parse_rating_from_title(title: str) -> str | None:
         if _mentions(lowered, rating):
             return rating
 
+    # A headline that names no rating of true or false, and says the material was
+    # clipped: "No, Clipped Video Goes Viral". Never one that says it was tampered
+    # with as well - a morphed and cropped picture is no genuine one - nor one that
+    # says the claim is false in other words: BOOM's "Cropped video falsely claims
+    # Iran President Pezeshkian touched Hindu seer's feet" debunks an event that never
+    # happened, and is left unrated, as it was before.
+    if _TAMPERED.search(lowered) is None and _CALLED_FALSE.search(lowered) is None:
+        for rating in sorted(_CONTEXT_RATINGS, key=len, reverse=True):
+            if _mentions(lowered, rating):
+                return rating
+
     return None
+
+
+_CALLED_FALSE = re.compile(r"\b(?:falsely|wrongly|untrue|did not|didn't|never)\b")
+
+_TAMPERED = re.compile(
+    r"\b(?:morphed|doctored|photoshopped|deep ?fake|ai[- ]generated|digitally|edited|"
+    r"manipulated|fabricated|altered)\b"
+)
 
 
 def _mentions(text: str, rating: str) -> bool:
@@ -692,6 +733,11 @@ class FactCheckResolver:
         verdict = record.verdict
         if verdict is None:
             return insufficient(NAME, VERSION, f"rating {record.rating!r} is not one we interpret")
+
+        if verdict is Relation.CONTEXTUALIZES:
+            # Genuine, and shown out of context: marked so the source check and the
+            # rules can tell it from other context (`rule.out_of_context`).
+            metric = f"{OUT_OF_CONTEXT}: rated {record.rating!r} ({metric})"
 
         return SourceRelation(
             relation=verdict,

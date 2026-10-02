@@ -28,6 +28,11 @@ support the reader held back: a passage read as only a narrower version, or as
 someone else's word ("the Army said"), is support when this call reads it as
 establishing the claim. Two readings that both find support are agreement, and
 throwing such a page away cost true news reports their only evidence (2026-10-02).
+And it can say a source finds the claim's words, picture or video genuine but
+presented out of context, which is neither side: kept as that, never as support. The
+one exception to "never to the other side" is a claim about who a picture shows, read
+as support from a debunk calling the picture itself AI-made (`_MEDIA_FAKED`): the fake
+does show them, and the check's FALSE is kept.
 
 Credibility is attached last, from the curated publisher list rather than from a
 model, so the same outlet weighs the same on every request.
@@ -43,13 +48,16 @@ from datetime import date
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
-from app.domain.claim import Claim
+from app.domain.claim import Claim, about_material, depicts
 from app.domain.enums import ClaimType, Direction, EvidenceKind
 from app.domain.evidence import (
     NARROWER_SCOPE,
+    OUT_OF_CONTEXT,
+    PARTIAL_SCOPE,
     Evidence,
     MatchBasis,
     is_narrower_scope,
+    is_out_of_context,
     is_shared_review,
 )
 from app.domain.typography import fold
@@ -75,8 +83,9 @@ _NOT_TEXT = frozenset(
 def _read_as(item: Evidence) -> str | None:
     """How the first reader left a source, for the check's answer to be read against:
     "supports", "contradicts", "narrower" (a smaller version of the claim),
-    "attributed" (a support the article put in someone else's mouth), or None for
-    other context, which is not sent."""
+    "attributed" (a support the article put in someone else's mouth),
+    "out_of_context" (a fact-check rating the claim's material genuine but misframed),
+    or None for other context, which is not sent."""
     if item.direction is Direction.SUPPORTS:
         return "supports"
     if item.direction is Direction.CONTRADICTS:
@@ -86,6 +95,8 @@ def _read_as(item: Evidence) -> str | None:
             return "narrower"
         if is_attributed_support(item.match_basis.metric):
             return "attributed"
+        if is_out_of_context(item.match_basis.metric):
+            return "out_of_context"
     return None
 
 
@@ -94,7 +105,72 @@ def _read_as(item: Evidence) -> str | None:
 _SUPPORT_READS = frozenset({"supports", "narrower", "attributed"})
 
 
-def _settled(item: Evidence, read: str, reading: Any) -> tuple[Evidence | None, str]:
+# A passage that calls the claim's material made up rather than misframed: a
+# contradiction that must stay one. The check is asked to tell the two apart
+# (`out_of_context`); this is the backstop that keeps a fabricated quote, an
+# AI-made picture or a denial from ever being softened to "out of context".
+_MADE_UP = re.compile(
+    r"\b(?:fake|fabricated|made[- ]up|morphed|doctored|photoshopped|deep[- ]?fakes?|"
+    r"ai[- ]generated|(?:made|created|generated) (?:with|using|by) "
+    r"(?:ai|artificial intelligence)|digitally (?:altered|created|edited|manipulated)|"
+    r"never (?:said|made|happened)|did not (?:say|happen)|didn't (?:say|happen)|"
+    r"denied|denies|no such (?:statement|announcement|incident|attack|event))\b",
+    re.IGNORECASE,
+)
+
+
+# For a claim about what a picture or video shows, a passage calling the claim false
+# says the scene did not happen, not that the footage was misframed: BOOM's "Cropped
+# video falsely claims Iran President Pezeshkian touched Hindu seer's feet".
+_CALLED_FALSE = re.compile(r"\b(?:falsely|false claims?|fake)\b", re.IGNORECASE)
+
+
+def _made_up(item: Evidence, *, depiction: bool = False) -> bool:
+    """Whether a source's headline or passage calls the claim's material made up."""
+    text = f"{item.title or ''}. {item.source_excerpt}"
+    return _affirmed(_MADE_UP, text) or (depiction and _affirmed(_CALLED_FALSE, text))
+
+
+# A word that turns what follows it in the same clause into its opposite, and where a
+# clause ends.
+_NEGATION = re.compile(r"\b(?:not|no|nor|neither|without|never)\b|n't\b", re.IGNORECASE)
+_CLAUSE_END = re.compile(r"[.;:!?]|\bbut\b", re.IGNORECASE)
+
+
+def _affirmed(pattern: re.Pattern[str], text: str) -> bool:
+    """Whether the text says what `pattern` matches, and not only that it is not so.
+
+    Snopes on the clipped Netanyahu video: "While the clip was authentic, meaning not
+    generated with artificial intelligence or digitally altered, it omits critical
+    context" - a finding of misframing that names the words of a fake only to rule
+    them out (2026-10-02).
+    """
+    for match in pattern.finditer(text):
+        clause = _CLAUSE_END.split(text[max(0, match.start() - 80) : match.start()])[-1]
+        if not _NEGATION.search(clause):
+            return True
+    return False
+
+
+# A passage saying a picture or video itself was made or altered: narrower than
+# `_MADE_UP`, because it turns a source to the other side (`_settled`).
+_MEDIA_FAKED = re.compile(
+    r"\b(?:ai[- ]generated|(?:made|created|generated) (?:with|using|by) "
+    r"(?:ai|artificial intelligence)|deep ?fakes?|digitally (?:altered|created|edited|"
+    r"manipulated)|morphed|doctored|photoshopped)\b",
+    re.IGNORECASE,
+)
+
+
+def _settled(
+    item: Evidence,
+    read: str,
+    reading: Any,
+    *,
+    depiction: bool = False,
+    material: bool = False,
+    footage: bool = False,
+) -> tuple[Evidence | None, str]:
     """What the check's answer makes of one source: the copy to keep, or None, and
     the outcome for the log.
 
@@ -106,11 +182,83 @@ def _settled(item: Evidence, read: str, reading: Any) -> tuple[Evidence | None, 
     A narrower version is, by definition, not "the same assertion", so the check has
     answered PARTLY and "not about the claim" in one breath: its own yes-or-no on
     "smaller version" decides, not `addresses_claim` (2026-09-27).
+
+    Material the check finds genuine but presented out of context is neither side: a
+    source explaining that Netanyahu spoke the words while quoting Hasan Piker was
+    read as support and kept as support, and a cut clip read TRUE (2026-10-02). It is
+    kept as what it is (`OUT_OF_CONTEXT`), never as support; and a contradiction only
+    when the passage calls nothing made up (`_MADE_UP`) - a fabricated quote or an
+    AI-made picture stays false.
     """
     verdict = reading.verdict
     about = reading.addresses_claim
     supports = read in _SUPPORT_READS
+    # Only a claim about words, a picture or footage can be genuine and misframed
+    # (`about_material`): an event claim the passage denies stays denied.
+    framed = material and bool(getattr(reading, "out_of_context", False))
     rejected = f"rejected: read {read}, check said {verdict}, about the claim={about}"
+
+    # A fact-check rated the claim "missing context" or "clipped": kept when the
+    # check finds it is about this claim, whatever it makes of the rest.
+    if read == "out_of_context":
+        # Never for a claim that something happened: such a rating of it says the
+        # event is not as told, which is for the rules on denials, not rule 3e.
+        if not material:
+            return None, f"{rejected} (out of context, but not about words or footage)"
+        if about:
+            return item, "kept (out of context)"
+        return None, rejected
+
+    # A claim about who or what a picture shows, and a passage saying the picture
+    # itself is AI-made or altered: a contradiction, however the first reader read
+    # it. An AI selfie of the BRICS leaders was read as "figures who appear to be
+    # Putin, Modi, Xi ... are pictured", and France 24's "Viral Putin, Modi and Xi
+    # selfie at BRICS summit is AI-generated" was read as support - a fake does show
+    # them. The check said FALSE and about this claim for that and three more debunks,
+    # and all four were thrown away (2026-10-02). The one place this step turns a
+    # source to the other side, and only on the check's own FALSE and the debunk's
+    # own words.
+    if (
+        depiction
+        and supports
+        and about
+        and verdict == "FALSE"
+        and _affirmed(_MEDIA_FAKED, f"{item.title or ''}. {item.source_excerpt}")
+    ):
+        return _as_contradiction(item, reading.reason), (
+            "kept (contradicts: the picture itself is called AI-made or altered)"
+        )
+
+    if framed and about:
+        # Never against the check's own TRUE: one reader's "out of context" must not
+        # turn a report it finds establishes the claim into framing, or one credible
+        # source could outvote three that report it.
+        if (
+            supports
+            and verdict != "TRUE"
+            and not (verdict == "FALSE" and _made_up(item, depiction=depiction))
+        ):
+            outcome = "kept (out of context)"
+            if read != "supports":
+                outcome = f"kept (out of context; read {read})"
+            return _as_out_of_context(item, reading.reason), outcome
+        # Never a published rating of false ("Alt News rated this False"): it is the
+        # fact-checker's own verdict, not a passage this call can read otherwise.
+        # Nor a fact-check page's contradiction, unless the claim is that the footage
+        # was taken at the post's event: a fact-check of "video shows X doing Y" that
+        # calls it false says it did not happen, however the clip was cut.
+        rating = not item.match_basis.metric.startswith("passage_")
+        fact_check = item.kind is EvidenceKind.FACT_CHECK and not footage
+        if (
+            read == "contradicts"
+            and not rating
+            and not fact_check
+            and not _made_up(item, depiction=depiction)
+        ):
+            return (
+                _as_out_of_context(item, reading.reason),
+                "kept (out of context; read contradicts)",
+            )
 
     if verdict == "TRUE":
         # The check found the passage establishes the claim. A support the first
@@ -136,10 +284,10 @@ def _settled(item: Evidence, read: str, reading: Any) -> tuple[Evidence | None, 
     # "2009-2018" (2026-10-02). What a source does not mention is unconfirmed by it,
     # not a reason to discard what it does confirm.
     #
-    # Never when the check calls it a smaller version: a proposal reported for a
-    # claim of a decision leaves nothing out and states nothing differently, and two
-    # such reports read as narrower would otherwise have cleared "Govt has approved
-    # Rs 5,000 a month for every woman" as true.
+    # Never when the check calls it a smaller version: two reports of a proposal,
+    # read as narrower, would otherwise have cleared "Govt has approved Rs 5,000 a
+    # month for every woman" as true - whatever the check said of stating it
+    # differently.
     says_less = (
         supports
         and about
@@ -147,6 +295,23 @@ def _settled(item: Evidence, read: str, reading: Any) -> tuple[Evidence | None, 
         and not reading.other_group
         and not reading.smaller_version
         and getattr(reading, "core_established", False)
+    )
+    # A narrower reading the check finds states nothing differently: it reports part
+    # of the claim and leaves the rest out. Kept as that (`PARTIAL_SCOPE`) - neither a
+    # smaller version, which would call a true report misleading, nor support. The
+    # Wire, TOI and NIE were narrower versions of "Baghel repeatedly alleged a larger
+    # conspiracy" for not saying "repeatedly", and the NDTV report of the Jhiram Ghati
+    # sentences read "partly true" (2026-10-02).
+    #
+    # Never a smaller version, whatever the check said of stating it differently: a
+    # proposal reported for a claim of a decision, kept as part of the claim, would
+    # stop holding a clearance back (`holds_back`).
+    partial = (
+        read == "narrower"
+        and about
+        and not reading.smaller_version
+        and not reading.states_differently
+        and not reading.other_group
     )
 
     if verdict == "PARTLY":
@@ -169,13 +334,16 @@ def _settled(item: Evidence, read: str, reading: Any) -> tuple[Evidence | None, 
         #
         # Read as support or as a denial, "smaller version" also needs a detail stated
         # differently: it was said of pages that merely said less ("the photographs
-        # were also shared", for a claim naming Facebook and X). Read as a narrower
-        # version already, the reader said that much, and the check's agreement that
-        # it is smaller keeps it (2026-10-02: four narrower reports were thrown away
-        # for lacking the second answer). Tamil Nadu's Rs 1,000 a month for women
-        # heads of families, read as denying "every woman gets Rs 5,000 a month", is
-        # a smaller version too: the user decided a real smaller version for the same
-        # people makes such a claim partly true (2026-09-28).
+        # were also shared", for a claim naming Facebook and X). A smaller version
+        # states something smaller - another state, once rather than monthly, a lower
+        # amount, a proposal for a decision. Read as a narrower version already, the
+        # first reader said that much, and the check's agreement that it is smaller
+        # keeps it even when it forgets to say what differs: otherwise an inflated
+        # claim ("approved" for a proposal) would read as reported in part and stop
+        # holding a clearance back. Tamil Nadu's Rs 1,000 a month for women heads of
+        # families, read as denying "every woman gets Rs 5,000 a month", is a smaller
+        # version too: the user decided a real smaller version for the same people
+        # makes such a claim partly true (2026-09-28).
         smaller = (
             reading.smaller_version
             and not reading.other_group
@@ -187,10 +355,14 @@ def _settled(item: Evidence, read: str, reading: Any) -> tuple[Evidence | None, 
         # stays the smaller version it is.
         if says_less:
             return _as_support(item), "kept (supports, says less)"
+        if partial:
+            return _as_partial(item, reading.reason), "kept (part of the claim)"
         return None, rejected
 
     if says_less:
         return _as_support(item), "kept (supports, says less)"
+    if partial:
+        return _as_partial(item, reading.reason), "kept (part of the claim)"
     return None, rejected
 
 
@@ -213,11 +385,40 @@ def _as_support(item: Evidence) -> Evidence:
 
 def _as_narrower(item: Evidence, reason: str) -> Evidence:
     """A support the check read as only part of the claim: kept, as a narrower version."""
+    return _marked(item, NARROWER_SCOPE, reason)
+
+
+def _as_contradiction(item: Evidence, reason: str) -> Evidence:
+    """A source the check read as calling the claim's picture made or altered."""
+    return item.model_copy(
+        update={
+            "direction": Direction.CONTRADICTS,
+            "match_basis": MatchBasis(
+                metric=f"passage_entailment: {reason}"[:200],
+                value=item.match_basis.value,
+                threshold=item.match_basis.threshold,
+            ),
+        }
+    )
+
+
+def _as_out_of_context(item: Evidence, reason: str) -> Evidence:
+    """A source the check read as finding the claim's material genuine but misframed."""
+    return _marked(item, OUT_OF_CONTEXT, reason)
+
+
+def _as_partial(item: Evidence, reason: str) -> Evidence:
+    """A narrower reading the check found states nothing differently: part of the claim."""
+    return _marked(item, PARTIAL_SCOPE, reason)
+
+
+def _marked(item: Evidence, marker: str, reason: str) -> Evidence:
+    """The source as context, its metric starting with `marker` and the check's reason."""
     return item.model_copy(
         update={
             "direction": Direction.CONTEXTUALIZES,
             "match_basis": MatchBasis(
-                metric=f"{NARROWER_SCOPE}: {reason}"[:200],
+                metric=f"{marker}: {reason}"[:200],
                 value=item.match_basis.value,
                 threshold=item.match_basis.threshold,
             ),
@@ -323,8 +524,13 @@ def dedupe(evidence: list[Evidence]) -> tuple[list[Evidence], int]:
 
 
 def _rank(item: Evidence) -> tuple[int, int, str]:
+    # A fact-checker's own rating that the material is genuine but misframed says
+    # more than a reading of the same page as support or as a denial.
+    framed = item.direction is Direction.CONTEXTUALIZES and is_out_of_context(
+        item.match_basis.metric
+    )
     return (
-        _DIRECTION_RANK.get(item.direction, 1),
+        -1 if framed else _DIRECTION_RANK.get(item.direction, 1),
         _KIND_RANK.get(item.kind, 2),
         item.tier.value,
     )
@@ -429,6 +635,8 @@ class SourceVerification:
             )
 
         kept: list[Evidence] = []
+        depiction = depicts(claim)
+        material = about_material(claim)
         for index, item in enumerate(sided):
             reading = answer.readings.get(index)
             host = _host(item.citation_url)
@@ -439,10 +647,27 @@ class SourceVerification:
                 continue
             read = _read_as(item)
             assert read is not None
-            settled, outcome = _settled(item, read, reading)
+            settled, outcome = _settled(
+                item,
+                read,
+                reading,
+                depiction=depiction,
+                material=material,
+                footage=claim.anchor.section == "footage",
+            )
             if settled is not None:
                 kept.append(settled)
-            outcomes.append({"host": host, "outcome": outcome, "reason": reading.reason[:200]})
+            outcomes.append(
+                {
+                    "host": host,
+                    "outcome": outcome,
+                    "reason": reading.reason[:200],
+                    # The check's yes-or-no answers, which decide a narrower version
+                    # from a report that only says less: without them a re-test could
+                    # not tell which answer kept a source as what (2026-10-02).
+                    "flags": _flags(reading),
+                }
+            )
 
         return self._finish(
             claim,
@@ -503,6 +728,20 @@ class SourceVerification:
             checked=checked,
             timed_out=timed_out,
         )
+
+
+_FLAGS = (
+    ("smaller_version", "smaller"),
+    ("states_differently", "differs"),
+    ("other_group", "other_group"),
+    ("core_established", "core"),
+    ("out_of_context", "out_of_context"),
+)
+
+
+def _flags(reading: Any) -> str:
+    """The check's yes answers for one source, for the log: "smaller,core"."""
+    return ",".join(name for field, name in _FLAGS if getattr(reading, field, False)) or "-"
 
 
 def _under_headline(item: Evidence) -> str:

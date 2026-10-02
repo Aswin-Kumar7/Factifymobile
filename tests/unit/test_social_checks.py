@@ -79,6 +79,7 @@ class _Platform:
         self.media = {PICTURE: images.original()} if media is None else media
         self.reads: list[Any] = []
         self.downloads: list[tuple[str, int | None]] = []
+        self.caps: dict[str, int] = {}
 
     def handles(self, ref: Any) -> bool:
         return True
@@ -91,6 +92,7 @@ class _Platform:
         self, media: PostMedia, *, max_bytes: int, max_seconds: int | None = None
     ) -> Downloaded | Gap:
         self.downloads.append((media.url, max_seconds))
+        self.caps[media.url] = max_bytes
         got = self.media.get(media.url)
         if isinstance(got, Gap):
             return got
@@ -201,7 +203,7 @@ class TestAnXPostWithAPicture:
         [(probed, reads_before)] = checker.probed
         assert reads_before == 0
         assert probed.cache_identity == normalise_url(X_URL).cache_identity
-        assert READER_VERSION == "2026.10.02.3"
+        assert READER_VERSION == "2026.10.03.1"
         # The picture was downloaded and read like an uploaded one.
         assert platform.downloads == [(PICTURE, None)]
         assert len(pictures.read) == 1
@@ -663,6 +665,143 @@ class TestAYouTubeVideo:
         assert platform.downloads == []
 
 
+class TestTheStillsYouTubePublishes:
+    """yt-5: a Short of a leopard lunging at a moving train - AI-made, by YouTurn,
+    Factly and The Quint - read from its title, Hindi shouts and a thumbnail of a man
+    leaning towards a leopard, had nothing to check (2026-10-02). YouTube publishes
+    three stills of every Short; with the video unwatched, they are what it shows."""
+
+    SHORT = "https://www.youtube.com/shorts/ikPJlAdAuaE"
+    THUMBNAIL = "https://i.ytimg.com/vi/ikPJlAdAuaE/hqdefault.jpg"
+    STILLS = tuple(f"https://i.ytimg.com/vi/ikPJlAdAuaE/oar{n}.jpg" for n in (1, 2, 3))
+    SHOWS = "A leopard runs beside a moving passenger train and lunges at an open window."
+
+    class _Describer(_Pictures):
+        def __init__(self, shows: str) -> None:
+            super().__init__(OcrOutcome(text="", description="A man near a leopard.", kind="PHOTO"))
+            self.shows = shows
+            self.sheets: list[tuple[bytes, int, str]] = []
+
+        async def describe_video(self, sheet: bytes, *, frames: int, span: str) -> OcrOutcome:
+            self.sheets.append((sheet, frames, span))
+            return OcrOutcome(description=self.shows, kind="PHOTO")
+
+    def _platform(self, stills: int = 3) -> _Platform:
+        ref = recognise(self.SHORT)
+        assert ref is not None
+        post = SocialPost(
+            ref=ref,
+            title="கவனமா இருங்க #trendingshorts #dangerous",
+            text_route="youtube.oembed",
+            thumbnail_url=self.THUMBNAIL,
+        )
+        media: dict[str, bytes | Gap] = {self.THUMBNAIL: images.original(seed=3)}
+        for n, url in enumerate(self.STILLS[:stills]):
+            media[url] = images.original(seed=10 + n)
+        return _Platform(post, media=media)
+
+    async def test_what_the_short_shows_is_read_from_them(self) -> None:
+        platform, checker = self._platform(), _Checker()
+        describer = self._Describer(self.SHOWS)
+        app = _app(platform, checker, pictures=describer, inspector=_KeepingInspector())
+
+        body = await _check(app, {"url": self.SHORT})
+
+        assert {url for url, _ in platform.downloads} >= set(self.STILLS)
+        [(_, frames, span)] = describer.sheets
+        assert frames == 3 and "three quarters" in span
+        [(document, _)] = checker.documents
+        assert (
+            "What the video shows, from stills YouTube publishes of it (described by "
+            f"Factify):\n{self.SHOWS}"
+        ) in document
+        part = next(p for p in body["input_read"]["parts"] if p["route"] == "youtube.stills")
+        assert part["kind"] == "video_description" and part["checked"] is True
+        # Never the picture checks' to decide: the thumbnail's alone are shown.
+        assert checker.verified[0]["synthetic"] is None
+
+    @pytest.mark.parametrize("stills", [0, 1])
+    async def test_a_video_with_fewer_than_two_is_left_to_its_thumbnail(self, stills: int) -> None:
+        """A regular video has no upright stills; one still is no account of a video."""
+        platform, checker = self._platform(stills), _Checker()
+        describer = self._Describer(self.SHOWS)
+        app = _app(platform, checker, pictures=describer)
+
+        body = await _check(app, {"url": self.SHORT})
+
+        assert describer.sheets == []
+        assert all(p["route"] != "youtube.stills" for p in body["input_read"]["parts"])
+        [(document, _)] = checker.documents
+        assert "What the video's thumbnail shows (described by Factify)" in document
+
+    async def test_each_still_is_fetched_under_a_small_cap(self) -> None:
+        from app.api.post_checks import STILL_MAX_BYTES
+
+        platform, checker = self._platform(), _Checker()
+        app = _app(platform, checker, pictures=self._Describer(self.SHOWS))
+
+        await _check(app, {"url": self.SHORT})
+
+        assert all(platform.caps[url] <= STILL_MAX_BYTES for url in self.STILLS)
+
+    async def test_a_failed_description_leaves_the_thumbnail(self) -> None:
+        """Never fails the check: the stills' description going wrong adds nothing."""
+
+        class _Broken(self._Describer):  # type: ignore[name-defined,misc]
+            async def describe_video(self, sheet: bytes, *, frames: int, span: str) -> OcrOutcome:
+                raise RuntimeError("the hosted reader fell over")
+
+        platform, checker = self._platform(), _Checker()
+        app = _app(platform, checker, pictures=_Broken(self.SHOWS))
+
+        body = await _check(app, {"url": self.SHORT})
+
+        assert all(p["route"] != "youtube.stills" for p in body["input_read"]["parts"])
+        [(document, _)] = checker.documents
+        assert "What the video's thumbnail shows (described by Factify)" in document
+
+    async def test_without_a_describer_they_are_never_fetched(self) -> None:
+        platform, checker = self._platform(), _Checker()
+
+        await _check(_app(platform, checker), {"url": self.SHORT})
+
+        assert not {url for url, _ in platform.downloads} & set(self.STILLS)
+
+
+def test_a_post_speaks_the_language_its_poster_typed() -> None:
+    """x-4: Whisper's garble of shouts in Arabic letters, under an English X post,
+    made every claim and the answer Urdu."""
+    from app.api.post_checks import _post_words
+    from app.extraction.reading import PartKind, Reading, ReadPart
+
+    post = "Terror on Dubai flight flydubai with 180 passengers including 27 children."
+    garble = "الله أكبر الله أكبر الله أكبر لا الله أكبر السيد عي وضع يعتبر"
+    reading = Reading(
+        kind="social_post",
+        parts=(
+            ReadPart(kind=PartKind.POST_TEXT, text=post, route="x.syndication"),
+            ReadPart(kind=PartKind.TRANSCRIPT, text=garble, route="whisper"),
+        ),
+    )
+    spoken_only = Reading(
+        kind="social_post",
+        parts=(ReadPart(kind=PartKind.TRANSCRIPT, text="यह खबर सच है", route="whisper"),),
+    )
+
+    assert detect(_post_words(reading)).language.value == "en"
+    assert _post_words(spoken_only) == "यह खबर सच है"
+
+
+def test_a_contact_sheet_says_when_each_still_was_taken() -> None:
+    from app.media.sheet import contact_sheet
+    from app.media.video import Keyframe
+
+    frames = [Keyframe(index=n, timestamp_ms=0, data=images.original(seed=n)) for n in (1, 2)]
+
+    assert contact_sheet(frames, moments=["about 1/4 of the way", "about 1/2 of the way"])
+    assert contact_sheet(frames)
+
+
 class TestAPostThatCannotBeRead:
     @pytest.mark.parametrize(
         "refused",
@@ -763,5 +902,5 @@ class TestAPostThatCannotBeRead:
 def test_the_readers_version_moved_with_the_wiring() -> None:
     """Text-only verdicts cached under a post's identity before its pictures were read
     must not be served for it now."""
-    assert READER_VERSION == "2026.10.02.3"
+    assert READER_VERSION == "2026.10.03.1"
     assert asyncio.iscoroutinefunction(checked_post)

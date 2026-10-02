@@ -31,6 +31,7 @@ import hashlib
 import logging
 import re
 from dataclasses import dataclass
+from functools import cache
 from typing import Any
 
 from app.domain.claim import Claim
@@ -52,7 +53,9 @@ from app.sources.base import (
     locate_excerpt,
 )
 from app.sources.corpus_text import is_navigation
+from app.sources.credibility import SourceCredibility
 from app.sources.reasoning import (
+    ATTRIBUTED_SUPPORT,
     REASONER_VERSION,
     PassageReasoner,
     locate_quote,
@@ -62,7 +65,7 @@ from app.sources.reasoning import (
 logger = logging.getLogger("factify.sources.corpus")
 
 NAME = "corpus"
-VERSION = "2026.08.1"
+VERSION = "2026.10.03.2"
 
 # How many rows each leg contributes before fusion. Deliberately wider than the
 # shortlist: fusion can only reorder what it is given, so starving a leg here is a
@@ -634,13 +637,27 @@ class CorpusResolver:
             # text changed under us between selection and location.
             return insufficient(NAME, VERSION, "selected sentence no longer locatable")
 
+        metric = "claim_word_coverage+semantic_gate"
+        relation = Relation.SUPPORTS if score >= SUPPORT_OVERLAP else Relation.CONTEXTUALIZES
+        if relation is Relation.SUPPORTS and _is_fact_check_page(
+            snapshot.title, snapshot.final_url or snapshot.url
+        ):
+            # A fact-check restates the claim it rates, so it shares the claim's
+            # words whichever way it rates it. Newschecker's "Did Benjamin Netanyahu
+            # Say 'America Deserved 9/11'? No, Clipped Video Goes Viral" covered two
+            # thirds of the claim's words and was counted as support (2026-10-02).
+            # Held as the claim on someone else's word: the source check reads it, and
+            # it is cited only on what the check finds.
+            relation = Relation.CONTEXTUALIZES
+            metric = f"{ATTRIBUTED_SUPPORT}: {metric} on a fact-check page"
+
         return SourceRelation(
-            relation=Relation.SUPPORTS if score >= SUPPORT_OVERLAP else Relation.CONTEXTUALIZES,
+            relation=relation,
             validator=NAME,
             validator_version=VERSION,
             excerpt=excerpt,
             anchor=anchor,
-            metric="claim_word_coverage+semantic_gate",
+            metric=metric,
             value=score,
             threshold=SUPPORT_OVERLAP if score >= SUPPORT_OVERLAP else CONTEXT_OVERLAP,
         )
@@ -811,3 +828,27 @@ class CorpusCorroboration:
 def _matching_language(claim: Claim) -> str | None:
     """The language of `claim.matching_text`: English when it is the translation."""
     return "en" if claim.matching_text is not claim.text else claim.language
+
+
+# A headline or address that plainly says the page rates a claim. Narrower than
+# `reads_as_a_fact_check`, which also takes "viral", "edited" and "unrelated": an
+# ordinary news report headed "Viral video shows ..." would otherwise lose its
+# word-match support here, and with the source check down, all of it.
+_CLEAR_FACT_CHECK = re.compile(
+    r"fact[\s_-]?check|webqoof|\bfake\b|\bhoax|\bmisleading\b|\bfalse(ly)?\b|"
+    r"\bdebunk|\bmisattributed\b|^\s*no,\s|फ़र्ज़ी|फर्जी|फेक|भ्रामक|पड़ताल",
+    re.IGNORECASE,
+)
+
+
+@cache
+def _credibility() -> SourceCredibility:
+    return SourceCredibility.load()
+
+
+def _is_fact_check_page(title: str | None, url: str) -> bool:
+    """Whether a corpus page is a fact-check: by its publisher being a fact-checker,
+    or by a headline or address that says so in plain words."""
+    return _credibility().is_fact_checker(url) or bool(
+        _CLEAR_FACT_CHECK.search(title or "") or _CLEAR_FACT_CHECK.search(url)
+    )

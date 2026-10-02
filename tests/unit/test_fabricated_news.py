@@ -154,3 +154,30 @@ def test_the_reason_quotes_the_claim_and_says_how_much_was_read() -> None:
     decided = fabricated_news(_LITHIUM, 17)
     assert decided.reason.startswith("This picture was likely made by AI and presented as news")
     assert "We read 17 pages from trusted news and fact-checkers" in decided.reason
+
+
+async def test_who_is_pictured_together_counts() -> None:
+    """media-4: an AI selfie of the BRICS leaders, read as "figures who appear to be
+    Putin, Modi, Xi ... are pictured at the BRICS Summit 2026" - an IDENTITY claim -
+    with 20 trusted pages read and none carrying it (2026-10-02)."""
+    decided, asked = await _decide([_outcome(claim_type=ClaimType.IDENTITY, looked=20)])
+    assert asked == 1
+    assert decided is not None
+    assert decided.verdict is Verdict.FALSE
+    assert decided.rule_id == FABRICATED_RULE
+    assert decided.confidence == FABRICATED_CAP
+
+
+async def test_but_not_when_confirmed_or_the_picture_is_real() -> None:
+    supported = _outcome(
+        claim_type=ClaimType.IDENTITY, evidence=[SimpleNamespace(direction=Direction.SUPPORTS)]
+    )
+    assert await _decide([supported]) == (None, 0)
+    real, asked = await _decide([_outcome(claim_type=ClaimType.IDENTITY)], made_by_ai=False)
+    assert real is None and asked == 1
+
+
+@pytest.mark.parametrize("claim_type", [ClaimType.QUOTE, ClaimType.ATTRIBUTION])
+async def test_a_quote_is_answered_by_its_denials_not_by_silence(claim_type: ClaimType) -> None:
+    decided, asked = await _decide([_outcome(claim_type=claim_type)])
+    assert decided is None and asked == 0

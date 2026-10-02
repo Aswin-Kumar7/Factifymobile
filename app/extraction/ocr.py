@@ -71,7 +71,7 @@ PROVIDER = "llm"
 # What a picture or a video is read and described as. Part of an upload's cache
 # identity (`app/api/verify.py`), so a stored verdict about what an older reader made
 # of a picture is not served once the reading has changed.
-READER_VERSION = "2026.10.03.2"
+READER_VERSION = "2026.10.03.3"
 
 # The longest reading asked for. A forward, a post or a screenshot of an article reads
 # in 130-500 tokens, a dense page in a few thousand. A picture with nothing legible in
@@ -160,7 +160,9 @@ _DESCRIPTION = f"""\
     an official document);
   - who it presents itself as coming from, when a logo, masthead, channel name,
     watermark or account is visible;
-  - what is pictured - people, place, event, objects - as seen;
+  - what is pictured - people, place, event, objects - as seen, the state they are
+    in (melted, burned, flooded, collapsed) and the details that tell one place or
+    event from another (the language of signs, a livery, a vehicle's markings);
 {_SEEN}
 - kind: {_KINDS_SAID}
 - publisher: the outlet, channel, organisation or account the image shows as its
@@ -214,6 +216,11 @@ Return:
     watermark or an account name is visible;
   - what is seen - people, place, event, objects - and a moment worth noting, by its
     time ("at 1:52 a full-screen card about the repo rate");
+  - what state the things it is about are in, as they look - melted, burned,
+    flooded, collapsed, crushed - and the details that tell one place or event from
+    another: an airline's livery or seat colours, the language of signs, a vehicle's
+    markings. Footage of one event is passed off as another, and these are what tell
+    them apart;
 {_SEEN}
 - kind: {_KINDS_SAID} The closest for the video as a whole: TV_GRAPHIC for a news
   broadcast, PHOTO for footage of a scene.

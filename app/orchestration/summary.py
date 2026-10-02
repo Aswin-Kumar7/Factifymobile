@@ -44,7 +44,16 @@ def case_summary(
     true" - under the grey badge, telling the reader the opposite of the answer.
     """
     deciding = _STATUS_FOR_VERDICT.get(verdict, {ClaimStatus.UNVERIFIED})
-    ranked = sorted(claims, key=lambda item: _IMPORTANCE_RANK.get(item[1], 4))
+    ranked = sorted(
+        claims,
+        key=lambda item: (
+            _IMPORTANCE_RANK.get(item[1], 4),
+            # A misleading piece is misleading by what is shown out of context, which
+            # speaks for it before a detail with a wrong figure beside it (x-4: real
+            # news, the wrong flight's footage, a passenger count off by six).
+            verdict is Verdict.MISLEADING and item[0] is not ClaimStatus.MISLEADING_CONTEXT,
+        ),
+    )
     for claim_status, _, explanation in ranked:
         if explanation and claim_status in deciding:
             return explanation

@@ -47,7 +47,13 @@ from app.domain.enums import (
     SourceRisk,
     Verdict,
 )
-from app.domain.evidence import Advisory, Evidence, is_narrower_scope
+from app.domain.evidence import (
+    Advisory,
+    Evidence,
+    is_narrower_scope,
+    is_out_of_context,
+    is_partial_scope,
+)
 from app.domain.publishers import registrable_domain
 from app.governor.governor import ProviderUnavailable
 from app.intake.normalizer import NormalisedIntake
@@ -69,6 +75,7 @@ from app.sources.reasoning import REASONER_VERSION
 from app.sources.verification import SourceVerification, dedupe, page_key
 from app.verdict.engine import (
     FABRICATED_MIN_READ,
+    NARROWER_RULE,
     RULE_VERSION,
     CaseDecision,
     Decision,
@@ -415,9 +422,36 @@ def _unreported_note(
 
 
 def _reports_on(item: Evidence) -> bool:
+    """Whether a source reports on the claim: either way, in a smaller version, in
+    part, or as genuine material shown out of context."""
+    metric = item.match_basis.metric
     return item.direction in (Direction.SUPPORTS, Direction.CONTRADICTS) or (
-        item.direction is Direction.CONTEXTUALIZES and is_narrower_scope(item.match_basis.metric)
+        item.direction is Direction.CONTEXTUALIZES
+        and (is_narrower_scope(metric) or is_out_of_context(metric) or is_partial_scope(metric))
     )
+
+
+# What an AI-made picture can present as news that nobody reports (`_fabricated`): an
+# event, a figure, or who is pictured together. An AI selfie of the BRICS leaders -
+# the late Ebrahim Raisi among them - was read as "figures who appear to be Putin,
+# Modi, Xi ... are pictured at the BRICS Summit 2026", an IDENTITY claim, and fell
+# outside the rule with every other condition met (2026-10-02). Never a quote: who
+# said what is answered by its denials, not by silence.
+_FABRICATED_TYPES = frozenset({ClaimType.EVENT, ClaimType.STATISTIC, ClaimType.IDENTITY})
+
+
+def _search_settled(decision: Decision) -> bool:
+    """Whether a claim's evidence already settles it, so no (further) web search is
+    worth its cost.
+
+    Not when only a smaller version decided it (rule 4b). Three corpus and feed items
+    read as narrower decided yt-2's headline - City guilty of all charges - before
+    any web search, and CBC, France24 and the BBC, read for its other claims with
+    the Premier League's own words, were never asked about it (2026-10-02). Rule 4
+    still needs two independent origins in full to call such a claim true, and 4b
+    still stands without them.
+    """
+    return decision.status.is_decisive and decision.rule_id != NARROWER_RULE
 
 
 # Every wording of the note, to recognise it on a finished claim.
@@ -967,7 +1001,7 @@ class Orchestrator:
             for o in outcomes
             if o.decision.status is ClaimStatus.UNVERIFIED
             and not o.decision.conflicting
-            and o.claim.claim_type in (ClaimType.EVENT, ClaimType.STATISTIC)
+            and o.claim.claim_type in _FABRICATED_TYPES
             and o.claim.coverage_expectation is CoverageExpectation.HIGH
             and is_central(o.claim)
             and not o.claim.within_developing_window
@@ -1085,7 +1119,7 @@ class Orchestrator:
         counted = await self._count_origins(claim, evidence=evidence, skipped=scratch)
 
         searched = False
-        if fallback and not late[0] and not decide(counted, evidence).status.is_decisive:
+        if fallback and not late[0] and not _search_settled(decide(counted, evidence)):
             evidence.extend(
                 await self._run_stage(
                     fallback, claim, skipped=mine, deadline=deadline, tally=looked, late=late
@@ -1115,7 +1149,7 @@ class Orchestrator:
         # than answer from nothing.
         if fallback and not searched and not late[0]:
             counted = await self._count_origins(claim, evidence=evidence, skipped=[])
-            if not decide(counted, evidence).status.is_decisive:
+            if not _search_settled(decide(counted, evidence)):
                 evidence.extend(
                     await self._run_stage(
                         fallback, claim, skipped=mine, deadline=deadline, tally=looked, late=late
@@ -1133,7 +1167,7 @@ class Orchestrator:
         # the extra searches go where they can change the answer.
         if fallback and searched and is_central(claim):
             counted = await self._count_origins(claim, evidence=evidence, skipped=[])
-            if not decide(counted, evidence).status.is_decisive:
+            if not _search_settled(decide(counted, evidence)):
                 more = await self._follow_up(
                     fallback, claim, evidence, skipped=mine, deadline=deadline, tally=looked
                 )

@@ -6,7 +6,7 @@
   "summary": "Factly and PIB Fact Check both say the RBI issued no such release, and ₹500 notes remain legal tender.",
   "action": "DO_NOT_SHARE",
   "action_reason": "A central claim in this content is contradicted by cited evidence.",
-  "rule_version": "2026.10.03.1",
+  "rule_version": "2026.10.03.7",
   "claims": [
     {
       "id": "cl_1",
@@ -17,7 +17,7 @@
       "importance": "HEADLINE",
       "reason": "A published fact-check contradicts this claim.",
       "rule_id": "rule.factcheck_contradiction",
-      "rule_version": "2026.10.03.1",
+      "rule_version": "2026.10.03.7",
       "strength": {
         "score": 0.87,
         "band": "conclusive",
@@ -138,7 +138,7 @@
       "importance": "SUPPORTING_DETAIL",
       "reason": "No evidence strong enough to decide this claim.",
       "rule_id": "rule.no_qualifying_evidence",
-      "rule_version": "2026.10.03.1",
+      "rule_version": "2026.10.03.7",
       "strength": {
         "score": 0.0,
         "band": "none",

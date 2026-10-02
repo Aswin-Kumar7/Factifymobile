@@ -45,7 +45,7 @@ from app.domain import (
     Tier,
 )
 from app.domain.enums import Relation
-from app.domain.evidence import NARROWER_SCOPE, is_narrower_scope
+from app.domain.evidence import NARROWER_SCOPE, is_narrower_scope, is_partial_scope
 from app.extraction.model_wire import WireFormat
 from app.observability.logging import _PAYLOAD_KEY
 from app.security.fetcher import FetchFailure, FetchResult
@@ -168,12 +168,35 @@ class TestANarrowerReadingTheCheckCallsPartly:
     """The comment said a narrower source the check agreed was PARTLY is kept; the
     code also wanted "states a detail differently", and four were thrown away."""
 
-    def test_a_smaller_version_is_kept_without_the_second_answer(self) -> None:
-        checker = _Checker("PARTLY", smaller_version=True, states_differently=False)
+    def test_nothing_stated_differently_is_part_of_the_claim(self) -> None:
+        """Three reports that did not say Baghel "repeatedly" alleged a conspiracy
+        were kept as smaller versions and a true report read "partly true"
+        (2026-10-02). Not a smaller version, and nothing stated differently: part of
+        the claim - not narrower, not support."""
+        checker = _Checker("PARTLY", smaller_version=False, states_differently=False)
 
         [kept] = _verified(checker, [_item("narrower")]).evidence
 
         assert kept.direction is Direction.CONTEXTUALIZES
+        assert not is_narrower_scope(kept.match_basis.metric)
+        assert is_partial_scope(kept.match_basis.metric)
+
+    def test_a_smaller_version_is_never_part_of_the_claim(self) -> None:
+        """Read narrower, and the check says smaller but forgets to say what differs:
+        still a smaller version. As part of the claim, an inflated "approved" for a
+        proposal would stop holding a clearance back (review, 2026-10-02)."""
+        checker = _Checker("PARTLY", smaller_version=True, states_differently=False)
+
+        [kept] = _verified(checker, [_item("narrower")]).evidence
+
+        assert is_narrower_scope(kept.match_basis.metric)
+        assert not is_partial_scope(kept.match_basis.metric)
+
+    def test_a_smaller_version_states_something_smaller(self) -> None:
+        checker = _Checker("PARTLY", smaller_version=True, states_differently=True)
+
+        [kept] = _verified(checker, [_item("narrower")]).evidence
+
         assert is_narrower_scope(kept.match_basis.metric)
 
     def test_one_that_only_leaves_details_out_is_support(self) -> None:
@@ -195,26 +218,42 @@ class TestANarrowerReadingTheCheckCallsPartly:
         assert _verified(checker, [_item("narrower")]).evidence == []
 
     @pytest.mark.parametrize("verdict", ["PARTLY", "UNCLEAR"])
-    def test_a_smaller_version_with_the_core_is_never_full_support(self, verdict: str) -> None:
+    @pytest.mark.parametrize("differs", [True, False])
+    def test_a_smaller_version_with_the_core_is_never_full_support(
+        self, verdict: str, differs: bool
+    ) -> None:
         """Two reports of a proposal for "Govt has approved Rs 5,000 a month for every
         woman": both readers found a smaller version, and the check's "the core is
-        established" must not turn them into support that clears the forward."""
-        checker = _Checker(verdict, smaller_version=True, core_established=True)
+        established" must not turn them into support that clears the forward -
+        whatever it answered on stating a detail differently. A proposal for a
+        decision is stated differently (the check is told so)."""
+        checker = _Checker(
+            verdict, smaller_version=True, core_established=True, states_differently=differs
+        )
 
         kept = _verified(checker, [_item("narrower"), _item("narrower", "ndtv.com")]).evidence
 
         assert all(e.direction is not Direction.SUPPORTS for e in kept)
-        if verdict == "PARTLY":
+        if verdict == "PARTLY" and differs:
             assert len(kept) == 2
             assert all(is_narrower_scope(e.match_basis.metric) for e in kept)
 
     def test_two_such_reports_leave_the_forward_partly_true(self) -> None:
-        checker = _Checker("PARTLY", smaller_version=True, core_established=True)
+        checker = _Checker(
+            "PARTLY", smaller_version=True, core_established=True, states_differently=True
+        )
         kept = _verified(checker, [_item("narrower"), _item("narrower", "ndtv.com")]).evidence
 
         decision = decide(claim(independent_origin_count=0), kept)
 
         assert decision.status is ClaimStatus.MISLEADING_CONTEXT
+
+    def test_the_check_is_told_a_proposal_is_stated_differently(self) -> None:
+        told = " ".join(_CHECK_SOURCES_INSTRUCTION.split())
+
+        assert "a proposal, plan, demand or expectation where the claim says decided" in told
+        assert "some, most or part where the claim says all, every or the whole" in told
+        assert "a passage that states none of them differently is never one" in told
 
 
 class TestAnAttributedReadingTheCheckCallsPartly:

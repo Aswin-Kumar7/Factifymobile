@@ -27,7 +27,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 # or how /v1/verify puts a post's reading together). It is folded into a post's cache
 # identity, so a post read under the old reader is read again rather than answered
 # from what that reader saw.
-READER_VERSION = "2026.10.02.3"
+READER_VERSION = "2026.10.03.1"
 # Bumped on any change to the video reader's prompt, schema or how its answer is read
 # (app/extraction/video_reader.py, which takes its VERSION from here). Kept here,
 # beside READER_VERSION, so the one identity holds both and a post's video is watched

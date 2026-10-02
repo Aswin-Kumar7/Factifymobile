@@ -69,20 +69,31 @@ def pick_for_sheet(frames: Sequence[Keyframe], most: int = SHEET_FRAMES) -> list
     return [ordered[index] for index in sorted(chosen)]
 
 
-def contact_sheet(frames: Sequence[Keyframe]) -> bytes | None:
+def contact_sheet(
+    frames: Sequence[Keyframe], *, moments: Sequence[str] | None = None
+) -> bytes | None:
     """The frames in a grid, left to right and top to bottom, each with its number and
     moment ("3 | 1:52") on the sheet just above it, as one JPEG; None when no frame
     can be opened.
 
+    `moments`, one per frame, says when each was taken where its timestamp cannot:
+    the stills YouTube publishes are from about a quarter, a half and three quarters
+    of the way through, and "0:00" under each would say they were the opening.
+
     The label is never on the frame itself: in a corner it covered the CNN logo at
     the top left of a screen recording (2026-10-03).
     """
-    pictures: list[tuple[Keyframe, Image.Image]] = []
-    for frame in frames:
+    pictures: list[tuple[str, Image.Image]] = []
+    for position, frame in enumerate(frames):
         picture = _opened(frame.data)
         if picture is not None:
             picture.thumbnail((CELL, CELL))
-            pictures.append((frame, picture))
+            moment = (
+                moments[position]
+                if moments is not None and position < len(moments)
+                else clock(frame.timestamp_ms)
+            )
+            pictures.append((moment, picture))
     if not pictures:
         return None
     count = len(pictures)
@@ -101,13 +112,13 @@ def contact_sheet(frames: Sequence[Keyframe]) -> bytes | None:
         BACKGROUND,
     )
     draw = ImageDraw.Draw(sheet)
-    for number, (frame, picture) in enumerate(pictures):
+    for number, (moment, picture) in enumerate(pictures):
         row, column = divmod(number, columns)
         left = GAP + column * (width + GAP)
         top = GAP + row * (cell + GAP)
         draw.text(
             (left + 2 - left_edge, top + 4 - top_edge),
-            f"{number + 1} | {clock(frame.timestamp_ms)}",
+            f"{number + 1} | {moment}",
             fill=(255, 255, 255),
             font=font,
         )
