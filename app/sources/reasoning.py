@@ -61,7 +61,7 @@ from app.sources.local_reading import local_reading, local_same_claim
 logger = logging.getLogger("factify.sources.reasoning")
 
 PROVIDER = "llm"
-REASONER_VERSION = "2026.10.03.5"
+REASONER_VERSION = "2026.10.03.6"
 
 # The metric prefix of a support the article attributes to someone else - "the Army
 # said", "police said" - held as context until the source check, reading the passage
@@ -1101,13 +1101,19 @@ For each source:
   claim about the final), and when the claim names a particular scheme and the
   passage is about a differently named one. False, too, when the passage only says
   less than the claim - leaves a detail out, names no platform or date - but what it
-  says fits the claim: that is UNCLEAR or TRUE, not a smaller version.
+  says fits the claim: that is UNCLEAR or TRUE, not a smaller version. A smaller
+  version always states one of the claim's details differently (states_differently):
+  a passage that states none of them differently is never one.
 - states_differently: true if the passage states one of the claim's own details
   differently: a different amount, frequency, date, place, person or body acting,
   or people it applies to - "once" where the claim says "every month", "Tamil Nadu"
-  where it says "the government", "Rs 1,000" where it says "Rs 5,000". False when the
+  where it says "the government", "Rs 1,000" where it says "Rs 5,000"; a proposal,
+  plan, demand or expectation where the claim says decided, approved, done or paid;
+  some, most or part where the claim says all, every or the whole. False when the
   passage only leaves details out: a report of the launch that does not name the
-  launch site states nothing differently.
+  launch site, of a fire that does not say which floor it began on, of an
+  assessment that names two of the four effects the claim lists, or of statements
+  that does not say they were made "repeatedly", states nothing differently.
 - other_group: true if what the passage reports is for a different group of people
   than the claim names, rather than for all of them or some of them: interns,
   students or employees of any gender for a claim about every woman; traders for a

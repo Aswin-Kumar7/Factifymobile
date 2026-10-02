@@ -50,6 +50,7 @@ from app.domain.enums import ClaimType, Direction, EvidenceKind
 from app.domain.evidence import (
     NARROWER_SCOPE,
     OUT_OF_CONTEXT,
+    PARTIAL_SCOPE,
     Evidence,
     MatchBasis,
     is_narrower_scope,
@@ -189,10 +190,10 @@ def _settled(item: Evidence, read: str, reading: Any) -> tuple[Evidence | None, 
     # "2009-2018" (2026-10-02). What a source does not mention is unconfirmed by it,
     # not a reason to discard what it does confirm.
     #
-    # Never when the check calls it a smaller version: a proposal reported for a
-    # claim of a decision leaves nothing out and states nothing differently, and two
-    # such reports read as narrower would otherwise have cleared "Govt has approved
-    # Rs 5,000 a month for every woman" as true.
+    # Never when the check calls it a smaller version: two reports of a proposal,
+    # read as narrower, would otherwise have cleared "Govt has approved Rs 5,000 a
+    # month for every woman" as true - whatever the check said of stating it
+    # differently.
     says_less = (
         supports
         and about
@@ -200,6 +201,15 @@ def _settled(item: Evidence, read: str, reading: Any) -> tuple[Evidence | None, 
         and not reading.other_group
         and not reading.smaller_version
         and getattr(reading, "core_established", False)
+    )
+    # A narrower reading the check finds states nothing differently: it reports part
+    # of the claim and leaves the rest out. Kept as that (`PARTIAL_SCOPE`) - neither a
+    # smaller version, which would call a true report misleading, nor support. The
+    # Wire, TOI and NIE were narrower versions of "Baghel repeatedly alleged a larger
+    # conspiracy" for not saying "repeatedly", and the NDTV report of the Jhiram Ghati
+    # sentences read "partly true" (2026-10-02).
+    partial = (
+        read == "narrower" and about and not reading.states_differently and not reading.other_group
     )
 
     if verdict == "PARTLY":
@@ -220,30 +230,30 @@ def _settled(item: Evidence, read: str, reading: Any) -> tuple[Evidence | None, 
         # for interns is no smaller version of "every woman gets Rs 5,000"
         # (`other_group`).
         #
-        # Read as support or as a denial, "smaller version" also needs a detail stated
-        # differently: it was said of pages that merely said less ("the photographs
-        # were also shared", for a claim naming Facebook and X). Read as a narrower
-        # version already, the reader said that much, and the check's agreement that
-        # it is smaller keeps it (2026-10-02: four narrower reports were thrown away
-        # for lacking the second answer). Tamil Nadu's Rs 1,000 a month for women
-        # heads of families, read as denying "every woman gets Rs 5,000 a month", is
-        # a smaller version too: the user decided a real smaller version for the same
-        # people makes such a claim partly true (2026-09-28).
-        smaller = (
-            reading.smaller_version
-            and not reading.other_group
-            and (reading.states_differently or read == "narrower")
-        )
+        # "Smaller version" also needs a detail stated differently: it was said of
+        # pages that merely said less ("the photographs were also shared", for a
+        # claim naming Facebook and X), and of reports that each carried part of a
+        # fire officer's account. A smaller version states something smaller - another
+        # state, once rather than monthly, a lower amount, a proposal for a decision;
+        # leaving a detail out states nothing (`partial`, below). Tamil Nadu's Rs 1,000
+        # a month for women heads of families, read as denying "every woman gets Rs
+        # 5,000 a month", is a smaller version too: the user decided a real smaller
+        # version for the same people makes such a claim partly true (2026-09-28).
+        smaller = reading.smaller_version and reading.states_differently and not reading.other_group
         if smaller:
             return _as_narrower(item, reading.reason), "kept (narrower than the claim)"
         # Checked after the smaller version, so a source both readers found smaller
         # stays the smaller version it is.
         if says_less:
             return _as_support(item), "kept (supports, says less)"
+        if partial:
+            return _as_partial(item, reading.reason), "kept (part of the claim)"
         return None, rejected
 
     if says_less:
         return _as_support(item), "kept (supports, says less)"
+    if partial:
+        return _as_partial(item, reading.reason), "kept (part of the claim)"
     return None, rejected
 
 
@@ -272,6 +282,11 @@ def _as_narrower(item: Evidence, reason: str) -> Evidence:
 def _as_out_of_context(item: Evidence, reason: str) -> Evidence:
     """A source the check read as finding the claim's material genuine but misframed."""
     return _marked(item, OUT_OF_CONTEXT, reason)
+
+
+def _as_partial(item: Evidence, reason: str) -> Evidence:
+    """A narrower reading the check found states nothing differently: part of the claim."""
+    return _marked(item, PARTIAL_SCOPE, reason)
 
 
 def _marked(item: Evidence, marker: str, reason: str) -> Evidence:

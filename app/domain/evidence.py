@@ -70,6 +70,16 @@ NARROWER_SCOPE = "passage_narrower"
 OUT_OF_CONTEXT = "passage_out_of_context"
 
 
+# How a source that reports part of a claim, and states none of it differently, is
+# recorded. It leaves details out - that statements were made "repeatedly", which
+# floor a fire began on - and says nothing smaller: not a narrower version, which the
+# rules call misleading, and not support either. Two reports of a fire officer's
+# account of the Koder House fire, each carrying half of it, made a true report
+# "partly true" as narrower versions (2026-10-02). Deliberately not starting with
+# NARROWER_SCOPE, so rule 4b and the narrower note never see it.
+PARTIAL_SCOPE = "passage_partial"
+
+
 # How relevant the reader must rate a passage, 0-1, before it can decide anything.
 # It was 0.0, so every passage cleared it: one the reader itself rated 0.1 relevant
 # was a MODERATE match and could carry a verdict. At 0.5, below half-relevant is WEAK
@@ -106,6 +116,11 @@ def is_narrower_scope(metric: str) -> bool:
 def is_out_of_context(metric: str) -> bool:
     """Whether a match metric records the claim's material as genuine but misframed."""
     return metric.startswith(OUT_OF_CONTEXT)
+
+
+def is_partial_scope(metric: str) -> bool:
+    """Whether a match metric records a report of part of the claim."""
+    return metric.startswith(PARTIAL_SCOPE)
 
 
 def can_be_decisive(method: Method) -> bool:

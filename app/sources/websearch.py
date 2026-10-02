@@ -54,6 +54,7 @@ from app.sources.base import (
     current_follow_up,
     current_own_pages,
     insufficient,
+    keyword_overlap,
     reads_as_a_fact_check,
 )
 from app.sources.credibility import SourceCredibility
@@ -85,7 +86,7 @@ _READ_TTL_SECONDS = 480.0
 _UNREAD_TTL_SECONDS = 90.0
 
 NAME = "web_search"
-VERSION = "2026.10.03.2"
+VERSION = "2026.10.03.3"
 PROVIDER = "web_search"
 
 # How many credible sources to read. Each is a metered model call, and corroboration
@@ -448,9 +449,13 @@ class WebSearchResolver:
                 )
                 raise ProviderUnavailable(PROVIDER, outcome.reason)
 
+        follow_up = bool(current_follow_up.get())
+        # What this check's other claims found, before this search adds to it: a
+        # second round also reads those (`_siblings`).
+        siblings = list(self._pages.items()) if follow_up else []
+
         rows = await self._queries(claim)
 
-        follow_up = bool(current_follow_up.get())
         # A second round reads what the first did not: a page the reader already judged
         # for this claim (`relate`) would be judged the same way again, at a model call
         # each. A page that could not be read then was never judged, and may be now.
@@ -501,6 +506,12 @@ class WebSearchResolver:
                 )
             )
 
+        found = len(shortlist)
+        if follow_up:
+            shortlist.extend(
+                _siblings(claim, siblings, skip=seen | judged, own=own, own_outlets=own_outlets)
+            )
+
         event(
             logger,
             "web-search candidates",
@@ -514,6 +525,8 @@ class WebSearchResolver:
             # and those need opposite responses.
             dropped_hosts=sorted(set(dropped_hosts)),
             already_judged=already_judged,
+            # Pages found for this check's other claims, offered to a second round.
+            siblings=len(shortlist) - found,
         )
         limit = _FOLLOW_UP_RESULTS if follow_up else self._max_results
 
@@ -1235,6 +1248,9 @@ class WebSearchResolver:
             provider=PROVIDER,
             queries=len(queries),
             rows=len(merged),
+            # What was asked: a first round that read Wikipedia's History of India
+            # for a GST figure could not be traced to its query (2026-10-02).
+            asked=[query[:160] for query in queries],
         )
         return list(merged.values())
 
@@ -1313,6 +1329,56 @@ class WebSearchResolver:
             }
             for row in data.get("results", [])
         ]
+
+
+# How many pages read for a check's other claims a second round may offer, and how
+# much of the claim's words one must carry to be offered. The relevance ranking then
+# chooses among them and the round's own results for its few read slots.
+_SIBLING_PAGES = 6
+_SIBLING_OVERLAP = 0.3
+
+
+def _siblings(
+    claim: Claim,
+    rows: list[tuple[str, dict[str, Any]]],
+    *,
+    skip: set[str],
+    own: frozenset[str],
+    own_outlets: set[str | None],
+) -> list[SourceCandidate]:
+    """Pages this check found for its other claims, offered to this claim's second round.
+
+    Searches are per claim, and a page found for one claim was never judged against
+    another. On PIB's October 2025 GST post the headline - gross GST was Rs 1,95,936
+    crore - ended on one origin while The Tribune and Hindustan Times, stating that
+    exact figure, were read the same minute for the claim beside it (2026-10-02).
+
+    Every page here already passed the credibility gate when it was found, and is read
+    from this check's own reads (`_read`): a reader call each, no fetch. Never a page
+    already judged for this claim, nor the person's own page or its outlet.
+    """
+    scored: list[tuple[float, str, dict[str, Any]]] = []
+    for url, row in rows:
+        key = page_key(url)
+        if key in skip or key in own or registrable_domain(url) in own_outlets:
+            continue
+        text = f"{row.get('title') or ''} {row.get('content') or ''}"
+        overlap = max(keyword_overlap(claim.search_text, text), keyword_overlap(claim.text, text))
+        if overlap >= _SIBLING_OVERLAP:
+            skip.add(key)
+            scored.append((overlap, url, row))
+    scored.sort(key=lambda item: -item[0])
+    return [
+        SourceCandidate(
+            url=url,
+            publisher=row.get("publisher"),
+            title=row.get("title"),
+            published_at=row.get("published_at"),
+            proposed_by="web_search:sibling",
+            prior_score=round(overlap, 4),
+        )
+        for overlap, url, row in scored[:_SIBLING_PAGES]
+    ]
 
 
 def _publisher_of(url: str | None) -> str | None:

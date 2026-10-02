@@ -34,13 +34,14 @@ from app.domain.evidence import (
     is_narrower_scope,
     is_official_absence,
     is_out_of_context,
+    is_partial_scope,
     is_shared_review,
 )
 from app.domain.publishers import publishers_of
 
 # Stamped on every verdict. A cached verdict produced under older rules is therefore
 # identifiable, and the cache can refuse to serve it (M13).
-RULE_VERSION = "2026.10.03.2"
+RULE_VERSION = "2026.10.03.3"
 
 # Default number of genuinely independent origins required before corroboration can
 # support a claim. Tenant-configurable later; never below two, because one origin is
@@ -60,6 +61,9 @@ OFFICIAL_ABSENCE_CAP = 60
 # context: a clip cut so a speaker seems to say what he was quoting, footage of
 # another event (rule 3e).
 OUT_OF_CONTEXT_RULE = "rule.out_of_context"
+
+# Several publishers report part of the claim and none of it differently (rule 7).
+REPORTED_IN_PART_RULE = "rule.reported_in_part"
 
 
 class AdvisoryLeakError(TypeError):
@@ -656,6 +660,26 @@ def _decide_rules(
             ),
         )
 
+    # Reported in part: independent publishers report the claim, each leaving out
+    # some of what it says and stating none of it differently. Undecided - nobody
+    # confirms all of it - but reported, which is not "nothing reports it": a
+    # critical detail of a story five outlets carried (the charges and the fine in
+    # the Jhiram Ghati sentencing) held a true report back as if nobody had (`holds_back`,
+    # 2026-10-02).
+    partial = [
+        e
+        for e in evidence
+        if e.direction is Direction.CONTEXTUALIZES
+        and is_partial_scope(e.match_basis.metric)
+        and e.is_decisive_capable
+    ]
+    if len(_publishers(partial)) >= min_origins:
+        return Decision(
+            status=ClaimStatus.UNVERIFIED,
+            rule_id=REPORTED_IN_PART_RULE,
+            reason="Sources report part of this claim; the rest could not be confirmed.",
+        )
+
     return Decision(
         status=ClaimStatus.UNVERIFIED,
         rule_id="rule.no_qualifying_evidence",
@@ -796,8 +820,11 @@ def blocks_clearance(claim: Claim) -> bool:
 
 
 # An undecided claim that sources did report: one credible origin carries it, too few
-# to decide on, or sources disagree about it (the toll of an attack, 27 or 29).
-_REPORTED_UNDECIDED = frozenset({"rule.insufficient_origins", "rule.conflicting_evidence"})
+# to decide on, sources disagree about it (the toll of an attack, 27 or 29), or
+# several report part of it.
+_REPORTED_UNDECIDED = frozenset(
+    {"rule.insufficient_origins", "rule.conflicting_evidence", "rule.reported_in_part"}
+)
 
 
 def holds_back(claim: Claim, decision: Decision) -> bool:
