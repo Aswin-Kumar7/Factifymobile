@@ -47,7 +47,7 @@ from app.domain.enums import (
     SourceRisk,
     Verdict,
 )
-from app.domain.evidence import Advisory, Evidence, is_narrower_scope
+from app.domain.evidence import Advisory, Evidence, is_narrower_scope, is_out_of_context
 from app.domain.publishers import registrable_domain
 from app.governor.governor import ProviderUnavailable
 from app.intake.normalizer import NormalisedIntake
@@ -415,8 +415,13 @@ def _unreported_note(
 
 
 def _reports_on(item: Evidence) -> bool:
+    """Whether a source reports on the claim: either way, in a smaller version, or as
+    genuine material shown out of context."""
     return item.direction in (Direction.SUPPORTS, Direction.CONTRADICTS) or (
-        item.direction is Direction.CONTEXTUALIZES and is_narrower_scope(item.match_basis.metric)
+        item.direction is Direction.CONTEXTUALIZES
+        and (
+            is_narrower_scope(item.match_basis.metric) or is_out_of_context(item.match_basis.metric)
+        )
     )
 
 

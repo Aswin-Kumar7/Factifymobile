@@ -50,9 +50,11 @@ from app.sources.base import (
     SourceSnapshot,
     insufficient,
     locate_excerpt,
+    reads_as_a_fact_check,
 )
 from app.sources.corpus_text import is_navigation
 from app.sources.reasoning import (
+    ATTRIBUTED_SUPPORT,
     REASONER_VERSION,
     PassageReasoner,
     locate_quote,
@@ -62,7 +64,7 @@ from app.sources.reasoning import (
 logger = logging.getLogger("factify.sources.corpus")
 
 NAME = "corpus"
-VERSION = "2026.08.1"
+VERSION = "2026.10.03.1"
 
 # How many rows each leg contributes before fusion. Deliberately wider than the
 # shortlist: fusion can only reorder what it is given, so starving a leg here is a
@@ -634,13 +636,27 @@ class CorpusResolver:
             # text changed under us between selection and location.
             return insufficient(NAME, VERSION, "selected sentence no longer locatable")
 
+        metric = "claim_word_coverage+semantic_gate"
+        relation = Relation.SUPPORTS if score >= SUPPORT_OVERLAP else Relation.CONTEXTUALIZES
+        if relation is Relation.SUPPORTS and reads_as_a_fact_check(
+            snapshot.title, snapshot.final_url or snapshot.url
+        ):
+            # A fact-check restates the claim it rates, so it shares the claim's
+            # words whichever way it rates it. Newschecker's "Did Benjamin Netanyahu
+            # Say 'America Deserved 9/11'? No, Clipped Video Goes Viral" covered two
+            # thirds of the claim's words and was counted as support (2026-10-02).
+            # Held as the claim on someone else's word: the source check reads it, and
+            # it is cited only on what the check finds.
+            relation = Relation.CONTEXTUALIZES
+            metric = f"{ATTRIBUTED_SUPPORT}: {metric} on a fact-check page"
+
         return SourceRelation(
-            relation=Relation.SUPPORTS if score >= SUPPORT_OVERLAP else Relation.CONTEXTUALIZES,
+            relation=relation,
             validator=NAME,
             validator_version=VERSION,
             excerpt=excerpt,
             anchor=anchor,
-            metric="claim_word_coverage+semantic_gate",
+            metric=metric,
             value=score,
             threshold=SUPPORT_OVERLAP if score >= SUPPORT_OVERLAP else CONTEXT_OVERLAP,
         )

@@ -46,6 +46,7 @@ from app.observability.logging import event
 from app.security.fetcher import FetchResult, SecureFetcher
 from app.security.patience import current_patience
 from app.sources.base import (
+    FACT_CHECK_WORDS,
     SourceCandidate,
     SourceRelation,
     SourceSnapshot,
@@ -53,6 +54,7 @@ from app.sources.base import (
     current_follow_up,
     current_own_pages,
     insufficient,
+    reads_as_a_fact_check,
 )
 from app.sources.credibility import SourceCredibility
 from app.sources.reasoning import (
@@ -208,19 +210,10 @@ class _SearchFailed(Exception):
     """One search call that did not return results: the provider refused or failed."""
 
 
-# A page that presents itself as a fact-check, in its headline or its address.
-_FACT_CHECK_WORDS = re.compile(
-    r"fact[\s_-]?check|webqoof|\bfake\b|\bhoax|\bviral\b|\bmisleading\b|"
-    r"\bfalse(ly)?\b|\bdebunk|\bdoctored\b|\bmorphed\b|\bedited\b|\bclipped\b|"
-    r"\bmisattributed\b|\bsatir|\bdeepfake|\bai[\s-]generated\b|\bdigitally altered\b|"
-    r"\bold (video|photo|image|clip)\b|\bunrelated\b|^\s*no,\s|"
-    r"फ़र्ज़ी|फर्जी|फेक|भ्रामक|वायरल|पड़ताल",
-    re.IGNORECASE,
-)
-
-
-def _reads_as_a_fact_check(title: str | None, url: str) -> bool:
-    return bool(_FACT_CHECK_WORDS.search(f"{title or ''} {url}"))
+# A page that presents itself as a fact-check, in its headline or its address
+# (`app/sources/base.py`, shared with the corpus).
+_FACT_CHECK_WORDS = FACT_CHECK_WORDS
+_reads_as_a_fact_check = reads_as_a_fact_check
 
 
 # A newsroom's fact-check desk, by its own label. Narrower than `_FACT_CHECK_WORDS`,

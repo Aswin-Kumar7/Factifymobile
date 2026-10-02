@@ -21,6 +21,7 @@ from app.domain.evidence import (
     Evidence,
     is_narrower_scope,
     is_official_absence,
+    is_out_of_context,
     is_shared_review,
 )
 from app.domain.publishers import publishers_of
@@ -42,6 +43,7 @@ _TEXT = {
         ),
         "supports": "{who} confirms it: “{quote}”",
         "narrower": "Only a narrower version of this is reported. {who}: “{quote}”",
+        "out_of_context": "{who} finds this genuine but shown out of context: “{quote}”",
         "media": "The picture is real but older: {who} published it on {date}.",
         "others": " {n} other sources say the same.",
         "other": " 1 other source says the same.",
@@ -62,6 +64,7 @@ _TEXT = {
         ),
         "supports": "{who} इसकी पुष्टि करता है: “{quote}”",
         "narrower": "इसका केवल एक सीमित रूप ही रिपोर्ट हुआ है। {who}: “{quote}”",
+        "out_of_context": "{who} के अनुसार यह असली है, पर संदर्भ से हटाकर दिखाया गया है: “{quote}”",
         "media": "तस्वीर असली है पर पुरानी है: {who} ने इसे {date} को प्रकाशित किया था।",
         "others": " {n} और स्रोत भी यही कहते हैं।",
         "other": " 1 और स्रोत भी यही कहता है।",
@@ -115,7 +118,11 @@ def explain(
             top.published_on is not None
         ):
             return text["media"].format(who=_who(top), date=top.published_on.isoformat())
-        template = "narrower"
+        template = (
+            "out_of_context"
+            if is_out_of_context(top.match_basis.metric) or is_shared_review(top.match_basis.metric)
+            else "narrower"
+        )
     else:
         return None
 

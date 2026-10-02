@@ -61,7 +61,7 @@ from app.sources.local_reading import local_reading, local_same_claim
 logger = logging.getLogger("factify.sources.reasoning")
 
 PROVIDER = "llm"
-REASONER_VERSION = "2026.10.03.4"
+REASONER_VERSION = "2026.10.03.5"
 
 # The metric prefix of a support the article attributes to someone else - "the Army
 # said", "police said" - held as context until the source check, reading the passage
@@ -1045,6 +1045,12 @@ _CHECK_SOURCES_SCHEMA: dict[str, Any] = {
                     # widely reported event read "nothing reports it" (2026-10-02).
                     # Asked as a description of its own, like the three above.
                     "core_established": {"type": "boolean"},
+                    # Genuine words, picture or video, presented misleadingly. Without
+                    # it the check could only call Newschecker's account of the cut
+                    # Netanyahu clip - he was quoting Hasan Piker - TRUE or FALSE, and
+                    # it said TRUE: the words were said (2026-10-02). Before the
+                    # verdict, like the descriptions above.
+                    "out_of_context": {"type": "boolean"},
                     "verdict": {
                         "type": "string",
                         "enum": ["TRUE", "PARTLY", "FALSE", "UNCLEAR"],
@@ -1058,6 +1064,7 @@ _CHECK_SOURCES_SCHEMA: dict[str, Any] = {
                     "other_group",
                     "addresses_claim",
                     "core_established",
+                    "out_of_context",
                     "verdict",
                 ],
             },
@@ -1140,6 +1147,17 @@ For each source:
   it only reports what someone claims or believes, and when what it leaves out is an
   assertion of its own: the amount, rate or beneficiaries of a scheme, a figure the
   claim gives, a second event or announcement, the words of a quote.
+- out_of_context: true if the passage says the claim's words were really said, or
+  its picture or video is genuine, but the claim presents them misleadingly: a clip
+  cut so the speaker seems to say or mean what he was quoting, reporting or
+  rejecting; a genuine photo or video from another event, place or time, or showing
+  something other than what the claim says it shows (fire damage passed off as heat
+  damage, one airline's flight passed off as another's); words or footage the
+  passage calls clipped, cropped, missing context or out of context. False when the
+  passage says the words were never said or the quote is made up, the picture or
+  video is AI-made, edited, morphed or doctored, or the event the claim reports did
+  not happen; and false when the passage does not itself say how the claim's words,
+  picture or video were presented.
 - verdict:
   * TRUE if the passage, in its own voice, establishes that the claim is correct -
     every part of it: who acts, who it applies to, how much, how often, where and
@@ -1197,6 +1215,8 @@ class SourceReading:
     other_group: bool = False
     # The passage establishes what the claim is about and leaves out only details.
     core_established: bool = False
+    # The passage finds the claim's words, picture or video genuine but misframed.
+    out_of_context: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -2055,6 +2075,7 @@ class PassageReasoner:
                         states_differently=bool(item.get("states_differently", False)),
                         other_group=bool(item.get("other_group", False)),
                         core_established=bool(item.get("core_established", False)),
+                        out_of_context=bool(item.get("out_of_context", False)),
                     )
             return SourceCheck(
                 readings=readings, explanation=str(payload.get("explanation") or "").strip()

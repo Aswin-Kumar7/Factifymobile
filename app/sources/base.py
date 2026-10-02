@@ -421,3 +421,22 @@ def keyword_overlap(claim_text: str, source_text: str, *, minimum_length: int = 
     if all(word.isdigit() for word in shared):
         return 0.0
     return len(shared) / len(claim_words)
+
+
+# A page that presents itself as a fact-check, in its headline or its address. Shared
+# by the web search, which reads such a page as a published adjudication, and the
+# corpus, whose word overlap must never count one as support: a debunk restates the
+# claim it rates, word for word.
+FACT_CHECK_WORDS = re.compile(
+    r"fact[\s_-]?check|webqoof|\bfake\b|\bhoax|\bviral\b|\bmisleading\b|"
+    r"\bfalse(ly)?\b|\bdebunk|\bdoctored\b|\bmorphed\b|\bedited\b|\bclipped\b|"
+    r"\bmisattributed\b|\bsatir|\bdeepfake|\bai[\s-]generated\b|\bdigitally altered\b|"
+    r"\bold (video|photo|image|clip)\b|\bunrelated\b|^\s*no,\s|"
+    r"फ़र्ज़ी|फर्जी|फेक|भ्रामक|वायरल|पड़ताल",
+    re.IGNORECASE,
+)
+
+
+def reads_as_a_fact_check(title: str | None, url: str) -> bool:
+    """Whether a page's headline or address says it is a fact-check."""
+    return bool(FACT_CHECK_WORDS.search(f"{title or ''} {url}"))

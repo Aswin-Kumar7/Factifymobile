@@ -29,12 +29,18 @@ from app.domain.enums import (
     Tier,
     Verdict,
 )
-from app.domain.evidence import Evidence, is_narrower_scope, is_official_absence
+from app.domain.evidence import (
+    Evidence,
+    is_narrower_scope,
+    is_official_absence,
+    is_out_of_context,
+    is_shared_review,
+)
 from app.domain.publishers import publishers_of
 
 # Stamped on every verdict. A cached verdict produced under older rules is therefore
 # identifiable, and the cache can refuse to serve it (M13).
-RULE_VERSION = "2026.10.03.1"
+RULE_VERSION = "2026.10.03.2"
 
 # Default number of genuinely independent origins required before corroboration can
 # support a claim. Tenant-configurable later; never below two, because one origin is
@@ -49,6 +55,11 @@ NARROWER_RULE = "rule.narrower_scope"
 # (rule 3d), and the most confidence that can carry: a list can lag a new opening.
 OFFICIAL_ABSENCE_RULE = "rule.official_presence_absent"
 OFFICIAL_ABSENCE_CAP = 60
+
+# Sources find the claim's words, picture or video genuine and presented out of
+# context: a clip cut so a speaker seems to say what he was quoting, footage of
+# another event (rule 3e).
+OUT_OF_CONTEXT_RULE = "rule.out_of_context"
 
 
 class AdvisoryLeakError(TypeError):
@@ -220,6 +231,10 @@ def _confidence(decision: Decision, evidence: list[Evidence]) -> int | None:
         Direction.CONTRADICTS if winning is Direction.SUPPORTS else Direction.SUPPORTS
     )
     opposing = [e for e in evidence if e.direction is opposing_direction and e.is_decisive_capable]
+    if decision.rule_id == OUT_OF_CONTEXT_RULE:
+        # A report of the words themselves agrees that they were said; it does not
+        # dispute that they were cut from what gave them their meaning.
+        opposing = []
 
     ours = _side_weight(cited)
     theirs = _side_weight(opposing)
@@ -318,6 +333,12 @@ def _decide_status(
             outranked = len(supporting)
             supporting = []
         else:
+            # A finding that the words or the footage are genuine but cut from their
+            # context explains such a split - one outlet repeats the words, another
+            # says they were never his - better than leaving it undecided.
+            framed = _out_of_context(evidence, min_origins=min_origins)
+            if framed is not None:
+                return framed
             return Decision(
                 status=ClaimStatus.UNVERIFIED,
                 rule_id="rule.conflicting_evidence",
@@ -346,6 +367,49 @@ def _decide_status(
             ),
         )
     return decision
+
+
+def _out_of_context(evidence: list[Evidence], *, min_origins: int) -> Decision | None:
+    """MISLEADING_CONTEXT when sources find the claim's words, picture or video
+    genuine but presented out of context, or None.
+
+    The media rule (rule 2) said this of a picture a dated copy shows is older than
+    claimed; a fact-checker saying it in words could not, and the words themselves
+    then read as confirmation. A clip of Netanyahu at the UN saying "America deserved
+    9/11" - quoting Hasan Piker, which the clip cut off - came back TRUE 89 on
+    Newschecker's and Snopes's own explanations of how it was cut (2026-10-02).
+
+    Held to the bar a contradiction meets: a published fact-check, one highly
+    credible source, or two independent publishers. A shared fact-check rated
+    "missing context" says it of the very claim it examines.
+    """
+    framing = [
+        e
+        for e in evidence
+        if e.direction is Direction.CONTEXTUALIZES
+        and e.is_decisive_capable
+        and (
+            is_out_of_context(e.match_basis.metric)
+            or (e.kind is EvidenceKind.FACT_CHECK and is_shared_review(e.match_basis.metric))
+        )
+    ]
+    if not framing:
+        return None
+    origins = _publishers(framing)
+    if not (
+        any(e.kind is EvidenceKind.FACT_CHECK for e in framing)
+        or any(e.credibility is Credibility.HIGH for e in framing)
+        or len(origins) >= min_origins
+    ):
+        return None
+    return Decision(
+        status=ClaimStatus.MISLEADING_CONTEXT,
+        rule_id=OUT_OF_CONTEXT_RULE,
+        reason=(
+            f"Sources find this genuine but shown out of context: {', '.join(sorted(origins))}."
+        ),
+        supporting_evidence_ids=tuple(e.id for e in framing),
+    )
 
 
 def _decide_rules(
@@ -455,6 +519,14 @@ def _decide_rules(
             reason=f"Contradicted by a highly credible source: {names}.",
             supporting_evidence_ids=tuple(e.id for e in authoritative_against),
         )
+
+    # Rule 3e - genuine, and shown out of context (`_out_of_context`). After every
+    # contradiction, so a credible "he never said it" or "it never happened" still
+    # decides the claim false; before support, so a report repeating the words
+    # cannot clear a clip cut to change what they meant.
+    framed = _out_of_context(evidence, min_origins=min_origins)
+    if framed is not None:
+        return framed
 
     # Rule 5 — inside the developing-news window, silence is ambiguous. Checked
     # before support so a thin early corroboration cannot harden into SUPPORTED
@@ -788,6 +860,7 @@ def _roll_up_action(
     # right. Told apart from media shown out of context, the other way to reach
     # MISLEADING_CONTEXT, by the rule that decided it.
     partly = [(c, d) for c, d in misleading if d.rule_id == NARROWER_RULE]
+    framed = [(c, d) for c, d in misleading if d.rule_id != NARROWER_RULE]
     # What sources confirm, in full or in part: a central claim among these makes a
     # piece partly true rather than false when another of its claims is wrong.
     right_central = [
@@ -818,6 +891,22 @@ def _roll_up_action(
                 reason="A central claim in this content is contradicted by cited evidence.",
             )
 
+    # Genuine material shown out of context - footage of another event, a clip cut
+    # so a speaker seems to say what he was quoting - is what the piece misleads by,
+    # and that outranks a detail sources report only in part. Real heatwave news
+    # illustrated with traffic lights burned in a fire is misleading, whatever its
+    # side details (2026-10-02). It was checked after them, and a heatwave post whose
+    # side details sources reported only in part read "partly true".
+    for claim, _ in framed:
+        if claim.is_material:
+            return CaseDecision(
+                action=Action.SHARE_WITH_CONTEXT,
+                rule_id="rollup.misleading_material",
+                reason=(
+                    "The media is genuine but its framing is misleading. Share only with context."
+                ),
+            )
+
     # A real thing inflated: sources report a smaller version of a claim that carries
     # the piece - one state's scheme as the government's, a one-time payment as a
     # monthly one. Partly true, and shown with what the sources actually report.
@@ -834,7 +923,7 @@ def _roll_up_action(
 
     # A contradicted detail is a correction, not a verdict on the whole piece.
     #
-    # This row used to send any contradicted HIGH-severity claim to DO_NOT_SHARE,
+    # A row here used to send any contradicted HIGH-severity claim to DO_NOT_SHARE,
     # wherever it sat. The extractor rates most political and public-safety claims
     # HIGH, so one detail decided the verdict on everything around it: a BOOM
     # fact-check of a deepfake - a correct debunk by an IFCN signatory - came back
@@ -842,19 +931,8 @@ def _roll_up_action(
     # was trolled over the snacking") drew contradictions. The same reasoning that
     # stopped an unconfirmed HIGH detail from blocking a clearance (below) applies
     # here: what makes a piece false is its headline, its main claim, or anything
-    # CRITICAL, which the row above still catches. A wrong HIGH detail now reads
-    # MISLEADING - share only with the correction - and the claim itself is still
-    # shown as contradicted.
-    for claim, _ in misleading:
-        if claim.is_material:
-            return CaseDecision(
-                action=Action.SHARE_WITH_CONTEXT,
-                rule_id="rollup.misleading_material",
-                reason=(
-                    "The media is genuine but its framing is misleading. Share only with context."
-                ),
-            )
-
+    # CRITICAL, which the rows above still catch. A wrong HIGH detail is a
+    # correction, and the claim itself is still shown as contradicted.
     if (contradicted or misleading) and anything_right:
         return CaseDecision(
             action=Action.SHARE_WITH_CORRECTION,
