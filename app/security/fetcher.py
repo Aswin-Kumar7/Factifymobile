@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -367,7 +368,82 @@ class SecureFetcher:
             )
         except httpx.TimeoutException:
             return self._failure(url, "request timed out", kind="timeout", provider=provider)
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
+            # InvalidURL is not an HTTPError: a media host's redirect to a malformed
+            # Location ("Invalid port") raised it out of here, and out of the check.
+            return self._failure(
+                url, f"transport error: {type(exc).__name__}", kind="transport", provider=provider
+            )
+        return self._failure(
+            url,
+            f"more than {self._max_redirects} redirects",
+            kind="redirect_limit",
+            provider=provider,
+        )
+
+    async def locate(
+        self,
+        url: str,
+        *,
+        provider: str,
+        stop: Callable[[str], bool] | None = None,
+        total_seconds: float = 20.0,
+    ) -> tuple[str, ...] | FetchFailure:
+        """Where a short link leads: its redirects followed, every hop checked, no body read.
+
+        The addresses on the way, the link itself first and where it ended last: an
+        address that answered with something other than a redirect, or one `stop`
+        said to go no further at. An address `stop` stops at is never asked for, so a
+        short link to a post is followed to the post's address without fetching the
+        platform's page for it, and one to an article without fetching the article.
+        Each address that is asked for passes the SSRF guard first, as in `fetch`.
+        """
+        chain: list[str] = []
+        current = url
+        try:
+            async with asyncio.timeout(total_seconds):
+                for hop in range(self._max_redirects + 1):
+                    if hop and stop is not None and stop(current):
+                        return (*chain, current)
+                    try:
+                        resolve_and_validate(current)
+                    except BlockedDestination as blocked:
+                        return self._failure(
+                            url, blocked.reason, kind="blocked", provider=provider, hop=hop
+                        )
+                    async with self._client.stream(
+                        "GET", current, headers={"Accept-Encoding": "identity"}
+                    ) as response:
+                        if response.is_redirect:
+                            location = response.headers.get("location")
+                            if not location:
+                                return self._failure(
+                                    url,
+                                    "redirect without a location",
+                                    kind="transport",
+                                    provider=provider,
+                                )
+                            chain.append(current)
+                            current = str(httpx.URL(current).join(location))
+                            continue
+                        if response.status_code >= 400:
+                            return self._failure(
+                                url,
+                                f"returned {response.status_code}",
+                                kind="status",
+                                provider=provider,
+                            )
+                        return (*chain, current)
+        except TimeoutError:
+            return self._failure(
+                url,
+                f"following the link took longer than {total_seconds:.0f}s",
+                kind="timeout",
+                provider=provider,
+            )
+        except httpx.TimeoutException:
+            return self._failure(url, "request timed out", kind="timeout", provider=provider)
+        except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
             return self._failure(
                 url, f"transport error: {type(exc).__name__}", kind="transport", provider=provider
             )
@@ -580,6 +656,7 @@ class SecureFetcher:
         *,
         provider: str,
         headers: dict[str, str] | None = None,
+        retry_statuses: frozenset[int] | None = None,
     ) -> FetchResult | FetchFailure:
         """POST to a configured provider endpoint.
 
@@ -588,6 +665,11 @@ class SecureFetcher:
         it resolves publicly like any other host, so the guard costs nothing and
         catches the case where a misconfigured or hijacked endpoint points somewhere
         internal. One HTTP client remains one HTTP client.
+
+        `retry_statuses` narrows which answers are tried again (429 and the 5xx
+        "busy" answers by default). A call that is slow and costly every time it is
+        made - a model watching a video - retries only the answers that come back
+        before any of that work was done.
         """
         started = time.perf_counter()
 
@@ -604,6 +686,7 @@ class SecureFetcher:
         patience = current_patience.get()
         retries = max(_PROVIDER_RETRIES, patience.retries)
         cap = max(_MAX_RETRY_AFTER_SECONDS, patience.retry_after_cap)
+        retryable = _RETRYABLE if retry_statuses is None else retry_statuses
         for attempt in range(retries + 1):
             try:
                 response = await self._client.post(
@@ -623,7 +706,7 @@ class SecureFetcher:
 
             body = await response.aread()
             await response.aclose()
-            if response.status_code not in _RETRYABLE or attempt == retries:
+            if response.status_code not in retryable or attempt == retries:
                 break
             await asyncio.sleep(_retry_delay(response, attempt, cap=cap))
 

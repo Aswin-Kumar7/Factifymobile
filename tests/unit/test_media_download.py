@@ -178,3 +178,73 @@ class TestWhatIsNotAMediaFile:
         result = await _download(handler)
 
         assert isinstance(result, FetchFailure) and result.kind == "transport"
+
+    async def test_a_malformed_redirect_is_a_failure_never_an_exception(self) -> None:
+        # A Location no URL parser accepts ("Invalid port") is a failed download, as
+        # data: httpx.InvalidURL is not an httpx.HTTPError, and nothing may escape.
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(302, headers={"location": "https://video.twimg.com:abc/x"})
+
+        result = await _download(handler)
+
+        assert isinstance(result, FetchFailure) and result.kind == "transport"
+
+
+# ------------------------------------------------------------------- following a short link
+
+
+def _not_short(url: str) -> bool:
+    return not url.startswith("https://t.co/")
+
+
+class TestLocatingWhereALinkLeads:
+    """`locate` follows redirects, checks every hop, and reads no body."""
+
+    async def test_it_stops_at_the_first_address_it_is_told_to_and_never_asks_it(self) -> None:
+        asked: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            asked.append(str(request.url))
+            return httpx.Response(301, headers={"location": "https://www.ndtv.com/story-1"})
+
+        chain = await _fetcher(handler).locate(
+            "https://t.co/abc", provider="social.x", stop=_not_short
+        )
+
+        assert chain == ("https://t.co/abc", "https://www.ndtv.com/story-1")
+        assert asked == ["https://t.co/abc"]
+
+    async def test_without_a_stop_it_ends_where_something_other_than_a_redirect_answers(
+        self,
+    ) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.host == "t.co":
+                return httpx.Response(301, headers={"location": "https://bit.ly/next"})
+            return httpx.Response(200, text="<html>" + "x" * 10_000)
+
+        chain = await _fetcher(handler).locate("https://t.co/abc", provider="social.x")
+
+        assert chain == ("https://t.co/abc", "https://bit.ly/next")
+
+    async def test_a_link_that_does_not_lead_anywhere_is_a_failure(self) -> None:
+        chain = await _fetcher(lambda request: httpx.Response(404)).locate(
+            "https://t.co/gone", provider="social.x", stop=_not_short
+        )
+
+        assert isinstance(chain, FetchFailure) and chain.kind == "status"
+
+    async def test_a_hop_to_an_internal_address_is_refused(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(301, headers={"location": "https://internal.cdninstagram.com/"})
+
+        chain = await _fetcher(handler).locate("https://t.co/abc", provider="social.x")
+
+        assert isinstance(chain, FetchFailure) and chain.kind == "blocked"
+
+    async def test_a_malformed_redirect_is_a_failure(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(301, headers={"location": "http://[::1"})
+
+        chain = await _fetcher(handler).locate("https://t.co/abc", provider="social.x")
+
+        assert isinstance(chain, FetchFailure) and chain.kind == "transport"
