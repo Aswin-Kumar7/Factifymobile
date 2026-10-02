@@ -172,6 +172,9 @@ class FramesRead:
     # How many of the frames were taken just after a cut.
     after_cuts: int = 0
     reason: str | None = None
+    # These are the picture checks' keyframes, from the clip's opening stretch, read
+    # because none could be taken across it (`reason` says why).
+    from_keyframes: bool = False
 
     @property
     def cut_off(self) -> bool:
@@ -588,7 +591,18 @@ class KeyframeExtractor:
     async def _clearest_near(
         self, source: Path, folder: Path, index: int, moment: float, duration: float
     ) -> Keyframe | None:
-        """The clearest of a few frames taken a moment apart around `moment`."""
+        """The clearest of a few frames taken a moment apart around `moment`; None when
+        none could be taken. Never raises: one frame lost is not the video lost, and a
+        file error here used to fail every frame of the check through `gather`."""
+        try:
+            return await self._clearest_frame(source, folder, index, moment, duration)
+        except Exception:
+            logger.exception("a frame to read could not be taken at %.1fs", moment)
+            return None
+
+    async def _clearest_frame(
+        self, source: Path, folder: Path, index: int, moment: float, duration: float
+    ) -> Keyframe | None:
         span = CANDIDATE_STEP_SECONDS * (CANDIDATES - 1)
         start = max(0.0, moment - span / 2)
         if duration > 0 and start + span > duration - 0.05:

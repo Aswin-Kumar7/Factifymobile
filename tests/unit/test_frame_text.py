@@ -198,6 +198,65 @@ def test_a_tickers_next_figures_are_not_kept_again() -> None:
     ]
 
 
+def test_a_ticker_read_in_pieces_is_kept_once() -> None:
+    """The RBI clip's ticker as our reader cut it up: figures with no words, signed
+    changes, rates to four places, under words already shown."""
+    reader = _Reader(
+        {
+            b"f1": [
+                ("-0.43% 0.38% USD-INR", 0.99),
+                ("7.0458 24602.25 94.9650", 0.99),
+                ("63660.95 57850.80 56.40", 0.99),
+            ],
+            b"f2": [
+                ("-0.44% 0.39% USD-INR", 0.99),
+                ("7.0458 24601.65 94.9625", 0.99),
+                ("-0.4150 -0.0331", 0.99),
+            ],
+        }
+    )
+
+    assert _read(reader, [b"f1", b"f2"]).text.splitlines() == ["-0.43% 0.38% USD-INR"]
+
+
+@pytest.mark.parametrize(
+    "lines",
+    [
+        # The RBI clip's end card, under an earlier line with "at" in it.
+        ["RBI POLICY DECISION AT 10 AM", "REPO RATE", "UNCHANGED", "AT 5.25%"],
+        ["EPF wage ceiling raised", "₹15,000", "to", "₹25,000"],
+        ["GDP growth forecast", "GDP 2024 8.2%", "GDP 2025 6.1%"],
+        ["FY 2024-25 GDP growth 6.5%", "FY 2025-26 GDP growth 7.0%"],
+        ["Repo 6.50%", "Repo 6.25%"],
+    ],
+)
+def test_a_figure_a_claim_turns_on_is_never_taken_for_a_ticker(lines: list[str]) -> None:
+    """Every word of the clip used to count against a line of figures, so "AT 5.25%"
+    was dropped for an earlier "at", and a second bare figure for the first
+    (2026-10-03 review)."""
+    reader = _Reader({b"f1": [(line, 0.99) for line in lines]})
+
+    assert _read(reader, [b"f1"]).text.splitlines() == lines
+
+
+def test_a_ticker_before_a_claim_does_not_take_its_figures() -> None:
+    reader = _Reader(
+        {
+            b"f1": [("NIFTY 50 24602.25", 0.99), ("-0.43% -0.49%", 0.99)],
+            b"f2": [("REPO RATE", 0.99), ("AT 5.25%", 0.99), ("50", 0.99)],
+        }
+    )
+
+    # The ticker's changes, with no words of their own, are its figures moving on; the
+    # card's figures, and a bare "50", are not the ticker's.
+    assert _read(reader, [b"f1", b"f2"]).text.splitlines() == [
+        "NIFTY 50 24602.25",
+        "REPO RATE",
+        "AT 5.25%",
+        "50",
+    ]
+
+
 def test_more_than_the_cap_is_cut_off_at_a_whole_line() -> None:
     lines = [(f"Line {index:03d} " + "x" * 90, 0.97) for index in range(60)]
     reader = _Reader({b"f1": lines[:30], b"f2": lines[30:]})
@@ -501,3 +560,29 @@ def test_without_a_read_window_no_frames_are_taken_to_read(tmp_path: Path) -> No
     video = _clip(tmp_path / "short.mp4", seconds=4, cuts=False)
 
     assert asyncio.run(KeyframeExtractor().extract(video)).read is None
+
+
+@requires_ffmpeg
+def test_a_frame_that_cannot_be_taken_loses_that_frame_not_the_video(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A file error on one frame used to fail every frame through `gather`, and with
+    them the whole check (2026-10-03 review)."""
+    video = _clip(tmp_path / "steady.mp4", seconds=20, cuts=False)
+    original = KeyframeExtractor._clearest_frame
+    calls = {"count": 0}
+
+    async def flaky(self: KeyframeExtractor, *args: object) -> object:
+        calls["count"] += 1
+        if calls["count"] == 2:
+            raise OSError("the frame's file went away")
+        return await original(self, *args)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(KeyframeExtractor, "_clearest_frame", flaky)
+
+    extracted = asyncio.run(KeyframeExtractor(read_seconds=600, read_frames=6).extract(video))
+
+    assert extracted.succeeded
+    read = extracted.read
+    assert read is not None and read.reason is None
+    assert len(read.frames) == calls["count"] - 1

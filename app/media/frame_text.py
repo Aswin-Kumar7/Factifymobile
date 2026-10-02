@@ -25,9 +25,10 @@ What is kept:
     200" to "Sensex up 250" is two claims, and a number is what a claim most often
     turns on. A digit misread is then kept twice, which costs a repeated line; the
     other way would cost a claim.
-  - A market ticker's figures once. A line that is mostly digits ("NIFTY 50
-    24602.25") is kept while it shows a word not shown before, and not again with
-    each new tick (`_figures`).
+  - A market ticker's figures once. A line shaped like a quote ("NIFTY 50
+    24602.25", "-0.43% -0.49%", `_ticker`) is kept while it shows a word no ticker
+    line before it showed, and not again with each new tick. A line of figures that
+    is not a quote ("AT 5.25%", "₹25,000") is never dropped as one.
   - At most 4000 characters; more is said to be cut off.
 
 What is read is text to check, as a pasted message is, and the frames are only where
@@ -63,6 +64,31 @@ MAX_CHARACTERS = 4000
 
 # The numbers in a line, in any script's digits: Devanagari ones (०-९) included.
 _NUMBERS = re.compile(r"\d+")
+# A number as a ticker quotes it, with its decimals ("24602.25", "6.7821"); and a
+# change, written with its sign ("-0.43%", "+12.5"). Not "2024-25", whose dash joins
+# two years.
+_NUMBER = re.compile(r"\d+(?:,\d+)*(?:\.\d+)?")
+_SIGNED = re.compile(r"[+-]\d[\d,]*(?:\.\d+)?%?")
+# Markets a ticker quotes, by name. A line naming one and mostly figures is a quote.
+_MARKETS = frozenset(
+    {
+        "nifty",
+        "sensex",
+        "bankex",
+        "midcap",
+        "smallcap",
+        "nasdaq",
+        "dow",
+        "nikkei",
+        "ftse",
+        "hang",
+        "yld",
+        "usd",
+        "inr",
+        "brent",
+        "crude",
+    }
+)
 
 
 class ReadsLines(Protocol):
@@ -182,15 +208,19 @@ def _distinct(lines: Sequence[OcrLine]) -> tuple[list[str], int]:
 
     A line below `MIN_CONFIDENCE`, or with fewer than two letters or digits in it (a
     rule, a bullet, a stray mark or a lone "1"), is not kept at all. Nor is a market
-    ticker's next tick: a line mostly of digits ("NIFTY 50 24602.25") whose words
-    have all been shown already is dropped, and so is a line of bare figures after
-    the first - a business channel's ticker filled four fifths of an RBI clip's text
-    with them (2026-10-03).
+    ticker's next tick: a line with a ticker's shape (`_ticker`) whose words have all
+    been shown on the ticker lines kept before it - a business channel's ticker filled
+    four fifths of an RBI clip's text with them (2026-10-03).
+
+    Only ticker lines are weighed against ticker lines. Every word of the clip once
+    was, and "AT 5.25%", the end of the RBI clip's headline card, was dropped for the
+    "at" of an earlier line; so was "₹25,000" after "₹15,000", and "GDP 2025 6.1%"
+    after "GDP 2024 8.2%". A figure a claim turns on is never a ticker's.
     """
     kept: list[tuple[str, str, float]] = []  # (compared form, as shown, confidence)
-    # Every word in the lines kept, and whether a line of figures alone was kept.
-    said: set[str] = set()
-    bare_figures = False
+    # Every word on the ticker lines kept, and whether a bare one was kept.
+    ticker_words: set[str] = set()
+    ticker_kept = False
     dropped = 0
     for line in lines:
         if line.confidence < MIN_CONFIDENCE:
@@ -200,12 +230,13 @@ def _distinct(lines: Sequence[OcrLine]) -> tuple[list[str], int]:
             continue
         compared = shown.casefold()
         words = set(_WORDS.findall(compared))
-        if _figures(compared) and (words <= said if words else bare_figures):
-            # The ticker again: words already shown, with its figures moved on.
-            dropped += 1
-            continue
-        said |= words
-        bare_figures = bare_figures or (not words and _figures(compared))
+        if _ticker(compared, words):
+            if ticker_kept and words <= ticker_words:
+                # The ticker again: its words already shown, its figures moved on.
+                dropped += 1
+                continue
+            ticker_words |= words
+            ticker_kept = True
         twin = next((at for at, (other, _, _) in enumerate(kept) if _alike(compared, other)), None)
         if twin is None:
             kept.append((compared, shown, line.confidence))
@@ -224,6 +255,26 @@ def _figures(line: str) -> bool:
     characters = [character for character in line if character.isalnum()]
     digits = sum(character.isdigit() for character in characters)
     return bool(characters) and digits >= FIGURES_SHARE * len(characters)
+
+
+def _ticker(line: str, words: set[str]) -> bool:
+    """Whether a line (casefolded) is a market ticker's: mostly figures (`_figures`),
+    and shaped like a quote rather than a claim - a market's name ("NIFTY 50
+    24602.25"), a change with its sign ("-0.43%"), a rate quoted to three places or
+    more ("94.9650"), or three prices in a row ("63660.95 57850.80 56.40").
+
+    "AT 5.25%", "₹25,000" and "GDP 2024 8.2%" are figures too, and none of these.
+    """
+    if not _figures(line):
+        return False
+    if words & _MARKETS:
+        return True
+    tokens = line.split()
+    if any(_SIGNED.fullmatch(token) for token in tokens):
+        return True
+    numbers = _NUMBER.findall(line)
+    places = [len(number.rsplit(".", 1)[1]) for number in numbers if "." in number]
+    return any(count >= 3 for count in places) or len(places) >= 3
 
 
 def _alike(one: str, other: str) -> bool:
