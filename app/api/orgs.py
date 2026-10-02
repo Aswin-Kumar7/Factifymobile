@@ -558,15 +558,25 @@ async def razorpay_webhook(request: Request) -> JSONResponse:
     """Razorpay's own word that an order was paid - credits once, even if the
     browser never came back - and every change to a subscription or a bill."""
     body = await request.body()
-    if not _razorpay(request).webhook_is_genuine(
-        body, request.headers.get("x-razorpay-signature", "")
-    ):
+    signature = request.headers.get("x-razorpay-signature", "")
+    # Razorpay switches a webhook off after a day of failed deliveries, so every
+    # rejection says why (never the signature or the body).
+    event_id = request.headers.get("x-razorpay-event-id", "unknown")
+    if not _razorpay(request).webhook_is_genuine(body, signature):
+        if not request.app.state.settings.billing.razorpay_webhook_secret:
+            reason = "no webhook secret set on this server"
+        elif not signature:
+            reason = "no signature"
+        else:
+            reason = "signature mismatch (the dashboard's webhook secret differs from ours)"
+        logger.warning("Razorpay webhook rejected: %s, event %s", reason, event_id)
         return JSONResponse({"detail": "bad signature"}, status_code=400)
     try:
         import json
 
         event = json.loads(body)
     except ValueError:
+        logger.warning("Razorpay webhook rejected: body is not JSON, event %s", event_id)
         return JSONResponse({"detail": "bad body"}, status_code=400)
     paid = payments.paid_order(event)
     if paid is not None:

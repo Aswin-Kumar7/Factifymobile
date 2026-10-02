@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import logging
 from uuid import uuid4
 
 import pytest
@@ -50,6 +51,46 @@ class TestRazorpay:
         sig = hmac.new(b"hook", body, hashlib.sha256).hexdigest()
         assert pay.webhook_is_genuine(body, sig)
         assert not pay.webhook_is_genuine(body + b" ", sig)
+
+    @pytest.mark.parametrize(
+        ("secret", "signature", "reason"),
+        [
+            ("hook", "0" * 64, "signature mismatch"),
+            ("hook", None, "no signature"),
+            (None, "0" * 64, "no webhook secret set on this server"),
+        ],
+    )
+    def test_a_rejected_webhook_says_why_in_the_log(
+        self,
+        secret: str | None,
+        signature: str | None,
+        reason: str,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        from fastapi.testclient import TestClient
+        from pydantic import SecretStr
+
+        from app.main import create_app
+
+        app = create_app()
+        logging.getLogger().addHandler(caplog.handler)  # the app's logging set-up removed it
+        settings = app.state.settings
+        app.state.settings = settings.model_copy(update={"billing": settings.billing.model_copy(
+            update={"razorpay_key_id": "rzp_test_x", "razorpay_key_secret": SecretStr("secret"),
+                    "razorpay_webhook_secret": SecretStr(secret) if secret else None},
+        )})  # fmt: skip
+        headers = {"x-razorpay-event-id": "evt_42"}
+        if signature is not None:
+            headers["x-razorpay-signature"] = signature
+
+        with caplog.at_level(logging.WARNING, logger="factify.api.orgs"):
+            response = TestClient(app).post(
+                "/v1/billing/razorpay/webhook", content=b'{"event":"order.paid"}', headers=headers
+            )
+
+        assert response.status_code == 400
+        assert f"Razorpay webhook rejected: {reason}" in caplog.text
+        assert "evt_42" in caplog.text and "0" * 64 not in caplog.text
 
     def test_a_captured_payment_names_its_order(self) -> None:
         event = {
