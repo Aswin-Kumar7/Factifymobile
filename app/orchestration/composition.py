@@ -43,7 +43,9 @@ from app.extraction.llm import LLMExtractor
 from app.extraction.local_ocr import LocalFirstOcr, LocalOcr
 from app.extraction.model_wire import WireFormat
 from app.extraction.ocr import OcrExtractor
+from app.extraction.social import build as build_social_reader
 from app.extraction.translate import FallbackTranslator, GoogleTranslator, ModelTranslator
+from app.extraction.video_reader import build as build_video_reader
 from app.intake.normalizer import NormalisedIntake
 from app.knowledge.factchecks import FactCheckKeeper, load_factcheck_records
 from app.knowledge.memory import EvidenceMemory
@@ -558,6 +560,12 @@ async def build(settings: Settings) -> dict[str, Any]:
             loop.run_in_executor(None, local_detector.warm_video)
         if state["speech_reader"] is not None:
             loop.run_in_executor(None, state["speech_reader"].load)
+    # A post on X, Instagram or YouTube read whole: its text, pictures and video, from
+    # the platforms' public embed addresses (app/extraction/social.py). None when off.
+    state["social_reader"] = build_social_reader(settings)
+    # A video watched by Gemini: a YouTube video at its address, which no server can
+    # download (app/extraction/video_reader.py). None until it is configured.
+    state["video_reader"] = build_video_reader(settings, governor)
     vision = settings.vision
     synthetic = settings.synthetic
     state["media_inspector"] = MediaInspector(
@@ -607,6 +615,8 @@ async def build(settings: Settings) -> dict[str, Any]:
         ),
         local_ocr=isinstance(state.get("ocr"), LocalFirstOcr),
         local_stance=reasoner is not None and local_stance is not None,
+        social_reader=state["social_reader"] is not None,
+        video_reader=state["video_reader"] is not None,
     )
     return state
 
