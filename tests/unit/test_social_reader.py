@@ -598,6 +598,8 @@ class TestTheReader:
         post = await _reader(platforms).read(_ref("https://t.co/m6dlFQ2Aev"))
 
         assert post.ref.post_id == X5 and post.found
+        # The post's own page on x.com is never fetched: it is read through syndication.
+        assert not any(url.startswith("https://x.com/") for url in platforms.asked)
 
     async def test_a_reader_fault_is_a_gap_never_an_exception(
         self, monkeypatch: pytest.MonkeyPatch
@@ -772,3 +774,315 @@ class TestDownloadingMedia:
         assert got.code is GapCode.VIDEO_UNREAD
         # The first refusal is not retried at a lower quality: it was not about size.
         assert len(platforms.asked) == 1
+
+
+# ------------------------------------------------------------------------- short links
+
+
+class TestAShortLinkThatIsNotAPost:
+    """Most t.co links lead to an article: that address is handed back, not lost."""
+
+    async def test_a_link_to_an_article_hands_back_the_article(self) -> None:
+        platforms = _Platforms(
+            {
+                "https://t.co/": httpx.Response(
+                    301, headers={"location": "https://www.ndtv.com/india-news/story-123"}
+                ),
+            }
+        )
+        reader = _reader(platforms)
+
+        post = await reader.read(_ref("https://t.co/AbCdEf1234"))
+
+        assert post.not_a_post_url == "https://www.ndtv.com/india-news/story-123"
+        # Not a gap: nothing of a post went unread, and the verdict is not held.
+        assert post.gaps == () and not post.found
+        # The article is left to whoever reads pages: never fetched here.
+        assert platforms.asked == ["https://t.co/AbCdEf1234"]
+
+    async def test_a_link_to_a_login_wall_is_a_post_that_was_not_shown(self) -> None:
+        platforms = _Platforms(
+            {
+                "https://www.instagram.com/share/": httpx.Response(
+                    302,
+                    headers={"location": "https://www.instagram.com/accounts/login/?next=%2F"},
+                ),
+            }
+        )
+
+        post = await _reader(platforms).read(_ref("https://www.instagram.com/share/BAbc123/"))
+
+        assert post.not_a_post_url is None
+        assert [gap.code for gap in post.gaps] == [GapCode.POST_UNAVAILABLE]
+
+    async def test_a_link_that_leads_nowhere_is_a_post_that_was_not_shown(self) -> None:
+        platforms = _Platforms({"https://t.co/": httpx.Response(404)})
+
+        post = await _reader(platforms).read(_ref("https://t.co/gone123"))
+
+        assert post.not_a_post_url is None
+        assert [gap.code for gap in post.gaps] == [GapCode.POST_UNAVAILABLE]
+
+    async def test_a_facebook_short_link_is_turned_away_without_a_fetch(self) -> None:
+        platforms = _Platforms({})
+
+        post = await _reader(platforms).read(_ref("https://fb.watch/abcDEF123/"))
+
+        assert [gap.code for gap in post.gaps] == [GapCode.NOT_SUPPORTED]
+        assert platforms.asked == []
+
+    async def test_a_short_link_of_a_platform_switched_off_is_not_followed(self) -> None:
+        platforms = _Platforms({})
+
+        post = await _reader(platforms, platforms=["instagram"]).read(
+            _ref("https://t.co/m6dlFQ2Aev")
+        )
+
+        assert [gap.code for gap in post.gaps] == [GapCode.NOT_SUPPORTED]
+        assert platforms.asked == []
+
+    async def test_a_short_link_to_a_platform_switched_off_is_not_read(self) -> None:
+        platforms = _Platforms(
+            {
+                "https://t.co/": httpx.Response(
+                    301, headers={"location": "https://www.instagram.com/reel/Dd90zQtDzon/"}
+                ),
+            }
+        )
+
+        post = await _reader(platforms, platforms=["x"]).read(_ref("https://t.co/m6dlFQ2Aev"))
+
+        assert [gap.code for gap in post.gaps] == [GapCode.NOT_SUPPORTED]
+        assert platforms.asked == ["https://t.co/m6dlFQ2Aev"]
+
+
+# ------------------------------------------------------------- nothing dropped unsaid
+
+
+def _x6_with_variants(variants: list[dict[str, Any]]) -> dict[str, Any]:
+    data = _json("x6_zeetelugu_video.syndication.json")
+    data["mediaDetails"][0]["video_info"]["variants"] = variants
+    data["video"]["variants"] = []
+    return data
+
+
+_HLS_ONLY = [
+    {
+        "content_type": "application/x-mpegURL",
+        "url": "https://video.twimg.com/amplify_video/1/pl/a.m3u8",
+    }
+]
+
+
+class TestMediaThePostHoldsIsNeverDroppedUnsaid:
+    def test_an_x_video_offered_only_as_a_stream_is_a_video_gap(self) -> None:
+        post = x_post(_x(X6), _x6_with_variants(_HLS_ONLY))
+
+        assert post.videos == ()
+        (gap,) = post.gaps
+        assert gap.code is GapCode.VIDEO_UNREAD and gap.blocking
+        assert "only as a stream" in gap.detail
+        assert post.text  # the words are still read
+
+    def test_an_x_photo_with_no_address_is_a_picture_gap(self) -> None:
+        data = _json("x5_ocjain4_photo.syndication.json")
+        data["mediaDetails"][0]["media_url_https"] = ""
+
+        post = x_post(_x(X5), data)
+
+        assert post.pictures == ()
+        assert [gap.code for gap in post.gaps] == [GapCode.PICTURE_UNREAD]
+        assert post.gaps[0].blocking
+
+    def test_an_instagram_album_video_with_no_address_is_a_video_gap(self) -> None:
+        data = {
+            "edge_media_to_caption": {"edges": [{"node": {"text": "Two clips and a photo"}}]},
+            "owner": {"username": "someone"},
+            "edge_sidecar_to_children": {
+                "edges": [
+                    {"node": {"is_video": True, "display_url": "https://x.cdninstagram.com/a.jpg"}},
+                    {
+                        "node": {
+                            "is_video": False,
+                            "display_url": "https://x.cdninstagram.com/b.jpg",
+                        }
+                    },
+                ]
+            },
+        }
+
+        post = social._instagram_from_data(_ref(IG1), data)
+
+        assert [item.kind for item in post.media] == ["image"]
+        (gap,) = post.gaps
+        assert gap.code is GapCode.VIDEO_UNREAD and gap.blocking
+        assert gap.detail.startswith("Instagram did not give Factify a video in this post.")
+
+    def test_an_instagram_picture_with_no_address_is_a_picture_gap(self) -> None:
+        data = {
+            "edge_media_to_caption": {"edges": [{"node": {"text": "A photo"}}]},
+            "owner": {"username": "someone"},
+            "is_video": False,
+        }
+
+        post = social._instagram_from_data(_ref(IG5), data)
+
+        assert post.media == ()
+        assert [gap.code for gap in post.gaps] == [GapCode.PICTURE_UNREAD]
+
+
+class TestAQuotedPostsMedia:
+    """ "This is fake!" above a quoted post: the claim is in the quoted post's media."""
+
+    @staticmethod
+    def _quoting(inner: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "text": "This is fake!",
+            "user": {"screen_name": "asker"},
+            "quoted_tweet": {"id_str": X6, **inner},
+        }
+
+    def test_its_pictures_and_videos_are_the_posts_to_read_and_say_whose_they_are(
+        self,
+    ) -> None:
+        inner = _json("x6_zeetelugu_video.syndication.json")
+        photo = _json("x5_ocjain4_photo.syndication.json")["mediaDetails"][0]
+        inner["mediaDetails"] = [*inner["mediaDetails"], photo]
+
+        post = x_post(_x(X5), self._quoting(inner))
+
+        assert post.media == ()  # nothing of its own
+        (video,) = post.videos
+        (picture,) = post.pictures
+        assert video.in_quoted_post and picture.in_quoted_post
+        assert post.quoted is not None and post.every_media == post.quoted.media
+        assert post.gaps == ()
+
+    def test_what_could_not_be_read_in_it_is_a_gap_of_the_post(self) -> None:
+        inner = _x6_with_variants(_HLS_ONLY)
+        inner["note_tweet"] = {"id": "1"}
+
+        post = x_post(_x(X5), self._quoting(inner))
+
+        codes = [(gap.part, gap.code) for gap in post.gaps]
+        assert codes == [
+            ("quoted_post", GapCode.TEXT_TRUNCATED),
+            ("video", GapCode.VIDEO_UNREAD),
+        ]
+        assert "the quoted post" in post.gaps[1].detail
+
+    async def test_the_picture_cap_counts_the_posts_own_first(self) -> None:
+        own = _json("x5_ocjain4_photo.syndication.json")
+        own["quoted_tweet"] = {
+            "id_str": X1,
+            "text": "The original",
+            "user": {"screen_name": "first"},
+            "mediaDetails": own["mediaDetails"],
+        }
+        platforms = _Platforms({SYNDICATION: httpx.Response(200, json=own)})
+
+        post = await _reader(platforms, max_pictures=1).read(_x(X5))
+
+        (picture,) = post.pictures
+        assert not picture.in_quoted_post
+        assert post.quoted is not None and post.quoted.media == ()
+        assert [gap.code for gap in post.gaps] == [GapCode.PICTURE_UNREAD]
+        assert not post.gaps[0].blocking
+
+    async def test_completing_the_posts_own_text_keeps_the_quoted_posts_gap(self) -> None:
+        data = _json("x1_httweets_long.syndication.json")
+        data["quoted_tweet"] = {
+            "id_str": X5,
+            "text": "A long quoted post",
+            "user": {"screen_name": "quoted"},
+            "note_tweet": {"id": "1"},
+        }
+        platforms = _Platforms(
+            {
+                SYNDICATION: httpx.Response(200, json=data),
+                "https://x.com/htTweets/status/": _html_answer("x1_httweets_long.page.html"),
+            }
+        )
+
+        post = await _reader(platforms).read(_x(X1))
+
+        assert post.text_complete and post.text_route == "x.page"
+        assert [(gap.part, gap.code) for gap in post.gaps] == [
+            ("quoted_post", GapCode.TEXT_TRUNCATED)
+        ]
+
+
+class TestAnInstagramVideoReadFromItsHtml:
+    """A labelled post has no data; what it is comes from the embed's own marker."""
+
+    def test_a_video_shared_under_p_is_said_to_be_unread(self) -> None:
+        page = _text("ig5_venukolangara_labelled.embed.html").replace(
+            'data-media-type="GraphImage"', 'data-media-type="GraphVideo"'
+        )
+
+        post = instagram_post(_ref(IG5), page)
+
+        assert _ref(IG5).kind == "post"
+        assert [gap.code for gap in post.gaps] == [GapCode.VIDEO_UNREAD]
+        assert post.gaps[0].blocking
+
+    def test_an_album_marker_says_only_the_first_picture_was_read(self) -> None:
+        page = _text("ig5_venukolangara_labelled.embed.html").replace(
+            'data-media-type="GraphImage"', 'data-media-type="GraphSidecar"'
+        )
+
+        post = instagram_post(_ref(IG5), page)
+
+        assert [gap.code for gap in post.gaps] == [GapCode.FIRST_PICTURE_ONLY]
+
+    def test_no_marker_at_all_is_said_without_holding_the_verdict(self) -> None:
+        page = _text("ig5_venukolangara_labelled.embed.html").replace(
+            'data-media-type="GraphImage"', ""
+        )
+
+        post = instagram_post(_ref(IG5), page)
+
+        (gap,) = post.gaps
+        assert gap.code is GapCode.VIDEO_UNREAD and not gap.blocking
+        assert len(post.pictures) == 1
+
+
+class TestXFromOEmbedForTheAuditsPosts:
+    """x-5 and x-6 through the fallback, as X's oEmbed answered the server (2026-10-02)."""
+
+    def test_x5_gives_the_hindi_words_and_says_the_picture_was_not_read(self) -> None:
+        post = x_oembed_post(_x(X5), _json("x5_ocjain4_photo.oembed.json"))
+
+        assert post.text.startswith("दिन-रात दलित-दलित चिल्लाने वाले राहुल गांधी")
+        assert (post.author_name, post.handle) == ("Oc updates", "ocjain4")
+        assert "pic.twitter.com" not in post.text
+        assert [gap.code for gap in post.gaps] == [GapCode.PICTURE_UNREAD]
+
+    def test_x6_gives_the_headline_and_says_the_video_was_not_read(self) -> None:
+        post = x_oembed_post(_x(X6), _json("x6_zeetelugu_video.oembed.json"))
+
+        assert post.text.startswith("Viral 80s Trend Photo Helps Uncover 45-Year-Old Theft")
+        assert post.handle == "ZeeTeluguLive"
+        assert [gap.code for gap in post.gaps] == [GapCode.PICTURE_UNREAD]
+
+
+class TestADownloadNeverRaises:
+    @pytest.mark.parametrize(
+        ("kind", "code"),
+        [("image", GapCode.PICTURE_UNREAD), ("video", GapCode.VIDEO_UNREAD)],
+    )
+    async def test_a_fault_in_the_download_is_a_gap(
+        self, monkeypatch: pytest.MonkeyPatch, kind: str, code: GapCode
+    ) -> None:
+        reader = _reader(_Platforms({}))
+
+        async def broken(*args: Any, **kwargs: Any) -> Any:
+            raise RuntimeError("a CDN surprise")
+
+        monkeypatch.setattr(reader._fetcher, "download", broken)
+        media = PostMedia(kind=kind, url="https://video.twimg.com/v/a.mp4")  # type: ignore[arg-type]
+
+        got = await reader.download(media, max_bytes=1_000_000)
+
+        assert not isinstance(got, Downloaded)
+        assert got.code is code

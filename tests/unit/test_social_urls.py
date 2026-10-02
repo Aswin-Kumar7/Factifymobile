@@ -10,8 +10,17 @@ from __future__ import annotations
 
 import pytest
 
+from app.intake import normalizer
 from app.intake.normalizer import normalise_url
-from app.intake.social_urls import READER_VERSION, Platform, PostRef, is_video_route, recognise
+from app.intake.social_urls import (
+    READER_VERSION,
+    VIDEO_READER_VERSION,
+    Platform,
+    PostRef,
+    is_platform_host,
+    is_video_route,
+    recognise,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -199,6 +208,38 @@ class TestNotALink:
         assert recognise(url) is None
 
 
+class TestThePlatformsOwnHosts:
+    """Where a short link ended that is not a post: a platform's page, or anywhere else."""
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://www.instagram.com/accounts/login/?next=/reel/Dd90zQtDzon/",
+            "https://x.com/OneObjective_",
+            "https://twitter.com/home",
+            "https://www.facebook.com/login/",
+            "https://www.youtube.com/@ndtv",
+        ],
+    )
+    def test_a_platforms_page_that_is_not_a_post(self, url: str) -> None:
+        assert is_platform_host(url)
+        assert recognise(url) is None
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://www.ndtv.com/india-news/story-123",
+            "https://bit.ly/abc",
+            # A look-alike is not the platform.
+            "https://x.com.example.org/a",
+            "https://evilinstagram.com/p/Dd90zQtDzon/",
+            "not a url",
+        ],
+    )
+    def test_anywhere_else_is_not_the_platform(self, url: str) -> None:
+        assert not is_platform_host(url)
+
+
 class TestTheCacheIdentity:
     """Shares of one post collapse; the reader's version is part of the key."""
 
@@ -226,9 +267,19 @@ class TestTheCacheIdentity:
         import hashlib
 
         intake = normalise_url("https://x.com/i/status/2105264647691440217")
-        keyed = f"https://x.com/i/status/2105264647691440217|social:{READER_VERSION}"
+        keyed = (
+            "https://x.com/i/status/2105264647691440217"
+            f"|social:{READER_VERSION}:{VIDEO_READER_VERSION}"
+        )
 
         assert intake.cache_identity == f"sha256:{hashlib.sha256(keyed.encode()).hexdigest()}"
+
+    def test_a_new_video_reader_is_a_new_identity(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # A YouTube verdict made by the old video reader is not served after it changes.
+        before = normalise_url("https://youtu.be/ikPJlAdAuaE").cache_identity
+        monkeypatch.setattr(normalizer, "VIDEO_READER_VERSION", "2099.01.01.1")
+
+        assert normalise_url("https://youtu.be/ikPJlAdAuaE").cache_identity != before
 
     def test_an_ordinary_link_keeps_its_identity_and_route(self) -> None:
         import hashlib

@@ -18,7 +18,7 @@ from enum import StrEnum
 
 from app.cache.keys import content_hash, text_hash
 from app.extraction.language import Detection, detect
-from app.intake.social_urls import READER_VERSION, recognise
+from app.intake.social_urls import READER_VERSION, VIDEO_READER_VERSION, recognise
 from app.security.uploads import MediaKind, UploadRejected, validate_upload
 
 
@@ -161,15 +161,15 @@ def normalise_url(url: str, *, consent: bool = False) -> NormalisedIntake:
     # A social post is known by its own one address, whichever of its many forms was
     # shared: twitter.com or x.com, a username or none, a preview fixer's domain, a
     # Shorts link, and the share parameters (`s`, `t`, `si`, `igsh`, `feature`) that
-    # identify who shared it rather than what. The social reader's version is part of
-    # its identity, so a post read by an older reader is read again rather than
-    # answered from what that reader could see.
+    # identify who shared it rather than what. The social reader's version and the
+    # video reader's are part of its identity, so a post read or watched by an older
+    # reader is read again rather than answered from what that reader could see.
     route = "url.canonicalised"
     keyed = canonical
     post = recognise(canonical)
     if post is not None:
         canonical = post.canonical_url
-        keyed = f"{canonical}|social:{READER_VERSION}"
+        keyed = f"{canonical}|social:{READER_VERSION}:{VIDEO_READER_VERSION}"
         route = "url.social"
 
     identity = f"sha256:{hashlib.sha256(keyed.encode('utf-8')).hexdigest()}"

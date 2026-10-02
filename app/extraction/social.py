@@ -32,7 +32,14 @@ Pictures and videos are downloaded only from the platforms' own media hosts
 it fits under the byte cap whole, at the best quality that does, or it is not
 downloaded (`SocialReader.download`).
 
-`read` never raises: whatever goes wrong comes back as the post's `gaps`.
+`read` never raises: whatever goes wrong comes back as the post's `gaps`. Nothing a
+post holds is dropped without one: a picture or video the platform gives no address
+for, or gives only as a stream, is a gap said out loud, as is one in a quoted post.
+
+A short link (t.co, an Instagram or Facebook share link) is followed to where it
+leads. When that is a post, the post is read; when it is an ordinary page - most
+t.co links lead to an article - `read` says so (`SocialPost.not_a_post_url`) and the
+page is left to be read as any other link is.
 """
 
 from __future__ import annotations
@@ -60,7 +67,7 @@ from app.extraction.reading import (
     gap,
 )
 from app.governor.governor import pace
-from app.intake.social_urls import Platform, PostRef, recognise
+from app.intake.social_urls import Platform, PostRef, is_platform_host, recognise
 from app.observability.logging import event
 from app.security.fetcher import FetchFailure, FetchResult, SecureFetcher
 from app.security.ratelimit import SlidingWindowLimiter
@@ -134,6 +141,9 @@ class PostMedia:
     # The post this picture or video was first posted in, when it is another one: X
     # shows a video re-posted from someone else's post with that post's address.
     source_post_url: str | None = None
+    # In the post this one quotes, not in this post's own: "This is fake!" above a
+    # quoted post with the viral video in it.
+    in_quoted_post: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,6 +177,10 @@ class SocialPost:
     # A label the platform itself put on the post: Instagram's "Altered photo/video.
     # Reviewed by third-party fact checkers." Shown beside the answer; not evidence.
     platform_label: str | None = None
+    # A short link that led to an ordinary page, not to a post: where it led. Not a
+    # gap - nothing of a post went unread - but the page is still to be read, as
+    # any other link is.
+    not_a_post_url: str | None = None
 
     @property
     def found(self) -> bool:
@@ -174,12 +188,20 @@ class SocialPost:
         return bool(self.text.strip() or self.title or self.media)
 
     @property
+    def every_media(self) -> tuple[PostMedia, ...]:
+        """This post's own pictures and videos, then those of the post it quotes."""
+        quoted = self.quoted.media if self.quoted is not None else ()
+        return (*self.media, *quoted)
+
+    @property
     def pictures(self) -> tuple[PostMedia, ...]:
-        return tuple(item for item in self.media if item.kind == "image")
+        """Every picture to read: the post's own, then its quoted post's."""
+        return tuple(item for item in self.every_media if item.kind == "image")
 
     @property
     def videos(self) -> tuple[PostMedia, ...]:
-        return tuple(item for item in self.media if item.kind in ("video", "gif"))
+        """Every video to read: the post's own, then its quoted post's."""
+        return tuple(item for item in self.every_media if item.kind in ("video", "gif"))
 
     def parts(self) -> tuple[ReadPart, ...]:
         """The post's words as parts of a `Reading`: its title, its text, a quoted post.
@@ -328,6 +350,20 @@ def embed_token(post_id: str) -> str:
     return re.sub(r"(0+|\.)", "", _to_radix(int(post_id) / 1e15 * math.pi, 36))
 
 
+@dataclass(frozen=True, slots=True)
+class Resolved:
+    """Where a short link leads: a post, an ordinary page, or nowhere that was found.
+
+    `ref` is the post when it leads to one. `url` is where it ended when that is not
+    a post and not one of the platforms' own pages either: an article, a shortener.
+    Both None when the link could not be followed, or ended on a platform's login
+    wall or home page, which is a post that was not shown.
+    """
+
+    ref: PostRef | None = None
+    url: str | None = None
+
+
 # --------------------------------------------------------------------------------- reader
 
 
@@ -355,24 +391,30 @@ class SocialReader:
         """Whether this reader reads posts from this platform on this server."""
         return self._settings.enabled and ref.platform.value in self._settings.platforms
 
-    async def resolve(self, ref: PostRef) -> PostRef | None:
-        """The post a short link (t.co, an Instagram share link) leads to, or None.
+    async def resolve(self, ref: PostRef) -> Resolved:
+        """Where a short link (t.co, an Instagram share link) leads: a post, or a page.
 
-        Followed with the fetcher, every hop checked; the first address on the way
-        that is a post's own is the post.
+        Followed with the fetcher, every hop checked, until the first address that is
+        not itself a short link, which is never fetched here: a post is read through
+        its platform's embed addresses, and a page by whoever reads pages. Most t.co
+        links lead to an article, and that address is handed back rather than lost.
         """
         if not ref.needs_resolving:
-            return ref
+            return Resolved(ref=ref)
         if not await self._paced(ref.platform):
-            return None
-        result = await self._fetcher.fetch(ref.canonical_url, provider=_provider(ref.platform))
-        if isinstance(result, FetchFailure):
-            return None
-        for address in (*result.redirect_chain[1:], result.final_url):
-            found = recognise(address)
-            if found is not None and not found.needs_resolving:
-                return found
-        return None
+            return Resolved()
+        chain = await self._fetcher.locate(
+            ref.canonical_url, provider=_provider(ref.platform), stop=_past_short_links
+        )
+        if isinstance(chain, FetchFailure) or len(chain) < 2:
+            return Resolved()
+        end = chain[-1]
+        found = recognise(end)
+        if found is not None and not found.needs_resolving:
+            return Resolved(ref=found)
+        if found is None and not is_platform_host(end) and _is_web_address(end):
+            return Resolved(url=end)
+        return Resolved()
 
     async def read(self, ref: PostRef) -> SocialPost:
         """Read a post. Never raises: what could not be read is in the post's `gaps`."""
@@ -392,9 +434,23 @@ class SocialReader:
             )
 
     async def _read(self, ref: PostRef) -> SocialPost:
+        # Said before anything is fetched: a Facebook link, or a platform switched off
+        # on this server, is not followed only to be turned away.
+        if not self._reads(ref):
+            return _not_supported(ref)
         if ref.needs_resolving:
             resolved = await self.resolve(ref)
-            if resolved is None:
+            if resolved.url is not None:
+                # Not a post: an ordinary page, read as any other link is.
+                event(
+                    logger,
+                    "short link is not a post",
+                    module="extraction.social",
+                    outcome="ok",
+                    platform=ref.platform.value,
+                )
+                return SocialPost(ref=ref, not_a_post_url=resolved.url)
+            if resolved.ref is None:
                 return SocialPost(
                     ref=ref,
                     gaps=(
@@ -405,20 +461,9 @@ class SocialReader:
                         ),
                     ),
                 )
-            ref = resolved
-        if not self.handles(ref) or ref.platform is Platform.FACEBOOK:
-            return SocialPost(
-                ref=ref,
-                gaps=(
-                    gap(
-                        "post",
-                        GapCode.NOT_SUPPORTED,
-                        f"Factify does not read posts from "
-                        f"{_PLATFORM_NAMES.get(ref.platform, 'this platform')}. Paste the "
-                        "post's text or upload a screenshot instead.",
-                    ),
-                ),
-            )
+            ref = resolved.ref
+            if not self._reads(ref):
+                return _not_supported(ref)
         if ref.kind == "story":
             return SocialPost(
                 ref=ref,
@@ -463,6 +508,9 @@ class SocialReader:
             latency_ms=(time.perf_counter() - started) * 1000,
         )
         return post
+
+    def _reads(self, ref: PostRef) -> bool:
+        return self.handles(ref) and ref.platform is not Platform.FACEBOOK
 
     def _remember(self, key: str, post: SocialPost) -> None:
         if len(self._cache) >= _CACHE_ENTRIES:
@@ -523,7 +571,11 @@ class SocialReader:
             text_route=ROUTE_X_PAGE,
             text_complete=True,
             links=tuple(dict.fromkeys([*post.links, *written])),
-            gaps=tuple(item for item in post.gaps if item.code is not GapCode.TEXT_TRUNCATED),
+            gaps=tuple(
+                item
+                for item in post.gaps
+                if not (item.code is GapCode.TEXT_TRUNCATED and item.part == "post_text")
+            ),
         )
 
     async def _read_x_oembed(self, ref: PostRef) -> SocialPost:
@@ -578,7 +630,7 @@ class SocialReader:
     async def download(
         self, media: PostMedia, *, max_bytes: int, max_seconds: int | None = None
     ) -> Downloaded | Gap:
-        """Download one picture or video whole, or say why it could not be.
+        """Download one picture or video whole, or say why it could not be. Never raises.
 
         A video is fetched at the best quality whose estimated size fits under
         `max_bytes`, and at the next lower one if it turns out larger than estimated;
@@ -586,6 +638,21 @@ class SocialReader:
         longer than `max_seconds` is still downloaded whole - an mp4 cut short does
         not play - and comes back `cut_off`, since only its start will be read.
         """
+        try:
+            return await self._download(media, max_bytes=max_bytes, max_seconds=max_seconds)
+        except Exception:  # a download failure must never fail the check
+            logger.exception("social media download failed")
+            if media.kind == "image":
+                return gap(
+                    "picture_text",
+                    GapCode.PICTURE_UNREAD,
+                    "A picture in the post could not be downloaded.",
+                )
+            return gap("video", GapCode.VIDEO_UNREAD, "The post's video could not be downloaded.")
+
+    async def _download(
+        self, media: PostMedia, *, max_bytes: int, max_seconds: int | None
+    ) -> Downloaded | Gap:
         if media.kind == "image":
             result = await self._fetcher.download(
                 media.url,
@@ -701,6 +768,35 @@ def _provider(platform: Platform) -> str:
     return f"social.{platform.value}"
 
 
+def _past_short_links(url: str) -> bool:
+    """Whether following a short link has reached an address that is not one."""
+    found = recognise(url)
+    return found is None or not found.needs_resolving
+
+
+def _is_web_address(url: str) -> bool:
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return False
+    return parts.scheme.lower() in ("http", "https") and bool(parts.hostname)
+
+
+def _not_supported(ref: PostRef) -> SocialPost:
+    return SocialPost(
+        ref=ref,
+        gaps=(
+            gap(
+                "post",
+                GapCode.NOT_SUPPORTED,
+                f"Factify does not read posts from "
+                f"{_PLATFORM_NAMES.get(ref.platform, 'this platform')}. Paste the "
+                "post's text or upload a screenshot instead.",
+            ),
+        ),
+    )
+
+
 def _is_missing(answer: FetchResult | FetchFailure) -> bool:
     """The platform said there is no such post."""
     return isinstance(answer, FetchResult) and answer.status_code in (404, 410)
@@ -731,19 +827,28 @@ def _unavailable(ref: PostRef, platform: str) -> SocialPost:
 
 
 def _capped(post: SocialPost, max_pictures: int) -> SocialPost:
-    """At most `max_pictures` pictures, the rest said to be unread (not blocking)."""
+    """At most `max_pictures` pictures, the rest said to be unread (not blocking).
+
+    Counted across the post and the post it quotes, the post's own first.
+    """
     pictures = post.pictures
     if len(pictures) <= max_pictures:
         return post
-    kept = set(pictures[:max_pictures])
-    media = tuple(item for item in post.media if item.kind != "image" or item in kept)
+    kept = {id(item) for item in pictures[:max_pictures]}
+
+    def keep(media: tuple[PostMedia, ...]) -> tuple[PostMedia, ...]:
+        return tuple(item for item in media if item.kind != "image" or id(item) in kept)
+
+    quoted = post.quoted
+    if quoted is not None:
+        quoted = replace(quoted, media=keep(quoted.media))
     note = gap(
         "picture_text",
         GapCode.PICTURE_UNREAD,
         f"The post has {len(pictures)} pictures; Factify read the first {max_pictures}.",
         blocking=False,
     )
-    return replace(post, media=media, gaps=(*post.gaps, note))
+    return replace(post, media=keep(post.media), quoted=quoted, gaps=(*post.gaps, note))
 
 
 def _duration(seconds: int) -> str:
@@ -809,11 +914,16 @@ def x_post(ref: PostRef, data: dict[str, Any], *, quoted: bool = False) -> Socia
     text = _clean(html.unescape(text))
 
     post_id = ref.post_id or str(data.get("id_str") or "")
-    media = tuple(_x_media(data, post_id))
+    found_media, unread_media = _x_media(data, post_id, quoted=quoted)
+    media = tuple(found_media)
 
     quoted_post: SocialPost | None = None
     quoted_data = data.get("quoted_tweet")
-    if not quoted and isinstance(quoted_data, dict) and quoted_data.get("text"):
+    if (
+        not quoted
+        and isinstance(quoted_data, dict)
+        and (quoted_data.get("text") or quoted_data.get("mediaDetails"))
+    ):
         quoted_id = str(quoted_data.get("id_str") or "")
         quoted_ref = recognise(f"https://x.com/i/status/{quoted_id}") if quoted_id else None
         quoted_post = x_post(quoted_ref or ref, quoted_data, quoted=True)
@@ -825,11 +935,14 @@ def x_post(ref: PostRef, data: dict[str, Any], *, quoted: bool = False) -> Socia
     if truncated:
         gaps.append(
             gap(
-                "post_text",
+                "quoted_post" if quoted else "post_text",
                 GapCode.TEXT_TRUNCATED,
-                "This is a long post, and X gave Factify only its start.",
+                "The quoted post is a long one, and X gave Factify only its start."
+                if quoted
+                else "This is a long post, and X gave Factify only its start.",
             )
         )
+    whose = "the quoted post's" if quoted else "the post's"
     for item in data.get("mediaDetails") or []:
         status = ((item or {}).get("ext_media_availability") or {}).get("status")
         if status and str(status).casefold() != "available":
@@ -838,9 +951,13 @@ def x_post(ref: PostRef, data: dict[str, Any], *, quoted: bool = False) -> Socia
                 gap(
                     "video" if kind == "video" else "picture_text",
                     GapCode.VIDEO_UNREAD if kind == "video" else GapCode.PICTURE_UNREAD,
-                    f"X no longer shows the post's {kind}.",
+                    f"X no longer shows {whose} {kind}.",
                 )
             )
+    gaps.extend(unread_media)
+    if quoted_post is not None:
+        # What could not be read of the quoted post is unread in this one too.
+        gaps.extend(quoted_post.gaps)
 
     duration = next((item.duration_seconds for item in media if item.duration_seconds), None)
     return SocialPost(
@@ -860,8 +977,18 @@ def x_post(ref: PostRef, data: dict[str, Any], *, quoted: bool = False) -> Socia
     )
 
 
-def _x_media(data: dict[str, Any], post_id: str) -> list[PostMedia]:
+def _x_media(
+    data: dict[str, Any], post_id: str, *, quoted: bool = False
+) -> tuple[list[PostMedia], list[Gap]]:
+    """A post's pictures and videos, and a gap for each one there is no way to read.
+
+    A picture with no address, or a video X gives only as a stream (a broadcast's
+    replay has no mp4), is said to be unread rather than left out: a post read
+    without its video reads exactly like a post that has none.
+    """
     found: list[PostMedia] = []
+    unread: list[Gap] = []
+    whose = "the quoted post" if quoted else "the post"
     for item in data.get("mediaDetails") or []:
         if not isinstance(item, dict):
             continue
@@ -876,7 +1003,15 @@ def _x_media(data: dict[str, Any], post_id: str) -> list[PostMedia]:
         source_post = source if from_elsewhere and from_elsewhere != post_id else None
         picture = str(item.get("media_url_https") or "")
         kind = item.get("type")
-        if kind == "photo" and picture:
+        if kind == "photo" and not picture:
+            unread.append(
+                gap(
+                    "picture_text",
+                    GapCode.PICTURE_UNREAD,
+                    f"X gave Factify no address for a picture in {whose}.",
+                )
+            )
+        elif kind == "photo":
             found.append(
                 PostMedia(
                     kind="image",
@@ -884,6 +1019,7 @@ def _x_media(data: dict[str, Any], post_id: str) -> list[PostMedia]:
                     width=width,
                     height=height,
                     source_post_url=source_post,
+                    in_quoted_post=quoted,
                 )
             )
         elif kind in ("video", "animated_gif"):
@@ -893,6 +1029,14 @@ def _x_media(data: dict[str, Any], post_id: str) -> list[PostMedia]:
                 top = data.get("video") or {}
                 variants = _mp4_variants(top.get("variants"), url_key="src", type_key="type")
             if not variants:
+                unread.append(
+                    gap(
+                        "video",
+                        GapCode.VIDEO_UNREAD,
+                        f"X gives the video in {whose} only as a stream, which Factify "
+                        "cannot download. Upload the video to check it.",
+                    )
+                )
                 continue
             millis = _int(
                 video.get("duration_millis") or (data.get("video") or {}).get("durationMs")
@@ -908,9 +1052,10 @@ def _x_media(data: dict[str, Any], post_id: str) -> list[PostMedia]:
                     variants=variants,
                     poster_url=picture or None,
                     source_post_url=source_post,
+                    in_quoted_post=quoted,
                 )
             )
-    return found
+    return found, unread
 
 
 def _mp4_variants(raw: Any, *, url_key: str, type_key: str) -> tuple[tuple[str, int | None], ...]:
@@ -1177,10 +1322,30 @@ def _instagram_from_data(ref: PostRef, data: dict[str, Any]) -> SocialPost:
         for edge in (data.get("edge_sidecar_to_children") or {}).get("edges") or []
     ]
     items = [child for child in children if isinstance(child, dict)] or [data]
-    media = tuple(item for item in (_instagram_item(child) for child in items) if item)
+    found: list[PostMedia] = []
+    videos_unread = pictures_unread = 0
+    for child in items:
+        item = _instagram_item(child)
+        if item is not None:
+            found.append(item)
+        elif child.get("is_video"):
+            videos_unread += 1
+        else:
+            pictures_unread += 1
+    media = tuple(found)
+    # Nothing the post holds is left out unsaid: a video with no address in an album
+    # is as unread as a reel's.
     gaps: list[Gap] = []
-    if data.get("is_video") and not any(item.kind == "video" for item in media):
-        gaps.append(_video_unread())
+    if videos_unread:
+        gaps.append(_video_unread(album=len(items) > 1))
+    if pictures_unread:
+        gaps.append(
+            gap(
+                "picture_text",
+                GapCode.PICTURE_UNREAD,
+                "Instagram gave Factify no address for a picture in this post.",
+            )
+        )
     text = _clean(caption)
     truncated = bool(_MORE.search(text))
     if truncated:
@@ -1263,15 +1428,28 @@ def _instagram_from_html(ref: PostRef, page: str, root: Any) -> SocialPost:
                 break
         if pictures:
             break
+    # What the post is, from the embed's own marker, not from its address: a reel is
+    # shared under /p/ as often as under /reel/, and a labelled one comes this way.
+    media_type = _instagram_media_type(root)
     gaps: list[Gap] = []
-    if ref.kind in ("reel", "video"):
+    if ref.kind in ("reel", "video") or media_type == "GraphVideo":
         gaps.append(_video_unread())
-    elif _SIDECAR.search(page):
+    elif media_type == "GraphSidecar" or _SIDECAR.search(page):
         gaps.append(
             gap(
                 "picture_text",
                 GapCode.FIRST_PICTURE_ONLY,
                 "This post has several pictures; Instagram showed Factify only the first.",
+            )
+        )
+    elif media_type is None:
+        gaps.append(
+            gap(
+                "video",
+                GapCode.VIDEO_UNREAD,
+                "Instagram did not say whether this post is a picture or a video; if it "
+                "holds a video, Factify did not read it.",
+                blocking=False,
             )
         )
     truncated = bool(_MORE.search(text))
@@ -1302,6 +1480,15 @@ def _largest_srcset(srcset: str) -> str | None:
     return best[1] if best else None
 
 
+def _instagram_media_type(root: Any) -> str | None:
+    """The embed's own word for the post: GraphImage, GraphVideo or GraphSidecar."""
+    for embed in root.find_class("Embed"):
+        said = str(embed.get("data-media-type") or "").strip()
+        if said:
+            return said
+    return None
+
+
 def _instagram_label(root: Any) -> str | None:
     """Instagram's own label on the post: "Altered photo/video. Reviewed by ..."."""
     titles = root.find_class("MediaOverlayInfoTitle")
@@ -1314,11 +1501,12 @@ def _instagram_label(root: Any) -> str | None:
     return " ".join(part for part in said if part) or None
 
 
-def _video_unread() -> Gap:
+def _video_unread(*, album: bool = False) -> Gap:
+    which = "a video in this post" if album else "this post's video"
     return gap(
         "video",
         GapCode.VIDEO_UNREAD,
-        "Instagram did not give Factify this post's video. Upload the video to check it.",
+        f"Instagram did not give Factify {which}. Upload the video to check it.",
     )
 
 

@@ -52,7 +52,12 @@ X_POSTS = {
     "x1_httweets_long": "2105365875310354576",
 }
 # Recorded through oEmbed too: the fallback.
-X_OEMBED = ("x4_oneobjective_video", "x1_httweets_long")
+X_OEMBED = (
+    "x4_oneobjective_video",
+    "x5_ocjain4_photo",
+    "x6_zeetelugu_video",
+    "x1_httweets_long",
+)
 # Recorded with their own page: the rest of a long post.
 X_PAGES = {"x1_httweets_long": "htTweets"}
 # An id no post has: what the syndication endpoint and oEmbed say for a missing post.

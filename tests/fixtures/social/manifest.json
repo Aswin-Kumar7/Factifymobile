@@ -39,6 +39,19 @@
    "file": "x5_ocjain4_photo.syndication.json"
   },
   {
+   "name": "x5_ocjain4_photo.oembed",
+   "url": "https://publish.x.com/oembed?url=https%3A%2F%2Fx.com%2Fi%2Fstatus%2F2100143601443557471&omit_script=1&dnt=true",
+   "user_agent": "FactifyBot/1.0 (+https://factify.example/bot)",
+   "status": 200,
+   "content_type": "application/json",
+   "byte_count": 997,
+   "final_url": "https://publish.x.com/oembed?url=https%3A%2F%2Fx.com%2Fi%2Fstatus%2F2100143601443557471&omit_script=1&dnt=true",
+   "redirect_chain": [],
+   "fetched_at": "2026-10-02T11:22:30+00:00",
+   "recorded_with": "curl on the server, as FactifyBot (2026-10-02 review fix)",
+   "file": "x5_ocjain4_photo.oembed.json"
+  },
+  {
    "name": "x6_zeetelugu_video.syndication",
    "url": "https://cdn.syndication.twimg.com/tweet-result?id=2100138377060532502&token=a&lang=en",
    "user_agent": "FactifyBot/1.0 (+https://factify.example/bot)",
@@ -49,6 +62,19 @@
    "redirect_chain": [],
    "fetched_at": "2026-10-02T10:49:45.206283+00:00",
    "file": "x6_zeetelugu_video.syndication.json"
+  },
+  {
+   "name": "x6_zeetelugu_video.oembed",
+   "url": "https://publish.x.com/oembed?url=https%3A%2F%2Fx.com%2Fi%2Fstatus%2F2100138377060532502&omit_script=1&dnt=true",
+   "user_agent": "FactifyBot/1.0 (+https://factify.example/bot)",
+   "status": 200,
+   "content_type": "application/json",
+   "byte_count": 2149,
+   "final_url": "https://publish.x.com/oembed?url=https%3A%2F%2Fx.com%2Fi%2Fstatus%2F2100138377060532502&omit_script=1&dnt=true",
+   "redirect_chain": [],
+   "fetched_at": "2026-10-02T11:22:31+00:00",
+   "recorded_with": "curl on the server, as FactifyBot (2026-10-02 review fix)",
+   "file": "x6_zeetelugu_video.oembed.json"
   },
   {
    "name": "x1_httweets_long.syndication",

@@ -24,9 +24,15 @@ from enum import StrEnum
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 # Bumped on any change to how a post is read (this module, app/extraction/social.py,
-# or the video reader). It is folded into a post's cache identity, so a post read
-# under the old reader is read again rather than answered from what that reader saw.
-READER_VERSION = "2026.10.02.1"
+# or how /v1/verify puts a post's reading together). It is folded into a post's cache
+# identity, so a post read under the old reader is read again rather than answered
+# from what that reader saw.
+READER_VERSION = "2026.10.02.2"
+# Bumped on any change to the video reader's prompt, schema or how its answer is read
+# (app/extraction/video_reader.py, which takes its VERSION from here). Kept here,
+# beside READER_VERSION, so the one identity holds both and a post's video is watched
+# again after either changes.
+VIDEO_READER_VERSION = "2026.10.02.1"
 
 
 class Platform(StrEnum):
@@ -91,6 +97,16 @@ _FACEBOOK_HOSTS = frozenset(
     }
 )
 _FACEBOOK_SHORT_HOSTS = frozenset({"fb.watch", "www.fb.watch"})
+_PLATFORM_HOSTS = (
+    _X_HOSTS
+    | _X_SHORT_HOSTS
+    | _INSTAGRAM_HOSTS
+    | _YOUTUBE_HOSTS
+    | _YOUTUBE_EMBED_HOSTS
+    | _YOUTUBE_SHORT_HOSTS
+    | _FACEBOOK_HOSTS
+    | _FACEBOOK_SHORT_HOSTS
+)
 
 # ---------------------------------------------------------------------------- ids
 
@@ -149,6 +165,20 @@ def recognise(url: str) -> PostRef | None:
         # fb.watch is always a video.
         return _short(Platform.FACEBOOK, "fb.watch", segments, kind="video")
     return None
+
+
+def is_platform_host(url: str) -> bool:
+    """Whether an address is on one of the platforms' own hosts, a post or not.
+
+    A short link that ends on one of these without reaching a post has ended on a
+    login wall, a profile or a home page: the post was not shown. One that ends
+    anywhere else led to an ordinary page, which is read as one.
+    """
+    try:
+        host = (urlsplit(url.strip()).hostname or "").lower().rstrip(".")
+    except ValueError:
+        return False
+    return host in _PLATFORM_HOSTS
 
 
 def is_video_route(ref: PostRef) -> bool:
