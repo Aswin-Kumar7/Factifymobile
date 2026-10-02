@@ -18,6 +18,7 @@ from enum import StrEnum
 
 from app.cache.keys import content_hash, text_hash
 from app.extraction.language import Detection, detect
+from app.intake.social_urls import READER_VERSION, recognise
 from app.security.uploads import MediaKind, UploadRejected, validate_upload
 
 
@@ -157,7 +158,21 @@ def normalise_url(url: str, *, consent: bool = False) -> NormalisedIntake:
     if not host or "." not in host.strip(".") or " " in host:
         raise IntakeRejected(f"not a usable URL: {url!r}")
 
-    identity = f"sha256:{hashlib.sha256(canonical.encode('utf-8')).hexdigest()}"
+    # A social post is known by its own one address, whichever of its many forms was
+    # shared: twitter.com or x.com, a username or none, a preview fixer's domain, a
+    # Shorts link, and the share parameters (`s`, `t`, `si`, `igsh`, `feature`) that
+    # identify who shared it rather than what. The social reader's version is part of
+    # its identity, so a post read by an older reader is read again rather than
+    # answered from what that reader could see.
+    route = "url.canonicalised"
+    keyed = canonical
+    post = recognise(canonical)
+    if post is not None:
+        canonical = post.canonical_url
+        keyed = f"{canonical}|social:{READER_VERSION}"
+        route = "url.social"
+
+    identity = f"sha256:{hashlib.sha256(keyed.encode('utf-8')).hexdigest()}"
 
     return NormalisedIntake(
         input_type=InputType.URL,
@@ -165,7 +180,7 @@ def normalise_url(url: str, *, consent: bool = False) -> NormalisedIntake:
         cache_identity=identity,
         language=detect(""),
         consent_to_process_media=consent,
-        extraction_route="url.canonicalised",
+        extraction_route=route,
         notes=("canonicalised",) if canonical != url.strip() else (),
     )
 
