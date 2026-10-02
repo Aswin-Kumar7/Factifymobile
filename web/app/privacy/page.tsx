@@ -3,7 +3,6 @@ import { Prose, SiteFooter, SiteHeader } from "@/components/site";
 
 export const metadata: Metadata = { title: "Privacy policy" };
 
-const CONTACT = "aswin.aswin5640@gmail.com";
 
 export default function Privacy() {
   return (
@@ -94,13 +93,13 @@ export default function Privacy() {
         <p>
           Delete your account from Settings in the dashboard or Profile in the app: your sign-in, credits, plan,
           payments and survey answers are deleted at once. If you are the only owner of an organisation, make someone
-          else an owner or close it from its settings first. You can also email{" "}
-          <a href={`mailto:${CONTACT}`}>{CONTACT}</a> from the address on your account and we will do it for you.
+          else an owner or close it from its settings first.
         </p>
 
-        <h2>Contact</h2>
+        <h2>Questions</h2>
         <p>
-          Questions about this policy: <a href={`mailto:${CONTACT}`}>{CONTACT}</a>.
+          Questions about this policy, or a result you think is wrong: use &quot;Report wrong result&quot; on any
+          answer in the app or on the website, and the Factify team reviews it.
         </p>
       </Prose>
       <SiteFooter />

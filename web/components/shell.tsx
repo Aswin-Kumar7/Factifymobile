@@ -32,7 +32,6 @@ const icons = {
   building: "M4.5 20V6.5L12 4v16M12 9h7.5v11M3 20h18M7.5 9h1.5M7.5 12.5h1.5M7.5 16h1.5M15 12.5h1.5M15 16h1.5",
   bolt: "M13 2L4 14h7l-1 8 9-12h-7l1-8z",
   logout: "M14 5H6.5A1.5 1.5 0 005 6.5v11A1.5 1.5 0 006.5 19H14M10 12h10M16.5 8.5L20 12l-3.5 3.5",
-  help: "M9.7 9.5a2.4 2.4 0 014.6 1c0 1.6-2.3 2-2.3 3.5M12 16.8v.2M20.5 12a8.5 8.5 0 11-17 0 8.5 8.5 0 0117 0z",
   flag: "M5 21V4M5 4.5h11.5l-2 4 2 4H5",
 };
 
@@ -423,9 +422,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
               <span className="truncate text-ink">{title}</span>
             </div>
             <div className="flex-1" />
-            <a href="mailto:aswin.aswin5640@gmail.com" aria-label="Help" title="Help" className="hidden h-9 w-9 items-center justify-center rounded-lg text-ink2 hover:bg-hover hover:text-ink sm:inline-flex">
-              <Icon name="help" />
-            </a>
             <ThemeButton />
           </div>
         </header>

@@ -102,7 +102,6 @@ const footer = [
     links: [
       ["Sign in", "/signin"],
       ["Create an account", "/signup"],
-      ["Contact us", "mailto:aswin.aswin5640@gmail.com"],
     ],
   },
 ];
@@ -119,17 +118,11 @@ export function SiteFooter() {
           {footer.map((col) => (
             <div key={col.title} className="flex flex-col gap-2.5">
               <span className="mb-1 text-sm text-ink">{col.title}</span>
-              {col.links.map(([label, href]) =>
-                href.startsWith("mailto:") ? (
-                  <a key={label} href={href} className="text-sm text-ink3 transition-colors hover:text-ink">
-                    {label}
-                  </a>
-                ) : (
-                  <Link key={label} href={href} className="text-sm text-ink3 transition-colors hover:text-ink">
-                    {label}
-                  </Link>
-                ),
-              )}
+              {col.links.map(([label, href]) => (
+                <Link key={label} href={href} className="text-sm text-ink3 transition-colors hover:text-ink">
+                  {label}
+                </Link>
+              ))}
             </div>
           ))}
         </div>

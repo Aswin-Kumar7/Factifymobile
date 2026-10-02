@@ -46,9 +46,10 @@ export default function Terms() {
           limit how many requests a key may make per minute, and may change prices with notice on this website.
         </p>
 
-        <h2>Contact</h2>
+        <h2>Questions</h2>
         <p>
-          <a href="mailto:aswin.aswin5640@gmail.com">aswin.aswin5640@gmail.com</a>
+          Use &quot;Report wrong result&quot; on any answer, or the request form for organisation plans in your
+          dashboard; the Factify team answers there.
         </p>
       </Prose>
       <SiteFooter />

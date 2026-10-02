@@ -13,7 +13,6 @@ from fastapi.responses import HTMLResponse
 
 router = APIRouter(include_in_schema=False)
 
-CONTACT = "aswin.aswin5640@gmail.com"
 UPDATED = "2 October 2026"
 
 _STYLE = """
@@ -54,8 +53,8 @@ def _page(title: str, body: str) -> HTMLResponse:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title}</title><style>{_STYLE}</style></head>
 <body><main><header>{_SEAL}<a href="/">Factify</a></header>{body}
-<footer><a href="/">Home</a> · <a href="/privacy">Privacy policy</a> ·
-Contact: <a href="mailto:{CONTACT}">{CONTACT}</a></footer></main></body></html>"""
+<footer><a href="/">Home</a> · <a href="/privacy">Privacy policy</a></footer>
+</main></body></html>"""
     )
 
 
@@ -133,10 +132,9 @@ the services above as needed to run Factify.</p>
 
 <h2>Deleting your account</h2>
 <p>Delete your account from Settings on the website or Profile in the app: your sign-in,
-credits, plan, payments and survey answers are deleted at once. Or email
-<a href="mailto:{CONTACT}">{CONTACT}</a> from the address on your account and we will
-do it for you.</p>
+credits, plan, payments and survey answers are deleted at once.</p>
 
-<h2>Contact</h2>
-<p>Questions about this policy: <a href="mailto:{CONTACT}">{CONTACT}</a>.</p>""",
+<h2>Questions</h2>
+<p>Questions about this policy, or a result you think is wrong: use "Report wrong
+result" on any answer in the app or on the website, and the Factify team reviews it.</p>""",
     )

@@ -782,12 +782,12 @@ export function Pricing() {
           name: "Enterprise",
           price: "Custom",
           per: "",
-          billed: "Agreed with you by email",
+          billed: "Agreed with you after a request",
           blurb: "For large newsrooms and platforms.",
-          cta: "Email us",
-          href: "mailto:aswin.aswin5640@gmail.com?subject=Factify%20Enterprise",
+          cta: "Request an organisation plan",
+          href: `/signup?next=${encodeURIComponent("/app/org/new")}`,
           limit: "Volume you need",
-          features: ["Everything in Team", "A price for your volume", "Members join by your verified email domain", "Questions answered by email"],
+          features: ["Everything in Team", "A price for your volume", "Members join by your verified email domain", "Requests answered in your dashboard"],
         },
       ]
     : PERSONAL.map((p) => personalRow(p, yearly));
