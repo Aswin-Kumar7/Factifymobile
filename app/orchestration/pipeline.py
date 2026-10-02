@@ -242,7 +242,7 @@ claim_progress: ContextVar[Callable[[int, int], None] | None] = ContextVar(
     "claim_progress", default=None
 )
 
-# The time a background check actually had, set for the length of one. Its deadline
+# The time the check running now actually had, set for the length of one. Its deadline
 # moves with how long reading the input took (`Orchestrator.verify`), so the time a
 # claim ran out of is said as it was, not as the budget it started from.
 _check_budget: ContextVar[float | None] = ContextVar("check_budget", default=None)
