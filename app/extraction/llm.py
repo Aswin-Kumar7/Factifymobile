@@ -42,7 +42,7 @@ PROVIDER = "llm"
 
 # Bumped whenever the prompt or the schema changes, because either changes what the
 # same document extracts to — and the extraction cache is keyed on it.
-EXTRACTOR_VERSION = "2026.10.02.3"
+EXTRACTOR_VERSION = "2026.10.03.1"
 
 MAX_CLAIMS_PER_DOCUMENT = 7
 
@@ -84,10 +84,53 @@ class ProposedClaim(BaseModel):
     source_anchor: ProposedAnchor = Field(default_factory=ProposedAnchor)
 
 
+class ProposedFootage(BaseModel):
+    """The model's answer on whether the input's footage is presented as an event."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    presented_as_event: bool = False
+    text: str = ""
+    standalone_english: str = ""
+    search_phrases: list[str] = Field(default_factory=list)
+
+
 class ExtractionResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     claims: list[ProposedClaim] = Field(default_factory=list, max_length=MAX_CLAIMS_PER_DOCUMENT)
+    footage: ProposedFootage | None = None
+
+
+def _footage_claim(footage: ProposedFootage | None) -> ProposedClaim | None:
+    """The claim that the input's footage was taken at the event its words describe.
+
+    Asked as a field of its own, because asked in prose it was not answered: told to
+    add such a claim, gpt-5.6-luna extracted the captions of a heatwave reel of burned
+    traffic lights and of a flydubai post carrying an old easyJet clip, and never what
+    the footage was presented as (2026-10-02). Real news illustrated with footage of
+    something else reads true on its words alone.
+
+    Always a supporting detail of high severity, never the headline or critical:
+    footage nobody has written about must not hold a true post back (`holds_back`),
+    while footage a fact-checker found to be of something else still makes the piece
+    misleading (`rule.out_of_context`).
+    """
+    if footage is None or not footage.presented_as_event:
+        return None
+    text = " ".join(footage.text.split())
+    english = " ".join(footage.standalone_english.split())
+    if not text or not english:
+        return None
+    return ProposedClaim(
+        text=text,
+        claim_type=ClaimType.EVENT,
+        severity=Severity.HIGH,
+        importance=Importance.SUPPORTING_DETAIL,
+        standalone_english=english,
+        search_phrases=[p for p in footage.search_phrases if p.strip()][:3],
+        source_anchor=ProposedAnchor(section="footage"),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +183,29 @@ _SYSTEM_INSTRUCTION = (
     "which the picture itself would confirm. Never extract how something looks - "
     "clothing, colours, layout, a logo - or the description's own wording; a "
     "description that presents no such claim gives none. "
+    "No claim is drawn from the description's details - who stands where, what they "
+    "wear. "
+    "footage: a post or upload that carries a video or a photograph of a scene - "
+    "people, a place, things, as a part headed '(described by Factify)' describes them; "
+    "not a news anchor, a speaker at a podium, a logo, a graphic or a screenshot of "
+    "text - together with words about an event (its text, its caption, the words shown "
+    "on the video) presents that footage as the event, whether or not it says 'this "
+    "video shows'. Real news is often illustrated with footage of something else, so "
+    "the footage is checked as well as the words: set presented_as_event true; text is "
+    "the post's own sentence about the event, copied exactly; standalone_english states "
+    "as a fact that the footage, named by what it shows, was taken at that event - "
+    "never that it 'is presented' or 'was shared' as anything, which is true of every "
+    "post - 'The video of passengers holding a man down "
+    "in a plane's aisle was filmed during the attack on the flydubai flight', 'The "
+    "video of drooping traffic lights was filmed in Europe's 40°C heatwave and shows "
+    "its damage'; search_phrases are two short queries, one of them '<what is seen> "
+    "video <the event> fact check'. For anything else presented_as_event is false and "
+    "the rest empty. It is never repeated in claims. "
+    "Words spoken in a video are said by the person the description shows speaking: "
+    "when the description names who that appears to be, a QUOTE's standalone_english "
+    "names that person and the place the description shows - 'Benjamin Netanyahu said "
+    "\"America deserved 9/11\" at the UN General Assembly' - never 'the speaker in the "
+    "video', which matches anyone; its text keeps the words as spoken. "
     "Each claim must be a COMPLETE, self-contained assertion that can be checked on its "
     "own — a full statement about who did what, when or where. Never emit a sentence "
     "fragment, a bare noun or place ('Odisha'), a date on its own ('after five days'), "
@@ -165,7 +231,12 @@ _SYSTEM_INSTRUCTION = (
     "confirmed. Incidental details a report tacks onto a sentence - the venue, the "
     "day of the week, a running tally ('its ninth title') - work the same way: leave "
     "them out of a claim unless they are its point, or make them a claim of their "
-    "own. "
+    "own. So is a count tacked onto an event to set the scene - how many people were "
+    "on board, in the building, at the venue: split it off. From 'Fire at a Pune mall "
+    "with 300 shoppers inside', the HEADLINE's text is 'Fire at a Pune mall' and '300 "
+    "shoppers inside' is a SUPPORTING_DETAIL STATISTIC of its own; a wrong count must "
+    "not make a real event read false. A count that is the event's outcome - the dead, "
+    "the injured, the arrested - stays in it. "
     "Instructions to the reader - 'forward this to all your groups', 'apply now', "
     "'share before it is deleted', 'click the link' - are not claims: never extract "
     "them. "
@@ -320,6 +391,13 @@ def _valid_claims_only(payload: Any) -> Any:
     """
     if not isinstance(payload, dict) or not isinstance(payload.get("claims"), list):
         return payload
+    footage = payload.get("footage")
+    if footage is not None:
+        try:
+            ProposedFootage.model_validate(footage)
+        except ValidationError:
+            # Only that answer is lost: the claims in the words stand without it.
+            payload = {key: value for key, value in payload.items() if key != "footage"}
     kept = []
     for item in payload["claims"]:
         try:
@@ -398,9 +476,21 @@ _RESPONSE_SCHEMA: dict[str, Any] = {
                     "standalone_english",
                 ],
             },
-        }
+        },
+        # Whether the input's video or photograph is presented as an event, asked on
+        # its own and turned into a claim in code (`_footage_claim`).
+        "footage": {
+            "type": "object",
+            "properties": {
+                "presented_as_event": {"type": "boolean"},
+                "text": {"type": "string"},
+                "standalone_english": {"type": "string"},
+                "search_phrases": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["presented_as_event", "text", "standalone_english", "search_phrases"],
+        },
     },
-    "required": ["claims"],
+    "required": ["claims", "footage"],
 }
 
 
@@ -535,8 +625,12 @@ class LLMExtractor:
                 injection_findings=findings,
             )
 
+        claims = list(validated.claims)
+        footage = _footage_claim(validated.footage)
+        if footage is not None:
+            claims.append(footage)
         return ExtractionOutcome(
-            claims=tuple(validated.claims), model_id=model_id, injection_findings=findings
+            claims=tuple(claims), model_id=model_id, injection_findings=findings
         )
 
     def _parse(self, response: FetchResult) -> dict[str, Any]:
