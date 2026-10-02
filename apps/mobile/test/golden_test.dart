@@ -1,6 +1,7 @@
 /// Golden images of the v5 screens, light and dark (v5 build brief, section 6).
 ///
-/// Check, Checking mid-way, the four verdicts, the Why sheet, History and Profile,
+/// Check, Checking mid-way, the four verdicts, a post checked from part of it and an
+/// answer held back (contract 1.8), the Why sheet, History and Profile,
 /// drawn at 360 wide with the app's own fonts and a fixed date (Saturday 26 September
 /// 2026, as in the design gallery), so an image drawn today matches one drawn next
 /// month. They are compared with a small tolerance: font rendering differs by a few
@@ -26,6 +27,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/contract.dart';
 import 'support/screens.dart';
 
 /// Passes an image that differs from its golden by at most [tolerance] of its pixels.
@@ -125,6 +127,26 @@ void main() {
             services: s,
             verdict: sampleVerdict(kind),
             submission: Submission.text(sampleClaim),
+          ),
+        );
+      });
+    }
+
+    // What was read (contract 1.8): a post checked from part of it, and a link whose
+    // answer was held back, from the server's own sample responses.
+    for (final (name, sample) in [
+      ('verdict_readInPart', 'instagram_reel_partial'),
+      ('verdict_withheld', 'link_withheld'),
+    ]) {
+      testWidgets('${name.split('_').last}, ${theme.name}', (tester) async {
+        await _golden(
+          tester,
+          name,
+          theme,
+          (s) => ResultScreen(
+            services: s,
+            verdict: contractVerdict(sample),
+            submission: Submission.link(contractVerdict(sample).inputRead!.url!),
           ),
         );
       });

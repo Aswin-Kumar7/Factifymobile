@@ -141,13 +141,20 @@ class ActionStyle {
 
   /// The label for a kept check: its verdict's word, or "Nothing to check" when the
   /// result found nothing to check - which its own page says, and a History row
-  /// calling it "Unconfirmed" contradicted.
-  static String label(Verdict verdict, AppLocalizations l10n) =>
-      verdict.nothingToCheck ? l10n.nothingToCheckShort : word(verdict.factVerdict, l10n);
+  /// calling it "Unconfirmed" contradicted. "Not checked" when the answer was held
+  /// back because part of the input could not be read (1.8): nothing was looked up.
+  static String label(Verdict verdict, AppLocalizations l10n) => verdict.withheld
+      ? l10n.withheldShort
+      : verdict.nothingToCheck
+      ? l10n.nothingToCheckShort
+      : word(verdict.factVerdict, l10n);
 
   /// The icon to go with [label].
-  static IconData labelIcon(Verdict verdict) =>
-      verdict.nothingToCheck ? FxIcons.info : iconFor(verdict.factVerdict);
+  static IconData labelIcon(Verdict verdict) => verdict.withheld
+      ? FxIcons.hidden
+      : verdict.nothingToCheck
+      ? FxIcons.info
+      : iconFor(verdict.factVerdict);
 
   /// The one word for a verdict: True, False, Partly true, Misleading, Unconfirmed.
   static String word(FactVerdict verdict, AppLocalizations l10n) => switch (verdict) {

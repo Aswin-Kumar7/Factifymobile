@@ -283,6 +283,7 @@ class CheckJob {
     required this.submission,
     required this.language,
     this.recheck = false,
+    this.acceptPartial = false,
     bool notifyWhenReady = false,
     Stream<CheckEvent> Function(String key)? follow,
   }) : _notify = notifyWhenReady,
@@ -292,6 +293,10 @@ class CheckJob {
   final Submission submission;
   final String language;
   final bool recheck;
+
+  /// "Check what was read" (contract 1.8): an answer held back because part of the
+  /// input could not be read, asked for again on what could be.
+  final bool acceptPartial;
   final Stream<CheckEvent> Function(String key) _follow;
 
   final ValueNotifier<CheckWatch> watch = ValueNotifier(const CheckWatch());
@@ -399,6 +404,7 @@ class CheckJob {
           url: link ? value : null,
           language: language,
           recheck: recheck,
+          acceptPartial: acceptPartial,
         );
         _listen(caseId);
         return _followCase(caseId);
@@ -414,6 +420,7 @@ class CheckJob {
           language: language,
           recheck: recheck,
           background: true,
+          acceptPartial: acceptPartial,
           requestId: key,
           onProgress: _showUpload,
         );
@@ -430,8 +437,8 @@ class CheckJob {
   }
 
   /// A check running in the background, followed until its verdict. Null past the
-  /// wait: six and a half minutes, past the server's own five, so a check that
-  /// finished is always collected.
+  /// wait: [polls] of three seconds, eight and a half minutes, past the server's own
+  /// ceiling of seven, so a check that finished is always collected.
   ///
   /// A poll that fails on the way - the phone's connection dropping for a moment -
   /// does not end a check the server is still running: a few in a row are
@@ -439,7 +446,7 @@ class CheckJob {
   /// ends it at once.
   Future<Verdict?> _followCase(String caseId) async {
     var misses = 0;
-    for (var attempt = 0; attempt < 130; attempt++) {
+    for (var attempt = 0; attempt < polls; attempt++) {
       await _wait(const Duration(seconds: 3));
       if (_cancelled) return null;
       final CheckProgress progress;
@@ -455,6 +462,13 @@ class CheckJob {
     }
     return null;
   }
+
+  /// Polls before a background check is given up on: 170 of three seconds, 510 s.
+  /// The server gives a check at least 150 s of reading once its claims are found,
+  /// and never more than 420 s in all (contract 1.8, `BACKGROUND_CEILING_SECONDS`);
+  /// this was 130 (390 s) for its earlier 300, and would drop a slow post the server
+  /// was still checking.
+  static const polls = 170;
 
   Timer? _pause;
   Completer<void>? _waiting;

@@ -17,6 +17,10 @@
 ///   * Confidence (50-97) is shown only for a decided verdict; it is arithmetic on
 ///     the sources, never a model's score.
 ///   * Advisories - forensic signals - are never evidence and never change it.
+///   * An answer is only about what was read (contract 1.8). When what could not be
+///     read could decide it, no verdict is shown at all - "Not checked yet", with
+///     the ways to send the rest - and an answer checked from part of a post says
+///     so beside the verdict, never only further down.
 library;
 
 import 'dart:typed_data';
@@ -34,6 +38,7 @@ import 'picture_checks.dart';
 import 'english_only_note.dart';
 import 'teaching_line.dart';
 import 'ui/ui.dart';
+import 'what_we_read.dart';
 
 /// Where the receipt check stands.
 enum ReceiptState { checking, verified, failed }
@@ -58,10 +63,20 @@ class VerdictCard extends StatelessWidget {
     this.receiptId,
     this.serverUrl,
     this.onOpenPage,
+    this.onCheckWhatWasRead,
+    this.onPasteText,
+    this.onUpload,
   });
 
   final Verdict verdict;
   final SubmissionKind kind;
+
+  /// For an answer held back because part of the input could not be read (1.8):
+  /// check what could be read, send the text instead, or send the picture or video
+  /// itself. Each is left out when null.
+  final VoidCallback? onCheckWhatWasRead;
+  final VoidCallback? onPasteText;
+  final VoidCallback? onUpload;
 
   /// The text that was checked, when it was text: underlined claim by claim.
   final String? submittedText;
@@ -104,7 +119,9 @@ class VerdictCard extends StatelessWidget {
         Container(
           key: const ValueKey('verdict-header'),
           color: tint,
-          child: _Header(verdict: verdict, strong: strong, soft: soft, onWhy: onWhy),
+          child: verdict.withheld
+              ? _WithheldHeader(card: this, strong: strong)
+              : _Header(verdict: verdict, strong: strong, soft: soft, onWhy: onWhy),
         ),
         Container(
           color: tint,
@@ -157,7 +174,12 @@ class _Header extends StatelessWidget {
               : verdict.imageReading != null
               ? l10n.nothingToCheckPicture
               : l10n.nothingToCheckText)
+        // What could be read was supported, and part could not be read: not "we
+        // couldn't find enough sources", which is the opposite of what happened.
+        : verdict.partlyRead
+        ? l10n.partlyReadBody
         : l10n.unconfirmedBody;
+    final read = verdict.inputRead;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(22, 22, 22, 22),
@@ -231,11 +253,22 @@ class _Header extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            style.subhead,
+            verdictSubhead(verdict, style, l10n),
             style: FactifyText.sans(15, weight: FontWeight.w600, color: k.ink),
           ),
           const SizedBox(height: 6),
           Text(summary, style: FactifyText.sans(13.5, color: k.ink2).copyWith(height: 1.5)),
+          // Checked from what could be read, as the person asked: said beside the
+          // verdict, so it is never read as an answer about the whole post.
+          if (read != null && read.checkedPartially) ...[
+            const SizedBox(height: 12),
+            _Pill(
+              key: const ValueKey('checked-partially'),
+              icon: FxIcons.hidden,
+              iconColour: k.mC,
+              label: l10n.checkedPartially(readThing(read)),
+            ),
+          ],
           // A picture or video with no claim in it, that our checks say was likely
           // made by AI: said here, at the top, not only in the checks below. It is a
           // note, never the verdict - detectors do not decide one (2026-09-29).
@@ -276,8 +309,153 @@ class _Header extends StatelessWidget {
           ],
           if (verdict.searchUnavailable)
             _Note(text: l10n.searchUnavailableNote)
-          else if (verdict.completenessNote != null)
-            _Note(text: l10n.incompleteNote),
+          // "Couldn't be checked in time" only when the time ran out: what could not
+          // be read is said where what was read is shown (1.8).
+          else if (verdict.ranOutOfTime)
+            _Note(text: l10n.incompleteNote)
+          else if (verdict.missedChecks)
+            _Note(text: l10n.incompleteChecksNote),
+        ],
+      ),
+    );
+  }
+}
+
+/// A small pill under the verdict: "Checked from part of the post". Two lines when
+/// the words need them (Hindi at 130%), where the one-line cache pill ellipses.
+class _Pill extends StatelessWidget {
+  const _Pill({required this.icon, required this.iconColour, required this.label, super.key});
+
+  final IconData icon;
+  final Color iconColour;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final k = FactifyTokens.of(context);
+    return Container(
+      constraints: const BoxConstraints(minHeight: 28),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+      decoration: BoxDecoration(color: k.sf, borderRadius: BorderRadius.circular(14)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: iconColour),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: FactifyText.sans(12, weight: FontWeight.w600, color: k.ink2),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// No verdict (1.8): what could not be read could decide the answer, so none was
+/// given. Says so in place of the verdict, and offers the ways on: check what could
+/// be read, or send the text or the picture or video itself.
+///
+/// Grey, as Unconfirmed is, and never worded as one: nothing was searched, so
+/// nothing failed to be confirmed.
+class _WithheldHeader extends StatelessWidget {
+  const _WithheldHeader({required this.card, required this.strong});
+
+  final VerdictCard card;
+  final Color strong;
+
+  @override
+  Widget build(BuildContext context) {
+    final k = FactifyTokens.of(context);
+    final l10n = AppLocalizations.of(context);
+    final check = card.onCheckWhatWasRead;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(22, 22, 22, 22),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Semantics(
+            header: true,
+            label: l10n.withheldTitle,
+            excludeSemantics: true,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(FxIcons.hidden, size: 16, color: strong),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(l10n.withheldOverline, style: FactifyText.mono(10.5, color: strong)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Text(
+                    l10n.withheldTitle,
+                    maxLines: 1,
+                    style: FactifyText.verdict(38, strong),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            l10n.withheldBody,
+            style: FactifyText.sans(15, weight: FontWeight.w600, color: k.ink),
+          ),
+          if (check != null) ...[
+            const SizedBox(height: 16),
+            FxButton(
+              key: const ValueKey('check-what-was-read'),
+              label: l10n.withheldCheckWhatWasRead,
+              icon: FxIcons.check,
+              variant: FxButtonVariant.dark,
+              height: 50,
+              radius: 16,
+              fontSize: 15,
+              onPressed: check,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              l10n.withheldCheckNote,
+              style: FactifyText.sans(12, color: k.ink2).copyWith(height: 1.45),
+            ),
+          ],
+          if (card.onPasteText case final paste?) ...[
+            const SizedBox(height: 10),
+            FxButton(
+              key: const ValueKey('paste-the-text'),
+              label: l10n.withheldPasteText,
+              icon: FxIcons.paste,
+              variant: FxButtonVariant.outline,
+              height: 46,
+              radius: 16,
+              fontSize: 14,
+              onPressed: paste,
+            ),
+          ],
+          if (card.onUpload case final upload?) ...[
+            const SizedBox(height: 8),
+            FxButton(
+              key: const ValueKey('upload-media'),
+              label: l10n.withheldUpload,
+              icon: FxIcons.addImage,
+              variant: FxButtonVariant.outline,
+              height: 46,
+              radius: 16,
+              fontSize: 14,
+              onPressed: upload,
+            ),
+          ],
         ],
       ),
     );
@@ -378,12 +556,21 @@ class _Body extends StatelessWidget {
     final sources = _sources(verdict);
     final media = verdict.claims.expand((c) => c.evidence).where((e) => e.isMediaMatch).firstOrNull;
     final technique = _technique(verdict);
+    final read = verdict.inputRead;
+    final reports = [?verdict.mediaReport, ...verdict.mediaReports];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _WhatWeChecked(card: card),
-        if (verdict.sourceProfile case final site?) ...[
+        // What was read, part by part (1.8); a result from before then shows what
+        // was checked, the way it always did.
+        if (read != null)
+          WhatWeRead(verdict: verdict, read: read, serverUrl: card.serverUrl)
+        else
+          _WhatWeChecked(card: card),
+        // A post's website is X or Instagram: what is known about it says nothing
+        // about who posted, and is not shown.
+        if (verdict.sourceProfile case final site? when read?.platform == null) ...[
           _SectionTitle(title: l10n.sourceProfileTitle, note: l10n.pcNote),
           _SiteCard(site: site),
         ],
@@ -395,16 +582,23 @@ class _Body extends StatelessWidget {
           const SizedBox(height: 10),
           _MediaMatch(evidence: media, thumbnail: card.thumbnail, serverUrl: card.serverUrl),
         ],
-        if (verdict.mediaReport case final report?) ...[
+        // The checks of the upload itself, and for a post with several pictures, of
+        // each of them in turn (1.8): picture 1 is `media_report`, the rest follow.
+        for (final (index, report) in reports.indexed) ...[
           _SectionTitle(
-            title: report.isVideo ? l10n.pcTitleVideo : l10n.pcTitle,
+            title: report.isVideo
+                ? l10n.pcTitleVideo
+                : reports.length > 1
+                ? l10n.pcTitleNumbered(index + 1)
+                : l10n.pcTitle,
             note: report.frames == null
                 ? l10n.pcNote
                 : '${l10n.pcFrames(report.frames!)} · ${l10n.pcNote}',
           ),
           PictureChecks(
             report: report,
-            thumbnail: card.thumbnail,
+            // Only the upload's own picture is on this phone.
+            thumbnail: index == 0 ? card.thumbnail : null,
             serverUrl: card.serverUrl,
             onOpenPage: card.onOpenPage,
           ),
@@ -441,7 +635,9 @@ class _Body extends StatelessWidget {
               ),
             ),
           ),
-        ] else if (!verdict.factVerdict.isDecided && !nothing) ...[
+        ] else if (!verdict.factVerdict.isDecided && !nothing && !verdict.withheld) ...[
+          // Not for an answer held back: nothing was searched for it, and "no source
+          // addressed this" would be untrue.
           const SizedBox(height: 10),
           FxCard(
             child: Column(
@@ -858,7 +1054,7 @@ class _WhatWeCheckedState extends State<_WhatWeChecked> {
           ],
           if (quote.isNotEmpty) ...[
             const SizedBox(height: 8),
-            _Underlined(text: quote, spans: spans, shortened: shortened),
+            UnderlinedQuote(text: quote, spans: spans, shortened: shortened),
             if (long)
               Semantics(
                 button: true,
@@ -885,7 +1081,7 @@ class _WhatWeCheckedState extends State<_WhatWeChecked> {
               style: FactifyText.sans(11.5, weight: FontWeight.w600, color: k.ink3),
             ),
             const SizedBox(height: 8),
-            _Underlined(text: said, spans: saidSpans, shortened: saidLong && !_whole),
+            UnderlinedQuote(text: said, spans: saidSpans, shortened: saidLong && !_whole),
             if (saidLong && !long)
               Semantics(
                 button: true,
@@ -934,44 +1130,6 @@ class _WhatWeCheckedState extends State<_WhatWeChecked> {
         ],
       ),
     );
-  }
-}
-
-class _Underlined extends StatelessWidget {
-  const _Underlined({required this.text, required this.spans, required this.shortened});
-
-  final String text;
-  final List<ClaimSpan> spans;
-  final bool shortened;
-
-  @override
-  Widget build(BuildContext context) {
-    final k = FactifyTokens.of(context);
-    final base = FactifyText.serif(
-      16.5,
-      weight: FontWeight.w400,
-      color: k.ink,
-    ).copyWith(height: 1.5);
-    final parts = <InlineSpan>[const TextSpan(text: '“')];
-    var at = 0;
-    for (final span in spans) {
-      if (span.start > at) parts.add(TextSpan(text: text.substring(at, span.start)));
-      parts.add(
-        TextSpan(
-          text: text.substring(span.start, span.end),
-          style: TextStyle(
-            decoration: TextDecoration.underline,
-            decorationColor: ActionStyle.forMark(span.mark, k.brightness),
-            decorationThickness: 2,
-            backgroundColor: ActionStyle.tintForMark(span.mark, k.brightness),
-          ),
-        ),
-      );
-      at = span.end;
-    }
-    if (at < text.length) parts.add(TextSpan(text: text.substring(at)));
-    parts.add(TextSpan(text: shortened ? '…”' : '”'));
-    return Text.rich(TextSpan(children: parts), style: base);
   }
 }
 

@@ -2291,4 +2291,282 @@ class AppLocalizationsHi extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String whatWeReadKind(String kind) {
+    return 'Factify ने क्या पढ़ा · $kind';
+  }
+
+  @override
+  String kindPostOn(String platform) {
+    return '$platform पोस्ट';
+  }
+
+  @override
+  String kindVideoOn(String platform) {
+    return '$platform वीडियो';
+  }
+
+  @override
+  String get kindPost => 'पोस्ट';
+
+  @override
+  String readPartial(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'post': 'Factify इस पोस्ट का सिर्फ़ कुछ हिस्सा पढ़ पाया।',
+      'page': 'Factify इस पेज का सिर्फ़ कुछ हिस्सा पढ़ पाया।',
+      'video': 'Factify इस वीडियो का सिर्फ़ कुछ हिस्सा पढ़ पाया।',
+      'picture': 'Factify इस तस्वीर का सिर्फ़ कुछ हिस्सा पढ़ पाया।',
+      'document': 'Factify इस दस्तावेज़ का सिर्फ़ कुछ हिस्सा पढ़ पाया।',
+      'other': 'Factify इसका सिर्फ़ कुछ हिस्सा पढ़ पाया।',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String get readNothing => 'इसमें से कुछ भी पढ़ा नहीं जा सका।';
+
+  @override
+  String get readShowAll => 'सब दिखाएँ';
+
+  @override
+  String get readInPart => 'सिर्फ़ कुछ हिस्सा पढ़ा गया';
+
+  @override
+  String get readNotChecked => 'सिर्फ़ विवरण, इसकी जाँच नहीं हुई';
+
+  @override
+  String get readDescribedByFactify => 'Factify का विवरण';
+
+  @override
+  String readHeard(String read, String total) {
+    return '$total में से $read सुना गया';
+  }
+
+  @override
+  String readHeardAll(String total) {
+    return 'पूरा $total सुना गया';
+  }
+
+  @override
+  String get readYoutubeLimit =>
+      'YouTube, Factify को वीडियो डाउनलोड नहीं करने देता, इसलिए उसकी AI, चेहरा बदलने और आवाज़ की जाँचें नहीं हो पाईं।';
+
+  @override
+  String get partMessage => 'संदेश';
+
+  @override
+  String get partPost => 'पोस्ट';
+
+  @override
+  String get partQuotedPost => 'उद्धृत पोस्ट';
+
+  @override
+  String partQuotedPostBy(String who) {
+    return '$who की उद्धृत पोस्ट';
+  }
+
+  @override
+  String get partTitle => 'शीर्षक';
+
+  @override
+  String get partDescription => 'विवरण';
+
+  @override
+  String get partArticle => 'लेख';
+
+  @override
+  String get partLinkedArticle => 'लिंक किया गया लेख';
+
+  @override
+  String partLinkedArticleOn(String host) {
+    return 'लिंक किया गया लेख · $host';
+  }
+
+  @override
+  String partPictureText(int index, int total) {
+    return 'तस्वीर $index/$total में लिखा पाठ';
+  }
+
+  @override
+  String get partOnScreenText => 'वीडियो में दिखा पाठ';
+
+  @override
+  String get partDocumentText => 'PDF में लिखा पाठ';
+
+  @override
+  String get partPictureDescription => 'तस्वीर में क्या दिखता है';
+
+  @override
+  String get partVideoDescription => 'वीडियो में क्या दिखता है';
+
+  @override
+  String get gapHeadlineOnly =>
+      'सिर्फ़ पेज का शीर्षक और सारांश पढ़ा जा सका, पूरा लेख नहीं।';
+
+  @override
+  String get gapTextTruncated =>
+      'पोस्ट का टेक्स्ट बीच में कटा हुआ था, इसलिए बाकी हिस्सा पढ़ा नहीं जा सका।';
+
+  @override
+  String get gapPostUnavailable =>
+      'पोस्ट खुल नहीं पाई। हो सकता है वह हटा दी गई हो, निजी कर दी गई हो, या कोई स्टोरी हो।';
+
+  @override
+  String get gapLoginRequired =>
+      'साइट इसे सिर्फ़ साइन-इन किए हुए लोगों को दिखाती है।';
+
+  @override
+  String get gapNotSupported =>
+      'Factify अभी इस साइट की पोस्ट नहीं पढ़ पाता। टेक्स्ट चिपकाएँ या स्क्रीनशॉट अपलोड करें।';
+
+  @override
+  String get gapPictureUnread => 'इसकी एक तस्वीर पढ़ी नहीं जा सकी।';
+
+  @override
+  String get gapVideoUnread => 'वीडियो पढ़ा नहीं जा सका।';
+
+  @override
+  String get gapSpeechUnread =>
+      'वीडियो में जो कहा गया है, वह सुना नहीं जा सका।';
+
+  @override
+  String get gapCutOff =>
+      'यह इतना लंबा था कि आख़िर तक नहीं पढ़ा जा सका, इसलिए सिर्फ़ शुरुआत पढ़ी गई।';
+
+  @override
+  String get gapPagesUnread => 'दस्तावेज़ के सिर्फ़ कुछ पन्ने पढ़े गए।';
+
+  @override
+  String get gapTooLarge => 'वीडियो इतना बड़ा है कि डाउनलोड नहीं हो सका।';
+
+  @override
+  String get gapNeedsBackground => 'वीडियो सिर्फ़ पूरी जाँच में पढ़े जाते हैं।';
+
+  @override
+  String get gapReaderUnavailable => 'इसे पढ़ने की सुविधा अभी उपलब्ध नहीं है।';
+
+  @override
+  String get gapFirstPictureOnly => 'एल्बम की सिर्फ़ पहली तस्वीर दिख सकी।';
+
+  @override
+  String get gapArticleTruncated =>
+      'लेख लंबा है, इसलिए उसका शुरुआती हिस्सा पढ़ा गया।';
+
+  @override
+  String get gapDescriptionUnread => 'वीडियो का विवरण पढ़ा नहीं जा सका।';
+
+  @override
+  String get gapLinkedPageUnread =>
+      'इसमें जिस लेख का लिंक है, वह पढ़ा नहीं जा सका, इसलिए उसे जाँच में शामिल नहीं किया गया।';
+
+  @override
+  String get withheldOverline => 'जाँच नहीं हुई';
+
+  @override
+  String get withheldTitle => 'अभी जाँचा नहीं गया';
+
+  @override
+  String get withheldShort => 'जाँचा नहीं गया';
+
+  @override
+  String get withheldBody =>
+      'Factify इसे पूरा नहीं पढ़ पाया, इसलिए इस पर कोई फ़ैसला नहीं दिया गया है।';
+
+  @override
+  String get withheldCheckWhatWasRead => 'जितना पढ़ा गया, उतना जाँचें';
+
+  @override
+  String get withheldPasteText => 'टेक्स्ट चिपकाएँ';
+
+  @override
+  String get withheldUpload => 'तस्वीर या वीडियो अपलोड करें';
+
+  @override
+  String get withheldCheckNote =>
+      'सिर्फ़ उतना जाँचा जाएगा जितना Factify पढ़ पाया। कुछ हिस्सा पढ़ा नहीं गया, इसलिए जवाब “सच” नहीं हो सकता।';
+
+  @override
+  String checkedPartially(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'post': 'पोस्ट के कुछ हिस्से से जाँचा गया',
+      'page': 'पेज के कुछ हिस्से से जाँचा गया',
+      'video': 'वीडियो के कुछ हिस्से से जाँचा गया',
+      'picture': 'तस्वीर के कुछ हिस्से से जाँचा गया',
+      'document': 'दस्तावेज़ के कुछ हिस्से से जाँचा गया',
+      'other': 'इसके कुछ हिस्से से जाँचा गया',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String get subheadPartlyRead => 'इसका कुछ हिस्सा पढ़ा नहीं जा सका';
+
+  @override
+  String get partlyReadBody =>
+      'Factify जितना पढ़ पाया, उसकी पुष्टि स्रोतों से होती है, लेकिन कुछ हिस्सा पढ़ा नहीं जा सका, इसलिए पूरी बात की पुष्टि नहीं हुई है।';
+
+  @override
+  String get pasteSheetTitle => 'जाँचने के लिए टेक्स्ट चिपकाएँ';
+
+  @override
+  String get pasteSheetBody =>
+      'पोस्ट या लेख के शब्द कॉपी करें और यहाँ चिपकाएँ।';
+
+  @override
+  String get pasteSheetHint => 'टेक्स्ट चिपकाएँ या लिखें';
+
+  @override
+  String get notReadTitle => 'क्या पढ़ा नहीं जा सका';
+
+  @override
+  String get incompleteChecksNote =>
+      'कुछ जाँचें नहीं हो पाईं, इसलिए यह जवाब अधूरा हो सकता है।';
+
+  @override
+  String pcTitleNumbered(int index) {
+    return 'तस्वीर $index की जाँच';
+  }
+
+  @override
+  String quickRead(String list) {
+    return 'पढ़ा गया: $list';
+  }
+
+  @override
+  String get quickReadPost => 'पोस्ट';
+
+  @override
+  String get quickReadQuoted => 'उद्धृत पोस्ट';
+
+  @override
+  String get quickReadPage => 'पेज';
+
+  @override
+  String get quickReadLinked => 'लिंक किया गया लेख';
+
+  @override
+  String quickReadPictures(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count तस्वीरें',
+      one: '1 तस्वीर',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get quickReadVideo => 'वीडियो';
+
+  @override
+  String quickReadVideoLength(String length) {
+    return 'वीडियो $length';
+  }
+
+  @override
+  String get quickReadDocument => 'दस्तावेज़';
+
+  @override
+  String get quickReadMessage => 'संदेश';
 }

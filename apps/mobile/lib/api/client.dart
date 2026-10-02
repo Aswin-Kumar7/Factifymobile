@@ -144,26 +144,34 @@ class FactifyClient {
   /// [requestId] is the id the Checking screen follows this check's progress by
   /// (lib/api/check_events.dart). Sent as `X-Request-ID`, which the server also logs
   /// the request under.
+  ///
+  /// [acceptPartial] is "Check what was read" (contract 1.8): a post or a page that
+  /// could be read only in part is checked from what was read, instead of the answer
+  /// being held back. The answer then says so, and is never True.
   Future<Verdict> verifyText(
     String text, {
     String? language,
     bool recheck = false,
+    bool acceptPartial = false,
     String? requestId,
   }) => _verify({
     'text': text,
     'language': ?language,
     if (recheck) 'recheck': true,
+    if (acceptPartial) 'accept_partial': true,
   }, requestId: requestId);
 
   Future<Verdict> verifyUrl(
     String url, {
     String? language,
     bool recheck = false,
+    bool acceptPartial = false,
     String? requestId,
   }) => _verify({
     'url': url,
     'language': ?language,
     if (recheck) 'recheck': true,
+    if (acceptPartial) 'accept_partial': true,
   }, requestId: requestId);
 
   Future<Verdict> _verify(Map<String, dynamic> body, {String? requestId}) async {
@@ -194,12 +202,16 @@ class FactifyClient {
   ///
   /// [onProgress] reports bytes the connection has taken against the whole body,
   /// so a slow upload shows how far it has got instead of an endless spinner.
+  ///
+  /// [acceptPartial] is "Check what was read", as for [verifyText]: the same form
+  /// field on the file endpoint.
   Future<VerifyFileOutcome> verifyFile(
     File file, {
     bool consentToProcessMedia = false,
     String? language,
     bool recheck = false,
     bool background = false,
+    bool acceptPartial = false,
     String? requestId,
     void Function(int sent, int total)? onProgress,
   }) => _guard(() async {
@@ -209,6 +221,7 @@ class FactifyClient {
     if (language != null) request.fields['language'] = language;
     if (recheck) request.fields['recheck'] = 'true';
     if (background) request.fields['background'] = 'true';
+    if (acceptPartial) request.fields['accept_partial'] = 'true';
     request.headers.addAll(await _signedIn());
     if (requestId != null) request.headers['x-request-id'] = requestId;
 
@@ -226,11 +239,14 @@ class FactifyClient {
   /// Start a check. The server answers at once with a case id and checks every
   /// claim in the background, taking the time that needs (contract 1.4); follow it
   /// with [checkOn].
+  ///
+  /// [acceptPartial] is "Check what was read", as for [verifyText].
   Future<String> startCheck({
     String? text,
     String? url,
     String? language,
     bool recheck = false,
+    bool acceptPartial = false,
   }) async {
     final auth = await _signedIn();
     final response = await _send(
@@ -244,6 +260,7 @@ class FactifyClient {
               'language': ?language,
               'mode': 'background',
               if (recheck) 'recheck': true,
+              if (acceptPartial) 'accept_partial': true,
             }),
           )
           .timeout(const Duration(seconds: 30)),

@@ -3511,6 +3511,432 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{seconds, plural, other{We look at the first {seconds} seconds of a video and listen to its first 3 minutes.}}'**
   String videoFirstSeconds(int seconds);
+
+  /// Heading of the panel that shows what was read from the input (contract 1.8). Factify is the product name.
+  ///
+  /// In en, this message translates to:
+  /// **'What Factify read · {kind}'**
+  String whatWeReadKind(String kind);
+
+  /// A social media post. platform is X, Instagram or Facebook, never translated.
+  ///
+  /// In en, this message translates to:
+  /// **'{platform} post'**
+  String kindPostOn(String platform);
+
+  /// A video on a platform. platform is YouTube, never translated.
+  ///
+  /// In en, this message translates to:
+  /// **'{platform} video'**
+  String kindVideoOn(String platform);
+
+  /// No description provided for @kindPost.
+  ///
+  /// In en, this message translates to:
+  /// **'Post'**
+  String get kindPost;
+
+  /// The warning above what was read, when something could not be read. kind is post, page, video, picture, document or other.
+  ///
+  /// In en, this message translates to:
+  /// **'{kind, select, post{Factify could only read part of this post.} page{Factify could only read part of this page.} video{Factify could only read part of this video.} picture{Factify could only read part of this picture.} document{Factify could only read part of this document.} other{Factify could only read part of this.}}'**
+  String readPartial(String kind);
+
+  /// No description provided for @readNothing.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing could be read from it.'**
+  String get readNothing;
+
+  /// No description provided for @readShowAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Show all'**
+  String get readShowAll;
+
+  /// No description provided for @readInPart.
+  ///
+  /// In en, this message translates to:
+  /// **'Read only in part'**
+  String get readInPart;
+
+  /// Beside Factify's description of what a picture or video shows, when it was shown for context and not checked.
+  ///
+  /// In en, this message translates to:
+  /// **'Description only, not checked'**
+  String get readNotChecked;
+
+  /// Beside Factify's description of what a picture or video shows, when it was checked beside the input's own words.
+  ///
+  /// In en, this message translates to:
+  /// **'Described by Factify'**
+  String get readDescribedByFactify;
+
+  /// How much of a video's speech was heard, as times: '10:00 of 14:02 heard'.
+  ///
+  /// In en, this message translates to:
+  /// **'{read} of {total} heard'**
+  String readHeard(String read, String total);
+
+  /// No description provided for @readHeardAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All {total} heard'**
+  String readHeardAll(String total);
+
+  /// No description provided for @readYoutubeLimit.
+  ///
+  /// In en, this message translates to:
+  /// **'YouTube doesn\'t let Factify download the video, so its AI, face-swap and voice checks didn\'t run.'**
+  String get readYoutubeLimit;
+
+  /// No description provided for @partMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Message'**
+  String get partMessage;
+
+  /// No description provided for @partPost.
+  ///
+  /// In en, this message translates to:
+  /// **'Post'**
+  String get partPost;
+
+  /// No description provided for @partQuotedPost.
+  ///
+  /// In en, this message translates to:
+  /// **'Quoted post'**
+  String get partQuotedPost;
+
+  /// who is the name or @handle of the person quoted, as written.
+  ///
+  /// In en, this message translates to:
+  /// **'Quoted post by {who}'**
+  String partQuotedPostBy(String who);
+
+  /// No description provided for @partTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Title'**
+  String get partTitle;
+
+  /// No description provided for @partDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Description'**
+  String get partDescription;
+
+  /// No description provided for @partArticle.
+  ///
+  /// In en, this message translates to:
+  /// **'Article'**
+  String get partArticle;
+
+  /// No description provided for @partLinkedArticle.
+  ///
+  /// In en, this message translates to:
+  /// **'Linked article'**
+  String get partLinkedArticle;
+
+  /// No description provided for @partLinkedArticleOn.
+  ///
+  /// In en, this message translates to:
+  /// **'Linked article · {host}'**
+  String partLinkedArticleOn(String host);
+
+  /// No description provided for @partPictureText.
+  ///
+  /// In en, this message translates to:
+  /// **'Text in picture {index} of {total}'**
+  String partPictureText(int index, int total);
+
+  /// No description provided for @partOnScreenText.
+  ///
+  /// In en, this message translates to:
+  /// **'Text shown in the video'**
+  String get partOnScreenText;
+
+  /// No description provided for @partDocumentText.
+  ///
+  /// In en, this message translates to:
+  /// **'Text in the PDF'**
+  String get partDocumentText;
+
+  /// No description provided for @partPictureDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'What the picture shows'**
+  String get partPictureDescription;
+
+  /// No description provided for @partVideoDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'What the video shows'**
+  String get partVideoDescription;
+
+  /// No description provided for @gapHeadlineOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Only the page\'s headline and summary could be read, not the article itself.'**
+  String get gapHeadlineOnly;
+
+  /// No description provided for @gapTextTruncated.
+  ///
+  /// In en, this message translates to:
+  /// **'The post\'s text was cut short, so the rest of it wasn\'t read.'**
+  String get gapTextTruncated;
+
+  /// No description provided for @gapPostUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'The post couldn\'t be opened. It may have been deleted or made private, or be a story.'**
+  String get gapPostUnavailable;
+
+  /// No description provided for @gapLoginRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'The site shows this only to people who are signed in.'**
+  String get gapLoginRequired;
+
+  /// No description provided for @gapNotSupported.
+  ///
+  /// In en, this message translates to:
+  /// **'Factify can\'t read posts from this site yet. Paste the text or upload a screenshot.'**
+  String get gapNotSupported;
+
+  /// No description provided for @gapPictureUnread.
+  ///
+  /// In en, this message translates to:
+  /// **'A picture in it couldn\'t be read.'**
+  String get gapPictureUnread;
+
+  /// No description provided for @gapVideoUnread.
+  ///
+  /// In en, this message translates to:
+  /// **'The video couldn\'t be read.'**
+  String get gapVideoUnread;
+
+  /// No description provided for @gapSpeechUnread.
+  ///
+  /// In en, this message translates to:
+  /// **'What is said in the video couldn\'t be heard.'**
+  String get gapSpeechUnread;
+
+  /// No description provided for @gapCutOff.
+  ///
+  /// In en, this message translates to:
+  /// **'It was too long to read to the end, so only the start was read.'**
+  String get gapCutOff;
+
+  /// No description provided for @gapPagesUnread.
+  ///
+  /// In en, this message translates to:
+  /// **'Only some of the document\'s pages were read.'**
+  String get gapPagesUnread;
+
+  /// No description provided for @gapTooLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'The video is too large to download.'**
+  String get gapTooLarge;
+
+  /// No description provided for @gapNeedsBackground.
+  ///
+  /// In en, this message translates to:
+  /// **'Videos are read only in a full check.'**
+  String get gapNeedsBackground;
+
+  /// No description provided for @gapReaderUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'What\'s needed to read this isn\'t available right now.'**
+  String get gapReaderUnavailable;
+
+  /// No description provided for @gapFirstPictureOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Only the first picture of the album could be seen.'**
+  String get gapFirstPictureOnly;
+
+  /// No description provided for @gapArticleTruncated.
+  ///
+  /// In en, this message translates to:
+  /// **'The article is long, and its opening part was read.'**
+  String get gapArticleTruncated;
+
+  /// No description provided for @gapDescriptionUnread.
+  ///
+  /// In en, this message translates to:
+  /// **'The video\'s description couldn\'t be read.'**
+  String get gapDescriptionUnread;
+
+  /// No description provided for @gapLinkedPageUnread.
+  ///
+  /// In en, this message translates to:
+  /// **'The article it links to couldn\'t be read, so it was left out.'**
+  String get gapLinkedPageUnread;
+
+  /// Small capitals above the title of an answer held back.
+  ///
+  /// In en, this message translates to:
+  /// **'NOT CHECKED'**
+  String get withheldOverline;
+
+  /// No description provided for @withheldTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Not checked yet'**
+  String get withheldTitle;
+
+  /// The label of an answer held back, in History and on Home.
+  ///
+  /// In en, this message translates to:
+  /// **'Not checked'**
+  String get withheldShort;
+
+  /// No description provided for @withheldBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Factify could not read all of this, so it has not given a verdict.'**
+  String get withheldBody;
+
+  /// No description provided for @withheldCheckWhatWasRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Check what was read'**
+  String get withheldCheckWhatWasRead;
+
+  /// No description provided for @withheldPasteText.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste the text'**
+  String get withheldPasteText;
+
+  /// No description provided for @withheldUpload.
+  ///
+  /// In en, this message translates to:
+  /// **'Upload the picture or video'**
+  String get withheldUpload;
+
+  /// No description provided for @withheldCheckNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Checks only what Factify could read. The answer can\'t be True, because part of it wasn\'t read.'**
+  String get withheldCheckNote;
+
+  /// A chip on an answer checked from only what could be read. kind is post, page, video, picture, document or other.
+  ///
+  /// In en, this message translates to:
+  /// **'{kind, select, post{Checked from part of the post} page{Checked from part of the page} video{Checked from part of the video} picture{Checked from part of the picture} document{Checked from part of the document} other{Checked from part of it}}'**
+  String checkedPartially(String kind);
+
+  /// No description provided for @subheadPartlyRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Part of it could not be read'**
+  String get subheadPartlyRead;
+
+  /// No description provided for @partlyReadBody.
+  ///
+  /// In en, this message translates to:
+  /// **'What Factify could read is supported by sources, but part of it couldn\'t be read, so the whole of it isn\'t confirmed.'**
+  String get partlyReadBody;
+
+  /// No description provided for @pasteSheetTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste the text to check'**
+  String get pasteSheetTitle;
+
+  /// No description provided for @pasteSheetBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy the words of the post or the article, and paste them here.'**
+  String get pasteSheetBody;
+
+  /// No description provided for @pasteSheetHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste or type the text'**
+  String get pasteSheetHint;
+
+  /// No description provided for @notReadTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'What could not be read'**
+  String get notReadTitle;
+
+  /// Under the verdict when a check other than reading the input did not run, such as an outside service not answering.
+  ///
+  /// In en, this message translates to:
+  /// **'Some checks couldn\'t run, so this answer may be incomplete.'**
+  String get incompleteChecksNote;
+
+  /// The picture checks of one picture of a post with several.
+  ///
+  /// In en, this message translates to:
+  /// **'Picture {index} checks'**
+  String pcTitleNumbered(int index);
+
+  /// What the quick verdict read, as a list: 'Read: post · 2 pictures · video 1:32'.
+  ///
+  /// In en, this message translates to:
+  /// **'Read: {list}'**
+  String quickRead(String list);
+
+  /// No description provided for @quickReadPost.
+  ///
+  /// In en, this message translates to:
+  /// **'post'**
+  String get quickReadPost;
+
+  /// No description provided for @quickReadQuoted.
+  ///
+  /// In en, this message translates to:
+  /// **'quoted post'**
+  String get quickReadQuoted;
+
+  /// No description provided for @quickReadPage.
+  ///
+  /// In en, this message translates to:
+  /// **'page'**
+  String get quickReadPage;
+
+  /// No description provided for @quickReadLinked.
+  ///
+  /// In en, this message translates to:
+  /// **'linked article'**
+  String get quickReadLinked;
+
+  /// No description provided for @quickReadPictures.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 picture} other{{count} pictures}}'**
+  String quickReadPictures(int count);
+
+  /// No description provided for @quickReadVideo.
+  ///
+  /// In en, this message translates to:
+  /// **'video'**
+  String get quickReadVideo;
+
+  /// No description provided for @quickReadVideoLength.
+  ///
+  /// In en, this message translates to:
+  /// **'video {length}'**
+  String quickReadVideoLength(String length);
+
+  /// No description provided for @quickReadDocument.
+  ///
+  /// In en, this message translates to:
+  /// **'document'**
+  String get quickReadDocument;
+
+  /// No description provided for @quickReadMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'message'**
+  String get quickReadMessage;
 }
 
 class _AppLocalizationsDelegate

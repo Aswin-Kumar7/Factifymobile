@@ -188,7 +188,8 @@ class LocalReadyNotifier with WidgetsBindingObserver implements ReadyNotifier {
   Future<void> ready(HistoryRecord record, {required String language}) async {
     final l10n = lookupAppLocalizations(Locale(language));
     final verdict = record.verdict.factVerdict;
-    final word = ActionStyle.word(verdict, l10n);
+    // As History labels it: "Not checked" for an answer held back, never "Unconfirmed".
+    final word = ActionStyle.label(record.verdict, l10n);
     final colour = ActionStyle.colours(verdict, FactifyTokens.light).$1;
     final correct =
         verdict == FactVerdict.falseClaim ||

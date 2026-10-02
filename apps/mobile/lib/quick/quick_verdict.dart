@@ -39,6 +39,7 @@ import '../theme/typography.dart';
 import '../widgets/action_style.dart';
 import '../widgets/correction_card.dart';
 import '../widgets/ui/fx_button.dart';
+import '../widgets/what_we_read.dart';
 import 'quick_preference.dart';
 
 /// What the window over the chat can do: hand over the shared text, and close -
@@ -283,7 +284,8 @@ class _QuickVerdictSheetState extends State<QuickVerdictSheet> {
         _verdict = verdict;
         _recordId = record?.id;
         _seconds = _clock.elapsed.inSeconds;
-        _note = _fetchNote(verdict);
+        // An answer held back has no note to send back to the chat.
+        _note = verdict.withheld ? null : _fetchNote(verdict);
       });
     } on CheckFailed catch (failed) {
       if (!mounted || job != _job) return;
@@ -503,9 +505,16 @@ class _QuickVerdictSheetState extends State<QuickVerdictSheet> {
     final fact = verdict.nothingToCheck ? FactVerdict.unconfirmed : verdict.factVerdict;
     final (strong, soft) = ActionStyle.colours(fact, k);
     final style = ActionStyle.forVerdict(verdict, Theme.of(context).brightness, l10n);
-    final word = ActionStyle.label(verdict, l10n);
+    // Held back (1.8): no verdict to name, and nothing to copy back to the chat - the
+    // full result has the ways on.
+    final withheld = verdict.withheld;
+    final word = withheld ? l10n.withheldTitle : ActionStyle.label(verdict, l10n);
     final confidence = verdict.confidence;
-    final summary = firstSentence(verdict.summary ?? '');
+    final summary = withheld ? l10n.withheldBody : firstSentence(verdict.summary ?? '');
+    final read = verdict.inputRead;
+    // "Read: message" under a message says nothing the person does not know.
+    final summarised = read == null ? '' : readSummary(read, l10n);
+    final readLine = summarised == l10n.quickReadMessage ? '' : summarised;
     final chips = decidingSources(verdict).map(l10n.describeSource).toSet().take(3).toList();
     final copy = switch (fact) {
       FactVerdict.falseClaim || FactVerdict.partlyTrue => l10n.quickCopyCorrection,
@@ -514,6 +523,7 @@ class _QuickVerdictSheetState extends State<QuickVerdictSheet> {
       FactVerdict.unconfirmed => l10n.quickCopyNote,
     };
     final glyph = switch (fact) {
+      _ when withheld => Icons.visibility_off_rounded,
       FactVerdict.falseClaim => Icons.close_rounded,
       FactVerdict.partlyTrue => Icons.contrast_rounded,
       FactVerdict.misleading => Icons.priority_high_rounded,
@@ -564,8 +574,13 @@ class _QuickVerdictSheetState extends State<QuickVerdictSheet> {
                           ),
                       ],
                     ),
-                    const SizedBox(height: 3),
-                    Text(style.subhead, style: FactifyText.sans(12, color: k.ink2)),
+                    if (!withheld) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        verdictSubhead(verdict, style, l10n),
+                        style: FactifyText.sans(12, color: k.ink2),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -573,6 +588,35 @@ class _QuickVerdictSheetState extends State<QuickVerdictSheet> {
           ),
         ),
       ),
+      // When part of it could not be read, one line saying so before anything is
+      // copied into the chat; then what the answer is about, in one line.
+      if (read != null && !read.complete) ...[
+        const SizedBox(height: 10),
+        Row(
+          key: const ValueKey('quick-read-partial'),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(FxIcons.hidden, size: 15, color: read.blocked ? k.mC : k.ink3),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                read.checkedPartially
+                    ? l10n.checkedPartially(readThing(read))
+                    : l10n.readPartial(readThing(read)),
+                style: FactifyText.sans(12.5, weight: FontWeight.w600, color: k.ink),
+              ),
+            ),
+          ],
+        ),
+      ],
+      if (readLine.isNotEmpty) ...[
+        const SizedBox(height: 6),
+        Text(
+          l10n.quickRead(readLine),
+          key: const ValueKey('quick-read'),
+          style: FactifyText.sans(12, color: k.ink3),
+        ),
+      ],
       if (summary.isNotEmpty) ...[
         const SizedBox(height: 10),
         Text(summary, style: FactifyText.sans(13, color: k.ink2).copyWith(height: 1.5)),
@@ -600,24 +644,32 @@ class _QuickVerdictSheetState extends State<QuickVerdictSheet> {
         ),
       ],
       const SizedBox(height: 14),
-      FxButton(
-        label: _copied ? l10n.quickCopied : copy,
-        icon: FxIcons.copy,
-        height: 52,
-        fontSize: 15,
-        onPressed: () => unawaited(_copy()),
-      ),
+      if (!withheld)
+        FxButton(
+          label: _copied ? l10n.quickCopied : copy,
+          icon: FxIcons.copy,
+          height: 52,
+          fontSize: 15,
+          onPressed: () => unawaited(_copy()),
+        ),
       if (recordId != null) ...[
-        const SizedBox(height: 8),
+        if (!withheld) const SizedBox(height: 8),
         FxButton(
           label: l10n.quickOpenResult,
           trailingIcon: FxIcons.forward,
-          variant: FxButtonVariant.ghost,
-          height: 46,
-          fontSize: 14,
+          // The one way on from an answer held back: the full result offers the rest.
+          variant: withheld ? FxButtonVariant.primary : FxButtonVariant.ghost,
+          height: withheld ? 52 : 46,
+          fontSize: withheld ? 15 : 14,
           onPressed: () => unawaited(widget.host.openResult(recordId)),
         ),
-      ],
+      ] else if (withheld)
+        FxButton(
+          label: l10n.quickOpenApp,
+          height: 52,
+          fontSize: 15,
+          onPressed: () => unawaited(widget.host.openFullApp(widget.shared.value)),
+        ),
     ];
   }
 

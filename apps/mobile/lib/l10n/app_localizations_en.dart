@@ -2294,4 +2294,284 @@ class AppLocalizationsEn extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String whatWeReadKind(String kind) {
+    return 'What Factify read · $kind';
+  }
+
+  @override
+  String kindPostOn(String platform) {
+    return '$platform post';
+  }
+
+  @override
+  String kindVideoOn(String platform) {
+    return '$platform video';
+  }
+
+  @override
+  String get kindPost => 'Post';
+
+  @override
+  String readPartial(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'post': 'Factify could only read part of this post.',
+      'page': 'Factify could only read part of this page.',
+      'video': 'Factify could only read part of this video.',
+      'picture': 'Factify could only read part of this picture.',
+      'document': 'Factify could only read part of this document.',
+      'other': 'Factify could only read part of this.',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String get readNothing => 'Nothing could be read from it.';
+
+  @override
+  String get readShowAll => 'Show all';
+
+  @override
+  String get readInPart => 'Read only in part';
+
+  @override
+  String get readNotChecked => 'Description only, not checked';
+
+  @override
+  String get readDescribedByFactify => 'Described by Factify';
+
+  @override
+  String readHeard(String read, String total) {
+    return '$read of $total heard';
+  }
+
+  @override
+  String readHeardAll(String total) {
+    return 'All $total heard';
+  }
+
+  @override
+  String get readYoutubeLimit =>
+      'YouTube doesn\'t let Factify download the video, so its AI, face-swap and voice checks didn\'t run.';
+
+  @override
+  String get partMessage => 'Message';
+
+  @override
+  String get partPost => 'Post';
+
+  @override
+  String get partQuotedPost => 'Quoted post';
+
+  @override
+  String partQuotedPostBy(String who) {
+    return 'Quoted post by $who';
+  }
+
+  @override
+  String get partTitle => 'Title';
+
+  @override
+  String get partDescription => 'Description';
+
+  @override
+  String get partArticle => 'Article';
+
+  @override
+  String get partLinkedArticle => 'Linked article';
+
+  @override
+  String partLinkedArticleOn(String host) {
+    return 'Linked article · $host';
+  }
+
+  @override
+  String partPictureText(int index, int total) {
+    return 'Text in picture $index of $total';
+  }
+
+  @override
+  String get partOnScreenText => 'Text shown in the video';
+
+  @override
+  String get partDocumentText => 'Text in the PDF';
+
+  @override
+  String get partPictureDescription => 'What the picture shows';
+
+  @override
+  String get partVideoDescription => 'What the video shows';
+
+  @override
+  String get gapHeadlineOnly =>
+      'Only the page\'s headline and summary could be read, not the article itself.';
+
+  @override
+  String get gapTextTruncated =>
+      'The post\'s text was cut short, so the rest of it wasn\'t read.';
+
+  @override
+  String get gapPostUnavailable =>
+      'The post couldn\'t be opened. It may have been deleted or made private, or be a story.';
+
+  @override
+  String get gapLoginRequired =>
+      'The site shows this only to people who are signed in.';
+
+  @override
+  String get gapNotSupported =>
+      'Factify can\'t read posts from this site yet. Paste the text or upload a screenshot.';
+
+  @override
+  String get gapPictureUnread => 'A picture in it couldn\'t be read.';
+
+  @override
+  String get gapVideoUnread => 'The video couldn\'t be read.';
+
+  @override
+  String get gapSpeechUnread => 'What is said in the video couldn\'t be heard.';
+
+  @override
+  String get gapCutOff =>
+      'It was too long to read to the end, so only the start was read.';
+
+  @override
+  String get gapPagesUnread => 'Only some of the document\'s pages were read.';
+
+  @override
+  String get gapTooLarge => 'The video is too large to download.';
+
+  @override
+  String get gapNeedsBackground => 'Videos are read only in a full check.';
+
+  @override
+  String get gapReaderUnavailable =>
+      'What\'s needed to read this isn\'t available right now.';
+
+  @override
+  String get gapFirstPictureOnly =>
+      'Only the first picture of the album could be seen.';
+
+  @override
+  String get gapArticleTruncated =>
+      'The article is long, and its opening part was read.';
+
+  @override
+  String get gapDescriptionUnread =>
+      'The video\'s description couldn\'t be read.';
+
+  @override
+  String get gapLinkedPageUnread =>
+      'The article it links to couldn\'t be read, so it was left out.';
+
+  @override
+  String get withheldOverline => 'NOT CHECKED';
+
+  @override
+  String get withheldTitle => 'Not checked yet';
+
+  @override
+  String get withheldShort => 'Not checked';
+
+  @override
+  String get withheldBody =>
+      'Factify could not read all of this, so it has not given a verdict.';
+
+  @override
+  String get withheldCheckWhatWasRead => 'Check what was read';
+
+  @override
+  String get withheldPasteText => 'Paste the text';
+
+  @override
+  String get withheldUpload => 'Upload the picture or video';
+
+  @override
+  String get withheldCheckNote =>
+      'Checks only what Factify could read. The answer can\'t be True, because part of it wasn\'t read.';
+
+  @override
+  String checkedPartially(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'post': 'Checked from part of the post',
+      'page': 'Checked from part of the page',
+      'video': 'Checked from part of the video',
+      'picture': 'Checked from part of the picture',
+      'document': 'Checked from part of the document',
+      'other': 'Checked from part of it',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String get subheadPartlyRead => 'Part of it could not be read';
+
+  @override
+  String get partlyReadBody =>
+      'What Factify could read is supported by sources, but part of it couldn\'t be read, so the whole of it isn\'t confirmed.';
+
+  @override
+  String get pasteSheetTitle => 'Paste the text to check';
+
+  @override
+  String get pasteSheetBody =>
+      'Copy the words of the post or the article, and paste them here.';
+
+  @override
+  String get pasteSheetHint => 'Paste or type the text';
+
+  @override
+  String get notReadTitle => 'What could not be read';
+
+  @override
+  String get incompleteChecksNote =>
+      'Some checks couldn\'t run, so this answer may be incomplete.';
+
+  @override
+  String pcTitleNumbered(int index) {
+    return 'Picture $index checks';
+  }
+
+  @override
+  String quickRead(String list) {
+    return 'Read: $list';
+  }
+
+  @override
+  String get quickReadPost => 'post';
+
+  @override
+  String get quickReadQuoted => 'quoted post';
+
+  @override
+  String get quickReadPage => 'page';
+
+  @override
+  String get quickReadLinked => 'linked article';
+
+  @override
+  String quickReadPictures(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count pictures',
+      one: '1 picture',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get quickReadVideo => 'video';
+
+  @override
+  String quickReadVideoLength(String length) {
+    return 'video $length';
+  }
+
+  @override
+  String get quickReadDocument => 'document';
+
+  @override
+  String get quickReadMessage => 'message';
 }
