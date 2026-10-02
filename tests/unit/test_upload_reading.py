@@ -107,9 +107,18 @@ class _Ears:
     def __init__(self, outcome: SpeechOutcome) -> None:
         self.outcome = outcome
         self.windows: list[float] = []
+        self.time_limits: list[float | None] = []
 
-    def read_video_outcome(self, _video: bytes, *, max_seconds: float) -> SpeechOutcome:
+    def read_video_outcome(
+        self,
+        _video: bytes,
+        *,
+        max_seconds: float,
+        time_limit: float | None = None,
+        stop: Any = None,
+    ) -> SpeechOutcome:
         self.windows.append(max_seconds)
+        self.time_limits.append(time_limit)
         return self.outcome
 
 
@@ -194,7 +203,7 @@ class TestAVideoIsReadWhole:
         response = await _checked_video(request, intake, data, case_id=uuid4(), recheck=False)
 
         [(document, kwargs)] = checker.documents
-        spoken = document.index("Spoken in the video:\n" + SAID)
+        spoken = document.index("Said in the video:\n" + SAID)
         shown = document.index("Text shown in the video:\nNDTV Profit\nREPO RATE UNCHANGED")
         seen = document.index("What the video shows (described by Factify):\nA TV business")
         assert spoken < shown < seen
@@ -255,7 +264,7 @@ class TestAVideoIsReadWhole:
         response = await _checked_video(request, intake, data, case_id=uuid4(), recheck=False)
 
         [(document, _)] = checker.documents
-        assert "Spoken in the video" not in document
+        assert "Said in the video" not in document
         assert "REPO RATE UNCHANGED" in document
         body = response.model_dump()
         [gap] = body["input_read"]["gaps"]
@@ -302,7 +311,7 @@ class TestAVideoIsReadWhole:
 
         [(document, _)] = checker.documents
         assert "Text shown in the video" not in document
-        assert "Spoken in the video" in document and "described by Factify" in document
+        assert "Said in the video" in document and "described by Factify" in document
         body = response.model_dump()
         [gap] = body["input_read"]["gaps"]
         assert (gap["code"], gap["part"]) == ("reader_unavailable", "on_screen_text")
@@ -325,6 +334,187 @@ class TestAVideoIsReadWhole:
         assert "REPO RATE UNCHANGED" in document
         [note] = [item for item in response.skipped if item.check == "video_frames"]
         assert "could not describe what it shows" in note.reason
+
+    async def test_speech_cut_for_time_says_how_far_it_got(self, tmp_path: Any) -> None:
+        from app.api.verify import SPEECH_SECONDS, _checked_video
+
+        intake, data = _video(tmp_path)
+        partly = SpeechOutcome(
+            status="read",
+            transcript=Transcript(
+                text=SAID,
+                language="en",
+                language_confidence=0.98,
+                seconds_read=150.0,
+                cut_off=True,
+                audio_seconds=9.0,
+                timed_out=True,
+            ),
+            audio_seconds=9.0,
+        )
+        request, checker, ears = _request(
+            speech=partly, describer=_Describer(), words=_FrameWords()
+        )
+
+        response = await _checked_video(request, intake, data, case_id=uuid4(), recheck=False)
+
+        assert ears.time_limits == [SPEECH_SECONDS]
+        body = response.model_dump()
+        [transcript] = [
+            part for part in body["input_read"]["parts"] if part["kind"] == "transcript"
+        ]
+        assert (transcript["seconds_read"], transcript["complete"]) == (9, False)
+        [gap] = body["input_read"]["gaps"]
+        assert (gap["part"], gap["code"], gap["blocking"]) == ("transcript", "cut_off", True)
+        assert "first 0:09 of 0:14; there was no time to read the rest" in gap["detail"]
+        assert [item.check for item in checker.verified[0]["noted"]] == ["speech"]
+        [note] = [item for item in body["skipped"] if item["check"] == "video_frames"]
+        assert "listened to the first 0:09 of 0:14 for speech, and had no time" in note["reason"]
+
+    async def test_the_search_keeps_its_time_and_the_whole_check_its_ceiling(
+        self, tmp_path: Any
+    ) -> None:
+        from app.api.verify import _checked_video
+        from app.sources.base import check_seconds
+
+        intake, data = _video(tmp_path)
+        request, checker, _ = _request(speech=_heard(), describer=_Describer(), words=_FrameWords())
+        budgets: list[float | None] = []
+        verify = checker.verify
+
+        async def timed(intake: Any, **kwargs: Any) -> Any:
+            budgets.append(check_seconds.get())
+            return await verify(intake, **kwargs)
+
+        checker.verify = timed  # type: ignore[method-assign]
+        budget = check_seconds.set(300.0)
+        try:
+            await _checked_video(request, intake, data, case_id=uuid4(), recheck=False)
+            assert check_seconds.get() == 300.0
+        finally:
+            check_seconds.reset(budget)
+
+        # A short clip's reading leaves the search its usual time, counted from when
+        # the reading was done.
+        assert budgets == [300.0]
+        assert checker.verified[0]["started_at"] is not None
+
+    async def test_frames_unread_for_time_are_said_and_the_answer_is_still_kept(
+        self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The same video is cut the same way every time: a gap that cannot decide the
+        answer no longer keeps it out of the cache (2026-10-03 review)."""
+        from app.api import verify as verify_module
+
+        monkeypatch.setattr(verify_module, "FRAMES_TEXT_SECONDS", 0.0)
+        intake, data = _video(tmp_path)
+        request, checker, _ = _request(speech=_heard(), describer=_Describer(), words=_FrameWords())
+
+        response = await verify_module._checked_video(
+            request, intake, data, case_id=uuid4(), recheck=False
+        )
+
+        body = response.model_dump()
+        [gap] = body["input_read"]["gaps"]
+        assert (gap["part"], gap["code"], gap["blocking"]) == ("on_screen_text", "cut_off", False)
+        assert checker.verified[0]["noted"] == ()
+        [said] = [item for item in body["skipped"] if item["check"] == "video_text"]
+        assert said["kind"] == "reading" and "there was no time for the rest" in said["reason"]
+
+    async def test_with_no_frames_across_it_the_keyframes_are_read(
+        self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Every grab across the clip failed: the picture checks' own frames are read,
+        rather than nothing, as the middle one always was before."""
+        from app.api.verify import _checked_video
+        from app.media.video import FramesRead, KeyframeExtractor
+
+        async def nothing(self: Any, source: Any, workspace: Any, duration: float) -> FramesRead:
+            return FramesRead(
+                duration_seconds=duration, reason="no frame could be taken from the video"
+            )
+
+        monkeypatch.setattr(KeyframeExtractor, "_frames_to_read", nothing)
+        intake, data = _video(tmp_path)
+        words, describer = _FrameWords(), _Describer()
+        request, checker, _ = _request(speech=_heard(), describer=describer, words=words)
+
+        response = await _checked_video(request, intake, data, case_id=uuid4(), recheck=False)
+
+        [(document, _)] = checker.documents
+        assert "Text shown in the video:\nNDTV Profit" in document
+        assert words.seconds and len(describer.sheets) == 1
+        body = response.model_dump()
+        [gap] = body["input_read"]["gaps"]
+        # The keyframes span the whole of a clip this short: said, but nothing missed.
+        assert (gap["part"], gap["code"], gap["blocking"]) == ("video", "cut_off", False)
+        assert gap["detail"].startswith(
+            "No frames could be taken across the video (no frame could be taken from the video)"
+        )
+        assert "of its 0:14" in gap["detail"]
+        [note] = [item for item in body["skipped"] if item["check"] == "video_frames"]
+        assert "as none could be taken across it" in note["reason"]
+
+    def test_a_video_whose_length_is_unknown_is_said_to_be_read_in_part(self) -> None:
+        """A recording whose file gives no length (a browser's WebM): what its frames
+        reach is all that can be said of it."""
+        from app.api.verify import _Described, _video_note, _video_reading
+        from app.media.frame_text import FramesText
+        from app.media.video import ExtractedVideo, FramesRead, Keyframe
+
+        frames = tuple(
+            Keyframe(index=index, timestamp_ms=moment, data=b"frame")
+            for index, moment in enumerate((0, 4_000, 31_500))
+        )
+        taken = FramesRead(
+            frames=frames,
+            window_seconds=31.5,
+            duration_seconds=0.0,
+            reason="the video has no length",
+            from_keyframes=True,
+        )
+        shown = FramesText(text="BREAKING NEWS", frames_read=3, frames_total=3)
+        looked = _Described(OcrOutcome(reason="unavailable: no picture reader is set up"))
+
+        read = _video_reading(taken, _heard(seconds=40.0), shown, looked, duration=0.0)
+        note = _video_note(
+            ExtractedVideo(probe=None, keyframes=frames),
+            taken,
+            _heard(seconds=40.0),
+            shown,
+            looked,
+            window=600,
+        )
+
+        [gap] = read.reading.gaps
+        assert (gap.code.value, gap.blocking) == ("cut_off", True)
+        assert gap.detail.endswith("from 3 frames of its first 0:31 (its length is unknown).")
+        assert "read the words on 3 frames taken from 0:00 to 0:31;" in note
+        assert " of 0:00" not in note
+        assert "listened to all 0:40 of it for speech" in note
+
+
+class TestTheTimeAVideoLeavesTheSearch:
+    """However long the reading took, the search keeps 150 s, and the whole check
+    stays within the 420 s the clients wait (contract 1.8)."""
+
+    @pytest.mark.parametrize(
+        ("spent", "searching"), [(20.0, 300.0), (120.0, 300.0), (200.0, 220.0), (330.0, 150.0)]
+    )
+    def test_in_the_background(self, spent: float, searching: float) -> None:
+        from app.api.verify import _searching_seconds
+        from app.sources.base import check_seconds
+
+        budget = check_seconds.set(300.0)
+        try:
+            assert _searching_seconds(spent) == searching
+        finally:
+            check_seconds.reset(budget)
+
+    def test_not_in_the_background(self) -> None:
+        from app.api.verify import _searching_seconds
+
+        assert _searching_seconds(30.0) is None
 
 
 # ------------------------------------------------------------------ AI on graphics
@@ -382,17 +572,34 @@ class TestWhatCountsAsAiMade:
 
 
 class TestWhatIsADesignedPicture:
-    @pytest.mark.parametrize("kind", ["POSTER", "TV_GRAPHIC", "DOCUMENT", "CHAT_MESSAGE", "MEME"])
+    @pytest.mark.parametrize("kind", ["POSTER", "DOCUMENT", "CHAT_MESSAGE"])
     def test_made_kinds_are_designed(self, kind: str) -> None:
         assert looks_designed(kind)
+        # The Labour Ministry's EPF graphic: 0.31 of it text on our own reader.
+        assert looks_designed(kind, 0.31)
+        assert looks_designed(kind, 0.15)
 
-    @pytest.mark.parametrize("kind", ["PHOTO", "SOCIAL_POST", "NEWS_ARTICLE", "OTHER", None])
-    def test_a_post_or_a_photo_is_judged_as_a_photograph(self, kind: str | None) -> None:
+    @pytest.mark.parametrize(
+        "kind", ["PHOTO", "SOCIAL_POST", "NEWS_ARTICLE", "TV_GRAPHIC", "MEME", "OTHER", None]
+    )
+    def test_a_post_a_photo_a_meme_or_a_tv_frame_is_judged_as_a_photograph(
+        self, kind: str | None
+    ) -> None:
+        """A meme or a TV frame is as often a photograph with words on it: an AI picture
+        of a politician under one caption is a meme (2026-10-03 review)."""
         assert not looks_designed(kind)
-        assert not looks_designed(kind, 0.08)
+        assert not looks_designed(kind, 0.12)
+
+    def test_a_made_kind_with_little_text_on_it_is_judged_as_a_photograph(self) -> None:
+        """The kind is the reader's word, and can change between readings: the AI
+        BRICS selfie (0.12 of it text) called a poster on one reading keeps its
+        detector."""
+        assert not looks_designed("POSTER", 0.12)
+        assert not looks_designed("DOCUMENT", 0.05)
 
     def test_a_picture_that_is_mostly_text_is_designed_whatever_it_was_called(self) -> None:
         assert looks_designed("SOCIAL_POST", 0.35)
+        assert looks_designed("MEME", 0.3)
         assert looks_designed(None, 0.2)
 
 
@@ -480,6 +687,51 @@ class TestTheDetectorOnAPicture:
         assert advisory["signal"] == "ADVISORY_SUSPICION"
         assert asked == [True]
 
+    async def test_a_repeat_from_the_cache_is_judged_as_the_first_check_was(self) -> None:
+        """A screenshot that is mostly text, called a post: designed by how much of it
+        is text, which a repeat served from the cache used to forget, and show "likely
+        AI" on the same picture (2026-10-03 review)."""
+        from app.main import create_app
+
+        text = "Breaking: all Saturdays declared bank holidays by the Government of India"
+        reading = OcrOutcome(text=text, language=detect(text), kind="SOCIAL_POST", text_area=0.35)
+        stored: list[Any] = []
+
+        class _Reader:
+            async def transcribe(self, image: bytes, *, mime_type: str = "") -> OcrOutcome:
+                return reading
+
+        class _Orchestrator:
+            async def cached(self, intake: Any, *, case_id: UUID) -> Any:
+                return stored[0] if stored else None
+
+            async def verify(self, intake: Any, *, case_id: UUID, claims: Any, **kw: Any) -> Any:
+                result = _result(case_id=case_id)
+                stored.append(result)
+                return result
+
+        app = create_app()
+        app.state.ocr = _Reader()
+        app.state.claim_pipeline = _Checker()
+        app.state.orchestrator = _Orchestrator()
+        app.state.media_inspector = _Inspector()
+        transport = httpx.ASGITransport(app=app)
+        bodies = []
+        async with httpx.AsyncClient(transport=transport, base_url="http://factify.test") as api:
+            for _ in range(2):
+                response = await api.post(
+                    "/v1/verify/file",
+                    files={"file": ("card.png", _png(), "image/png")},
+                    data={"consent_to_process_media": "true"},
+                )
+                assert response.status_code == 200
+                bodies.append(response.json())
+
+        assert len(stored) == 1  # the second was the cache's
+        for body in bodies:
+            assert body["media_report"]["detector"]["why"] == "text_card"
+            assert not [item for item in body["advisories"] if item["provider"] == "ai_generation"]
+
 
 # ------------------------------------------------------------------ the picture reader
 
@@ -490,7 +742,11 @@ class TestWhatTheReaderIsAskedFor:
 
         for prompt in (_INSTRUCTION, _DESCRIBE_INSTRUCTION, _VIDEO_INSTRUCTION):
             assert '"appears to be <name>"' in prompt
-            assert "never guess who a\n    private person is" in prompt
+            assert "never guess who a private person is" in prompt
+            # An office-holder is named from what the image writes, never from a
+            # face: the reader called the RBI Governor by his predecessor's name.
+            assert "central bank governor" in prompt
+            assert "named only when the image writes their\n    name" in prompt
             assert "FAKE, FALSE or MISLEADING" in prompt
             assert "PIB Fact Check" in prompt
             assert "masthead" in prompt and "watermark" in prompt
@@ -604,6 +860,20 @@ class TestEveryPictureIsDescribed:
         assert (outcome.kind, outcome.publisher) == ("DOCUMENT", "PIB Fact Check")
         assert outcome.text_area == pytest.approx(0.25)
 
+    async def test_a_scanned_pdfs_pages_are_read_for_their_words_alone(self) -> None:
+        """Only the pages' words are used: three descriptions were three paid calls
+        thrown away (2026-10-03 review)."""
+        hosted = _Hosted(OcrOutcome(description="unused"))
+        page = _Local(_confident("Circular No. 12 of 2026 on bank holidays"))
+        ocr = LocalFirstOcr(local=page, hosted=hosted)  # type: ignore[arg-type]
+
+        outcome = await ocr.transcribe(_png(), describe=False)
+
+        assert hosted.asked == []
+        assert (
+            outcome.text == "Circular No. 12 of 2026 on bank holidays" and outcome.description == ""
+        )
+
     async def test_a_description_that_fails_leaves_our_words(self) -> None:
         hosted = _Hosted(OcrOutcome(reason="provider returned 429"))
         ocr = LocalFirstOcr(local=_Local(_confident("RBI keeps repo rate at 5.25%")), hosted=hosted)  # type: ignore[arg-type]
@@ -688,7 +958,7 @@ class TestTheTextClaimsAreFoundIn:
         from app.extraction.reading import PartKind, Reading, ReadPart
         from app.media.composed import (
             PICTURE_DESCRIBED,
-            SPOKEN_IN_VIDEO,
+            SAID_IN_VIDEO,
             TEXT_IN_VIDEO,
             VIDEO_DESCRIBED,
             compose,
@@ -697,7 +967,7 @@ class TestTheTextClaimsAreFoundIn:
         reading = Reading(
             kind="video",
             parts=(
-                ReadPart(PartKind.TRANSCRIPT, "Rates are unchanged.", "whisper", SPOKEN_IN_VIDEO),
+                ReadPart(PartKind.TRANSCRIPT, "Rates are unchanged.", "whisper", SAID_IN_VIDEO),
                 ReadPart(PartKind.ON_SCREEN_TEXT, "", "frames.ocr", TEXT_IN_VIDEO),
                 ReadPart(
                     PartKind.VIDEO_DESCRIPTION, "A TV broadcast.", "ocr.hosted", VIDEO_DESCRIBED
@@ -708,7 +978,7 @@ class TestTheTextClaimsAreFoundIn:
         composed = compose(reading)
 
         assert composed.text == (
-            "Spoken in the video:\nRates are unchanged.\n\n"
+            "Said in the video:\nRates are unchanged.\n\n"
             "What the video shows (described by Factify):\nA TV broadcast."
         )
         assert composed.span_of(1) is None

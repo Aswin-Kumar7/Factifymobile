@@ -74,8 +74,16 @@ class Transcript:
     # which is `audio_seconds`.
     seconds_read: float
     cut_off: bool = False
-    # Seconds of the sound that were heard: the read window, or the clip if shorter.
+    # Seconds of the sound that were heard: the read window, or the clip if shorter;
+    # up to the last stretch read when there was no time for the rest.
     audio_seconds: float | None = None
+    # Reading stopped at its time limit (`read_video_outcome(time_limit=...)`), before
+    # the end of the sound: `audio_seconds` says how far it got.
+    timed_out: bool = False
+
+
+class SpeechTimedOut(Exception):
+    """No speech was read before the time limit: nothing can be said of the sound."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,10 +153,24 @@ class SpeechReader:
         return self.read_video_outcome(video, max_seconds=max_seconds).transcript
 
     def read_video_outcome(
-        self, video: bytes, *, max_seconds: float = MAX_SECONDS
+        self,
+        video: bytes,
+        *,
+        max_seconds: float = MAX_SECONDS,
+        time_limit: float | None = None,
+        stop: threading.Event | None = None,
     ) -> SpeechOutcome:
         """What is said in a video's first `max_seconds`, and what stopped it when
-        nothing is. Never raises: a reader that fails says so in the outcome."""
+        nothing is. Never raises: a reader that fails says so in the outcome.
+
+        With `time_limit`, reading stops that many seconds after it began (decoding
+        included) at the end of the stretch being read, and the transcript says how
+        far it got (`Transcript.timed_out`): ten minutes of speech take minutes of
+        CPU on the server's four cores, shared with everything else a check reads, and
+        the person is waiting. `stop`, once set, stops it the same way: the check it
+        was for was stopped, and a thread cannot be cancelled from outside.
+        """
+        deadline = time.perf_counter() + time_limit if time_limit is not None else None
         try:
             # A second more than the window, so a clip longer than it is known to be.
             sound = decode_sound(video, max_seconds=max_seconds + 1)
@@ -181,8 +203,14 @@ class SpeechReader:
             )
         try:
             transcript = self.read(
-                samples[:window], cut_off=len(samples) > window, max_seconds=max_seconds
+                samples[:window],
+                cut_off=len(samples) > window,
+                max_seconds=max_seconds,
+                deadline=deadline,
+                stop=stop,
             )
+        except SpeechTimedOut as late:
+            return SpeechOutcome(status="failed", audio_seconds=heard, reason=str(late))
         except Exception as error:
             logger.exception("the video's speech could not be read")
             return SpeechOutcome(
@@ -194,21 +222,39 @@ class SpeechReader:
             return SpeechOutcome(
                 status="no_speech", audio_seconds=heard, reason="nothing in the sound is speech"
             )
+        if transcript.timed_out:
+            return SpeechOutcome(
+                status="read", transcript=transcript, audio_seconds=transcript.audio_seconds
+            )
         return SpeechOutcome(status="read", transcript=transcript, audio_seconds=heard)
 
     def read(
-        self, samples: np.ndarray, *, cut_off: bool = False, max_seconds: float | None = None
+        self,
+        samples: np.ndarray,
+        *,
+        cut_off: bool = False,
+        max_seconds: float | None = None,
+        deadline: float | None = None,
+        stop: threading.Event | None = None,
     ) -> Transcript | None:
         """What is said in 16 kHz mono samples, or None when nothing is.
 
         The words are kept to `max_characters(max_seconds)`; with no window given, to
         that of the samples' own length.
+
+        Whisper writes the sound down a stretch at a time, as its stretches are asked
+        for, so reading can stop between two: at `deadline` (a `time.perf_counter()`
+        moment) or once `stop` is set. What was read up to there is the transcript,
+        `timed_out`, heard up to the end of its last stretch; with nothing read by
+        then, `SpeechTimedOut`.
         """
         self.load()
         assert self._model is not None
         audio_seconds = round(len(samples) / RATE, 1)
         limit = max_characters(audio_seconds if max_seconds is None else max_seconds)
         began = time.perf_counter()
+        timed_out = False
+        reached = 0.0
         with self._lock:
             segments, info = self._model.transcribe(
                 samples,
@@ -218,7 +264,19 @@ class SpeechReader:
                 # becomes the next one's prompt and repeats.
                 condition_on_previous_text=False,
             )
-            kept = [segment for segment in segments if _speech(segment)]
+            kept = []
+            for segment in segments:
+                reached = max(reached, float(segment.end))
+                if _speech(segment):
+                    kept.append(segment)
+                if (stop is not None and stop.is_set()) or (
+                    deadline is not None and time.perf_counter() >= deadline
+                ):
+                    timed_out = reached < audio_seconds - 1.0
+                    break
+            close = getattr(segments, "close", None)
+            if timed_out and close is not None:
+                close()
         spoken = sum(segment.end - segment.start for segment in kept)
         text = " ".join(" ".join(segment.text.split()) for segment in kept).strip()
         seconds = round(time.perf_counter() - began, 1)
@@ -226,14 +284,20 @@ class SpeechReader:
             logger,
             "speech read",
             module="media.speech",
-            outcome="ok" if text else "empty",
+            outcome=("cut_off" if timed_out else "ok") if text else "empty",
             provider="local",
             language=getattr(info, "language", None),
             speech_seconds=round(spoken, 1),
             audio_seconds=audio_seconds,
+            heard_seconds=round(reached, 1) if timed_out else audio_seconds,
             characters=len(text),
             seconds=seconds,
         )
+        if timed_out and (spoken < MIN_SPEECH_SECONDS or not text):
+            raise SpeechTimedOut(
+                f"there was no time to read its speech ({round(reached)} of "
+                f"{round(audio_seconds)} s heard, nothing said)"
+            )
         if spoken < MIN_SPEECH_SECONDS or not text:
             return None
         return Transcript(
@@ -241,23 +305,37 @@ class SpeechReader:
             language=getattr(info, "language", None),
             language_confidence=getattr(info, "language_probability", None),
             seconds_read=seconds,
-            cut_off=cut_off or len(text) > limit,
-            audio_seconds=audio_seconds,
+            cut_off=cut_off or timed_out or len(text) > limit,
+            audio_seconds=round(reached, 1) if timed_out else audio_seconds,
+            timed_out=timed_out,
         )
 
 
 async def read_speech(
-    reader: SpeechReader | None, video: bytes, *, max_seconds: float = MAX_SECONDS
+    reader: SpeechReader | None,
+    video: bytes,
+    *,
+    max_seconds: float = MAX_SECONDS,
+    time_limit: float | None = None,
 ) -> SpeechOutcome:
     """What is said in a video, read off the event loop; "unavailable" with no reader.
 
     Never raises: whatever goes wrong is a "failed" outcome, and the video is still
-    checked from its frames.
+    checked from its frames. Within `time_limit` seconds when given
+    (`SpeechReader.read_video_outcome`). Cancelled, it stops the reader at the end of
+    the stretch it is on, rather than leave it reading for nobody.
     """
     if reader is None:
         return SpeechOutcome(status="unavailable", reason="speech is not read on this server")
+    stop = threading.Event()
+    options: dict[str, Any] = {"max_seconds": max_seconds}
+    if time_limit is not None:
+        options.update(time_limit=time_limit, stop=stop)
     try:
-        return await asyncio.to_thread(reader.read_video_outcome, video, max_seconds=max_seconds)
+        return await asyncio.to_thread(reader.read_video_outcome, video, **options)
+    except asyncio.CancelledError:
+        stop.set()
+        raise
     except Exception as error:
         logger.exception("the video's speech could not be read")
         return SpeechOutcome(status="failed", reason=f"the speech reader failed ({_named(error)})")

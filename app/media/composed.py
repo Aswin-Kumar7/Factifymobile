@@ -23,13 +23,19 @@ Pure: no input or output.
 
 from __future__ import annotations
 
-from app.extraction.reading import Composed, Reading, picture_text_label
+from app.extraction.reading import (
+    SAID_IN_VIDEO,
+    TEXT_IN_VIDEO,
+    Composed,
+    Reading,
+    picture_text_label,
+)
 
 # The labels, exactly. A picture's text is "Text in the picture", or "Text in
-# picture 2 of 3" in a post with several (`picture_text_label`).
+# picture 2 of 3" in a post with several (`picture_text_label`). What is said in a
+# video and the words shown on it are the contract's own labels (`SAID_IN_VIDEO`,
+# `TEXT_IN_VIDEO`), so an uploaded video and one read from a link say the same.
 PICTURE_DESCRIBED = "What the picture shows (described by Factify)"
-SPOKEN_IN_VIDEO = "Spoken in the video"
-TEXT_IN_VIDEO = "Text shown in the video"
 VIDEO_DESCRIBED = "What the video shows (described by Factify)"
 POST_TEXT = "Post text"
 QUOTED_POST = "Quoted post"
@@ -38,7 +44,7 @@ __all__ = [
     "PICTURE_DESCRIBED",
     "POST_TEXT",
     "QUOTED_POST",
-    "SPOKEN_IN_VIDEO",
+    "SAID_IN_VIDEO",
     "TEXT_IN_VIDEO",
     "VIDEO_DESCRIBED",
     "compose",

@@ -370,18 +370,51 @@ class TestAnUploadedImageIsReadAndChecked:
         assert (missing["code"], missing["part"]) == ("cut_off", "picture_text")
 
     @pytest.mark.anyio
-    async def test_a_picture_with_no_text_is_checked_from_what_it_shows(self) -> None:
-        """A photograph with no words can still carry a claim: who is in it, where.
-        What it shows is checked, under Factify's own label (2026-10-03)."""
-        reading = OcrOutcome(text="", description="A flooded street.", kind="PHOTO")
+    @pytest.mark.parametrize("text", ["", "Exclusive Minds"])
+    async def test_a_picture_with_no_words_of_its_own_is_checked_as_a_picture(
+        self, text: str
+    ) -> None:
+        """An old flood photograph forwarded as new: no claims are made of Factify's
+        own description of it, which no search can settle, so it reaches the checker
+        with none and is asked its own questions - has it been published before, does
+        its file say where it came from (`MediaVerification`). A watermark is no words
+        of its own (2026-10-03 review)."""
+        reading = OcrOutcome(
+            text=text, language=detect(text), description="A flooded street.", kind="PHOTO"
+        )
         app, seen = self._app(reading)
 
         response = await self._upload(app)
 
-        assert seen["extracted"][0][0] == (
-            "What the picture shows (described by Factify):\nA flooded street."
+        # Only the words on it are looked in for claims, as before it was described.
+        assert [document for document, _ in seen["extracted"]] == (
+            [f"Text in the picture:\n{text}"] if text else []
         )
-        assert response.json()["image_reading"]["description"] == "A flooded street."
+        if not text:
+            assert seen["claims"] == [[]]
+        body = response.json()
+        assert body["image_reading"]["description"] == "A flooded street."
+        [described] = [
+            part for part in body["input_read"]["parts"] if part["kind"] == "picture_description"
+        ]
+        assert not described["checked"] and described["char_start"] is None
+
+    @pytest.mark.anyio
+    async def test_a_picture_with_words_of_its_own_is_checked_with_what_it_shows(self) -> None:
+        reading = OcrOutcome(
+            text="BRICS SUMMIT 2026 STRONGER TOGETHER",
+            description="A selfie of leaders who appear to be Vladimir Putin and Narendra Modi.",
+            kind="SOCIAL_POST",
+        )
+        app, seen = self._app(reading)
+
+        await self._upload(app)
+
+        assert seen["extracted"][0][0] == (
+            "Text in the picture:\nBRICS SUMMIT 2026 STRONGER TOGETHER\n\n"
+            "What the picture shows (described by Factify):\nA selfie of leaders who appear "
+            "to be Vladimir Putin and Narendra Modi."
+        )
 
     @pytest.mark.anyio
     async def test_a_picture_with_nothing_read_from_it_is_checked_as_a_picture(self) -> None:

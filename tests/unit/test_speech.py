@@ -134,7 +134,7 @@ class TestAVideosSpeechInTheCheck:
         assert heard.transcript is None
 
     async def test_what_is_said_is_passed_on_with_the_whole_window(self) -> None:
-        from app.api.verify import _heard
+        from app.api.verify import SPEECH_SECONDS, _heard
 
         said = Transcript(
             text="Every woman gets Rs 5,000.",
@@ -144,17 +144,28 @@ class TestAVideosSpeechInTheCheck:
             audio_seconds=129.0,
         )
         windows: list[float] = []
+        limits: list[float | None] = []
 
         class _Reader:
-            def read_video_outcome(self, _video: bytes, *, max_seconds: float) -> SpeechOutcome:
+            def read_video_outcome(
+                self,
+                _video: bytes,
+                *,
+                max_seconds: float,
+                time_limit: float | None = None,
+                stop: object = None,
+            ) -> SpeechOutcome:
                 windows.append(max_seconds)
+                limits.append(time_limit)
                 return SpeechOutcome(status="read", transcript=said, audio_seconds=129.0)
 
         heard = await _heard(self._request(_Reader()), b"video", max_seconds=600)  # type: ignore[arg-type]
 
         assert heard.transcript == said
-        # The whole clip up to the background window, not the first three minutes.
+        # The whole clip up to the background window, not the first three minutes,
+        # within the time a check can give it.
         assert windows == [600]
+        assert limits == [SPEECH_SECONDS]
 
 
 # ------------------------------------------------------------ what happened (1.8)
@@ -352,6 +363,140 @@ class TestTheWindow:
         assert said.startswith(short.transcript.text)
         assert said[len(short.transcript.text)] == " "
         assert short.transcript.cut_off
+
+
+class _Clock:
+    """`time` for the reader, moved on by the stand-in Whisper as it writes."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def perf_counter(self) -> float:
+        return self.now
+
+
+class _SlowWhisper:
+    """Writes a stretch every ten seconds of processing, as Whisper does: lazily."""
+
+    def __init__(self, segments: list[_Segment], clock: _Clock) -> None:
+        self._segments = segments
+        self._clock = clock
+        self.written = 0
+
+    def transcribe(self, _samples: object, **_: object) -> tuple[object, object]:
+        def stretches() -> object:
+            for segment in self._segments:
+                self._clock.now += 10.0
+                self.written += 1
+                yield segment
+
+        return stretches(), SimpleNamespace(language="en", language_probability=0.9)
+
+
+class TestATimeLimit:
+    """Ten minutes of speech take minutes of the server's four cores: a check cannot
+    wait for all of it (2026-10-03 review)."""
+
+    @staticmethod
+    def _slow(
+        monkeypatch: pytest.MonkeyPatch, segments: list[_Segment]
+    ) -> tuple[SpeechReader, _SlowWhisper]:
+        clock = _Clock()
+        monkeypatch.setattr(speech_module, "time", clock)
+        whisper = _SlowWhisper(segments, clock)
+        reader = SpeechReader(directory="nowhere")
+        reader._model = whisper
+        return reader, whisper
+
+    def test_reading_stops_at_its_limit_and_says_how_far_it_got(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _sounds(monkeypatch, _seconds_of_sound(300))
+        segments = [
+            _Segment(f"Sentence number {index}.", 30.0 * index, 30.0 * index + 25)
+            for index in range(10)
+        ]
+        reader, whisper = self._slow(monkeypatch, segments)
+
+        outcome = reader.read_video_outcome(b"video", max_seconds=600, time_limit=25)
+
+        # Three stretches written by the time the limit passed, and no more asked for.
+        assert whisper.written == 3
+        assert outcome.status == "read" and not outcome.unread
+        transcript = outcome.transcript
+        assert transcript is not None
+        assert transcript.text == "Sentence number 0. Sentence number 1. Sentence number 2."
+        assert transcript.timed_out and transcript.cut_off
+        assert transcript.audio_seconds == outcome.audio_seconds == 85.0
+
+    def test_within_its_limit_it_is_read_whole(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _sounds(monkeypatch, _seconds_of_sound(60))
+        segments = [_Segment("The dam has burst.", 0.0, 4.0), _Segment("Leave now.", 50, 59.5)]
+        reader, _ = self._slow(monkeypatch, segments)
+
+        outcome = reader.read_video_outcome(b"video", max_seconds=600, time_limit=150)
+
+        assert outcome.transcript is not None
+        assert not outcome.transcript.timed_out and not outcome.transcript.cut_off
+        assert outcome.audio_seconds == 60.0
+
+    def test_nothing_read_by_its_limit_is_a_gap_not_a_silence(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _sounds(monkeypatch, _seconds_of_sound(300))
+        segments = [
+            _Segment("Thank you.", 0.0, 3.0, no_speech_prob=0.9, avg_logprob=-1.4),
+            _Segment("The dam has burst.", 200.0, 204.0),
+        ]
+        reader, whisper = self._slow(monkeypatch, segments)
+
+        outcome = reader.read_video_outcome(b"video", max_seconds=600, time_limit=5)
+
+        assert whisper.written == 1
+        assert outcome.status == "failed" and outcome.unread
+        assert outcome.reason is not None and "no time to read its speech" in outcome.reason
+
+    def test_a_stopped_check_stops_the_reading(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import threading
+
+        _sounds(monkeypatch, _seconds_of_sound(300))
+        segments = [
+            _Segment(f"Sentence {index}.", 30.0 * index, 30.0 * index + 25) for index in range(10)
+        ]
+        reader, whisper = self._slow(monkeypatch, segments)
+        stop = threading.Event()
+        stop.set()
+
+        outcome = reader.read_video_outcome(b"video", max_seconds=600, time_limit=1000, stop=stop)
+
+        # The stretch being written is finished, and nothing more is asked for.
+        assert whisper.written == 1
+        assert outcome.transcript is not None and outcome.transcript.timed_out
+        assert outcome.transcript.text == "Sentence 0."
+
+    async def test_cancelling_the_check_tells_the_reader_to_stop(self) -> None:
+        import asyncio
+        import threading
+
+        started, stopped = threading.Event(), threading.Event()
+
+        class _Reader:
+            def read_video_outcome(
+                self, _video: bytes, *, max_seconds: float, time_limit: float, stop: threading.Event
+            ) -> SpeechOutcome:
+                started.set()
+                stopped.set() if stop.wait(5) else None
+                return SpeechOutcome(status="no_speech")
+
+        task = asyncio.create_task(
+            read_speech(_Reader(), b"video", max_seconds=600, time_limit=150)  # type: ignore[arg-type]
+        )
+        await asyncio.to_thread(started.wait, 5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert await asyncio.to_thread(stopped.wait, 5)
 
 
 class TestReadingOffTheEventLoop:

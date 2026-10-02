@@ -360,7 +360,16 @@ class LocalFirstOcr:
         """The hosted reader, for what a video shows (`OcrExtractor.describe_video`)."""
         return self._hosted
 
-    async def transcribe(self, image: bytes, *, mime_type: str = "image/jpeg") -> OcrOutcome:
+    async def transcribe(
+        self, image: bytes, *, mime_type: str = "image/jpeg", describe: bool = True
+    ) -> OcrOutcome:
+        """The picture's words, and what it shows.
+
+        Without `describe`, the words alone when ours are good: for a scanned PDF's page
+        images, whose text is all that is used, three descriptions were three paid
+        calls thrown away. The hosted reader, when it is asked for the words, describes
+        in the same call, at no extra cost.
+        """
         import asyncio
 
         reading: LocalReading | None = None
@@ -397,6 +406,8 @@ class LocalFirstOcr:
                 model_id=MODEL_ID,
                 text_area=reading.text_area,
             )
+            if not describe:
+                return read
             return await self._with_description(read, image, mime_type=mime_type)
 
         if reading is not None:

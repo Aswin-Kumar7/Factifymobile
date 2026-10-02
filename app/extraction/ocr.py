@@ -71,7 +71,7 @@ PROVIDER = "llm"
 # What a picture or a video is read and described as. Part of an upload's cache
 # identity (`app/api/verify.py`), so a stored verdict about what an older reader made
 # of a picture is not served once the reading has changed.
-READER_VERSION = "2026.10.03.1"
+READER_VERSION = "2026.10.03.2"
 
 # The longest reading asked for. A forward, a post or a screenshot of an article reads
 # in 130-500 tokens, a dense page in a few thousand. A picture with nothing legible in
@@ -98,31 +98,44 @@ KINDS = (
     "OTHER",
 )
 
-# Kinds that are made rather than photographed: a designed card or poster, a TV
-# channel's graphic, a document, a chat, a meme. The AI-picture detector is not
-# trusted on these (`looks_designed`): it called the Labour Ministry's EPF graphic
-# 100% AI-made, PIB's fact-check card 99% and a gazette screenshot 94% (2026-10-02).
-DESIGNED_KINDS = frozenset({"POSTER", "TV_GRAPHIC", "DOCUMENT", "CHAT_MESSAGE", "MEME"})
+# Kinds that are made rather than photographed: a designed card or poster, a
+# document, a chat. The AI-picture detector is not trusted on these
+# (`looks_designed`): it called the Labour Ministry's EPF graphic 100% AI-made, PIB's
+# fact-check card 99% and a gazette screenshot 94% (2026-10-02). Not a meme or a TV
+# frame, which are as often a photograph with words on it - an AI picture of a
+# politician under one caption is a meme - and are judged by their text alone.
+DESIGNED_KINDS = frozenset({"POSTER", "DOCUMENT", "CHAT_MESSAGE"})
 # A picture whose text covers this share of it is a card or a screenshot of text,
-# whatever kind it was called - or when it could not be described at all.
+# whatever kind it was called - or when it could not be described at all. The three
+# genuine graphics above measured 0.30-0.31 on our own reader; the AI BRICS selfie,
+# a post with a photograph in it, 0.12.
 TEXT_DENSE_AREA = 0.2
+# The kind is the hosted reader's word and can change from one reading to the next,
+# so it counts only with some text behind it: a mislabelled photograph does not turn
+# the detector off. Unknown (no reader of our own here), the kind is taken alone.
+DESIGNED_KIND_AREA = 0.15
 
 _SEEN = """\
   - who the people are. Name a widely recognised public figure - a head of state or
     government, a national minister or party leader, a famous film star or
     sportsperson - when the face is clearly recognisable, as "appears to be <name>".
     Never infer who someone is from a title, a role or a caption ("Governor", "Army
-    chief"), nor from who you believe holds an office: offices change hands. Name
-    anyone else only when the image itself names them, and never guess who a
-    private person is. A name written in the image is given exactly as written,
-    never replaced by one you think more likely; small print you cannot read with
-    certainty is left out.
+    chief"), nor from who you believe holds an office: offices change hands. Anyone
+    else - a central bank governor, a military or police officer, a judge, an
+    official, a news anchor or reporter - is named only when the image writes their
+    name, and otherwise described by what is seen ("a man speaking at an RBI
+    podium"); never guess who a private person is. A name written in the image is
+    given exactly as written, never replaced by one you think more likely; small
+    print you cannot read with certainty is left out.
   - marks on it, as things seen: a stamp or label such as FAKE, FALSE or MISLEADING
     and where it is; a fact-checker's logo (PIB Fact Check, BOOM, Alt News and the
     like); a news channel's logo or a newspaper's masthead; a watermark.
   - visible signs that it was generated or altered by AI, or edited: warped hands,
     faces or lettering, a face or an object pasted in, lighting or edges that do not
-    match. Only what can be seen; nothing when there is nothing.
+    match. Only what can be seen. When nothing can, say nothing about AI or editing
+    at all - never that there are no signs of it, which a good fake also shows.
+  Say only what is there, never what is not: no sentence such as "no logo, stamp,
+  watermark or sign of editing is visible".
   Never say yourself whether anything in it is true, false or fake: a FAKE stamp is
   reported as a stamp, not as your finding."""
 
@@ -287,13 +300,16 @@ class OcrOutcome:
 def looks_designed(kind: str | None, text_area: float | None = None) -> bool:
     """Whether a picture is a designed graphic, a document or a screenshot of text.
 
-    By what the hosted reader called it (`DESIGNED_KINDS`), or by how much of it is
-    text when it was called something else or could not be described. A post or a
-    news page with a photograph in it is neither, and its photograph is judged as one.
+    By how much of it is text (`TEXT_DENSE_AREA`), or by what the hosted reader called
+    it (`DESIGNED_KINDS`) with some text behind that (`DESIGNED_KIND_AREA`). A post or
+    a news page with a photograph in it is neither, and its photograph is judged as
+    one.
     """
-    if (kind or "").upper() in DESIGNED_KINDS:
+    if text_area is not None and text_area >= TEXT_DENSE_AREA:
         return True
-    return text_area is not None and text_area >= TEXT_DENSE_AREA
+    if (kind or "").upper() not in DESIGNED_KINDS:
+        return False
+    return text_area is None or text_area >= DESIGNED_KIND_AREA
 
 
 class OcrExtractor:
