@@ -142,7 +142,7 @@ export default function Docs() {
       <SiteHeader />
       <main>
         {/* Hero */}
-        <section className="relative isolate overflow-hidden border-b border-line">
+        <section className="relative isolate -mt-18 overflow-hidden border-b border-line pt-18">
           <div
             aria-hidden="true"
             className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(var(--grid)_1px,transparent_1.3px)] bg-[size:22px_22px] [mask-image:radial-gradient(ellipse_70%_70%_at_20%_30%,black,transparent)]"
@@ -162,8 +162,8 @@ export default function Docs() {
                 <Link href={`/signup?next=${encodeURIComponent("/app/org/new")}`} className="inline-flex h-11 items-center gap-2 rounded-[10px] bg-acc px-5 text-[15px] font-medium text-on-acc hover:bg-acc-h">
                   Get an API key
                 </Link>
-                <a href={`${BASE}/openapi.json`} className="inline-flex h-11 items-center gap-2 rounded-[10px] border border-line2 px-5 text-[15px] font-medium text-ink hover:bg-hover">
-                  OpenAPI spec
+                <a href="#quickstart" className="inline-flex h-11 items-center gap-2 rounded-[10px] border border-line2 px-5 text-[15px] font-medium text-ink hover:bg-hover">
+                  Read the quickstart
                 </a>
               </div>
             </div>
@@ -499,11 +499,11 @@ events.onmessage = (e) => console.log(JSON.parse(e.data));
                 />
               </div>
               <p className="mt-4 text-[14px] text-ink3">
-                The full schema is in the{" "}
+                Every endpoint and field is also described in a machine-readable{" "}
                 <a href={`${BASE}/openapi.json`} className="text-acc-ink underline">
-                  OpenAPI spec
+                  OpenAPI schema
                 </a>
-                .
+                , for importing into Postman or generating a client library.
               </p>
             </Section>
 

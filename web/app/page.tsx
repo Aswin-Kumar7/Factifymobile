@@ -84,7 +84,7 @@ export default async function Home() {
       <SiteHeader />
       <main>
         {/* Hero */}
-        <section className="relative isolate overflow-hidden">
+        <section className="relative isolate -mt-18 overflow-hidden pt-18">
           {/* A soft green glow and a fading dot grid behind the hero. */}
           <div
             aria-hidden="true"
