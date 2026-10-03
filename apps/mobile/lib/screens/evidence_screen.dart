@@ -289,7 +289,12 @@ class _ClaimCard extends StatelessWidget {
             if (anchor != null)
               _InputAnchorBlock(anchor: anchor, submission: submission, read: read),
             const SizedBox(height: 10),
-            Row(
+            // Wraps: a long status ("Reported only in part") beside the confidence ran
+            // 13 px past a phone's edge.
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -302,15 +307,13 @@ class _ClaimCard extends StatelessWidget {
                     style: TextStyle(color: colour, fontWeight: FontWeight.w800, fontSize: 13),
                   ),
                 ),
-                if (claim.isDecisive && confidence != null) ...[
-                  const SizedBox(width: 8),
+                if (claim.isDecisive && confidence != null)
                   Text(
                     l10n.confidence(confidence),
                     style: theme.textTheme.labelMedium?.copyWith(
                       color: FactifyTokens.of(context).ink3,
                     ),
                   ),
-                ],
               ],
             ),
             const SizedBox(height: 10),
