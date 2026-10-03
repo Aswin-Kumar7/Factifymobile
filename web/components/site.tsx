@@ -14,11 +14,13 @@ const links = [
   { href: "/#faq", label: "FAQ" },
 ];
 
-export function SiteHeader() {
+/** `wide` lines the bar up with pages that use the full width, like the API docs. */
+export function SiteHeader({ wide = false }: { wide?: boolean }) {
+  const width = wide ? "max-w-[1480px]" : "max-w-[1200px]";
   const [open, setOpen] = useState(false);
   return (
     <header className="sticky top-0 z-30 px-3 pt-3 sm:px-5">
-      <div className="mx-auto flex h-15 max-w-[1200px] items-center justify-between gap-4 rounded-2xl border border-line bg-bg/70 px-4 shadow-card backdrop-blur-xl sm:px-5">
+      <div className={`mx-auto flex h-15 ${width} items-center justify-between gap-4 rounded-2xl border border-line bg-bg/70 px-4 shadow-card backdrop-blur-xl sm:px-5`}>
         <div className="flex items-center gap-3">
           <Wordmark />
           <span className="hidden h-5 w-px bg-line2 lg:block" />
@@ -61,7 +63,7 @@ export function SiteHeader() {
         </div>
       </div>
       {open && (
-        <nav className="mx-auto mt-2 max-w-[1200px] rounded-2xl border border-line bg-bg/95 px-4 pb-4 shadow-card backdrop-blur-xl md:hidden" aria-label="Main">
+        <nav className={`mx-auto mt-2 ${width} rounded-2xl border border-line bg-bg/95 px-4 pb-4 shadow-card backdrop-blur-xl md:hidden`} aria-label="Main">
           {links.map((l) => (
             <Link key={l.href} href={l.href} onClick={() => setOpen(false)} className="block border-b border-line py-3 text-base text-ink last:border-b-0">
               {l.label}

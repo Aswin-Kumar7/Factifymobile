@@ -39,7 +39,7 @@ function Section({ id, eyebrow, title, children }: { id: string; eyebrow?: strin
 /** Explanation on the left, code on the right, on wide screens. */
 function Split({ children, code }: { children: React.ReactNode; code: React.ReactNode }) {
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] xl:gap-7">
+    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:gap-8 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
       <div className="flex min-w-0 flex-col gap-4 text-[15px] leading-relaxed text-ink2">{children}</div>
       <div className="min-w-0 xl:sticky xl:top-28 xl:self-start">{code}</div>
     </div>
@@ -139,7 +139,7 @@ const RESPONSE = `{
 export default function Docs() {
   return (
     <>
-      <SiteHeader />
+      <SiteHeader wide />
       <main>
         {/* Hero */}
         <section className="relative isolate -mt-18 overflow-hidden border-b border-line pt-18">
@@ -148,7 +148,7 @@ export default function Docs() {
             className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(var(--grid)_1px,transparent_1.3px)] bg-[size:22px_22px] [mask-image:radial-gradient(ellipse_70%_70%_at_20%_30%,black,transparent)]"
           />
           <div aria-hidden="true" className="pointer-events-none absolute -top-40 -left-20 -z-10 h-[460px] w-[680px] rounded-full bg-[radial-gradient(closest-side,var(--glow),transparent)] opacity-60 blur-2xl" />
-          <div className="mx-auto grid max-w-[1200px] gap-10 px-4 pt-16 pb-14 sm:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,.9fr)] lg:items-end">
+          <div className="mx-auto grid max-w-[1480px] gap-10 px-4 pt-16 pb-14 sm:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,.9fr)] lg:items-end">
             <div className="flex flex-col gap-5">
               <span className="eyebrow">Developers</span>
               <h1 className="text-[2.6rem] leading-[1.04] font-medium tracking-[-0.04em] text-ink sm:text-[3.4rem]">
@@ -192,7 +192,7 @@ export default function Docs() {
           </div>
         </section>
 
-        <div className="mx-auto grid max-w-[1200px] gap-10 px-4 py-14 sm:px-8 lg:grid-cols-[210px_minmax(0,1fr)] lg:gap-14">
+        <div className="mx-auto grid max-w-[1480px] gap-10 px-4 py-14 sm:px-8 lg:grid-cols-[210px_minmax(0,1fr)] lg:gap-12 2xl:gap-16">
           {/* Sidebar */}
           <nav aria-label="API docs" className="hidden lg:block">
             <div className="sticky top-28 flex flex-col gap-6">
