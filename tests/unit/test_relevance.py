@@ -175,8 +175,9 @@ class TestASharedFactCheck:
 
 
 class TestNewsTooFreshToConfirm:
-    """Hindustan Times on a scheme launched that morning: four claims confirmed, the
-    headline Unconfirmed, because nobody else had reported it yet (2026-09-28)."""
+    """No "too recent to confirm" hold-back: today's news is answered from the facts
+    available when the check runs. An Al Jazeera post a day old read "too recent"
+    (2026-10-03); a newsroom cannot wait for a story to age."""
 
     @staticmethod
     async def _check(published: date) -> object:
@@ -198,15 +199,15 @@ class TestNewsTooFreshToConfirm:
             current_reference_date.reset(token)
 
     @pytest.mark.anyio
-    async def test_an_unconfirmed_claim_from_today_s_news_is_too_recent(self) -> None:
+    async def test_today_s_news_is_never_held_back_as_too_recent(self) -> None:
         from datetime import UTC, datetime
 
         from app.domain.enums import Action
 
         result = await self._check(datetime.now(UTC).date())
 
-        assert result.claims[0].decision.rule_id == "rule.developing_window"  # type: ignore[attr-defined]
-        assert result.action is Action.WAIT_AND_RECHECK  # type: ignore[attr-defined]
+        assert result.claims[0].decision.rule_id != "rule.developing_window"  # type: ignore[attr-defined]
+        assert result.action is not Action.WAIT_AND_RECHECK  # type: ignore[attr-defined]
 
     @pytest.mark.anyio
     async def test_last_month_s_news_is_not(self) -> None:

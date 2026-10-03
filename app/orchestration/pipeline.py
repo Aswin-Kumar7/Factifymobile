@@ -71,6 +71,7 @@ from app.sources.base import (
 )
 from app.sources.corpus import CorroborationSignal
 from app.sources.factcheck import shared_review_for
+from app.sources.outlets import outlet_name
 from app.sources.reasoning import REASONER_VERSION
 from app.sources.verification import SourceVerification, dedupe, page_key
 from app.verdict.engine import (
@@ -374,6 +375,20 @@ _FOLLOW_UP_MIN_SECONDS = 45.0
 # How recent a shared news page must be for what it reports to be "too recent to
 # confirm yet": published today or yesterday.
 _FRESH_DAYS = 1
+
+
+# The trusted publisher whose own page was shared, by name, for the check running.
+current_reporter: ContextVar[str | None] = ContextVar("current_reporter", default=None)
+
+
+def _reported_by_note(claim: Claim, reporter: str | None) -> str | None:
+    """What is known about an undecided claim from a trusted publisher's own page: who
+    reports it, and that no second independent outlet has confirmed it yet."""
+    if not reporter or claim.claim_type in (ClaimType.OPINION, ClaimType.PREDICTION):
+        return None
+    if claim.language == "hi":
+        return f"यह {reporter} ने रिपोर्ट किया है; किसी दूसरे स्वतंत्र स्रोत ने अभी इसकी पुष्टि नहीं की है।"
+    return f"Reported by {reporter}; not yet confirmed by a second independent outlet."
 
 
 def _fresh_news(claim: Claim) -> bool:
@@ -701,6 +716,15 @@ class Orchestrator:
         reported = verification is not None and any(
             verification.trusted(f"https://{key}") for key in own
         )
+        # Which trusted publisher that is, by name, for "Reported by ..." on what no
+        # second outlet has confirmed yet.
+        reporter = None
+        if reported and verification is not None:
+            for key in sorted(own):
+                if verification.trusted(f"https://{key}"):
+                    reporter = outlet_name(key.split("/")[0]) or key.split("/")[0]
+                    break
+        reporter_token = current_reporter.set(reporter)
 
         # The budget becomes a deadline here, not a wish. It was declared and
         # measured but never enforced, and real requests ran to 90 seconds — past
@@ -754,6 +778,7 @@ class Orchestrator:
             _check_budget.reset(had)
             current_own_pages.reset(shared)
             current_check.reset(check)
+            current_reporter.reset(reporter_token)
             for resolver in self._resolvers:
                 end_check = getattr(resolver, "end_check", None)
                 if end_check is not None:
@@ -1218,15 +1243,11 @@ class Orchestrator:
                 evidence.append(absent)
                 decision = decide(counted, evidence)
 
-        # News too fresh for others to have reported it yet. A claim from a news page
-        # the person shared, published today or yesterday, that nothing confirms or
-        # contradicts is "too recent to confirm", not "unconfirmed": Hindustan Times on
-        # a scheme launched that morning had four claims confirmed and its headline
-        # read Unconfirmed (2026-09-28). Only after deciding, and only an undecided
-        # claim, so nothing already confirmed is held back by it.
-        if not decision.status.is_decisive and _fresh_news(counted):
-            counted = counted.model_copy(update={"within_developing_window": True})
-            decision = decide(counted, evidence)
+        # No "too recent to confirm" hold-back: a check answers from the facts
+        # available when it runs. An Al Jazeera post a day old read "too recent"
+        # because its page was dated yesterday (2026-10-03); a newsroom cannot wait for
+        # a story to age. An undecided claim from a trusted publisher's own page says
+        # who reports it instead (`_reported_by_note`).
 
         # A plain explanation is shown only under a verdict it can agree with.
         #
@@ -1238,10 +1259,14 @@ class Orchestrator:
         # rule had correctly declined to call it true. The app says what UNCONFIRMED
         # means in its own words instead.
         if not decision.status.is_decisive:
-            explanation = narrower_note(evidence, language=claim.language) or (
-                _unreported_note(claim, evidence, reported=reported)
-                if search == "searched"
-                else None
+            explanation = (
+                _reported_by_note(claim, current_reporter.get())
+                or narrower_note(evidence, language=claim.language)
+                or (
+                    _unreported_note(claim, evidence, reported=reported)
+                    if search == "searched"
+                    else None
+                )
             )
         else:
             # Written from what decided the claim - its source, named and quoted - and
