@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { DownloadHere, Features, HowItWorks, Pricing, ProductShot } from "@/components/landing";
-import { SiteFooter, SiteHeader } from "@/components/site";
+import { SiteFooter, SiteHeader, ZeaiLogo, ZeaiMark } from "@/components/site";
 import { ApkFactsLine } from "@/lib/app-download";
 import { EXTRA_CHECK_INR } from "@/lib/plans";
 
@@ -55,7 +55,7 @@ function principles(counts: SourceCounts | null) {
       "Only sources worth trusting.",
       `${list}, chosen by published criteria: fact-checkers verified by the IFCN or EFCSN (now or in the past), wire services, public broadcasters and established newsrooms, and no outlets owned by politicians. Twenty copies of one wire story count once.`,
     ],
-    ["Honest when unsure.", "Too new to confirm? You see “Unconfirmed” and the reason. Made-up news with a fake picture, reported by no one, is called out as False."],
+    ["Honest when unsure.", "Every check answers from what is published right now. Not enough evidence? You see “Unconfirmed” and who reports it. Made-up news with a fake picture, reported by no one, is called out as False."],
   ];
 }
 
@@ -84,12 +84,20 @@ export default async function Home() {
       <SiteHeader />
       <main>
         {/* Hero */}
-        <section className="mx-auto max-w-[1200px] px-4 pt-20 pb-14 sm:px-8 sm:pt-26">
+        <section className="relative isolate overflow-hidden">
+          {/* A soft green glow and a fading dot grid behind the hero. */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(var(--grid)_1px,transparent_1.3px)] bg-[size:22px_22px] [mask-image:radial-gradient(ellipse_70%_60%_at_30%_30%,black,transparent)]"
+          />
+          <div aria-hidden="true" className="pointer-events-none absolute -top-40 -left-24 -z-10 h-[520px] w-[720px] rounded-full bg-[radial-gradient(closest-side,var(--glow),transparent)] opacity-70 blur-2xl" />
+          <div className="mx-auto max-w-[1200px] px-4 pt-16 pb-14 sm:px-8 sm:pt-22">
           <div className="flex max-w-[820px] flex-col gap-6.5">
+            <ZeaiMark />
             <h1 className="text-[2.9rem] leading-[1.02] font-medium tracking-[-0.045em] text-ink sm:text-[4.25rem]">
               Know what&apos;s true
               <br />
-              <span className="text-ink3">before you forward it.</span>
+              <span className="bg-linear-to-r from-acc-ink to-[var(--chart-2)] bg-clip-text text-transparent">before you forward it.</span>
             </h1>
             <p className="max-w-[600px] text-[19px] leading-relaxed text-ink2">
               Factify checks WhatsApp forwards, links, pictures, videos and PDFs against trusted newsrooms and fact-checkers — and shows you the line that proves it.
@@ -104,6 +112,7 @@ export default async function Home() {
             </div>
             <span className="text-sm text-ink3">30 free checks every month. No card needed.</span>
           </div>
+          </div>
         </section>
 
         {/* The product, clickable */}
@@ -117,7 +126,7 @@ export default async function Home() {
           <div className="grid grid-cols-2 border-y border-line md:grid-cols-4">
             {FACTS.map(([value, label], i) => (
               <div key={label} className={`py-6.5 ${i % 2 ? "border-l border-line pl-5 sm:pl-7" : ""} ${i === 2 ? "md:border-l md:border-line md:pl-7" : ""} ${i >= 2 ? "max-md:border-t max-md:border-line" : ""}`}>
-                <div className="text-[1.6rem] font-medium tracking-tight text-ink">{value}</div>
+                <div className="text-[1.75rem] font-medium tracking-tight text-acc-ink">{value}</div>
                 <div className="mt-1 text-sm text-ink3">{label}</div>
               </div>
             ))}
@@ -153,8 +162,20 @@ export default async function Home() {
         </section>
 
         {/* Pricing */}
-        <section id="pricing" className="mx-auto max-w-[1200px] scroll-mt-20 px-4 pt-32 sm:px-8 sm:pt-40">
-          <Pricing />
+        <section id="pricing" className="mx-auto max-w-[1240px] scroll-mt-20 px-2 pt-32 sm:px-4 sm:pt-40">
+          <div className="relative isolate overflow-hidden rounded-[28px] border border-line bg-sf2/60 px-4 py-12 sm:px-10 sm:py-16">
+            <div aria-hidden="true" className="pointer-events-none absolute -top-32 right-[-10%] -z-10 h-[420px] w-[620px] rounded-full bg-[radial-gradient(closest-side,var(--glow),transparent)] opacity-50 blur-2xl" />
+            <Pricing />
+            <div className="mt-5 flex flex-wrap items-center gap-4 rounded-2xl border border-line bg-sf px-6 py-4.5 shadow-card">
+              <ZeaiLogo height={28} />
+              <span className="min-w-0 flex-1 text-[14.5px] text-ink2">
+                <span className="font-medium text-ink">Judging for the ZeAI #MadeInIndia Hackathon?</span> During this preview, checks are not limited &mdash; try as many as you like.
+              </span>
+              <Link href="/signup" className="group inline-flex items-center gap-1.5 text-[15px] font-medium text-acc-ink">
+                Try it now {arrow}
+              </Link>
+            </div>
+          </div>
         </section>
 
         {/* The app */}
@@ -292,15 +313,23 @@ export default async function Home() {
         </section>
 
         {/* Closing */}
-        <section className="mx-auto max-w-[1200px] px-4 pt-32 pb-32 text-center sm:px-8 sm:pt-40">
-          <h2 className="text-[2.4rem] font-medium tracking-tight text-ink sm:text-[3.25rem]">Check your next forward.</h2>
-          <div className="mt-7 flex flex-wrap justify-center gap-3">
-            <Link href="/signup" className={primary}>
-              Start checking free {arrow}
-            </Link>
-            <Link href="/download" className={ghost}>
-              Download for Android
-            </Link>
+        <section className="mx-auto max-w-[1240px] px-2 pt-32 pb-28 sm:px-4 sm:pt-40">
+          <div className="relative isolate overflow-hidden rounded-[28px] bg-[#0f2a20] px-6 py-16 text-center sm:px-12 sm:py-20">
+            <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(rgba(234,244,238,.07)_1px,transparent_1.3px)] bg-[size:22px_22px]" />
+            <div aria-hidden="true" className="pointer-events-none absolute -bottom-40 left-1/2 -z-10 h-[460px] w-[820px] -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,rgba(91,228,168,.35),transparent)] blur-2xl" />
+            <div className="flex justify-center">
+              <ZeaiMark dark />
+            </div>
+            <h2 className="mt-7 text-[2.4rem] leading-[1.05] font-medium tracking-tight text-white sm:text-[3.4rem]">Check your next forward.</h2>
+            <p className="mx-auto mt-4 max-w-[520px] text-[17px] leading-relaxed text-[#b9d3c6]">Trusted sources, the exact line that proves it, and a polite correction for the group &mdash; in under a minute.</p>
+            <div className="mt-8 flex flex-wrap justify-center gap-3">
+              <Link href="/signup" className="group inline-flex h-11 items-center gap-2 rounded-[10px] bg-[#5be4a8] px-5 text-[15px] font-medium text-[#0b2018] transition-colors hover:bg-[#7debbb]">
+                Start checking free {arrow}
+              </Link>
+              <Link href="/download" className="inline-flex h-11 items-center gap-2 rounded-[10px] border border-white/20 px-5 text-[15px] font-medium text-white transition-colors hover:bg-white/10">
+                {download} Download for Android
+              </Link>
+            </div>
           </div>
         </section>
       </main>

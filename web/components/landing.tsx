@@ -825,8 +825,10 @@ export function Pricing() {
         {rows.map((r) => (
           <div
             key={r.name}
-            className={`flex flex-col gap-5 rounded-2xl border p-7 shadow-card transition-colors ${
-              r.popular ? "border-acc-ink/40 bg-linear-to-b from-hi to-sf to-45%" : "border-line bg-sf hover:border-line2"
+            className={`relative flex flex-col gap-5 rounded-2xl border p-7 transition duration-300 hover:-translate-y-1 ${
+              r.popular
+                ? "border-acc-ink/50 bg-linear-to-b from-hi to-sf to-45% shadow-lg ring-1 ring-acc-ink/25"
+                : "border-line bg-sf shadow-card hover:border-line2 hover:shadow-lg"
             }`}
           >
             <div className="flex h-5.5 items-center justify-between">
@@ -835,7 +837,7 @@ export function Pricing() {
             </div>
             <div>
               <div className="flex items-baseline gap-1.5">
-                <span className="tabular text-[2.5rem] font-medium tracking-tight text-ink">{r.price}</span>
+                <span className={`tabular text-[2.75rem] font-medium tracking-tight ${r.popular ? "text-acc-ink" : "text-ink"}`}>{r.price}</span>
                 <span className="text-sm text-ink3">{r.per}</span>
               </div>
               <div className="mt-0.5 min-h-5 text-[13px] text-ink3">{r.billed}</div>
@@ -854,7 +856,7 @@ export function Pricing() {
               <li className="text-[14.5px] font-medium text-ink">{r.limit}</li>
               {r.features.map((x) => (
                 <li key={x} className="flex gap-2.5 text-sm leading-snug text-ink2">
-                  {tick("text-ink3")}
+                  {tick("text-acc-ink")}
                   {x}
                 </li>
               ))}
