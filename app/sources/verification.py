@@ -162,6 +162,72 @@ _MEDIA_FAKED = re.compile(
 )
 
 
+# Counts written as words, at their lowest: "millions" is at least a million.
+_COUNT_WORDS = (
+    (re.compile(r"\bhundreds of thousands\b", re.IGNORECASE), 100_000),
+    (re.compile(r"\btens of thousands\b", re.IGNORECASE), 10_000),
+    (re.compile(r"\bmillions\b", re.IGNORECASE), 1_000_000),
+    (re.compile(r"\bcrores\b", re.IGNORECASE), 10_000_000),
+    (re.compile(r"\blakhs\b", re.IGNORECASE), 100_000),
+    (re.compile(r"\bbillions\b", re.IGNORECASE), 1_000_000_000),
+)
+_SCALE = {
+    "thousand": 1_000,
+    "k": 1_000,
+    "lakh": 100_000,
+    "lac": 100_000,
+    "million": 1_000_000,
+    "mn": 1_000_000,
+    "crore": 10_000_000,
+    "billion": 1_000_000_000,
+}
+_COUNT = re.compile(
+    r"(?<![\d.,])(\d(?:[\d,]*\d)?(?:\.\d+)?)(?:\s*(thousand|lakh|lac|million|mn|crore|billion|k)\b)?"
+    r"(?![\d,]*\s*(?:%|per ?cent))",
+    re.IGNORECASE,
+)
+_MONEY_BEFORE = re.compile(r"(?:rs\.?|inr|usd|₹|\$|€|£)\s*$", re.IGNORECASE)
+# A passage's figure at most this share of the claim's says the claim is wrong.
+FAR_BELOW_RATIO = 5
+
+
+def _counts(text: str) -> list[float]:
+    """The counts a text states: never money, a percentage, a year or a small number
+    that is more likely a date than a count."""
+    found = [float(value) for pattern, value in _COUNT_WORDS if pattern.search(text)]
+    for m in _COUNT.finditer(text):
+        if _MONEY_BEFORE.search(text[max(0, m.start() - 6) : m.start()]):
+            continue
+        raw = m.group(1).replace(",", "")
+        try:
+            number = float(raw)
+        except ValueError:
+            continue
+        scale = m.group(2)
+        if scale:
+            number *= _SCALE[scale.lower()]
+        elif number < 100 or ("," not in m.group(1) and 1900 <= number <= 2100):
+            continue
+        found.append(number)
+    return found
+
+
+def far_below(claim_text: str, passage: str) -> bool:
+    """Whether a passage's figures all sit far below the claim's own.
+
+    The check's `far_smaller_figure` says the two figures count the same thing; this
+    confirms the numbers say what it says. "Millions" against "about 10,000" and "the
+    party claimed some 200,000" is a fifth or less, so the claim is wrong, not
+    narrower (2026-10-03). Every figure in the passage must be that far below, so a
+    passage that also gives one near the claim's never counts.
+    """
+    claimed = _counts(claim_text)
+    stated = _counts(passage)
+    if not claimed or not stated:
+        return False
+    return max(claimed) >= FAR_BELOW_RATIO * max(stated)
+
+
 def _settled(
     item: Evidence,
     read: str,
@@ -170,6 +236,7 @@ def _settled(
     depiction: bool = False,
     material: bool = False,
     footage: bool = False,
+    claim_text: str = "",
 ) -> tuple[Evidence | None, str]:
     """What the check's answer makes of one source: the copy to keep, or None, and
     the outcome for the log.
@@ -227,6 +294,24 @@ def _settled(
     ):
         return _as_contradiction(item, reading.reason), (
             "kept (contradicts: the picture itself is called AI-made or altered)"
+        )
+
+    # A figure for the claim's own count far below the claim's: "about 10,000" for
+    # "millions" says the claim is wrong. It was kept as a narrower version and
+    # "Millions of Koreans gathered in Gwanghwamun" read Unconfirmed (2026-10-03).
+    # Only on the check's own yes and only when the numbers bear it out
+    # (`far_below`), and never against the check's TRUE.
+    if (
+        about
+        and verdict in ("PARTLY", "FALSE")
+        and getattr(reading, "far_smaller_figure", False)
+        and (supports or read == "contradicts")
+        and far_below(claim_text, item.source_excerpt)
+    ):
+        return _as_contradiction(item, reading.reason), (
+            "kept (contradicts: a far smaller figure)"
+            if read == "contradicts"
+            else f"kept (contradicts: a far smaller figure; read {read})"
         )
 
     if framed and about:
@@ -389,7 +474,8 @@ def _as_narrower(item: Evidence, reason: str) -> Evidence:
 
 
 def _as_contradiction(item: Evidence, reason: str) -> Evidence:
-    """A source the check read as calling the claim's picture made or altered."""
+    """A source the check read as contradicting the claim: its picture called made or
+    altered, or its figure far above the passage's."""
     return item.model_copy(
         update={
             "direction": Direction.CONTRADICTS,
@@ -654,6 +740,7 @@ class SourceVerification:
                 depiction=depiction,
                 material=material,
                 footage=claim.anchor.section == "footage",
+                claim_text=claim.text,
             )
             if settled is not None:
                 kept.append(settled)
@@ -733,6 +820,7 @@ class SourceVerification:
 _FLAGS = (
     ("smaller_version", "smaller"),
     ("states_differently", "differs"),
+    ("far_smaller_figure", "far_smaller"),
     ("other_group", "other_group"),
     ("core_established", "core"),
     ("out_of_context", "out_of_context"),

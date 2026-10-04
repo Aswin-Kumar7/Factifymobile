@@ -427,7 +427,9 @@ class TestWaitingForTheBudgetIsNotTheExtractsTime:
 
     async def test_a_background_check_waits_for_the_budget_only_briefly(self) -> None:
         """The read holds a server-wide fetch slot: a ninety-second wait for the budget
-        held one that long, and reads needing no extract queued behind it."""
+        held one that long, and reads needing no extract queued behind it. Twelve
+        seconds skipped 8 reads of one check and left two claims with no source
+        (2026-10-03), so a background check waits forty - still short of ninety."""
         governor = _Governor()
         fetcher = _Fetcher(None, vendor=ARTICLE)
         resolver = _resolver(governor=governor, fetcher=fetcher)
@@ -442,8 +444,12 @@ class TestWaitingForTheBudgetIsNotTheExtractsTime:
             current_check.reset(check)
 
         assert body.startswith("The state government said")
-        assert governor.patience == [websearch._EXTRACT_PACE_SECONDS]
-        assert websearch._EXTRACT_PACE_SECONDS < PATIENT.pace_seconds
+        assert governor.patience == [websearch._EXTRACT_PACE_PATIENT_SECONDS]
+        assert (
+            websearch._EXTRACT_PACE_SECONDS
+            < websearch._EXTRACT_PACE_PATIENT_SECONDS
+            < PATIENT.pace_seconds
+        )
         # The check's own patience is left as it was, for its other calls.
         assert after is PATIENT
 

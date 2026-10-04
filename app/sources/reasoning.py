@@ -61,7 +61,7 @@ from app.sources.local_reading import local_reading, local_same_claim
 logger = logging.getLogger("factify.sources.reasoning")
 
 PROVIDER = "llm"
-REASONER_VERSION = "2026.10.03.8"
+REASONER_VERSION = "2026.10.04.1"
 
 # The metric prefix of a support the article attributes to someone else - "the Army
 # said", "police said" - held as context until the source check, reading the passage
@@ -1032,6 +1032,15 @@ _CHECK_SOURCES_SCHEMA: dict[str, Any] = {
                     # Aditya-L1 launch, which did not name Sriharikota, a "smaller
                     # version", and a true claim came back partly true (2026-09-28).
                     "states_differently": {"type": "boolean"},
+                    # A figure for the same count far below the claim's. "Millions of
+                    # Koreans gathered in Gwanghwamun" against Chosun's "about 10,000"
+                    # and Yonhap's "the party claimed some 200,000" was kept as a
+                    # narrower version, and the claim read Unconfirmed (2026-10-03).
+                    # A crowd a hundredth of the size is not a smaller version of the
+                    # claim; it says the claim is wrong. Asked as its own yes-or-no,
+                    # like the descriptions around it, and confirmed in code
+                    # (`verification.far_below`).
+                    "far_smaller_figure": {"type": "boolean"},
                     # Who the passage's version is for. "Eligible people" was read as a
                     # smaller group of the claim's people, and the PM Internship
                     # Scheme's Rs 5,000 a month for interns passed as a smaller version
@@ -1061,6 +1070,7 @@ _CHECK_SOURCES_SCHEMA: dict[str, Any] = {
                     "reason",
                     "smaller_version",
                     "states_differently",
+                    "far_smaller_figure",
                     "other_group",
                     "addresses_claim",
                     "core_established",
@@ -1114,6 +1124,13 @@ For each source:
   launch site, of a fire that does not say which floor it began on, of an
   assessment that names two of the four effects the claim lists, or of statements
   without the word "repeatedly", states nothing differently.
+- far_smaller_figure: true if the claim gives a number or size for a count - people
+  at a rally or protest, a crowd, attendance, deaths, injuries, arrests, votes - and
+  the passage gives its own figure for the same count at the same event that is less
+  than a fifth of the claim's: "about 10,000 people gathered", or "organisers claimed
+  200,000", where the claim says "millions". False when the passage's figure counts
+  something else (police deployed, one district, one day of several), and for money:
+  a lower payment or price is a smaller version, not this.
 - other_group: true if what the passage reports is for a different group of people
   than the claim names, rather than for all of them or some of them: interns,
   students or employees of any gender for a claim about every woman; traders for a
@@ -1217,6 +1234,8 @@ class SourceReading:
     smaller_version: bool = False
     # The passage states one of the claim's details differently, not merely leaves it out.
     states_differently: bool = False
+    # The passage gives a figure for the claim's own count far below the claim's.
+    far_smaller_figure: bool = False
     # What the passage reports is for a different group of people than the claim's.
     other_group: bool = False
     # The passage establishes what the claim is about and leaves out only details.
@@ -2079,6 +2098,7 @@ class PassageReasoner:
                         reason=str(item.get("reason") or "").strip(),
                         smaller_version=bool(item.get("smaller_version", False)),
                         states_differently=bool(item.get("states_differently", False)),
+                        far_smaller_figure=bool(item.get("far_smaller_figure", False)),
                         other_group=bool(item.get("other_group", False)),
                         core_established=bool(item.get("core_established", False)),
                         out_of_context=bool(item.get("out_of_context", False)),

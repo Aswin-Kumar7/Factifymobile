@@ -44,7 +44,7 @@ from app.extraction.web import extract, plain_text
 from app.governor.governor import ProviderUnavailable, Skip, SkipReason
 from app.observability.logging import event
 from app.security.fetcher import FetchResult, SecureFetcher
-from app.security.patience import current_patience
+from app.security.patience import PATIENT, current_patience
 from app.sources.base import (
     FACT_CHECK_WORDS,
     SourceCandidate,
@@ -200,6 +200,11 @@ _EXTRACT_TIMEOUT_SECONDS = 12.0
 # ninety-second wait for the budget would hold one that long, and reads that need no
 # extract, this check's and others', queued behind it.
 _EXTRACT_PACE_SECONDS = 12.0
+# A check in the background waits longer: twelve seconds skipped 8 reads of one check
+# of a post about the Gwanghwamun rallies as "rate limited", and two of its claims
+# were left with no source at all (2026-10-03). A held slot for 40 s is cheaper than
+# a claim no page was read for.
+_EXTRACT_PACE_PATIENT_SECONDS = 40.0
 
 
 def _kept_for(read: tuple[str, str, str]) -> float:
@@ -894,10 +899,12 @@ class WebSearchResolver:
 
     async def _metered_briefly(self, call: str) -> bool:
         """`_metered`, waiting at most `_EXTRACT_PACE_SECONDS` for room under the
-        per-minute ceiling whatever the check's own patience."""
+        per-minute ceiling - `_EXTRACT_PACE_PATIENT_SECONDS` in a background check -
+        however long the check's own patience."""
         patience = current_patience.get()
+        ceiling = _EXTRACT_PACE_PATIENT_SECONDS if patience is PATIENT else _EXTRACT_PACE_SECONDS
         token = current_patience.set(
-            replace(patience, pace_seconds=min(patience.pace_seconds, _EXTRACT_PACE_SECONDS))
+            replace(patience, pace_seconds=min(patience.pace_seconds, ceiling))
         )
         try:
             return await self._metered(call)
